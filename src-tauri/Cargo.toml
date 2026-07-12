@@ -31,5 +31,12 @@ encoding_rs = "0.8"
 # HTTP 请求（在线歌词）
 ureq = { version = "3", features = ["json"] }
 
+# ── 平台特定：系统媒体控制 ──
+[target.'cfg(target_os = "windows")'.dependencies]
+smtc-tokio = "0.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+
 [features]
 default = []

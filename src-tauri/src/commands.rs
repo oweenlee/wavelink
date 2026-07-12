@@ -71,13 +71,22 @@ pub fn play_queue(paths: Vec<String>, state: State<AppState>) {
 pub fn next_track(state: State<AppState>) { state.engine.next_track(); }
 
 #[tauri::command]
-pub fn pause(state: State<AppState>) { state.engine.pause(); }
+pub fn pause(state: State<AppState>) {
+    state.engine.pause();
+    state.media_bridge.update_playback_state(false);
+}
 
 #[tauri::command]
-pub fn resume(state: State<AppState>) { state.engine.resume(); }
+pub fn resume(state: State<AppState>) {
+    state.engine.resume();
+    state.media_bridge.update_playback_state(true);
+}
 
 #[tauri::command]
-pub fn stop(state: State<AppState>) { state.engine.stop(); }
+pub fn stop(state: State<AppState>) {
+    state.engine.stop();
+    state.media_bridge.clear();
+}
 
 #[tauri::command]
 pub fn seek(pos: f64, state: State<AppState>) { state.engine.seek(pos); }

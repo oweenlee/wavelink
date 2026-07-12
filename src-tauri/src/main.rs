@@ -3,6 +3,7 @@
 
 mod commands;
 mod logging;
+mod media_bridge;
 mod settings;
 mod state;
 
@@ -27,13 +28,33 @@ fn forward_engine_events(app_handle: tauri::AppHandle, event_rx: Receiver<Engine
                     let _ = app_handle.emit("player:track_changed", &path);
                     if let Some(state) = app_handle.try_state::<AppState>() {
                         commands::apply_replaygain_volume_for_path(&path_clone, &state);
+
+                        // 更新系统媒体控制
+                        if let Ok(db) = state.library.lock() {
+                            if let Ok(Some(track)) = db.get_track_by_path(&path) {
+                                let title = track.title.as_deref().unwrap_or("未知曲目");
+                                let artist = track.artist.as_deref().unwrap_or("未知艺术家");
+                                let album = track.album.as_deref().unwrap_or("");
+                                let duration_ms = track.duration
+                                    .map(|d| (d * 1000.0) as u64)
+                                    .unwrap_or(0);
+                                state.media_bridge.update_metadata(title, artist, album, duration_ms);
+                                state.media_bridge.update_playback_state(true);
+                            }
+                        }
                     }
                 }
                 EngineEvent::PlaybackStopped => {
                     let _ = app_handle.emit("player:stopped", ());
+                    if let Some(state) = app_handle.try_state::<AppState>() {
+                        state.media_bridge.clear();
+                    }
                 }
                 EngineEvent::Position(pos) => {
                     let _ = app_handle.emit("player:position", pos);
+                    if let Some(state) = app_handle.try_state::<AppState>() {
+                        state.media_bridge.update_position((pos * 1000.0) as u64);
+                    }
                 }
                 EngineEvent::DurationSecs(dur) => {
                     let _ = app_handle.emit("player:duration", dur);
@@ -88,6 +109,8 @@ fn main() {
             let (engine, event_rx) = EngineHandle::start();
             forward_engine_events(app.handle().clone(), event_rx);
 
+            let media_bridge = media_bridge::MediaBridge::new();
+
             app.manage(AppState {
                 engine,
                 library: Mutex::new(db),
@@ -97,6 +120,7 @@ fn main() {
                 replaygain_enabled: Mutex::new(false),
                 base_volume: Mutex::new(1.0),
                 current_track: Mutex::new(None),
+                media_bridge,
             });
 
             // 注册全局快捷键
