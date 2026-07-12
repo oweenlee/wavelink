@@ -1,4 +1,4 @@
-name: Build macOS
+name: Build
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 # 需要的 Secret（在 GitHub repo Settings → Secrets and variables → Actions 里设置）:
-# - ENGINE_PAT: 访问私有 wavelink-engine 仓库的 Fine-grained PAT
+# - ENGINE_PAT: 访问私有 wavelink-engine 仓库的 PAT
 
 env:
   CARGO_TERM_COLOR: always
@@ -16,11 +16,13 @@ env:
 
 jobs:
   build:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Checkout app
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: 配置 git 访问私有引擎仓库
         run: |
@@ -40,15 +42,26 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: 移除本地 .cargo/config（如果有，避免干扰 CI）
+      - name: 移除本地 .cargo/config
         run: rm -f .cargo/config.toml
 
-      - name: Build Tauri app (macOS)
+      - name: Build Tauri app
         run: npm run tauri build
 
-      - name: 上传安装包
+      - name: 上传安装包 (macOS)
+        if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: wavelink-macos
           path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+      - name: 上传安装包 (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wavelink-windows
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
