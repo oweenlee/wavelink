@@ -50,7 +50,7 @@ impl MediaBridge {
         { let _ = is_playing; }
     }
 
-    pub fn update_position(&self, position_ms: u64) {
+    pub fn update_position(&self, #[allow(unused_variables)] position_ms: u64) {
         #[cfg(target_os = "windows")]
         {
             if let Ok(mgr) = smtc_tokio::WindowsMediaManager::new() {
