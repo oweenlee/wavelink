@@ -56,9 +56,9 @@
   --space-10: 40px;
 
   /* ── Typography ── */
-  --font-ui: -apple-system, 'SF Pro Text', 'Inter', 'PingFang SC', sans-serif;
-  --font-display: -apple-system, 'SF Pro Display', 'Inter', sans-serif;
-  --font-mono: 'SF Mono', 'JetBrains Mono', monospace;
+  --font-ui: -apple-system, 'SF Pro Text', 'PingFang SC', 'Segoe UI Variable', 'Segoe UI', 'Inter', sans-serif;
+  --font-display: -apple-system, 'SF Pro Display', 'Segoe UI Variable', 'Segoe UI', 'Inter', sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
 
   --font-size-xs: 10px;
   --font-size-sm: 12px;
