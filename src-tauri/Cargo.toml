@@ -1,0 +1,35 @@
+[package]
+name = "wavelink"
+version = "0.1.0"
+description = "WaveLink - 果味玻璃风格高级音乐播放器"
+authors = ["you"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 音频内核（通过 SDK 调用）
+sdk = { git = "https://github.com/qinlaoban/wavelink-engine.git" }
+
+# 引擎事件接收
+crossbeam-channel = "0.5"
+
+# 结构化日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# 文件编码检测
+encoding_rs = "0.8"
+
+# HTTP 请求（在线歌词）
+ureq = { version = "3", features = ["json"] }
+
+[features]
+default = []

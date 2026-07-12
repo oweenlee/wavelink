@@ -1,0 +1,45 @@
+name: Build macOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 需要的 Secret（在 GitHub repo Settings → Secrets and variables → Actions 里设置）:
+# - ENGINE_PAT: 访问私有 wavelink-engine 仓库的 Fine-grained PAT
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout app
+        uses: actions/checkout@v4
+
+      - name: 配置 git 访问私有引擎仓库
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.ENGINE_PAT }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: 移除本地 .cargo/config（如果有，避免干扰 CI）
+        run: rm -f .cargo/config.toml
+
+      - name: Build Tauri app (macOS)
+        run: npm run tauri build

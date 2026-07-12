@@ -1,0 +1,8 @@
+/* ══════════════════════════════════════════════
+   WaveLink — app entry stylesheet
+   Imports design system: tokens → reset → components
+   ══════════════════════════════════════════════ */
+
+@import '$lib/styles/tokens.css';
+@import '$lib/styles/reset.css';
+@import '$lib/styles/components.css';

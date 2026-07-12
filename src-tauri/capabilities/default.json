@@ -1,0 +1,10 @@
+{
+  "identifier": "default",
+  "description": "Default capability",
+  "windows": ["*"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "global-shortcut:default"
+  ]
+}

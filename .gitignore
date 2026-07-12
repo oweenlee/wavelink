@@ -1,0 +1,7 @@
+target/
+node_modules/
+/build
+/.svelte-kit
+.DS_Store
+*.tsbuildinfo
+/.cargo

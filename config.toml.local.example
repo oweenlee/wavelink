@@ -1,0 +1,6 @@
+# 本地开发配置
+# 将此文件复制到 .cargo/config.toml 即可在开发时使用本地引擎源码
+# 删除 .cargo/config.toml 即可切回远程 git 依赖
+
+[patch."https://github.com/qinlaoban/wavelink-engine"]
+sdk = { path = "../../wavelink-engine/sdk" }

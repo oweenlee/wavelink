@@ -1,0 +1,78 @@
+/* ══════════════════════════════════════════════
+   Design Tokens — Lavender Dark
+   Modern dark · Pure base · Purple accent
+   Inspired by Apple's clean UI philosophy
+   ══════════════════════════════════════════════ */
+
+:root {
+  /* ── Background — glass-ready dark with subtle gradient ── */
+  --bg: #0a0a0e;
+  --bg-gradient: radial-gradient(ellipse 140% 80% at 50% -20%, rgba(167, 139, 250, 0.06) 0%, transparent 70%),
+                 radial-gradient(ellipse 80% 100% at 80% 100%, rgba(167, 139, 250, 0.03) 0%, transparent 60%);
+  --bg-surface: rgba(255, 255, 255, 0.035);
+  --bg-elevated: rgba(255, 255, 255, 0.055);
+  --bg-hover: rgba(255, 255, 255, 0.045);
+  --bg-active: rgba(255, 255, 255, 0.07);
+
+  /* ── Glass panels ── */
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-blur: blur(32px);
+  --glass-border: 0.5px solid rgba(255, 255, 255, 0.06);
+
+  /* ── Foreground — clean white─ */
+  --fg-primary: #eeeeee;
+  --fg-secondary: #999999;
+  --fg-tertiary: #666666;
+  --fg-quaternary: rgba(255, 255, 255, 0.1);
+
+  /* ── Separator ── */
+  --separator: rgba(255, 255, 255, 0.06);
+
+  /* ── Accent (Lavender — soft purple) ── */
+  --accent: #a78bfa;
+  --accent-dim: rgba(167, 139, 250, 0.18);
+  --accent-glow: rgba(167, 139, 250, 0.12);
+
+  /* ── Semantic ── */
+  --danger: #e5484d;
+  --danger-dim: rgba(229, 72, 77, 0.12);
+  --success: #5bbd78;
+  --success-dim: rgba(91, 189, 120, 0.12);
+
+  /* ── Radius ── */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  /* ── Spacing ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* ── Typography ── */
+  --font-ui: -apple-system, 'SF Pro Text', 'Inter', 'PingFang SC', sans-serif;
+  --font-display: -apple-system, 'SF Pro Display', 'Inter', sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', monospace;
+
+  --font-size-xs: 10px;
+  --font-size-sm: 12px;
+  --font-size-md: 14px;
+  --font-size-lg: 18px;
+  --font-size-xl: 22px;
+  --font-size-2xl: 26px;
+
+  /* ── Shadow ── */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.55);
+
+  /* ── Easing ── */
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.25, 0.1, 0.25, 1);
+}
