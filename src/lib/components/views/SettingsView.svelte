@@ -38,6 +38,11 @@
 	async function toggleReplaygain() {
 		await settings.setReplaygain(!settings.replaygainEnabled);
 	}
+
+	function toggleGapless() {
+		settings.crossfadeMs = settings.crossfadeMs === 0 ? 50 : 0;
+		applyEngineConfig();
+	}
 </script>
 
 <div class="settings-page">
@@ -100,6 +105,15 @@
 			<h3 class="card-title">播放</h3>
 		</div>
 		<div class="card-body">
+			<div class="setting-row">
+				<div class="setting-label">
+					<span class="label-text">无间隙播放</span>
+					<span class="label-desc">切歌时无淡入淡出，适合连续专辑；关闭则使用 50ms 平滑过渡</span>
+				</div>
+				<button class="toggle" class:active={settings.crossfadeMs === 0} onclick={toggleGapless} aria-label="切换无间隙播放">
+					<span class="toggle-knob"></span>
+				</button>
+			</div>
 			<div class="setting-row">
 				<div class="setting-label">
 					<span class="label-text">ReplayGain</span>

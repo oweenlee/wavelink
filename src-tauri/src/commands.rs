@@ -561,12 +561,14 @@ pub fn set_engine_config(
     sample_rate: u32,
     channels: u32,
     buffer_ms: u32,
+    crossfade_ms: u32,
     state: State<AppState>,
 ) {
     let cfg = sdk::EngineConfig {
         sample_rate,
         channels,
         buffer_ms,
+        crossfade_ms,
     };
     state.engine.set_config(cfg);
 }
