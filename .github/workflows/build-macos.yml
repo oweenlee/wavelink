@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 # 需要的 Secret（在 GitHub repo Settings → Secrets and variables → Actions 里设置）:
 # - ENGINE_PAT: 访问私有 wavelink-engine 仓库的 Fine-grained PAT
