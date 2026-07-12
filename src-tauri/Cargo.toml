@@ -31,9 +31,13 @@ encoding_rs = "0.8"
 # HTTP 请求（在线歌词）
 ureq = { version = "3", features = ["json"] }
 
+# 窗口句柄获取（用于 Windows DWM 标题栏设置）
+raw-window-handle = "0.6"
+
 # ── 平台特定：系统媒体控制 ──
 [target.'cfg(target_os = "windows")'.dependencies]
 smtc-tokio = "0.1"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Dwm"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

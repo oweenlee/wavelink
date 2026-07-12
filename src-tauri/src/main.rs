@@ -18,6 +18,39 @@ use sdk::{EngineEvent, EngineHandle, PlayMode};
 
 use state::AppState;
 
+/// 设置 Windows 标题栏为深色模式，macOS 标题栏透明，以匹配深色玻璃 UI
+fn setup_window_appearance(window: &tauri::WebviewWindow) {
+#[cfg(target_os = "windows")]
+{
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
+    use windows_sys::Win32::Foundation::{BOOL, HWND};
+
+    unsafe {
+        let Ok(handle) = window.window_handle() else {
+            tracing::warn!("获取窗口句柄失败");
+            return;
+        };
+        let RawWindowHandle::Win32(h) = handle.as_raw() else {
+            return;
+        };
+        let hwnd = HWND(h.hwnd as *mut std::ffi::c_void);
+        let dark_mode: BOOL = 1;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            &dark_mode as *const _ as *const _,
+            std::mem::size_of::<BOOL>() as u32,
+        );
+    }
+}
+    #[cfg(target_os = "macos")]
+    {
+        // macOS 通过 tauri.conf.json 的 titleBarStyle: Transparent 处理
+        let _ = window;
+    }
+}
+
 /// 将引擎事件转发到前端 Tauri event
 fn forward_engine_events(app_handle: tauri::AppHandle, event_rx: Receiver<EngineEvent>) {
     std::thread::spawn(move || {
@@ -122,6 +155,10 @@ fn main() {
                 current_track: Mutex::new(None),
                 media_bridge,
             });
+
+            if let Some(window) = app.get_webview_window("main") {
+                setup_window_appearance(&window);
+            }
 
             // 注册全局快捷键
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
