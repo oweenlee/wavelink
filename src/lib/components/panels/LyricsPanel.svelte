@@ -10,6 +10,7 @@
 
 	let lyricsContainer: HTMLDivElement | undefined = $state();
 	let _lastTrackPath = '';
+	let coverDataUrl = $state('');
 
 	$effect(() => {
 		const track = playback.currentTrack;
@@ -18,6 +19,21 @@
 			_lastTrackPath = track.path;
 			loadForTrack(track);
 		}
+	});
+
+	// Load cover for mini thumbnail
+	$effect(() => {
+		const track = playback.currentTrack;
+		if (!track || !browser) { coverDataUrl = ''; return; }
+		let cancelled = false;
+		import('@tauri-apps/api/core').then(async (mod) => {
+			try {
+				const data: unknown = await mod.invoke('get_file_cover_cmd', { path: track.path });
+				if (cancelled) return;
+				if (data && typeof data === 'string') coverDataUrl = data;
+			} catch { coverDataUrl = ''; }
+		});
+		return () => { cancelled = true; };
 	});
 
 	$effect(() => {
@@ -47,7 +63,7 @@
 <div class="lyrics-panel" class:visible={ui.showLyricsPanel}>
 	<div class="panel-header">
 		<div class="track-info">
-			<div class="mini-cover"></div>
+			<div class="mini-cover" style={coverDataUrl ? `background-image: url(${coverDataUrl})` : ''}></div>
 			<div>
 				<h3 class="track-name">{trackTitle}</h3>
 				<p class="track-artist">{trackArtist}</p>
@@ -99,7 +115,7 @@
 
 	.panel-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--separator); }
 	.track-info { display: flex; align-items: center; gap: 14px; }
-	.mini-cover { width: 44px; height: 44px; border-radius: var(--radius-md); background: linear-gradient(135deg, #2a2a4e, #1a1a3e); flex-shrink: 0; }
+	.mini-cover { width: 44px; height: 44px; border-radius: var(--radius-md); background-image: linear-gradient(135deg, #2a2a4e, #1a1a3e); background-size: cover; background-position: center; flex-shrink: 0; }
 	.track-name { font-size: 15px; font-weight: 600; color: var(--fg-primary); }
 	.track-artist { font-size: 12px; color: var(--fg-tertiary); margin-top: 2px; }
 	.close-btn { width: 36px; height: 36px; border-radius: var(--radius-md); border: none; background: var(--bg-hover); color: var(--fg-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }

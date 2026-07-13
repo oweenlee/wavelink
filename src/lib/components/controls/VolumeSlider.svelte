@@ -5,22 +5,26 @@
 		step?: number;
 		oninput: (v: number) => void;
 	}
-	let { value, max = 1.5, step = 0.01, oninput }: Props = $props();
+	let { value, max = 1.5, step = 0.05, oninput }: Props = $props();
+
+	function onWheel(e: WheelEvent) {
+		e.preventDefault();
+		const delta = e.deltaY > 0 ? -step : step;
+		const next = Math.max(0, Math.min(max, +(value + delta).toFixed(2)));
+		oninput(next);
+	}
 </script>
 
-<div class="vol">
+<div class="vol" onwheel={onWheel} title="滚轮调节音量">
 	<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="color: var(--fg-tertiary);">
 		<polygon points="11 5 6 9 2 9 2 15 6 15 11 19"/>
 		<path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
 		<path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
 	</svg>
-	<input type="range" min="0" max={max} step={step} value={value} oninput={(e) => oninput(parseFloat((e.currentTarget as HTMLInputElement).value))} class="vol-slider" />
+	<span class="vol-pct">{Math.round(value * 100)}%</span>
 </div>
 
 <style>
-	.vol { display: flex; align-items: center; gap: 4px; }
-	.vol-slider { width: 52px; height: 3px; -webkit-appearance: none; appearance: none; background: rgba(255,255,255,0.08); border-radius: 2px; outline: none; cursor: pointer; transition: height 0.12s; }
-	.vol-slider:hover { height: 4px; }
-	.vol-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 0; height: 0; border-radius: 50%; background: var(--fg-secondary); border: none; cursor: pointer; transition: width 0.12s; }
-	.vol-slider:hover::-webkit-slider-thumb { width: 8px; height: 8px; }
+	.vol { display: flex; align-items: center; gap: 4px; cursor: default; }
+	.vol-pct { font-size: 10px; color: var(--fg-tertiary); font-variant-numeric: tabular-nums; min-width: 28px; text-align: right; }
 </style>

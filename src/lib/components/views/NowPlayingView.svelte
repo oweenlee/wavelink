@@ -1,14 +1,17 @@
 <script lang="ts">
-	import { fly } from 'svelte/transition';
+	import { fly, fade } from 'svelte/transition';
 	import { browser } from '$app/environment';
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
+	import { getPlaylistState } from '$lib/stores/playlist.svelte';
 	import { getUiState } from '$lib/stores/ui.svelte';
 	import { getSettingsState } from '$lib/stores/settings.svelte';
 	import { getLyricsState, loadForTrack } from '$lib/stores/lyrics.svelte';
 	import { formatTime } from '$lib/data/music';
 	import VolumeSlider from '$lib/components/controls/VolumeSlider.svelte';
+	import ProgressBar from '$lib/components/controls/ProgressBar.svelte';
 
 	const playback = getPlaybackState();
+	const playlist = getPlaylistState();
 	const ui = getUiState();
 	const settings = getSettingsState();
 	const lyrics = getLyricsState();
@@ -28,21 +31,19 @@
 			loadForTrack(track);
 		}
 
+		let cancelled = false;
 		(async () => {
 			const { invoke } = await import('@tauri-apps/api/core');
 			try {
 				const data: unknown = await invoke('get_file_cover_cmd', { path: track.path });
+				if (cancelled) return;
 				if (data && typeof data === 'string') { coverDataUrl = data; coverLoaded = true; }
 			} catch {}
 		})();
+		return () => { cancelled = true; };
 	});
 
-	function handleSeek(e: MouseEvent) {
-		const el = (e.currentTarget as HTMLElement);
-		const rect = el.getBoundingClientRect();
-		const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-		playback.currentTime = ratio * playback.duration;
-	}
+	function handleSeek(ratio: number) { playback.currentTime = ratio * playback.duration; }
 
 	let lyricsContainer: HTMLDivElement | undefined = $state();
 
@@ -98,7 +99,8 @@
 		</div>
 
 		<div class="np-side">
-			<div class="np-meta">
+			{#key playback.currentTrack?.path}
+				<div class="np-meta" transition:fade={{ duration: 250 }}>
 				<h2 class="np-title">{trackTitle}</h2>
 				<p class="np-artist">{trackArtist}</p>
 				{#if trackAlbum}
@@ -108,6 +110,7 @@
 					<p class="np-format">{trackFormat}</p>
 				{/if}
 			</div>
+			{/key}
 
 			<div class="np-lyrics" bind:this={lyricsContainer}>
 				{#if lyrics.loading}
@@ -125,16 +128,17 @@
 				{/if}
 			</div>
 
-			<div class="np-ctrl">
-				<div class="np-progress" onmousedown={handleSeek} role="slider" tabindex="0" aria-valuenow={playback.currentTime} aria-label="进度">
-					<div class="np-progress-bg">
-						<div class="np-progress-fill" style="width: {playback.duration > 0 ? (playback.currentTime / playback.duration) * 100 : 0}%"></div>
-					</div>
-					<div class="np-progress-time">
-						<span>{formatTime(Math.floor(playback.currentTime))}</span>
-						<span>{formatTime(Math.floor(playback.duration))}</span>
-					</div>
+			{#if playlist.currentIndex >= 0 && playlist.currentIndex + 1 < playlist.queue.length}
+				{@const next = playlist.queue[playlist.currentIndex + 1]}
+				<div class="np-next">
+					<span class="np-next-label">下一首</span>
+					<span class="np-next-title">{next.title || next.path.split(/[/\\]/).pop()}</span>
+					<span class="np-next-artist">{next.artist || '未知'}</span>
 				</div>
+			{/if}
+
+			<div class="np-ctrl">
+				<ProgressBar value={playback.currentTime} max={playback.duration} currentTime={playback.currentTime} ondrag={handleSeek} color={settings.accentColor || 'var(--accent)'} />
 
 				<div class="np-btns">
 					<button class="np-btn" onclick={() => playback.prev()} disabled={!playback.hasTrack} aria-label="上一首">
@@ -153,7 +157,6 @@
 				</div>
 
 				<div class="np-volume">
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
 					<VolumeSlider value={playback.volume} oninput={onVolumeChange} />
 				</div>
 			</div>
@@ -172,7 +175,7 @@
 	}
 	.np-bg-gradient { position: absolute; inset: 0; pointer-events: none; }
 
-	.np-close { position: absolute; top: 24px; left: 24px; z-index: 2; width: 36px; height: 36px; border-radius: 50%; border: 0.5px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.04); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); color: var(--fg-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+	.np-close { position: absolute; top: 24px; right: 24px; z-index: 2; width: 36px; height: 36px; border-radius: 50%; border: 0.5px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.04); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); color: var(--fg-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
 	.np-close:hover { background: rgba(255,255,255,0.08); color: var(--fg-primary); }
 
 	.np-body { display: flex; align-items: center; gap: 64px; position: relative; z-index: 1; }
@@ -191,10 +194,14 @@
 	.np-album { font-size: 13px; color: var(--fg-tertiary); margin: 4px 0 0; }
 	.np-format { font-size: 11px; color: var(--fg-quaternary); margin: 6px 0 0; letter-spacing: 0.5px; }
 
-	.np-lyrics { height: 220px; overflow-y: auto; }
+	.np-lyrics { flex: 1; min-height: 100px; max-height: 340px; overflow-y: auto; }
 	.np-lyrics::-webkit-scrollbar { width: 3px; }
 	.np-lyrics::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.04); border-radius: 2px; }
 	.np-lyrics-scroll { display: flex; flex-direction: column; gap: 16px; padding: 12px 0; }
+	.np-next { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--radius-md); background: rgba(255,255,255,0.03); border: 0.5px solid rgba(255,255,255,0.04); }
+	.np-next-label { font-size: 10px; color: var(--fg-tertiary); text-transform: uppercase; letter-spacing: 0.5px; }
+	.np-next-title { font-size: 12px; color: var(--fg-secondary); font-weight: 500; }
+	.np-next-artist { font-size: 11px; color: var(--fg-quaternary); }
 	.np-status { color: var(--fg-tertiary); font-size: 14px; text-align: center; padding: 60px 0; }
 	.lr { transition: all 0.35s ease; }
 	.lr-text { font-size: 16px; font-weight: 400; line-height: 1.7; color: var(--fg-quaternary); transition: all 0.35s ease; }
@@ -202,12 +209,6 @@
 	.lr.past .lr-text { font-size: 13px; color: var(--fg-tertiary); }
 
 	.np-ctrl { display: flex; flex-direction: column; gap: 12px; }
-	.np-progress { cursor: pointer; }
-	.np-progress-bg { height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; transition: height 0.1s; }
-	.np-progress:hover .np-progress-bg { height: 4px; }
-	.np-progress-fill { height: 100%; border-radius: 2px; background: var(--accent); transition: width 0.1s linear; }
-	.np-progress-time { display: flex; justify-content: space-between; font-size: 10px; color: var(--fg-tertiary); margin-top: 4px; font-variant-numeric: tabular-nums; }
-
 	.np-btns { display: flex; align-items: center; justify-content: center; gap: 20px; }
 	.np-btn { width: 40px; height: 40px; border-radius: 50%; border: none; background: transparent; color: var(--fg-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.12s; }
 	.np-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--fg-primary); }

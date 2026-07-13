@@ -35,7 +35,7 @@
 
 	function closeSearch() {
 		ui.showSearch = false;
-		if (!library.searchQuery) library.loadTracks(200, 0);
+		if (!library.searchQuery) library.loadTracks();
 	}
 
 	async function onSearchInput(e: Event) {

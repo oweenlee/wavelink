@@ -23,6 +23,35 @@
 	let editTrack = $state<Track | null>(null);
 	let deleteTarget = $state<Track | null>(null);
 
+	// ── Virtual scroll (tracks mode) ──
+	const ROW_HEIGHT = 40;
+	const OVERSCAN = 15;
+	let trackTableEl: HTMLDivElement | undefined = $state();
+	let tableScrollTop = $state(0);
+	let tableViewH = $state(0);
+
+	$effect(() => {
+		const el = trackTableEl;
+		if (!el) return;
+		const ro = new ResizeObserver((entries) => {
+			tableViewH = entries[0]!.contentRect.height;
+		});
+		ro.observe(el);
+		return () => ro.disconnect();
+	});
+
+	let totalCount = $derived(library.tracks.length);
+	let visStart = $derived(Math.max(0, Math.floor(tableScrollTop / ROW_HEIGHT) - OVERSCAN));
+	let visEnd = $derived(Math.min(totalCount, visStart + Math.ceil(tableViewH / ROW_HEIGHT) + OVERSCAN * 2));
+	let visTracks = $derived(library.tracks.slice(visStart, visEnd));
+	let topSpacerH = $derived(visStart * ROW_HEIGHT);
+	let bottomSpacerH = $derived(Math.max(0, (totalCount - visEnd) * ROW_HEIGHT));
+
+	function onTableScroll() {
+		if (!trackTableEl) return;
+		tableScrollTop = trackTableEl.scrollTop;
+	}
+
 	function playTrack(_track: Track, index: number) {
 		playback.playAllAsQueue(library.tracks, index);
 	}
@@ -33,14 +62,14 @@
 
 	function closeTagEditor() {
 		editTrack = null;
-		library.loadTracks(200, 0);
+		library.loadTracks();
 	}
 
 	async function executeDelete() {
 		if (!deleteTarget) return;
 		await library.deleteTrack(deleteTarget.id);
 		deleteTarget = null;
-		await library.loadTracks(200, 0);
+		await library.loadTracks();
 	}
 
 	async function handleScan() {
@@ -50,7 +79,7 @@
 	}
 
 	$effect(() => {
-		library.loadTracks(200, 0);
+		library.loadTracks();
 	});
 
 	// ── Browse mode ──
@@ -79,7 +108,7 @@
 
 	function backToTracks() {
 		mode = 'tracks';
-		library.loadTracks(200, 0);
+		library.loadTracks();
 	}
 
 	async function enterAlbumGrid() {
@@ -171,7 +200,7 @@
 		</div>
 
 	{:else if mode === 'tracks'}
-		<div class="track-table">
+		<div class="track-table" bind:this={trackTableEl} onscroll={onTableScroll}>
 			<div class="track-header">
 				<span class="th-num">#</span>
 				<span class="th-title">标题</span>
@@ -180,7 +209,9 @@
 				<span class="th-duration">时长</span>
 			</div>
 			<div class="track-list">
-				{#each library.tracks as track, i}
+				<div style="height: {topSpacerH}px;"></div>
+				{#each visTracks as track, vi}
+					{@const i = visStart + vi}
 					<div class="track-row" class:active={playback.currentTrack?.id === track.id && playback.isPlaying} onclick={(e) => { if ((e.target as HTMLElement).closest('.td-actions')) return; playTrack(track, i); }} onkeydown={(e) => e.key === 'Enter' && playTrack(track, i)}>
 						<span class="td-num">{i + 1}</span>
 						<span class="td-title">
@@ -199,6 +230,7 @@
 						<span class="td-duration">{track.duration ? formatTime(track.duration) : '--:--'}</span>
 					</div>
 				{/each}
+				<div style="height: {bottomSpacerH}px;"></div>
 			</div>
 		</div>
 

@@ -6,6 +6,7 @@
 	import { getPlaylistState } from '$lib/stores/playlist.svelte';
 	import ProgressBar from '$lib/components/controls/ProgressBar.svelte';
 	import VolumeSlider from '$lib/components/controls/VolumeSlider.svelte';
+	import { fade } from 'svelte/transition';
 	import type { Track } from '$lib/audio/types';
 
 	const playback = getPlaybackState();
@@ -87,7 +88,8 @@
 
 <div class="bar">
 	<div class="bar-body">
-		<div class="bar-left">
+		{#key playback.currentTrack?.path}
+			<div class="bar-left" transition:fade={{ duration: 250 }}>
 			<div class="bar-cover" style={coverStyle}>
 				{#if playback.isPlaying}<div class="eq-anim"><span></span><span></span><span></span></div>{/if}
 			</div>
@@ -95,7 +97,8 @@
 				<span class="bar-title">{trackTitle}</span>
 				<span class="bar-artist">{trackArtist}</span>
 			</div>
-		</div>
+			</div>
+		{/key}
 
 		<div class="bar-center">
 			<div class="bar-ctrl">
