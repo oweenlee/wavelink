@@ -38,16 +38,9 @@
 	async function toggleReplaygain() {
 		await settings.setReplaygain(!settings.replaygainEnabled);
 	}
-
-	function toggleGapless() {
-		settings.crossfadeMs = settings.crossfadeMs === 0 ? 50 : 0;
-		applyEngineConfig();
-	}
 </script>
 
 <div class="settings-page">
-	<div class="page-title">设置</div>
-
 	<!-- ── 引擎配置 ── -->
 	<div class="card">
 		<div class="card-header">
@@ -107,15 +100,6 @@
 		<div class="card-body">
 			<div class="setting-row">
 				<div class="setting-label">
-					<span class="label-text">无间隙播放</span>
-					<span class="label-desc">切歌时无淡入淡出，适合连续专辑；关闭则使用 50ms 平滑过渡</span>
-				</div>
-				<button class="toggle" class:active={settings.crossfadeMs === 0} onclick={toggleGapless} aria-label="切换无间隙播放">
-					<span class="toggle-knob"></span>
-				</button>
-			</div>
-			<div class="setting-row">
-				<div class="setting-label">
 					<span class="label-text">ReplayGain</span>
 					<span class="label-desc">统一不同曲目的响度，避免切歌时音量突变</span>
 				</div>
@@ -143,7 +127,6 @@
 
 <style>
 	.settings-page { padding: 8px 32px 32px; display: flex; flex-direction: column; gap: 20px; height: 100%; overflow-y: auto; }
-	.page-title { font-size: 22px; font-weight: 700; color: var(--fg-primary); padding: 4px 0; flex-shrink: 0; }
 
 	.card { background: var(--bg-surface); border: 1px solid var(--separator); border-radius: 16px; padding: 20px 24px; }
 	.card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }

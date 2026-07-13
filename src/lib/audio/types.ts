@@ -27,3 +27,11 @@ export interface PeqBand {
 	gain_db: number;
 	q: number;
 }
+
+export interface AlbumBrief {
+	artist: string;
+	album: string;
+	first_track_id: number;
+	first_track_path: string;
+	year: number | null;
+}

@@ -1,5 +1,5 @@
 import { browser } from '$app/environment';
-import type { Track } from '$lib/audio/types';
+import type { Track, AlbumBrief } from '$lib/audio/types';
 
 /**
  * Library store — manages the track library, search, and browse modes.
@@ -109,6 +109,14 @@ export function getLibraryState() {
 			try {
 				const invoke = await lazyInvoke();
 				return await invoke('get_tracks_by_album', { artist, album }) as Track[];
+			} catch { return []; }
+		},
+
+		async loadAllAlbums(): Promise<AlbumBrief[]> {
+			if (!browser) return [];
+			try {
+				const invoke = await lazyInvoke();
+				return await invoke('get_all_albums') as AlbumBrief[];
 			} catch { return []; }
 		},
 

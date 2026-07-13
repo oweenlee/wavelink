@@ -3,13 +3,13 @@
 	import { getLibraryState } from '$lib/stores/library.svelte';
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
 	import { formatTime } from '$lib/data/music';
-	import type { Track } from '$lib/audio/types';
+	import type { Track, AlbumBrief } from '$lib/audio/types';
 	import TagEditor from '$lib/components/panels/TagEditor.svelte';
 
 	const library = getLibraryState();
 	const playback = getPlaybackState();
 
-	type BrowseMode = 'tracks' | 'artists' | 'albums' | 'album_tracks';
+	type BrowseMode = 'tracks' | 'artists' | 'albums' | 'album_tracks' | 'albums_grid';
 	let mode = $state<BrowseMode>('tracks');
 	let artists = $state<string[]>([]);
 	let albums = $state<string[]>([]);
@@ -17,6 +17,8 @@
 	let selectedAlbum = $state('');
 	let albumTracks = $state<Track[]>([]);
 	let browsingLoading = $state(false);
+	let albumBriefs = $state<AlbumBrief[]>([]);
+	let albumCovers = $state<Map<number, string>>(new Map());
 
 	let editTrack = $state<Track | null>(null);
 	let deleteTarget = $state<Track | null>(null);
@@ -80,6 +82,28 @@
 		library.loadTracks(200, 0);
 	}
 
+	async function enterAlbumGrid() {
+		mode = 'albums_grid';
+		browsingLoading = true;
+		albumBriefs = await library.loadAllAlbums();
+		albumCovers = new Map();
+		browsingLoading = false;
+		// 懒加载封面
+		for (const ab of albumBriefs) {
+			loadCoverForAlbum(ab);
+		}
+	}
+
+	async function loadCoverForAlbum(ab: AlbumBrief) {
+		try {
+			const { invoke } = await import('@tauri-apps/api/core');
+			const data = await invoke('get_file_cover_cmd', { path: ab.first_track_path }) as string | null;
+			if (data) {
+				albumCovers = new Map(albumCovers).set(ab.first_track_id, data);
+			}
+		} catch {}
+	}
+
 	function backToArtists() {
 		mode = 'artists';
 		albums = [];
@@ -107,6 +131,8 @@
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15,18 9,12 15,6"/></svg>
 				</button>
 				{selectedArtist}
+			{:else if mode === 'albums_grid'}
+				{library.trackCount} 首歌曲
 			{:else}
 				{library.trackCount} 首歌曲
 			{/if}
@@ -124,6 +150,7 @@
 	<!-- Browse mode tabs -->
 	<div class="browse-tabs">
 		<button class="browse-tab" class:active={mode === 'tracks'} onclick={backToTracks}>曲目</button>
+		<button class="browse-tab" class:active={mode === 'albums_grid'} onclick={enterAlbumGrid}>专辑</button>
 		<button class="browse-tab" class:active={mode === 'artists' || mode === 'albums' || mode === 'album_tracks'} onclick={enterArtists}>艺术家</button>
 	</div>
 
@@ -173,6 +200,36 @@
 					</div>
 				{/each}
 			</div>
+		</div>
+
+	{:else if mode === 'albums_grid'}
+		<div class="album-grid">
+			{#if albumBriefs.length === 0}
+				<div class="empty-state">
+					<div class="empty-icon">
+						<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+					</div>
+					<h3 class="empty-title">暂无专辑</h3>
+					<p class="empty-hint">导入音乐后将会显示专辑封面</p>
+				</div>
+			{:else}
+				{#each albumBriefs as ab}
+					<button class="album-card" onclick={() => { selectedArtist = ab.artist; selectedAlbum = ab.album; enterAlbumTracks(ab.artist, ab.album); }}>
+						<div class="album-cover" style={albumCovers.has(ab.first_track_id) ? `background-image: url(${albumCovers.get(ab.first_track_id)})` : ''}>
+							{#if !albumCovers.has(ab.first_track_id)}
+								<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+							{/if}
+							<div class="album-play-overlay">
+								<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+							</div>
+						</div>
+						<div class="album-info">
+							<span class="album-name">{ab.album}</span>
+							<span class="album-artist">{ab.artist}</span>
+						</div>
+					</button>
+				{/each}
+			{/if}
 		</div>
 
 	{:else if mode === 'artists'}
@@ -296,6 +353,95 @@
 	.td-action:hover { color: var(--fg-secondary); background: var(--bg-hover); }
 	.td-action-del:hover { color: rgba(255, 80, 80, 0.6); background: rgba(255, 80, 80, 0.08); }
 	.track-row.active .td-title-text { color: var(--accent); }
+
+	/* ── Album grid ── */
+	.album-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+		gap: 16px;
+		padding: 4px 0 16px;
+		flex: 1;
+		overflow-y: auto;
+		align-content: start;
+	}
+
+	.album-card {
+		display: flex;
+		flex-direction: column;
+		border: none;
+		background: transparent;
+		cursor: pointer;
+		text-align: left;
+		font-family: inherit;
+		padding: 0;
+		border-radius: var(--radius-md);
+		transition: all 0.15s var(--ease-out);
+	}
+
+	.album-card:hover {
+		transform: translateY(-2px);
+	}
+
+	.album-cover {
+		width: 100%;
+		aspect-ratio: 1;
+		border-radius: var(--radius-md);
+		background: linear-gradient(135deg, #1a1a24, #2a2438);
+		background-size: cover;
+		background-position: center;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		position: relative;
+		overflow: hidden;
+		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+		transition: box-shadow 0.15s;
+	}
+
+	.album-card:hover .album-cover {
+		box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+	}
+
+	.album-play-overlay {
+		position: absolute;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.3);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		opacity: 0;
+		transition: opacity 0.15s;
+		color: white;
+	}
+
+	.album-card:hover .album-play-overlay {
+		opacity: 1;
+	}
+
+	.album-info {
+		padding: 8px 2px 0;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.album-name {
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--fg-primary);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.album-artist {
+		font-size: 11px;
+		color: var(--fg-tertiary);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
 	.td-artist { flex: 1 1 25%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.td-album { flex: 1 1 25%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg-tertiary); }
 	.td-duration { width: 48px; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; color: var(--fg-tertiary); font-size: 11px; }

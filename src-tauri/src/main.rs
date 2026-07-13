@@ -237,6 +237,7 @@ fn main() {
             commands::get_artists,
             commands::get_albums_by_artist,
             commands::get_tracks_by_album,
+            commands::get_all_albums,
             commands::get_track_count,
             commands::get_cover,
             commands::get_file_cover_cmd,
