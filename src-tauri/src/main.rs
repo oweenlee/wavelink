@@ -6,6 +6,7 @@ mod logging;
 mod media_bridge;
 mod settings;
 mod state;
+mod tray;
 
 use std::sync::Mutex;
 
@@ -158,6 +159,19 @@ fn main() {
 
             if let Some(window) = app.get_webview_window("main") {
                 setup_window_appearance(&window);
+
+                // 关闭窗口时隐藏到托盘而非退出
+                let handle = app.handle().clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { .. } = event {
+                        let _ = handle.get_webview_window("main").map(|w| w.hide());
+                    }
+                });
+            }
+
+            // 创建系统托盘
+            if let Err(e) = tray::create_tray(app.handle()) {
+                tracing::warn!("创建系统托盘失败: {e}");
             }
 
             // 注册全局快捷键
