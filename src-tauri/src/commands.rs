@@ -15,9 +15,9 @@ use sdk::{analyze_file, AnalysisResult, PlayMode};
 use crate::state::AppState;
 
 fn apply_replaygain(state: &AppState) {
-    let rg = *state.replaygain_enabled.lock().unwrap();
+    let rg = *state.replaygain_enabled.lock().expect("replaygain_enabled mutex 被毒化");
     if rg {
-        if let Some(ref cur) = *state.current_track.lock().unwrap() {
+        if let Some(ref cur) = *state.current_track.lock().expect("current_track mutex 被毒化") {
             if let Ok(db) = state.library.lock() {
                 if let Ok(tracks) = db.search(cur, 1, 0) {
                     if let Some(t) = tracks.first() {
@@ -35,18 +35,18 @@ fn apply_replaygain(state: &AppState) {
 
 fn apply_track_settings(state: &AppState) {
     apply_replaygain(state);
-    let base = *state.base_volume.lock().unwrap();
+    let base = *state.base_volume.lock().expect("base_volume mutex 被毒化");
     state.engine.set_volume(base as f32);
 }
 
 pub fn apply_replaygain_volume_for_path(path: &str, state: &AppState) {
-    *state.current_track.lock().unwrap() = Some(path.to_string());
+    *state.current_track.lock().expect("current_track mutex 被毒化") = Some(path.to_string());
     apply_track_settings(state);
 }
 
 #[tauri::command]
 pub fn play(path: String, state: State<AppState>) {
-    *state.current_track.lock().unwrap() = Some(path.clone());
+    *state.current_track.lock().expect("current_track mutex 被毒化") = Some(path.clone());
     apply_track_settings(&state);
     state.engine.play(path);
 }
@@ -54,7 +54,7 @@ pub fn play(path: String, state: State<AppState>) {
 #[tauri::command]
 pub fn play_queue(paths: Vec<String>, state: State<AppState>) {
     if let Some(first) = paths.first() {
-        *state.current_track.lock().unwrap() = Some(first.clone());
+        *state.current_track.lock().expect("current_track mutex 被毒化") = Some(first.clone());
     }
     apply_track_settings(&state);
     state.engine.play_queue(paths);
@@ -83,19 +83,19 @@ pub fn get_duration(state: State<AppState>) -> f64 { state.engine.duration_secs(
 
 #[tauri::command]
 pub fn set_volume(vol: f64, state: State<AppState>) {
-    *state.base_volume.lock().unwrap() = vol;
+    *state.base_volume.lock().expect("base_volume mutex 被毒化") = vol;
     state.engine.set_volume(vol as f32);
 }
 
 #[tauri::command]
 pub fn set_play_mode(mode: PlayMode, state: State<AppState>) {
-    *state.play_mode.lock().unwrap() = mode;
+    *state.play_mode.lock().expect("play_mode mutex 被毒化") = mode;
     state.engine.set_play_mode(mode);
 }
 
 #[tauri::command]
 pub fn get_play_mode(state: State<AppState>) -> PlayMode {
-    *state.play_mode.lock().unwrap()
+    *state.play_mode.lock().expect("play_mode mutex 被毒化")
 }
 
 #[tauri::command]
@@ -110,13 +110,13 @@ pub fn set_stereo_widener(enabled: bool, width: f32, state: State<AppState>) {
 
 #[tauri::command]
 pub fn set_replaygain(enabled: bool, state: State<AppState>) {
-    *state.replaygain_enabled.lock().unwrap() = enabled;
+    *state.replaygain_enabled.lock().expect("replaygain_enabled mutex 被毒化") = enabled;
     apply_track_settings(&state);
 }
 
 #[tauri::command]
 pub fn get_replaygain(state: State<AppState>) -> bool {
-    *state.replaygain_enabled.lock().unwrap()
+    *state.replaygain_enabled.lock().expect("replaygain_enabled mutex 被毒化")
 }
 
 #[tauri::command]
