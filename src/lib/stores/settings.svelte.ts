@@ -54,11 +54,6 @@ export function getSettingsState() {
 				if (typeof saved.bufferMs === 'number') _bufferMs = saved.bufferMs;
 				if (typeof saved.crossfadeMs === 'number') _crossfadeMs = saved.crossfadeMs;
 				if (typeof saved.replaygainEnabled === 'boolean') _replaygainEnabled = saved.replaygainEnabled;
-				if (typeof saved.volume === 'number') {
-					// Sync volume to engine
-					const { setVolume } = await import('$lib/audio/engine.svelte');
-					await setVolume(saved.volume);
-				}
 				_loaded = true;
 				return saved;
 			} catch (err) {
