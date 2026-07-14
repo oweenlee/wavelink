@@ -260,6 +260,11 @@ pub fn analyze_all_tracks(app: tauri::AppHandle, state: State<AppState>) {
 }
 
 #[tauri::command]
+pub fn get_underrun_count(state: State<AppState>) -> u64 {
+    state.engine.underrun_count()
+}
+
+#[tauri::command]
 pub fn audio_info() -> serde_json::Value {
     serde_json::json!({
         "sample_rate": sdk::TARGET_SAMPLE_RATE,

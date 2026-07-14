@@ -5,6 +5,7 @@
 	import { formatTime } from '$lib/data/music';
 	import type { Track, AlbumBrief } from '$lib/audio/types';
 	import TagEditor from '$lib/components/panels/TagEditor.svelte';
+	import { ChevronLeft, Play, Music, Upload, Pencil, Trash2, Disc3, User, ChevronRight } from 'lucide-svelte';
 
 	const library = getLibraryState();
 	const playback = getPlaybackState();
@@ -152,12 +153,12 @@
 		<h2 class="lib-title">
 			{#if mode === 'album_tracks'}
 				<button class="back-btn" onclick={backToAlbums} aria-label="返回">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15,18 9,12 15,6"/></svg>
+					<ChevronLeft size={18} />
 				</button>
 				{selectedAlbum}
 			{:else if mode === 'albums'}
 				<button class="back-btn" onclick={backToArtists} aria-label="返回">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15,18 9,12 15,6"/></svg>
+					<ChevronLeft size={18} />
 				</button>
 				{selectedArtist}
 			{:else if mode === 'albums_grid'}
@@ -169,7 +170,7 @@
 		<div class="lib-actions">
 			{#if mode === 'tracks' && library.trackCount > 0}
 				<button class="action-btn action-play-all" onclick={() => playback.playAllAsQueue(library.tracks)}>
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="7,5 19,12 7,19"/></svg>
+					<Play size={16} fill="currentColor" />
 					<span>播放全部</span>
 				</button>
 			{/if}
@@ -189,12 +190,12 @@
 	{:else if mode === 'tracks' && library.trackCount === 0}
 		<div class="empty-state">
 			<div class="empty-icon">
-				<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+				<Music size={48} stroke-width={1.5} />
 			</div>
 			<h3 class="empty-title">导入本地音乐</h3>
 			<p class="empty-hint">点击「扫描目录」选择音乐文件夹</p>
 			<button class="scan-btn" onclick={handleScan}>
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+				<Upload size={16} />
 				<span>选择音乐目录</span>
 			</button>
 		</div>
@@ -218,10 +219,10 @@
 							<span class="td-title-text">{track.title || track.path.split(/[/\\]/).pop()}</span>
 							<span class="td-actions">
 								<button type="button" class="td-action" onclick={() => openEditor(track)} title="编辑标签">
-									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+									<Pencil size={12} />
 								</button>
 								<button type="button" class="td-action td-action-del" onclick={() => deleteTarget = track} title="从曲库删除">
-									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+									<Trash2 size={12} />
 								</button>
 							</span>
 						</span>
@@ -238,9 +239,9 @@
 		<div class="album-grid">
 			{#if albumBriefs.length === 0}
 				<div class="empty-state">
-					<div class="empty-icon">
-						<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
-					</div>
+				<div class="empty-icon">
+					<Disc3 size={48} stroke-width={1.5} />
+				</div>
 					<h3 class="empty-title">暂无专辑</h3>
 					<p class="empty-hint">导入音乐后将会显示专辑封面</p>
 				</div>
@@ -249,10 +250,10 @@
 					<button class="album-card" onclick={() => { selectedArtist = ab.artist; selectedAlbum = ab.album; enterAlbumTracks(ab.artist, ab.album); }}>
 						<div class="album-cover" style={albumCovers.has(ab.first_track_id) ? `background-image: url(${albumCovers.get(ab.first_track_id)})` : ''}>
 							{#if !albumCovers.has(ab.first_track_id)}
-								<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+								<Disc3 size={28} stroke-width={1.5} opacity={0.3} />
 							{/if}
 							<div class="album-play-overlay">
-								<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+								<Play size={20} fill="currentColor" />
 							</div>
 						</div>
 						<div class="album-info">
@@ -269,10 +270,10 @@
 			{#each artists as artist}
 				<button class="browse-card" onclick={() => enterAlbums(artist)}>
 					<div class="card-icon">
-						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+						<User size={24} stroke-width={1.5} />
 					</div>
 					<span class="card-label">{artist}</span>
-					<svg class="card-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,18 15,12 9,6"/></svg>
+									<ChevronRight class="card-chevron" size={14} />
 				</button>
 			{/each}
 		</div>
@@ -282,10 +283,10 @@
 			{#each albums as album}
 				<button class="browse-card" onclick={() => enterAlbumTracks(selectedArtist, album)}>
 					<div class="card-icon">
-						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+						<Disc3 size={24} stroke-width={1.5} />
 					</div>
 					<span class="card-label">{album || '(未知专辑)'}</span>
-					<svg class="card-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,18 15,12 9,6"/></svg>
+									<ChevronRight class="card-chevron" size={14} />
 				</button>
 			{/each}
 		</div>
@@ -305,10 +306,10 @@
 							<span class="td-title-text">{track.title || track.path.split(/[/\\]/).pop()}</span>
 							<span class="td-actions">
 								<button type="button" class="td-action" onclick={() => openEditor(track)} title="编辑标签">
-									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+									<Pencil size={12} />
 								</button>
 								<button type="button" class="td-action td-action-del" onclick={() => deleteTarget = track} title="从曲库删除">
-									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+									<Trash2 size={12} />
 								</button>
 							</span>
 						</span>

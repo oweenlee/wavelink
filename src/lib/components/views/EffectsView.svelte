@@ -3,6 +3,7 @@
 	import { getSettingsState } from '$lib/stores/settings.svelte';
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
 	import type { PeqBand } from '$lib/audio/types';
+	import { Upload } from 'lucide-svelte';
 
 	const settings = getSettingsState();
 	const playback = getPlaybackState();
@@ -555,10 +556,10 @@
 			<h3 class="card-title">IR 卷积混响</h3>
 			<p class="card-desc">加载真实声学空间的脉冲响应，模拟混响效果</p>
 			<div class="card-actions">
-				<button class="btn" onclick={handleLoadIr}>
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-					<span>加载 WAV</span>
-				</button>
+			<button class="btn" onclick={handleLoadIr}>
+				<Upload size={14} />
+				<span>加载 WAV</span>
+			</button>
 				{#if irLoaded}<button class="btn danger" onclick={handleClearIr}>清除</button>{/if}
 				<span class="status-dot" class:active={irLoaded}></span>
 				<span class="status-text">{irLoaded ? '已加载' : '未加载'}</span>

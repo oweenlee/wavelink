@@ -216,6 +216,7 @@ fn main() {
             commands::pause,
             commands::resume,
             commands::stop,
+            commands::get_underrun_count,
             commands::audio_info,
             commands::read_text_file,
             commands::save_text_file,

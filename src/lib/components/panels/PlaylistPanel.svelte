@@ -6,6 +6,7 @@
 	import { fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 	import { formatTime } from '$lib/data/music';
+	import { X, Plus, ListMusic, Trash2 } from 'lucide-svelte';
 
 	const ui = getUiState();
 	const playlist = getPlaylistState();
@@ -58,7 +59,7 @@
 	<div class="panel-header">
 		<h3 class="panel-title">播放列表</h3>
 		<button class="close-btn" onclick={closePanel} aria-label="关闭">
-			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+			<X size={18} />
 		</button>
 	</div>
 
@@ -82,14 +83,14 @@
 							<span class="qi-title">{track.title || track.path.split(/[/\\]/).pop()}</span>
 							<span class="qi-artist">{track.artist || '未知'}</span>
 						</div>
-						<button class="qi-remove" onclick={() => playlist.removeFromQueue(i)} aria-label="移除">
-							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-						</button>
+			<button class="qi-remove" onclick={() => playlist.removeFromQueue(i)} aria-label="移除">
+				<X size={12} />
+			</button>
 					</div>
 				{/each}
 			</div>
 			<button class="save-queue-btn" onclick={() => creating = true}>
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+				<Plus size={14} />
 				<span>保存为播放列表</span>
 			</button>
 		{:else}
@@ -120,11 +121,11 @@
 				{#each playlist.savedPlaylists as name}
 					<div class="saved-item">
 						<button class="si-play" onclick={() => loadPlaylist(name)}>
-							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M21 15V6M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM12 12H3M16 6H3M12 18H3"/></svg>
+							<ListMusic size={14} stroke-width={1.5} />
 							<span class="si-name">{name}</span>
 						</button>
 						<button class="si-delete" onclick={() => deletePlaylist(name)} aria-label="删除">
-							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+							<Trash2 size={12} />
 						</button>
 					</div>
 				{/each}
