@@ -61,7 +61,7 @@
 				const data: unknown = await invoke('get_file_cover_cmd', { path: track.path });
 				if (cancelled) return;
 				if (data && typeof data === 'string') coverDataUrl = data;
-			} catch { /* 无封面正常 */ }
+			} catch { console.warn('[NowPlayingView] 封面加载失败'); /* 无封面正常 */ }
 		})();
 
 		return () => { cancelled = true; };

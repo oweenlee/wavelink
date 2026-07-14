@@ -158,7 +158,7 @@ export function getPlaybackState() {
 				try {
 					const { invoke } = await import('@tauri-apps/api/core');
 					await invoke('set_play_mode', { mode });
-				} catch {}
+				} catch { console.warn('[playback] 播放模式设置失败'); }
 			}
 		},
 

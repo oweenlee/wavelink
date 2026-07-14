@@ -24,7 +24,7 @@
 			try {
 				const bands: any = await mod.invoke('get_eq_bands');
 				eqBands = bands as PeqBand[];
-			} catch {
+			} catch { console.warn('[Effects] EQ 加载失败, 使用默认');
 				// 引擎无 EQ 数据时使用默认
 			}
 
@@ -41,7 +41,7 @@
 						await mod.invoke('set_peq_band', { index: i, freq: b.freq, gainDb: b.gain_db, q: b.q });
 					}
 				}
-			} catch {}
+			} catch { console.warn('[Effects] 设置加载/同步失败'); }
 
 			eq10 = getEq10();
 		});
@@ -59,7 +59,7 @@
 					replaygainEnabled: settings.replaygainEnabled,
 				},
 			});
-		} catch {}
+		} catch { console.warn('[Effects] 保存设置失败'); }
 	}
 
 	// ── EQ ──

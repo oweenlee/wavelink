@@ -106,7 +106,7 @@ export function getSettingsState() {
 					const invoke = await lazyInvoke();
 					await invoke('set_replaygain', { enabled });
 					await this.save();
-				} catch {}
+				} catch { console.warn('[settings] ReplayGain 同步失败'); }
 			}
 		},
 

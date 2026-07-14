@@ -17,7 +17,7 @@
 			try {
 				const mode = await mod.invoke('get_play_mode');
 				playback.playMode = mode as PlayMode;
-			} catch {}
+			} catch { console.warn('播放模式同步失败'); }
 		});
 	});
 

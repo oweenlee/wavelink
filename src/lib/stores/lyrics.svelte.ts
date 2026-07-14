@@ -24,7 +24,7 @@ export function loadForTrack(track: Track | null) {
 				const text: string = await invoke('read_text_file', { path: lrcPath });
 				const parsed = parseLrc(text);
 				if (parsed.length > 0) { _lines = parsed; _loading = false; return; }
-			} catch {}
+			} catch { console.warn('[lyrics] LRC 文件读取失败, 回退网络查询'); }
 
 			const title = track.title || '';
 			const artist = track.artist || '';
@@ -40,7 +40,7 @@ export function loadForTrack(track: Track | null) {
 						time: i * 10, text: text.trim()
 					}));
 				}
-				try { await invoke('save_text_file', { path: lrcPath, content: lrcText }); } catch {}
+				try { await invoke('save_text_file', { path: lrcPath, content: lrcText }); } catch { console.warn('[lyrics] LRC 保存失败'); }
 			} else {
 				_error = '未找到歌词';
 			}

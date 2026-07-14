@@ -131,7 +131,7 @@
 			if (data) {
 				albumCovers = new Map(albumCovers).set(ab.first_track_id, data);
 			}
-		} catch {}
+		} catch { console.warn('[Library] 封面加载失败:',); }
 	}
 
 	function backToArtists() {

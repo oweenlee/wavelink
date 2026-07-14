@@ -30,8 +30,8 @@
 					playback.playMode = saved.playMode as PlayMode;
 					await mod.invoke('set_play_mode', { mode: saved.playMode });
 				}
-			} catch {}
-			mod.invoke('get_play_mode').then((m: any) => { playback.playMode = m as PlayMode; }).catch(() => {});
+			} catch { console.warn('[NowPlayingBar] 设置加载失败'); }
+			mod.invoke('get_play_mode').then((m: any) => { playback.playMode = m as PlayMode; }).catch(() => console.warn('[NowPlayingBar] 播放模式查询失败'));
 		});
 	});
 
@@ -73,7 +73,7 @@
 						settings.accentColor = color;
 						settings.save({ volume: playback.volume, playMode: playback.playMode });
 					}
-				}).catch(() => {});
+				}).catch(() => console.warn('[NowPlayingBar] 颜色提取失败'));
 			} else {
 				coverDataUrl = '';
 			}
