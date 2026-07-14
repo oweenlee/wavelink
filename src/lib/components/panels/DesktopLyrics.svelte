@@ -11,19 +11,27 @@
 
 	$effect(() => {
 		if (!browser) return;
-		// 监听歌词更新事件（由主窗口推送）
-		import('@tauri-apps/api/event').then(({ listen }) => {
-			listen<string>('lyrics:current_line', (e) => {
-				currentLine = e.payload || '';
-			});
-			listen<string>('lyrics:next_line', (e) => {
-				nextLine = e.payload || '';
-			});
+		let cancelled = false;
+		let unlistenFns: (() => void)[] = [];
+
+		import('@tauri-apps/api/event').then(async ({ listen }) => {
+			if (cancelled) return;
+			const fns = await Promise.all([
+				listen<string>('lyrics:current_line', (e) => { if (!cancelled) currentLine = e.payload || ''; }),
+				listen<string>('lyrics:next_line', (e) => { if (!cancelled) nextLine = e.payload || ''; }),
+			]);
+			if (cancelled) { fns.forEach(fn => fn()); return; }
+			unlistenFns.push(...fns);
 		});
-		// 同步主题色
+
 		settings.load().then(() => {
-			accentColor = settings.accentColor;
+			if (!cancelled) accentColor = settings.accentColor;
 		});
+
+		return () => {
+			cancelled = true;
+			for (const fn of unlistenFns) fn();
+		};
 	});
 
 	// 鼠标穿透切换
