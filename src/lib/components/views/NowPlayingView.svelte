@@ -48,6 +48,12 @@
 		return q.slice(idx + 1);
 	});
 
+	let currentQueueIndex = $derived.by(() => {
+		const t = playback.currentTrack;
+		if (!t) return -1;
+		return playlist.queue.findIndex(tr => tr.id === t.id);
+	});
+
 	let nextTrack = $derived.by(() => {
 		const t = playback.currentTrack;
 		const q = playlist.queue;
@@ -93,6 +99,11 @@
 
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') close();
+	}
+
+	async function playQueueItem(index: number) {
+		await playback.playFromQueue(index);
+		showQueue = false;
 	}
 </script>
 
@@ -251,8 +262,7 @@
 			</div>
 			<div class="np-queue-scroll">
 				{#each upcomingTracks as track, i}
-					{@const queueIdx = playlist.queue.findIndex(t => t.id === track.id)}
-					<button class="np-queue-item" onclick={() => { playback.playFromQueue(queueIdx); showQueue = false; }}>
+					<button class="np-queue-item" onclick={() => playQueueItem(currentQueueIndex + 1 + i)}>
 						<span class="np-queue-idx">{i + 1}</span>
 						<div class="np-queue-meta">
 							<span class="np-queue-title">{track.title || track.path.split(/[/\\]/).pop()}</span>
