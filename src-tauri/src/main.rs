@@ -35,7 +35,7 @@ fn setup_window_appearance(window: &tauri::WebviewWindow) {
         let RawWindowHandle::Win32(h) = handle.as_raw() else {
             return;
         };
-        let hwnd = HWND(h.hwnd.get() as *mut std::ffi::c_void);
+        let hwnd: HWND = h.hwnd.get() as *mut std::ffi::c_void;
         let dark_mode: BOOL = 1;
         let _ = DwmSetWindowAttribute(
             hwnd,
