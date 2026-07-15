@@ -13,22 +13,22 @@
 
   // 颜色渐变点：紫 → 品红 → 橙
   const colors = [
-    [167, 139, 250],  // #a78bfa 紫
-    [167, 139, 250],  // #a78bfa
-    [180, 130, 240],  // 过渡
-    [200, 120, 220],  // 过渡
-    [220, 110, 200],  // 过渡
-    [240, 100, 180],  // 过渡
-    [244, 114, 182],  // #f472b6 品红
-    [245, 115, 170],  // 过渡
-    [248, 120, 155],  // 过渡
-    [250, 130, 140],  // 过渡
-    [251, 140, 130],  // 过渡
-    [251, 150, 115],  // 过渡
-    [251, 155, 105],  // 过渡
-    [251, 160, 95],   // 过渡
-    [251, 170, 80],   // 过渡
-    [251, 180, 70],   // #fbbf24 橙金
+    [167, 139, 250],
+    [180, 130, 240],
+    [200, 120, 220],
+    [220, 110, 200],
+    [240, 100, 180],
+    [244, 114, 182],
+    [246, 116, 170],
+    [248, 120, 155],
+    [250, 130, 140],
+    [250, 140, 125],
+    [251, 150, 115],
+    [251, 155, 105],
+    [251, 160, 95],
+    [251, 165, 85],
+    [251, 172, 78],
+    [251, 180, 70],
   ];
 
   onMount(() => {
@@ -46,73 +46,48 @@
 
     function draw() {
       if (!ctx) { rafId = requestAnimationFrame(draw); return; }
-      // 中等缓动，配合后端自动归一化
       for (let i = 0; i < 16; i++) {
-        smooth[i] += (bands[i] - smooth[i]) * 0.18;
+        smooth[i] += (bands[i] - smooth[i]) * 0.22;
       }
       ctx.clearRect(0, 0, width, height);
 
-      const barCount = 16;
-      const maxH = height;
+      const curveH = height * 0.55;
+      const baseY = height - 4;
 
-      // 计算曲线顶点（power curve 提升低能量段的可见度）
+      // 计算顶点
+      const segW = width / 15;
       const pts: { x: number; y: number }[] = [];
-      const segW = width / (barCount - 1);
-      for (let i = 0; i < barCount; i++) {
+      for (let i = 0; i < 16; i++) {
         const x = i * segW;
-        const val = Math.max(0, Math.pow(smooth[i], 0.7));
-        const bh = Math.max(8, val * maxH);
-        pts.push({ x, y: maxH - bh });
+        const val = Math.pow(Math.max(0, smooth[i]), 0.65);
+        const y = baseY - val * curveH;
+        pts.push({ x, y });
       }
 
-      // 发光层（模糊曲线 + 填充）
-      const grad = ctx.createLinearGradient(0, 0, 0, maxH);
-      grad.addColorStop(0, 'rgba(167, 139, 250, 0.25)');
-      grad.addColorStop(0.5, 'rgba(244, 114, 182, 0.10)');
-      grad.addColorStop(1, 'rgba(167, 139, 250, 0)');
+      // 细发光（仅曲线本身）
+      ctx.shadowColor = 'rgba(167, 139, 250, 0.2)';
+      ctx.shadowBlur = 12;
 
-      ctx.shadowColor = 'rgba(167, 139, 250, 0.3)';
-      ctx.shadowBlur = 16;
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, maxH);
-      ctx.lineTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < barCount; i++) {
-        const xc = (pts[i - 1].x + pts[i].x) / 2;
-        const yc = (pts[i - 1].y + pts[i].y) / 2;
-        ctx.quadraticCurveTo(pts[i - 1].x, pts[i - 1].y, xc, yc);
-      }
-      ctx.lineTo(pts[barCount - 1].x, maxH);
-      ctx.closePath();
-      ctx.fillStyle = grad;
-      ctx.fill();
-      ctx.shadowBlur = 0;
-
-      // 主曲线（亮线）
+      // 主曲线
       ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < barCount; i++) {
+      for (let i = 1; i < 16; i++) {
         const xc = (pts[i - 1].x + pts[i].x) / 2;
         const yc = (pts[i - 1].y + pts[i].y) / 2;
         ctx.quadraticCurveTo(pts[i - 1].x, pts[i - 1].y, xc, yc);
       }
-      ctx.lineTo(pts[barCount - 1].x, pts[barCount - 1].y);
+      ctx.lineTo(pts[15].x, pts[15].y);
 
-      const lineGrad = ctx.createLinearGradient(0, 0, width, 0);
-      lineGrad.addColorStop(0, '#a78bfa');
-      lineGrad.addColorStop(0.5, '#f472b6');
-      lineGrad.addColorStop(1, '#fbbf24');
-      ctx.strokeStyle = lineGrad;
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 2;
+      const grad = ctx.createLinearGradient(0, 0, width, 0);
+      grad.addColorStop(0, '#a78bfa');
+      grad.addColorStop(0.4, '#c084fc');
+      grad.addColorStop(0.7, '#f472b6');
+      grad.addColorStop(1, '#fb923c');
+      ctx.strokeStyle = grad;
       ctx.stroke();
 
-      // 顶点光点
-      for (const p of pts) {
-        const [r, g, b] = colors[Math.min(Math.round((p.y / maxH) * 15), 15)];
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.8)`;
-        ctx.fill();
-      }
+      ctx.shadowBlur = 0;
 
       rafId = requestAnimationFrame(draw);
     }

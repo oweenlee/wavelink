@@ -333,7 +333,7 @@
 	.np-spectrum-bg {
 		position: absolute; inset: 0;
 		display: flex; align-items: flex-end; justify-content: center;
-		opacity: 0.15; pointer-events: none;
+		opacity: 0.25; pointer-events: none;
 		overflow: hidden; border-radius: 12px;
 	}
 
