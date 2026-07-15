@@ -12,28 +12,14 @@
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
 	import { getUiState } from '$lib/stores/ui.svelte';
 	import { getSettingsState } from '$lib/stores/settings.svelte';
-	import { getLyricsState } from '$lib/stores/lyrics.svelte';
 	import { createKeyboardHandler } from '$lib/keyboard';
 
 	const playback = getPlaybackState();
 	const ui = getUiState();
 	const settings = getSettingsState();
-	const lyrics = getLyricsState();
 
 	const onKeydown = createKeyboardHandler(playback);
 
-	// 桌面歌词：推送当前歌词行到歌词窗口
-	$effect(() => {
-		if (!ui.showDesktopLyrics) return;
-		const idx = lyrics.currentIndex;
-		const lines = lyrics.lines;
-		const current = idx >= 0 ? lines[idx]?.text ?? '' : '';
-		const next = idx >= 0 && idx < lines.length - 1 ? lines[idx + 1]?.text ?? '' : '';
-		import('@tauri-apps/api/event').then(({ emit }) => {
-			emit('lyrics:current_line', current);
-			emit('lyrics:next_line', next);
-		});
-	});
 </script>
 
 <svelte:window onkeydown={onKeydown} />

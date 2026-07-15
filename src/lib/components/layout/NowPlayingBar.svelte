@@ -6,7 +6,7 @@
 	import { getPlaylistState } from '$lib/stores/playlist.svelte';
 	import ProgressBar from '$lib/components/controls/ProgressBar.svelte';
 	import VolumeSlider from '$lib/components/controls/VolumeSlider.svelte';
-	import { SkipBack, SkipForward, Play, Pause, List, Repeat, Repeat1, Shuffle, Disc3, ListMusic, Expand, Mic2, Monitor } from 'lucide-svelte';
+	import { SkipBack, SkipForward, Play, Pause, List, Repeat, Repeat1, Shuffle, Disc3, ListMusic, Expand, Mic2 } from 'lucide-svelte';
 
 	import type { Track } from '$lib/audio/types';
 
@@ -144,9 +144,6 @@
 			</button>
 			<button class="bar-btn" onclick={() => ui.toggleLyrics()} class:active={ui.showLyricsPanel} aria-label="歌词">
 				<Mic2 size={13} />
-			</button>
-			<button class="bar-btn" onclick={() => ui.toggleDesktopLyrics()} class:active={ui.showDesktopLyrics} aria-label="桌面歌词" title="桌面歌词">
-				<Monitor size={13} />
 			</button>
 		</div>
 	</div>

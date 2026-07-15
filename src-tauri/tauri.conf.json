@@ -21,20 +21,6 @@
         "resizable": true,
         "fullscreen": false,
         "visible": false
-      },
-      {
-        "label": "lyrics",
-        "url": "index.html",
-        "title": "WaveLink Lyrics",
-        "width": 900,
-        "height": 130,
-        "transparent": true,
-        "decorations": false,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "resizable": false,
-        "visible": false,
-        "center": true
       }
     ],
     "security": {
