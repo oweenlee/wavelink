@@ -54,11 +54,11 @@
 	.track-fill { height: 100%; border-radius: 3px; transition: width 0.05s linear; position: relative; }
 	.track-knob {
 		position: absolute; top: 50%; width: 12px; height: 12px;
-		border-radius: 50%; transform: translate(-50%, -50%);
-		opacity: 0; transition: opacity 0.15s;
+		border-radius: 50%; transform: translate(-50%, -50%) scale(0);
+		opacity: 0; transition: transform 0.15s var(--ease-out), opacity 0.12s;
 		pointer-events: none;
 	}
-	.track:hover .track-knob, .dragging .track-knob { opacity: 1; }
+	.track:hover .track-knob, .dragging .track-knob { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 	.times { display: flex; justify-content: space-between; font-size: 10px; color: var(--fg-tertiary); margin-top: 2px; font-variant-numeric: tabular-nums; }
 	.tooltip {
 		position: absolute; top: -28px; transform: translateX(-50%);

@@ -158,11 +158,10 @@
 					<SkipBack size={22} fill="currentColor" />
 				</button>
 				<button class="np-btn np-btn-play" onclick={() => playback.togglePlay()} aria-label={playback.isPlaying ? '暂停' : '播放'}>
-					{#if playback.isPlaying}
-						<Pause size={28} fill="currentColor" />
-					{:else}
-						<Play size={28} fill="currentColor" />
-					{/if}
+					<div class="icon-wrap">
+						<div class="icon-layer" class:show={playback.isPlaying}><Pause size={28} fill="currentColor" /></div>
+						<div class="icon-layer" class:show={!playback.isPlaying}><Play size={28} fill="currentColor" /></div>
+					</div>
 				</button>
 				<button class="np-btn" onclick={() => playback.next()} aria-label="下一首">
 					<SkipForward size={22} fill="currentColor" />
@@ -330,6 +329,9 @@
 	}
 	.np-btn-play:hover { transform: scale(1.06); color: #fff; }
 	.np-btn-play:active { transform: scale(0.95); }
+	.np-btn-play .icon-wrap { position: relative; width: 28px; height: 28px; }
+	.np-btn-play .icon-layer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s; }
+	.np-btn-play .icon-layer.show { opacity: 1; }
 	.np-vol-wrap { display: flex; justify-content: center; }
 
 	/* ── Info panel ── */

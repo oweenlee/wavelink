@@ -114,7 +114,16 @@
 		font-size: 13px; font-family: inherit;
 		cursor: pointer; transition: all 0.12s;
 		text-align: left; width: 100%;
+		position: relative;
 	}
+
+	.nav-item::before {
+		content: ''; position: absolute; left: -12px; top: 0; height: 100%; width: 2px;
+		background: var(--accent); border-radius: 0 2px 2px 0;
+		transform: scaleY(0); transition: transform 0.15s var(--ease-out);
+		transform-origin: top;
+	}
+	.nav-item.active::before { transform: scaleY(1); }
 
 	.nav-item:hover { background: var(--bg-hover); color: var(--fg-primary); }
 	.nav-item.active { background: var(--bg-active); color: var(--fg-primary); font-weight: 500; }

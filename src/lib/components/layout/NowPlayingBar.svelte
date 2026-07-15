@@ -108,11 +108,10 @@
 					<SkipBack size={12} />
 				</button>
 				<button class="ctrl-play" onclick={() => playback.togglePlay()} disabled={!hasTrack} aria-label={playback.isPlaying ? '暂停' : '播放'}>
-					{#if playback.isPlaying}
-						<Pause size={14} />
-					{:else}
-						<Play size={14} />
-					{/if}
+					<div class="icon-wrap">
+						<div class="icon-layer" class:show={playback.isPlaying}><Pause size={14} /></div>
+						<div class="icon-layer" class:show={!playback.isPlaying}><Play size={14} /></div>
+					</div>
 				</button>
 				<button class="ctrl-btn" onclick={() => playback.next()} disabled={!hasTrack} aria-label="下一首">
 					<SkipForward size={12} />
@@ -205,6 +204,9 @@
 	.ctrl-play:hover:not(:disabled) { background: var(--accent-dim); filter: brightness(1.15); }
 	.ctrl-play:active:not(:disabled) { transform: scale(0.92); }
 	.ctrl-play:disabled { opacity: 0.15; cursor: default; }
+	.icon-wrap { position: relative; width: 14px; height: 14px; }
+	.icon-layer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.12s; }
+	.icon-layer.show { opacity: 1; }
 
 	/* ── Right ── */
 	.bar-right { display: flex; align-items: center; gap: var(--space-1); flex-shrink: 0; }
