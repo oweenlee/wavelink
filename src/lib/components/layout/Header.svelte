@@ -7,7 +7,7 @@
 	import { formatTime } from '$lib/data/music';
 	import { browser } from '$app/environment';
 	import type { Track } from '$lib/audio/types';
-	import { Search, Folder, Settings, X } from 'lucide-svelte';
+	import { Search, Folder, X } from 'lucide-svelte';
 
 	const ui = getUiState();
 	const library = getLibraryState();
@@ -83,9 +83,6 @@
 		</button>
 		<button class="icon-btn" title="扫描目录" onclick={handleScan}>
 			<Folder size={16} />
-		</button>
-		<button class="icon-btn" title="设置" onclick={() => ui.navigateTo('settings')}>
-			<Settings size={16} />
 		</button>
 		<div class="avatar" style="background: linear-gradient(135deg, {settings.accentColor}, color-mix(in srgb, {settings.accentColor} 70%, #fff));">W</div>
 	</div>
