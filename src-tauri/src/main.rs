@@ -24,7 +24,7 @@ fn setup_window_appearance(window: &tauri::WebviewWindow) {
 #[cfg(target_os = "windows")]
 {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
+    use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
     use windows_sys::Win32::Foundation::{BOOL, HWND};
 
     unsafe {
@@ -35,11 +35,11 @@ fn setup_window_appearance(window: &tauri::WebviewWindow) {
         let RawWindowHandle::Win32(h) = handle.as_raw() else {
             return;
         };
-        let hwnd = HWND(h.hwnd as *mut std::ffi::c_void);
+        let hwnd = HWND(h.hwnd.get() as *mut std::ffi::c_void);
         let dark_mode: BOOL = 1;
         let _ = DwmSetWindowAttribute(
             hwnd,
-            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            20,  // DWMWA_USE_IMMERSIVE_DARK_MODE
             &dark_mode as *const _ as *const _,
             std::mem::size_of::<BOOL>() as u32,
         );
