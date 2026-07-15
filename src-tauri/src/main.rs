@@ -168,14 +168,7 @@ fn main() {
                     }
                 });
 
-                // macOS: Dock 图标点击时恢复窗口
-                #[cfg(target_os = "macos")]
-                app.on_reopen(|app| {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                });
+                // macOS: Dock 图标点击时恢复窗口（在 .run() 中处理）
             }
 
             // 创建系统托盘
@@ -277,6 +270,15 @@ fn main() {
             settings::save_settings,
             settings::load_settings,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        });
 }
