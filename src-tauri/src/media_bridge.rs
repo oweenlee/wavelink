@@ -2,7 +2,7 @@
 //! Windows: SMTC (SystemMediaTransportControls)
 //! macOS: MPNowPlayingInfoCenter (via objc2)
 
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// 媒体桥接句柄
 pub struct MediaBridge;
