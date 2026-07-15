@@ -47,7 +47,7 @@
 
 <style>
 	.progress { width: 100%; user-select: none; padding: 2px 0; }
-	.track { position: relative; height: 24px; display: flex; align-items: center; cursor: pointer; }
+	.track { position: relative; height: 24px; display: flex; align-items: center; cursor: pointer; outline: none; }
 	.track-bg { position: relative; width: 100%; height: 4px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: visible; transition: height 0.15s var(--ease-out); }
 	.track:hover .track-bg { height: 6px; }
 	.track-bg.dragging { height: 6px; }
