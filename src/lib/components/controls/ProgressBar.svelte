@@ -9,15 +9,28 @@
 	let hoverRatio = $state(0);
 	let showTooltip = $state(false);
 
-	function onDown(e: MouseEvent) { isDragging = true; onMove(e); window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp); }
-	function onMove(e: MouseEvent) { if (!trackEl) return; const r = trackEl.getBoundingClientRect(); const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); hoverRatio = ratio; showTooltip = true; if (isDragging) ondrag(ratio); }
-	function onUp() { isDragging = false; showTooltip = false; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); }
+	function updatePosition(clientX: number) {
+		if (!trackEl) return;
+		const r = trackEl.getBoundingClientRect();
+		const ratio = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+		hoverRatio = ratio;
+		showTooltip = true;
+		if (isDragging) ondrag(ratio);
+	}
+
+	function onDown(e: MouseEvent) { isDragging = true; updatePosition(e.clientX); window.addEventListener('mousemove', onMouseMove); window.addEventListener('mouseup', onUp); }
+	function onMouseMove(e: MouseEvent) { updatePosition(e.clientX); }
+	function onUp() { isDragging = false; showTooltip = false; window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onUp); }
+
+	function onTouchDown(e: TouchEvent) { e.preventDefault(); isDragging = true; const t = e.touches[0]; if (t) updatePosition(t.clientX); window.addEventListener('touchmove', onTouchMove); window.addEventListener('touchend', onTouchUp); }
+	function onTouchMove(e: TouchEvent) { const t = e.touches[0]; if (t) updatePosition(t.clientX); }
+	function onTouchUp() { isDragging = false; showTooltip = false; window.removeEventListener('touchmove', onTouchMove); window.removeEventListener('touchend', onTouchUp); }
 
 	let fillPct = $derived(max > 0 ? Math.min(100, (value / max) * 100) : 0);
 </script>
 
 <div class="progress">
-	<div class="track" bind:this={trackEl} onmousedown={onDown} onmouseenter={() => { if (!isDragging) showTooltip = true; }} onmouseleave={() => { if (!isDragging) showTooltip = false; }} onmousemove={onMove} role="slider" tabindex="0" aria-valuemin={0} aria-valuemax={max} aria-valuenow={currentTime}>
+	<div class="track" bind:this={trackEl} onmousedown={onDown} onmouseenter={() => { if (!isDragging) showTooltip = true; }} onmouseleave={() => { if (!isDragging) showTooltip = false; }} onmousemove={onMouseMove} ontouchstart={onTouchDown} ontouchmove={onTouchMove} ontouchend={onTouchUp} role="slider" tabindex="0" aria-valuemin={0} aria-valuemax={max} aria-valuenow={currentTime}>
 		<div class="track-bg" class:dragging={isDragging}>
 			<div class="track-fill" style="width: {fillPct}%; background: {color};"></div>
 			<div class="track-knob" style="left: {fillPct}%; background: {color}; box-shadow: 0 0 8px {color}80;"></div>

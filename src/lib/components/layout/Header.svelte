@@ -7,6 +7,7 @@
 	import { formatTime } from '$lib/data/music';
 	import { browser } from '$app/environment';
 	import type { Track } from '$lib/audio/types';
+	import { Search, Folder, Settings, X } from 'lucide-svelte';
 
 	const ui = getUiState();
 	const library = getLibraryState();
@@ -35,7 +36,7 @@
 
 	function closeSearch() {
 		ui.showSearch = false;
-		if (!library.searchQuery) library.loadTracks(200, 0);
+		if (!library.searchQuery) library.loadTracks();
 	}
 
 	async function onSearchInput(e: Event) {
@@ -78,13 +79,13 @@
 	</div>
 	<div class="header-right">
 		<button class="icon-btn" title="搜索 (⌘K)" onclick={openSearch}>
-			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+			<Search size={16} />
 		</button>
 		<button class="icon-btn" title="扫描目录" onclick={handleScan}>
-			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+			<Folder size={16} />
 		</button>
 		<button class="icon-btn" title="设置" onclick={() => ui.navigateTo('settings')}>
-			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m11-7h-6m-6 0H1m16.24-7.24l-4.24 4.24m-6 6l-4.24 4.24m0-14.48l4.24 4.24m6 6l4.24 4.24"/></svg>
+			<Settings size={16} />
 		</button>
 		<div class="avatar" style="background: linear-gradient(135deg, {settings.accentColor}, color-mix(in srgb, {settings.accentColor} 70%, #fff));">W</div>
 	</div>
@@ -100,10 +101,10 @@
 			transition={{ type: 'spring', stiffness: 400, damping: 28 }}
 		>
 		<div class="search-bar">
-			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="color: var(--fg-tertiary); flex-shrink: 0;"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+			<Search size={16} style="color: var(--fg-tertiary); flex-shrink: 0;" />
 			<input bind:this={searchInput} type="text" class="search-input" placeholder="搜索曲目、艺术家、专辑..." value={library.searchQuery} oninput={onSearchInput} onkeydown={onSearchKeydown} />
 			<button class="search-close" onclick={closeSearch} aria-label="关闭">
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+				<X size={14} />
 			</button>
 		</div>
 

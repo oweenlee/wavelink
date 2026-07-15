@@ -1,5 +1,5 @@
 import { browser } from '$app/environment';
-import type { Track } from '$lib/audio/types';
+import type { Track, AlbumBrief } from '$lib/audio/types';
 
 /**
  * Library store — manages the track library, search, and browse modes.
@@ -18,8 +18,8 @@ async function lazyInvoke() {
 	return invoke;
 }
 
-/** Get sorted + filtered tracks */
-function getSortedTracks(): Track[] {
+/** Sorted tracks — recomputed only when _tracks or _sortBy change */
+let _sortedTracks = $derived.by(() => {
 	let result = [..._tracks];
 	switch (_sortBy) {
 		case 'title':
@@ -36,12 +36,12 @@ function getSortedTracks(): Track[] {
 			break;
 	}
 	return result;
-}
+});
 
 export function getLibraryState() {
 	return {
 		// ── State ──
-		get tracks() { return getSortedTracks(); },
+		get tracks() { return _sortedTracks; },
 		get rawTracks() { return _tracks; },
 		get trackCount() { return _tracks.length; },
 		get searchQuery() { return _searchQuery; },
@@ -53,7 +53,7 @@ export function getLibraryState() {
 		get loading() { return _loading; },
 
 		// ── Library loading ──
-		async loadTracks(limit = 200, offset = 0) {
+		async loadTracks(limit = 50000, offset = 0) {
 			if (!browser) return [];
 			_loading = true;
 			try {
@@ -109,6 +109,14 @@ export function getLibraryState() {
 			try {
 				const invoke = await lazyInvoke();
 				return await invoke('get_tracks_by_album', { artist, album }) as Track[];
+			} catch { return []; }
+		},
+
+		async loadAllAlbums(): Promise<AlbumBrief[]> {
+			if (!browser) return [];
+			try {
+				const invoke = await lazyInvoke();
+				return await invoke('get_all_albums') as AlbumBrief[];
 			} catch { return []; }
 		},
 

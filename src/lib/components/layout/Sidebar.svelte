@@ -2,6 +2,7 @@
 	import { getUiState } from '$lib/stores/ui.svelte';
 	import { getPlaylistState } from '$lib/stores/playlist.svelte';
 	import { browser } from '$app/environment';
+	import { Music, AudioLines, Settings, ChevronRight, ListMusic, Plus } from 'lucide-svelte';
 
 	const ui = getUiState();
 	const playlist = getPlaylistState();
@@ -30,15 +31,15 @@
 	<nav class="nav">
 		<p class="nav-label">浏览</p>
 		<button class="nav-item" class:active={ui.view === 'library'} onclick={() => ui.navigateTo('library')}>
-			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+			<Music size={16} stroke-width={1.5} />
 			<span>本地音乐</span>
 		</button>
 		<button class="nav-item" class:active={ui.view === 'effects'} onclick={() => ui.navigateTo('effects')}>
-			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-6"/></svg>
+			<AudioLines size={16} stroke-width={1.5} />
 			<span>音效设置</span>
 		</button>
 		<button class="nav-item" class:active={ui.view === 'settings'} onclick={() => ui.navigateTo('settings')}>
-			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+			<Settings size={16} stroke-width={1.5} />
 			<span>设置</span>
 		</button>
 	</nav>
@@ -47,14 +48,14 @@
 		<div class="nav-section-header">
 			<p class="nav-label">播放列表</p>
 			<button class="nav-toggle" onclick={togglePlaylists} aria-label="展开播放列表">
-				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="transform: rotate({showPlaylists ? 90 : 0}deg); transition: transform 0.2s;"><polyline points="9,18 15,12 9,6"/></svg>
+				<ChevronRight size={12} style="transform: rotate({showPlaylists ? 90 : 0}deg); transition: transform 0.2s;" />
 			</button>
 		</div>
 		{#if showPlaylists}
 			{#if playlist.savedPlaylists.length > 0}
 				{#each playlist.savedPlaylists as name}
 					<button class="nav-item playlist-item" onclick={() => { playlist.loadPlaylist(name); ui.navigateTo('library'); }}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M21 15V6M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM12 12H3M16 6H3M12 18H3"/></svg>
+						<ListMusic size={14} stroke-width={1.5} />
 						<span class="playlist-name">{name}</span>
 					</button>
 				{/each}
@@ -62,7 +63,7 @@
 				<p class="nav-empty">暂无播放列表</p>
 			{/if}
 			<button class="nav-item new-playlist" onclick={() => ui.showPlaylistPanel = true}>
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+				<Plus size={14} />
 				<span>新建播放列表</span>
 			</button>
 		{/if}

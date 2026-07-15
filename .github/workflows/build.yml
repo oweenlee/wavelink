@@ -46,6 +46,9 @@ jobs:
         run: rm -f .cargo/config.toml
         shell: bash
 
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
       - name: Build Tauri app
         run: npm run tauri build
 

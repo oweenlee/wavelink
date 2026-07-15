@@ -9,6 +9,7 @@ let _theme = $state<'dark' | 'light'>('dark');
 let _accentColor = $state('#8888cc');
 let _sampleRate = $state(44100);
 let _bufferMs = $state(80);
+let _crossfadeMs = $state(0);
 let _replaygainEnabled = $state(false);
 let _loaded = $state(false);
 
@@ -33,6 +34,9 @@ export function getSettingsState() {
 		get bufferMs() { return _bufferMs; },
 		set bufferMs(v: number) { _bufferMs = v; },
 
+		get crossfadeMs() { return _crossfadeMs; },
+		set crossfadeMs(v: number) { _crossfadeMs = v; },
+
 		get replaygainEnabled() { return _replaygainEnabled; },
 		set replaygainEnabled(v: boolean) { _replaygainEnabled = v; },
 
@@ -48,12 +52,8 @@ export function getSettingsState() {
 				if (typeof saved.theme === 'string') _theme = saved.theme as 'dark' | 'light';
 				if (typeof saved.sampleRate === 'number') _sampleRate = saved.sampleRate;
 				if (typeof saved.bufferMs === 'number') _bufferMs = saved.bufferMs;
+				if (typeof saved.crossfadeMs === 'number') _crossfadeMs = saved.crossfadeMs;
 				if (typeof saved.replaygainEnabled === 'boolean') _replaygainEnabled = saved.replaygainEnabled;
-				if (typeof saved.volume === 'number') {
-					// Sync volume to engine
-					const { setVolume } = await import('$lib/audio/engine.svelte');
-					await setVolume(saved.volume);
-				}
 				_loaded = true;
 				return saved;
 			} catch (err) {
@@ -73,6 +73,7 @@ export function getSettingsState() {
 						theme: _theme,
 						sampleRate: _sampleRate,
 						bufferMs: _bufferMs,
+						crossfadeMs: _crossfadeMs,
 						replaygainEnabled: _replaygainEnabled,
 						...extra,
 					},
@@ -90,6 +91,7 @@ export function getSettingsState() {
 					sampleRate: _sampleRate,
 					channels: 2,
 					bufferMs: _bufferMs,
+					crossfadeMs: _crossfadeMs,
 				});
 				await this.save();
 			} catch (err) {
@@ -104,7 +106,7 @@ export function getSettingsState() {
 					const invoke = await lazyInvoke();
 					await invoke('set_replaygain', { enabled });
 					await this.save();
-				} catch {}
+				} catch { console.warn('[settings] ReplayGain 同步失败'); }
 			}
 		},
 

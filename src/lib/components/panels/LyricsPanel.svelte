@@ -3,6 +3,7 @@
 	import { getUiState } from '$lib/stores/ui.svelte';
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
 	import { getLyricsState, loadForTrack } from '$lib/stores/lyrics.svelte';
+	import { Disc3, X, Mic2 } from 'lucide-svelte';
 
 	const ui = getUiState();
 	const playback = getPlaybackState();
@@ -10,6 +11,7 @@
 
 	let lyricsContainer: HTMLDivElement | undefined = $state();
 	let _lastTrackPath = '';
+	let coverDataUrl = $state('');
 
 	$effect(() => {
 		const track = playback.currentTrack;
@@ -18,6 +20,21 @@
 			_lastTrackPath = track.path;
 			loadForTrack(track);
 		}
+	});
+
+	// Load cover for mini thumbnail
+	$effect(() => {
+		const track = playback.currentTrack;
+		if (!track || !browser) { coverDataUrl = ''; return; }
+		let cancelled = false;
+		import('@tauri-apps/api/core').then(async (mod) => {
+			try {
+				const data: unknown = await mod.invoke('get_file_cover_cmd', { path: track.path });
+				if (cancelled) return;
+				if (data && typeof data === 'string') coverDataUrl = data;
+			} catch { coverDataUrl = ''; }
+		});
+		return () => { cancelled = true; };
 	});
 
 	$effect(() => {
@@ -47,14 +64,18 @@
 <div class="lyrics-panel" class:visible={ui.showLyricsPanel}>
 	<div class="panel-header">
 		<div class="track-info">
-			<div class="mini-cover"></div>
+			<div class="mini-cover" style={coverDataUrl ? `background-image: url(${coverDataUrl})` : ''}>
+			{#if !coverDataUrl}
+				<Disc3 size={20} stroke-width={1.2} opacity={0.25} />
+			{/if}
+		</div>
 			<div>
 				<h3 class="track-name">{trackTitle}</h3>
 				<p class="track-artist">{trackArtist}</p>
 			</div>
 		</div>
 		<button class="close-btn" onclick={closePanel} aria-label="关闭">
-			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+			<X size={18} />
 		</button>
 	</div>
 
@@ -71,7 +92,7 @@
 			</div>
 		{:else}
 			<div class="status">
-				<svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.25"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+				<Mic2 size={42} stroke-width={1.5} opacity={0.25} />
 				<p>{lyrics.error || '暂无歌词'}</p>
 			</div>
 		{/if}
@@ -99,7 +120,7 @@
 
 	.panel-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--separator); }
 	.track-info { display: flex; align-items: center; gap: 14px; }
-	.mini-cover { width: 44px; height: 44px; border-radius: var(--radius-md); background: linear-gradient(135deg, #2a2a4e, #1a1a3e); flex-shrink: 0; }
+	.mini-cover { width: 44px; height: 44px; border-radius: var(--radius-md); background-image: linear-gradient(135deg, #2a2a4e, #1a1a3e); background-size: cover; background-position: center; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--fg-quaternary); }
 	.track-name { font-size: 15px; font-weight: 600; color: var(--fg-primary); }
 	.track-artist { font-size: 12px; color: var(--fg-tertiary); margin-top: 2px; }
 	.close-btn { width: 36px; height: 36px; border-radius: var(--radius-md); border: none; background: var(--bg-hover); color: var(--fg-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }

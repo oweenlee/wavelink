@@ -17,7 +17,7 @@
 			try {
 				const mode = await mod.invoke('get_play_mode');
 				playback.playMode = mode as PlayMode;
-			} catch {}
+			} catch { console.warn('播放模式同步失败'); }
 		});
 	});
 
@@ -41,8 +41,6 @@
 </script>
 
 <div class="settings-page">
-	<div class="page-title">设置</div>
-
 	<!-- ── 引擎配置 ── -->
 	<div class="card">
 		<div class="card-header">
@@ -129,7 +127,6 @@
 
 <style>
 	.settings-page { padding: 8px 32px 32px; display: flex; flex-direction: column; gap: 20px; height: 100%; overflow-y: auto; }
-	.page-title { font-size: 22px; font-weight: 700; color: var(--fg-primary); padding: 4px 0; flex-shrink: 0; }
 
 	.card { background: var(--bg-surface); border: 1px solid var(--separator); border-radius: 16px; padding: 20px 24px; }
 	.card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }

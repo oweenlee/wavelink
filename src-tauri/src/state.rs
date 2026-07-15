@@ -5,6 +5,8 @@ use sdk::dsp::PeqBand;
 use sdk::library::LibraryDb;
 use sdk::{EngineHandle, PlayMode};
 
+use crate::media_bridge::MediaBridge;
+
 /// 全局状态
 pub struct AppState {
     pub engine: EngineHandle,
@@ -15,4 +17,5 @@ pub struct AppState {
     pub replaygain_enabled: Mutex<bool>,
     pub base_volume: Mutex<f64>,
     pub current_track: Mutex<Option<String>>,
+    pub media_bridge: MediaBridge,
 }

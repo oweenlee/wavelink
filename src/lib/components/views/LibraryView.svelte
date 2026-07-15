@@ -3,13 +3,14 @@
 	import { getLibraryState } from '$lib/stores/library.svelte';
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
 	import { formatTime } from '$lib/data/music';
-	import type { Track } from '$lib/audio/types';
+	import type { Track, AlbumBrief } from '$lib/audio/types';
 	import TagEditor from '$lib/components/panels/TagEditor.svelte';
+	import { ChevronLeft, Play, Music, Upload, Pencil, Trash2, Disc3, User, ChevronRight } from 'lucide-svelte';
 
 	const library = getLibraryState();
 	const playback = getPlaybackState();
 
-	type BrowseMode = 'tracks' | 'artists' | 'albums' | 'album_tracks';
+	type BrowseMode = 'tracks' | 'artists' | 'albums' | 'album_tracks' | 'albums_grid';
 	let mode = $state<BrowseMode>('tracks');
 	let artists = $state<string[]>([]);
 	let albums = $state<string[]>([]);
@@ -17,9 +18,40 @@
 	let selectedAlbum = $state('');
 	let albumTracks = $state<Track[]>([]);
 	let browsingLoading = $state(false);
+	let albumBriefs = $state<AlbumBrief[]>([]);
+	let albumCovers = $state<Map<number, string>>(new Map());
 
 	let editTrack = $state<Track | null>(null);
 	let deleteTarget = $state<Track | null>(null);
+
+	// ── Virtual scroll (tracks mode) ──
+	const ROW_HEIGHT = 40;
+	const OVERSCAN = 15;
+	let trackTableEl: HTMLDivElement | undefined = $state();
+	let tableScrollTop = $state(0);
+	let tableViewH = $state(0);
+
+	$effect(() => {
+		const el = trackTableEl;
+		if (!el) return;
+		const ro = new ResizeObserver((entries) => {
+			tableViewH = entries[0]!.contentRect.height;
+		});
+		ro.observe(el);
+		return () => ro.disconnect();
+	});
+
+	let totalCount = $derived(library.tracks.length);
+	let visStart = $derived(Math.max(0, Math.floor(tableScrollTop / ROW_HEIGHT) - OVERSCAN));
+	let visEnd = $derived(Math.min(totalCount, visStart + Math.ceil(tableViewH / ROW_HEIGHT) + OVERSCAN * 2));
+	let visTracks = $derived(library.tracks.slice(visStart, visEnd));
+	let topSpacerH = $derived(visStart * ROW_HEIGHT);
+	let bottomSpacerH = $derived(Math.max(0, (totalCount - visEnd) * ROW_HEIGHT));
+
+	function onTableScroll() {
+		if (!trackTableEl) return;
+		tableScrollTop = trackTableEl.scrollTop;
+	}
 
 	function playTrack(_track: Track, index: number) {
 		playback.playAllAsQueue(library.tracks, index);
@@ -31,14 +63,14 @@
 
 	function closeTagEditor() {
 		editTrack = null;
-		library.loadTracks(200, 0);
+		library.loadTracks();
 	}
 
 	async function executeDelete() {
 		if (!deleteTarget) return;
 		await library.deleteTrack(deleteTarget.id);
 		deleteTarget = null;
-		await library.loadTracks(200, 0);
+		await library.loadTracks();
 	}
 
 	async function handleScan() {
@@ -48,7 +80,7 @@
 	}
 
 	$effect(() => {
-		library.loadTracks(200, 0);
+		library.loadTracks();
 	});
 
 	// ── Browse mode ──
@@ -77,7 +109,29 @@
 
 	function backToTracks() {
 		mode = 'tracks';
-		library.loadTracks(200, 0);
+		library.loadTracks();
+	}
+
+	async function enterAlbumGrid() {
+		mode = 'albums_grid';
+		browsingLoading = true;
+		albumBriefs = await library.loadAllAlbums();
+		albumCovers = new Map();
+		browsingLoading = false;
+		// 懒加载封面
+		for (const ab of albumBriefs) {
+			loadCoverForAlbum(ab);
+		}
+	}
+
+	async function loadCoverForAlbum(ab: AlbumBrief) {
+		try {
+			const { invoke } = await import('@tauri-apps/api/core');
+			const data = await invoke('get_file_cover_cmd', { path: ab.first_track_path }) as string | null;
+			if (data) {
+				albumCovers = new Map(albumCovers).set(ab.first_track_id, data);
+			}
+		} catch { console.warn('[Library] 封面加载失败:',); }
 	}
 
 	function backToArtists() {
@@ -99,14 +153,16 @@
 		<h2 class="lib-title">
 			{#if mode === 'album_tracks'}
 				<button class="back-btn" onclick={backToAlbums} aria-label="返回">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15,18 9,12 15,6"/></svg>
+					<ChevronLeft size={18} />
 				</button>
 				{selectedAlbum}
 			{:else if mode === 'albums'}
 				<button class="back-btn" onclick={backToArtists} aria-label="返回">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15,18 9,12 15,6"/></svg>
+					<ChevronLeft size={18} />
 				</button>
 				{selectedArtist}
+			{:else if mode === 'albums_grid'}
+				{library.trackCount} 首歌曲
 			{:else}
 				{library.trackCount} 首歌曲
 			{/if}
@@ -114,7 +170,7 @@
 		<div class="lib-actions">
 			{#if mode === 'tracks' && library.trackCount > 0}
 				<button class="action-btn action-play-all" onclick={() => playback.playAllAsQueue(library.tracks)}>
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="7,5 19,12 7,19"/></svg>
+					<Play size={16} fill="currentColor" />
 					<span>播放全部</span>
 				</button>
 			{/if}
@@ -124,6 +180,7 @@
 	<!-- Browse mode tabs -->
 	<div class="browse-tabs">
 		<button class="browse-tab" class:active={mode === 'tracks'} onclick={backToTracks}>曲目</button>
+		<button class="browse-tab" class:active={mode === 'albums_grid'} onclick={enterAlbumGrid}>专辑</button>
 		<button class="browse-tab" class:active={mode === 'artists' || mode === 'albums' || mode === 'album_tracks'} onclick={enterArtists}>艺术家</button>
 	</div>
 
@@ -133,18 +190,18 @@
 	{:else if mode === 'tracks' && library.trackCount === 0}
 		<div class="empty-state">
 			<div class="empty-icon">
-				<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+				<Music size={48} stroke-width={1.5} />
 			</div>
 			<h3 class="empty-title">导入本地音乐</h3>
 			<p class="empty-hint">点击「扫描目录」选择音乐文件夹</p>
 			<button class="scan-btn" onclick={handleScan}>
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+				<Upload size={16} />
 				<span>选择音乐目录</span>
 			</button>
 		</div>
 
 	{:else if mode === 'tracks'}
-		<div class="track-table">
+		<div class="track-table" bind:this={trackTableEl} onscroll={onTableScroll}>
 			<div class="track-header">
 				<span class="th-num">#</span>
 				<span class="th-title">标题</span>
@@ -153,17 +210,19 @@
 				<span class="th-duration">时长</span>
 			</div>
 			<div class="track-list">
-				{#each library.tracks as track, i}
+				<div style="height: {topSpacerH}px;"></div>
+				{#each visTracks as track, vi}
+					{@const i = visStart + vi}
 					<div class="track-row" class:active={playback.currentTrack?.id === track.id && playback.isPlaying} onclick={(e) => { if ((e.target as HTMLElement).closest('.td-actions')) return; playTrack(track, i); }} onkeydown={(e) => e.key === 'Enter' && playTrack(track, i)}>
 						<span class="td-num">{i + 1}</span>
 						<span class="td-title">
 							<span class="td-title-text">{track.title || track.path.split(/[/\\]/).pop()}</span>
 							<span class="td-actions">
 								<button type="button" class="td-action" onclick={() => openEditor(track)} title="编辑标签">
-									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+									<Pencil size={12} />
 								</button>
 								<button type="button" class="td-action td-action-del" onclick={() => deleteTarget = track} title="从曲库删除">
-									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+									<Trash2 size={12} />
 								</button>
 							</span>
 						</span>
@@ -172,7 +231,38 @@
 						<span class="td-duration">{track.duration ? formatTime(track.duration) : '--:--'}</span>
 					</div>
 				{/each}
+				<div style="height: {bottomSpacerH}px;"></div>
 			</div>
+		</div>
+
+	{:else if mode === 'albums_grid'}
+		<div class="album-grid">
+			{#if albumBriefs.length === 0}
+				<div class="empty-state">
+				<div class="empty-icon">
+					<Disc3 size={48} stroke-width={1.5} />
+				</div>
+					<h3 class="empty-title">暂无专辑</h3>
+					<p class="empty-hint">导入音乐后将会显示专辑封面</p>
+				</div>
+			{:else}
+				{#each albumBriefs as ab}
+					<button class="album-card" onclick={() => { selectedArtist = ab.artist; selectedAlbum = ab.album; enterAlbumTracks(ab.artist, ab.album); }}>
+						<div class="album-cover" style={albumCovers.has(ab.first_track_id) ? `background-image: url(${albumCovers.get(ab.first_track_id)})` : ''}>
+							{#if !albumCovers.has(ab.first_track_id)}
+								<Disc3 size={28} stroke-width={1.5} opacity={0.3} />
+							{/if}
+							<div class="album-play-overlay">
+								<Play size={20} fill="currentColor" />
+							</div>
+						</div>
+						<div class="album-info">
+							<span class="album-name">{ab.album}</span>
+							<span class="album-artist">{ab.artist}</span>
+						</div>
+					</button>
+				{/each}
+			{/if}
 		</div>
 
 	{:else if mode === 'artists'}
@@ -180,10 +270,10 @@
 			{#each artists as artist}
 				<button class="browse-card" onclick={() => enterAlbums(artist)}>
 					<div class="card-icon">
-						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+						<User size={24} stroke-width={1.5} />
 					</div>
 					<span class="card-label">{artist}</span>
-					<svg class="card-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,18 15,12 9,6"/></svg>
+									<ChevronRight class="card-chevron" size={14} />
 				</button>
 			{/each}
 		</div>
@@ -193,10 +283,10 @@
 			{#each albums as album}
 				<button class="browse-card" onclick={() => enterAlbumTracks(selectedArtist, album)}>
 					<div class="card-icon">
-						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+						<Disc3 size={24} stroke-width={1.5} />
 					</div>
 					<span class="card-label">{album || '(未知专辑)'}</span>
-					<svg class="card-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,18 15,12 9,6"/></svg>
+									<ChevronRight class="card-chevron" size={14} />
 				</button>
 			{/each}
 		</div>
@@ -216,10 +306,10 @@
 							<span class="td-title-text">{track.title || track.path.split(/[/\\]/).pop()}</span>
 							<span class="td-actions">
 								<button type="button" class="td-action" onclick={() => openEditor(track)} title="编辑标签">
-									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+									<Pencil size={12} />
 								</button>
 								<button type="button" class="td-action td-action-del" onclick={() => deleteTarget = track} title="从曲库删除">
-									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+									<Trash2 size={12} />
 								</button>
 							</span>
 						</span>
@@ -296,6 +386,95 @@
 	.td-action:hover { color: var(--fg-secondary); background: var(--bg-hover); }
 	.td-action-del:hover { color: rgba(255, 80, 80, 0.6); background: rgba(255, 80, 80, 0.08); }
 	.track-row.active .td-title-text { color: var(--accent); }
+
+	/* ── Album grid ── */
+	.album-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+		gap: 16px;
+		padding: 4px 0 16px;
+		flex: 1;
+		overflow-y: auto;
+		align-content: start;
+	}
+
+	.album-card {
+		display: flex;
+		flex-direction: column;
+		border: none;
+		background: transparent;
+		cursor: pointer;
+		text-align: left;
+		font-family: inherit;
+		padding: 0;
+		border-radius: var(--radius-md);
+		transition: all 0.15s var(--ease-out);
+	}
+
+	.album-card:hover {
+		transform: translateY(-2px);
+	}
+
+	.album-cover {
+		width: 100%;
+		aspect-ratio: 1;
+		border-radius: var(--radius-md);
+		background: linear-gradient(135deg, #1a1a24, #2a2438);
+		background-size: cover;
+		background-position: center;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		position: relative;
+		overflow: hidden;
+		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+		transition: box-shadow 0.15s;
+	}
+
+	.album-card:hover .album-cover {
+		box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+	}
+
+	.album-play-overlay {
+		position: absolute;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.3);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		opacity: 0;
+		transition: opacity 0.15s;
+		color: white;
+	}
+
+	.album-card:hover .album-play-overlay {
+		opacity: 1;
+	}
+
+	.album-info {
+		padding: 8px 2px 0;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.album-name {
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--fg-primary);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.album-artist {
+		font-size: 11px;
+		color: var(--fg-tertiary);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
 	.td-artist { flex: 1 1 25%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.td-album { flex: 1 1 25%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg-tertiary); }
 	.td-duration { width: 48px; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; color: var(--fg-tertiary); font-size: 11px; }

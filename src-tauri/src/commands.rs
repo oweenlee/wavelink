@@ -8,18 +8,16 @@ use sdk::dsp::{default_peq_bands, preset_bands, PeqBand, PresetName};
 use sdk::library::{
     analyze_loudness as rg_analyze, edit_audio_tags, export_playlist,
     gain_for_loudness, get_file_cover, import_playlist, Scanner,
-    TagUpdate, Track,
+    AlbumBrief, TagUpdate, Track,
 };
 use sdk::{analyze_file, AnalysisResult, PlayMode};
 
 use crate::state::AppState;
 
-/// 根据 ReplayGain 设置，将 RG 增益（dB）作为 Pre-amp 发送到 DSP 管线
-/// 用户音量（base_volume）通过 engine.set_volume 单独发送（限幅器之后）
 fn apply_replaygain(state: &AppState) {
-    let rg = *state.replaygain_enabled.lock().unwrap();
+    let rg = *state.replaygain_enabled.lock().expect("replaygain_enabled mutex 被毒化");
     if rg {
-        if let Some(ref cur) = *state.current_track.lock().unwrap() {
+        if let Some(ref cur) = *state.current_track.lock().expect("current_track mutex 被毒化") {
             if let Ok(db) = state.library.lock() {
                 if let Ok(tracks) = db.search(cur, 1, 0) {
                     if let Some(t) = tracks.first() {
@@ -32,28 +30,23 @@ fn apply_replaygain(state: &AppState) {
             }
         }
     }
-    // 未启用 RG 或无有效增益 → 0 dB（无增益）
     state.engine.set_replaygain_gain_db(0.0);
 }
 
-/// 播放/切歌时同时应用 RG Pre-amp 和用户音量
 fn apply_track_settings(state: &AppState) {
     apply_replaygain(state);
-    let base = *state.base_volume.lock().unwrap();
+    let base = *state.base_volume.lock().expect("base_volume mutex 被毒化");
     state.engine.set_volume(base as f32);
 }
 
-/// 给引擎事件转发线程使用的公开版本（接受 path + AppState 引用）
 pub fn apply_replaygain_volume_for_path(path: &str, state: &AppState) {
-    *state.current_track.lock().unwrap() = Some(path.to_string());
+    *state.current_track.lock().expect("current_track mutex 被毒化") = Some(path.to_string());
     apply_track_settings(state);
 }
 
-// ── 播放控制 ──
-
 #[tauri::command]
 pub fn play(path: String, state: State<AppState>) {
-    *state.current_track.lock().unwrap() = Some(path.clone());
+    *state.current_track.lock().expect("current_track mutex 被毒化") = Some(path.clone());
     apply_track_settings(&state);
     state.engine.play(path);
 }
@@ -61,7 +54,7 @@ pub fn play(path: String, state: State<AppState>) {
 #[tauri::command]
 pub fn play_queue(paths: Vec<String>, state: State<AppState>) {
     if let Some(first) = paths.first() {
-        *state.current_track.lock().unwrap() = Some(first.clone());
+        *state.current_track.lock().expect("current_track mutex 被毒化") = Some(first.clone());
     }
     apply_track_settings(&state);
     state.engine.play_queue(paths);
@@ -90,48 +83,40 @@ pub fn get_duration(state: State<AppState>) -> f64 { state.engine.duration_secs(
 
 #[tauri::command]
 pub fn set_volume(vol: f64, state: State<AppState>) {
-    *state.base_volume.lock().unwrap() = vol;
+    *state.base_volume.lock().expect("base_volume mutex 被毒化") = vol;
     state.engine.set_volume(vol as f32);
 }
 
-// ── 播放模式 ──
-
 #[tauri::command]
 pub fn set_play_mode(mode: PlayMode, state: State<AppState>) {
-    *state.play_mode.lock().unwrap() = mode;
+    *state.play_mode.lock().expect("play_mode mutex 被毒化") = mode;
     state.engine.set_play_mode(mode);
 }
 
 #[tauri::command]
 pub fn get_play_mode(state: State<AppState>) -> PlayMode {
-    *state.play_mode.lock().unwrap()
+    *state.play_mode.lock().expect("play_mode mutex 被毒化")
 }
-
-// ── 播放队列 ──
 
 #[tauri::command]
 pub fn remove_from_queue(idx: usize, state: State<AppState>) {
     state.engine.remove_from_queue(idx);
 }
 
-// ── 立体声展宽 ──
-
 #[tauri::command]
 pub fn set_stereo_widener(enabled: bool, width: f32, state: State<AppState>) {
     state.engine.set_stereo_widener(enabled, width);
 }
 
-// ── ReplayGain ──
-
 #[tauri::command]
 pub fn set_replaygain(enabled: bool, state: State<AppState>) {
-    *state.replaygain_enabled.lock().unwrap() = enabled;
+    *state.replaygain_enabled.lock().expect("replaygain_enabled mutex 被毒化") = enabled;
     apply_track_settings(&state);
 }
 
 #[tauri::command]
 pub fn get_replaygain(state: State<AppState>) -> bool {
-    *state.replaygain_enabled.lock().unwrap()
+    *state.replaygain_enabled.lock().expect("replaygain_enabled mutex 被毒化")
 }
 
 #[tauri::command]
@@ -198,8 +183,6 @@ pub fn analyze_all_replaygain(app: tauri::AppHandle, state: State<AppState>) {
         );
     });
 }
-
-// ── 音频分析 ──
 
 #[tauri::command]
 pub fn analyze_track(path: String, state: State<AppState>) -> Result<AnalysisResult, String> {
@@ -276,7 +259,10 @@ pub fn analyze_all_tracks(app: tauri::AppHandle, state: State<AppState>) {
     });
 }
 
-// ── 音频信息 ──
+#[tauri::command]
+pub fn get_underrun_count(state: State<AppState>) -> u64 {
+    state.engine.underrun_count()
+}
 
 #[tauri::command]
 pub fn audio_info() -> serde_json::Value {
@@ -286,9 +272,6 @@ pub fn audio_info() -> serde_json::Value {
     })
 }
 
-// ── 文件读取 ──
-
-/// 保存文本文件（用于缓存歌词到 .lrc）
 #[tauri::command]
 pub fn save_text_file(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, &content).map_err(|e| format!("写入文件失败: {e}"))
@@ -309,8 +292,6 @@ pub fn read_text_file(path: String) -> Result<String, String> {
     }
 }
 
-// ── IR 卷积混响 ──
-
 #[tauri::command]
 pub fn load_ir(path: String, state: State<AppState>) {
     state.engine.load_ir(path);
@@ -321,8 +302,6 @@ pub fn clear_ir(state: State<AppState>) {
     state.engine.clear_ir();
 }
 
-// ── 歌单导入导出 ──
-
 #[tauri::command]
 pub fn import_playlist_cmd(path: String) -> Result<Vec<String>, String> {
     import_playlist(&std::path::PathBuf::from(&path))
@@ -332,8 +311,6 @@ pub fn import_playlist_cmd(path: String) -> Result<Vec<String>, String> {
 pub fn export_playlist_cmd(path: String, entries: Vec<String>) -> Result<(), String> {
     export_playlist(&std::path::PathBuf::from(&path), &entries)
 }
-
-// ── 曲库命令 ──
 
 #[tauri::command]
 pub fn scan_dir(path: String, state: State<AppState>) -> Result<serde_json::Value, String> {
@@ -423,6 +400,12 @@ pub fn get_tracks_by_album(
 }
 
 #[tauri::command]
+pub fn get_all_albums(state: State<AppState>) -> Result<Vec<AlbumBrief>, String> {
+    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    db.all_albums().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn get_track_count(state: State<AppState>) -> Result<i64, String> {
     let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
     db.track_count().map_err(|e| e.to_string())
@@ -434,14 +417,12 @@ pub fn get_cover(track_id: i64, state: State<AppState>) -> Result<Option<String>
     db.get_cover(track_id).map_err(|e| e.to_string())
 }
 
-/// 直接从文件读取封面（不依赖数据库）
 #[tauri::command]
 pub fn get_file_cover_cmd(path: String) -> Result<Option<String>, String> {
     let p = std::path::PathBuf::from(&path);
     get_file_cover(&p).map_err(|e| e.to_string())
 }
 
-/// 通过 LRCLIB 查询在线歌词（后台线程，不阻塞 UI）
 #[tauri::command]
 pub async fn lrc_lookup(artist: String, title: String, album: Option<String>) -> Result<Option<String>, String> {
     let (tx, rx) = std::sync::mpsc::channel();
@@ -506,8 +487,6 @@ fn urlencoding(s: &str) -> String {
     result
 }
 
-// ── 均衡器命令 ──
-
 #[tauri::command]
 pub fn get_eq_bands(state: State<AppState>) -> Result<Vec<PeqBand>, String> {
     let bands = state.peq_bands.lock().map_err(|e| format!("锁失败: {e}"))?;
@@ -533,12 +512,9 @@ pub fn set_peq_band(
 #[tauri::command]
 pub fn reset_eq(state: State<AppState>) -> Result<(), String> {
     let defaults = default_peq_bands();
-    let mut bands = state.peq_bands.lock().map_err(|e| format!("锁失败: {e}"))?;
+    *state.peq_bands.lock().map_err(|e| format!("锁失败: {e}"))? = defaults.clone();
     for (i, band) in defaults.iter().enumerate() {
-        if i < bands.len() {
-            bands[i] = band.clone();
-            state.engine.set_peq_band(i, band.clone());
-        }
+        state.engine.set_peq_band(i, band.clone());
     }
     Ok(())
 }
@@ -546,15 +522,17 @@ pub fn reset_eq(state: State<AppState>) -> Result<(), String> {
 #[tauri::command]
 pub fn set_eq_preset(preset: PresetName, state: State<AppState>) -> Result<(), String> {
     let new_bands = preset_bands(preset);
-    let mut bands = state.peq_bands.lock().map_err(|e| format!("锁失败: {e}"))?;
-    *bands = new_bands.clone();
+    // 用 10 段预设值
+    *state.peq_bands.lock().map_err(|e| format!("锁失败: {e}"))? = new_bands.clone();
+    // 设置引擎 DSP：前 10 段用预设值，后 21 段清零（防止残留）
     for (i, band) in new_bands.iter().enumerate() {
         state.engine.set_peq_band(i, band.clone());
     }
+    for i in 10..31 {
+        state.engine.set_peq_band(i, PeqBand { freq: 0.0, gain_db: 0.0, q: 1.41 });
+    }
     Ok(())
 }
-
-// ── 引擎配置 ──
 
 #[tauri::command]
 pub fn set_engine_config(
@@ -567,11 +545,10 @@ pub fn set_engine_config(
         sample_rate,
         channels,
         buffer_ms,
+        crossfade_ms: 0,
     };
     state.engine.set_config(cfg);
 }
-
-// ── 播放列表管理 ──
 
 fn playlists_dir() -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|_| "无法获取 HOME 目录".to_string())?;
@@ -615,7 +592,6 @@ pub fn save_playlist(name: String, paths: Vec<String>) -> Result<(), String> {
 #[tauri::command]
 pub fn load_playlist(name: String) -> Result<Vec<String>, String> {
     let dir = playlists_dir()?;
-    // 尝试 .m3u8 / .m3u / .pls
     for ext in &["m3u8", "m3u", "pls"] {
         let path = dir.join(format!("{}.{}", name, ext));
         if path.exists() {

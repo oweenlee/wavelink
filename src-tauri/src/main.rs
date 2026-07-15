@@ -3,8 +3,10 @@
 
 mod commands;
 mod logging;
+mod media_bridge;
 mod settings;
 mod state;
+mod tray;
 
 use std::sync::Mutex;
 
@@ -17,6 +19,39 @@ use sdk::{EngineEvent, EngineHandle, PlayMode};
 
 use state::AppState;
 
+/// 设置 Windows 标题栏为深色模式，macOS 标题栏透明，以匹配深色玻璃 UI
+fn setup_window_appearance(window: &tauri::WebviewWindow) {
+#[cfg(target_os = "windows")]
+{
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
+    use windows_sys::Win32::Foundation::{BOOL, HWND};
+
+    unsafe {
+        let Ok(handle) = window.window_handle() else {
+            tracing::warn!("获取窗口句柄失败");
+            return;
+        };
+        let RawWindowHandle::Win32(h) = handle.as_raw() else {
+            return;
+        };
+        let hwnd = HWND(h.hwnd as *mut std::ffi::c_void);
+        let dark_mode: BOOL = 1;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            &dark_mode as *const _ as *const _,
+            std::mem::size_of::<BOOL>() as u32,
+        );
+    }
+}
+    #[cfg(target_os = "macos")]
+    {
+        // macOS 通过 tauri.conf.json 的 titleBarStyle: Transparent 处理
+        let _ = window;
+    }
+}
+
 /// 将引擎事件转发到前端 Tauri event
 fn forward_engine_events(app_handle: tauri::AppHandle, event_rx: Receiver<EngineEvent>) {
     std::thread::spawn(move || {
@@ -27,13 +62,33 @@ fn forward_engine_events(app_handle: tauri::AppHandle, event_rx: Receiver<Engine
                     let _ = app_handle.emit("player:track_changed", &path);
                     if let Some(state) = app_handle.try_state::<AppState>() {
                         commands::apply_replaygain_volume_for_path(&path_clone, &state);
+
+                        // 更新系统媒体控制
+                        if let Ok(db) = state.library.lock() {
+                            if let Ok(Some(track)) = db.get_track_by_path(&path) {
+                                let title = track.title.as_deref().unwrap_or("未知曲目");
+                                let artist = track.artist.as_deref().unwrap_or("未知艺术家");
+                                let album = track.album.as_deref().unwrap_or("");
+                                let duration_ms = track.duration
+                                    .map(|d| (d * 1000.0) as u64)
+                                    .unwrap_or(0);
+                                state.media_bridge.update_metadata(title, artist, album, duration_ms);
+                                state.media_bridge.update_playback_state(true);
+                            }
+                        }
                     }
                 }
                 EngineEvent::PlaybackStopped => {
                     let _ = app_handle.emit("player:stopped", ());
+                    if let Some(state) = app_handle.try_state::<AppState>() {
+                        state.media_bridge.clear();
+                    }
                 }
                 EngineEvent::Position(pos) => {
                     let _ = app_handle.emit("player:position", pos);
+                    if let Some(state) = app_handle.try_state::<AppState>() {
+                        state.media_bridge.update_position((pos * 1000.0) as u64);
+                    }
                 }
                 EngineEvent::DurationSecs(dur) => {
                     let _ = app_handle.emit("player:duration", dur);
@@ -88,6 +143,8 @@ fn main() {
             let (engine, event_rx) = EngineHandle::start();
             forward_engine_events(app.handle().clone(), event_rx);
 
+            let media_bridge = media_bridge::MediaBridge::new();
+
             app.manage(AppState {
                 engine,
                 library: Mutex::new(db),
@@ -97,7 +154,25 @@ fn main() {
                 replaygain_enabled: Mutex::new(false),
                 base_volume: Mutex::new(1.0),
                 current_track: Mutex::new(None),
+                media_bridge,
             });
+
+            if let Some(window) = app.get_webview_window("main") {
+                setup_window_appearance(&window);
+
+                // 关闭窗口时隐藏到托盘而非退出
+                let handle = app.handle().clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { .. } = event {
+                        let _ = handle.get_webview_window("main").map(|w| w.hide());
+                    }
+                });
+            }
+
+            // 创建系统托盘
+            if let Err(e) = tray::create_tray(app.handle()) {
+                tracing::warn!("创建系统托盘失败: {e}");
+            }
 
             // 注册全局快捷键
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
@@ -141,6 +216,7 @@ fn main() {
             commands::pause,
             commands::resume,
             commands::stop,
+            commands::get_underrun_count,
             commands::audio_info,
             commands::read_text_file,
             commands::save_text_file,
@@ -162,6 +238,7 @@ fn main() {
             commands::get_artists,
             commands::get_albums_by_artist,
             commands::get_tracks_by_album,
+            commands::get_all_albums,
             commands::get_track_count,
             commands::get_cover,
             commands::get_file_cover_cmd,
