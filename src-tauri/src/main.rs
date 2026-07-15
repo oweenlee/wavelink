@@ -238,6 +238,8 @@ fn main() {
             commands::get_play_mode,
             commands::remove_from_queue,
             commands::scan_dir,
+            commands::get_scan_folders,
+            commands::remove_scan_folder,
             commands::search_tracks,
             commands::edit_tags,
             commands::delete_track,

@@ -317,11 +317,25 @@ pub fn scan_dir(path: String, state: State<AppState>) -> Result<serde_json::Valu
     let dir = PathBuf::from(&path);
     let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
     let result = Scanner::scan_directory(&db, &dir)?;
+    db.add_folder(&path).ok();
     Ok(serde_json::json!({
         "scanned": result.scanned,
         "errors": result.errors,
         "removed": result.removed,
     }))
+}
+
+#[tauri::command]
+pub fn get_scan_folders(state: State<AppState>) -> Result<Vec<String>, String> {
+    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    db.list_folders().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn remove_scan_folder(path: String, state: State<AppState>) -> Result<usize, String> {
+    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    let removed = db.remove_folder(&path).map_err(|e| e.to_string())?;
+    Ok(removed.len())
 }
 
 #[tauri::command]

@@ -2,22 +2,25 @@
 	import { browser } from '$app/environment';
 	import { getSettingsState } from '$lib/stores/settings.svelte';
 	import { getPlaybackState, type PlayMode } from '$lib/stores/playback.svelte';
+	import { Trash2 } from 'lucide-svelte';
+	import { open } from '@tauri-apps/plugin-dialog';
 
 	const settings = getSettingsState();
 	const playback = getPlaybackState();
 
 	let _invoke: ((cmd: string, args?: any) => Promise<any>) | null = null;
+	let folders = $state<string[]>([]);
 
 	$effect(() => {
 		if (!browser) return;
 		import('@tauri-apps/api/core').then(async (mod) => {
 			_invoke = mod.invoke;
 			await settings.load();
-			// Sync playMode from engine
 			try {
+				folders = await mod.invoke('get_scan_folders');
 				const mode = await mod.invoke('get_play_mode');
 				playback.playMode = mode as PlayMode;
-			} catch { console.warn('播放模式同步失败'); }
+			} catch { console.warn('同步失败'); }
 		});
 	});
 
@@ -37,6 +40,25 @@
 
 	async function toggleReplaygain() {
 		await settings.setReplaygain(!settings.replaygainEnabled);
+	}
+
+	async function addFolder() {
+		const selected = await open({ directory: true, multiple: false, title: '选择音乐文件夹' });
+		if (!selected || !_invoke) return;
+		try {
+			const result = await _invoke('scan_dir', { path: selected });
+			console.log('扫描结果:', result);
+			folders = await _invoke('get_scan_folders');
+		} catch (e) { console.error('扫描失败:', e); }
+	}
+
+	async function removeFolder(path: string) {
+		if (!_invoke) return;
+		try {
+			const count = await _invoke('remove_scan_folder', { path });
+			folders = folders.filter(f => f !== path);
+			console.log(`已删除 ${count} 首曲目`);
+		} catch (e) { console.error('删除失败:', e); }
 	}
 </script>
 
@@ -110,6 +132,28 @@
 		</div>
 	</div>
 
+	<!-- ── 文件夹管理 ── -->
+	<div class="card">
+		<div class="card-header">
+			<h3 class="card-title">扫描文件夹</h3>
+			<button class="btn-add" onclick={addFolder} title="添加文件夹">+ 添加</button>
+		</div>
+		<div class="card-body">
+			{#if folders.length === 0}
+				<p class="empty-hint">暂无已扫描的文件夹</p>
+			{:else}
+				{#each folders as folder}
+					<div class="folder-row">
+						<div class="folder-path" title={folder}>{folder}</div>
+						<button class="btn-remove" onclick={() => removeFolder(folder)} title="删除此文件夹及音乐">
+							<Trash2 size={14} />
+						</button>
+					</div>
+				{/each}
+			{/if}
+		</div>
+	</div>
+
 	<!-- ── 关于 ── -->
 	<div class="card about">
 		<div class="card-header">
@@ -161,4 +205,13 @@
 	.about-info { display: flex; flex-direction: column; gap: 2px; }
 	.about-name { font-size: 16px; font-weight: 600; color: var(--fg-primary); }
 	.about-version { font-size: 12px; color: var(--fg-tertiary); }
+
+	.folder-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,0.03); }
+	.folder-row:hover { background: rgba(255,255,255,0.06); }
+	.folder-path { font-size: 12px; color: var(--fg-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+	.btn-add { padding: 4px 12px; border: none; border-radius: 6px; background: var(--accent); color: #fff; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+	.btn-add:hover { filter: brightness(1.15); }
+	.btn-remove { width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: var(--fg-tertiary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; }
+	.btn-remove:hover { background: rgba(239,68,68,0.15); color: #ef4444; }
+	.empty-hint { font-size: 12px; color: var(--fg-tertiary); text-align: center; padding: 8px 0; }
 </style>
