@@ -174,36 +174,39 @@ fn main() {
                 tracing::warn!("创建系统托盘失败: {e}");
             }
 
-            // 注册全局快捷键
-            use tauri_plugin_global_shortcut::GlobalShortcutExt;
-            let gs = app.handle().global_shortcut();
-            if let Err(e) = gs.on_shortcut("MediaPlayPause", |app: &tauri::AppHandle, _shortcut, event| {
-                if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                    let state = app.state::<AppState>();
-                    if state.engine.is_playing() {
-                        state.engine.pause();
-                    } else {
-                        state.engine.resume();
+            // 全局快捷键（macOS 媒体键由 MPRemoteCommandCenter 处理）
+            #[cfg(not(target_os = "macos"))]
+            {
+                use tauri_plugin_global_shortcut::GlobalShortcutExt;
+                let gs = app.handle().global_shortcut();
+                if let Err(e) = gs.on_shortcut("MediaPlayPause", |app: &tauri::AppHandle, _shortcut, event| {
+                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        let state = app.state::<AppState>();
+                        if state.engine.is_playing() {
+                            state.engine.pause();
+                        } else {
+                            state.engine.resume();
+                        }
                     }
+                }) {
+                    tracing::warn!("注册 MediaPlayPause 快捷键失败: {e}");
                 }
-            }) {
-                tracing::warn!("注册 MediaPlayPause 快捷键失败: {e}");
-            }
-            if let Err(e) = gs.on_shortcut("MediaNextTrack", |app: &tauri::AppHandle, _shortcut, event| {
-                if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                    let state = app.state::<AppState>();
-                    state.engine.next_track();
+                if let Err(e) = gs.on_shortcut("MediaNextTrack", |app: &tauri::AppHandle, _shortcut, event| {
+                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        let state = app.state::<AppState>();
+                        state.engine.next_track();
+                    }
+                }) {
+                    tracing::warn!("注册 MediaNextTrack 快捷键失败: {e}");
                 }
-            }) {
-                tracing::warn!("注册 MediaNextTrack 快捷键失败: {e}");
-            }
-            if let Err(e) = gs.on_shortcut("MediaPreviousTrack", |app: &tauri::AppHandle, _shortcut, event| {
-                if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                    let state = app.state::<AppState>();
-                    state.engine.seek(0.0);
+                if let Err(e) = gs.on_shortcut("MediaPreviousTrack", |app: &tauri::AppHandle, _shortcut, event| {
+                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        let state = app.state::<AppState>();
+                        state.engine.seek(0.0);
+                    }
+                }) {
+                    tracing::warn!("注册 MediaPreviousTrack 快捷键失败: {e}");
                 }
-            }) {
-                tracing::warn!("注册 MediaPreviousTrack 快捷键失败: {e}");
             }
 
             tracing::info!("WaveLink 启动");
