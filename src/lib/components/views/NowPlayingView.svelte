@@ -16,6 +16,7 @@
 	let coverDataUrl = $state('');
 	let coverCancelled = $state(false);
 	let showInfo = $state(false);
+	let showQueue = $state(false);
 	let lyricsScrollEl: HTMLDivElement | undefined = $state();
 
 	// ── Derived ──
@@ -35,6 +36,15 @@
 		if (s < 1024) return s + ' B';
 		if (s < 1024 * 1024) return (s / 1024).toFixed(1) + ' KB';
 		return (s / (1024 * 1024)).toFixed(1) + ' MB';
+	});
+
+	let upcomingTracks = $derived.by(() => {
+		const t = playback.currentTrack;
+		const q = playlist.queue;
+		if (!t || q.length <= 1) return [];
+		const idx = q.findIndex((tr) => tr.id === t.id);
+		if (idx < 0 || idx >= q.length - 1) return [];
+		return q.slice(idx + 1);
 	});
 
 	let nextTrack = $derived.by(() => {
@@ -173,6 +183,30 @@
 				</div>
 			</div>
 
+			<!-- Queue -->
+			{#if upcomingTracks.length > 0}
+				<div class="np-queue">
+					<button class="np-queue-toggle" onclick={() => showQueue = !showQueue} aria-expanded={showQueue}>
+						<span>即将播放 ({upcomingTracks.length})</span>
+						<ChevronDown size={12} class={showQueue ? 'rotated' : ''} />
+					</button>
+					{#if showQueue}
+						<div class="np-queue-list" transition:fly={{ y: -8, duration: 200 }}>
+							{#each upcomingTracks as track, i}
+								{@const queueIdx = playlist.queue.findIndex(t => t.id === track.id)}
+								<button class="np-queue-item" onclick={() => playback.playFromQueue(queueIdx)}>
+									<span class="np-queue-idx">{i + 1}</span>
+									<div class="np-queue-meta">
+										<span class="np-queue-title">{track.title || track.path.split(/[/\\]/).pop()}</span>
+										<span class="np-queue-artist">{track.artist || '未知艺术家'}</span>
+									</div>
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
+
 			<!-- Info toggle / panel -->
 			<div class="np-info-section">
 				<button class="np-info-toggle" onclick={() => showInfo = !showInfo} aria-expanded={showInfo}>
@@ -298,6 +332,48 @@
 	.lyric-text { font-size: 14px; font-weight: 400; color: var(--fg-tertiary); line-height: 1.7; transition: all 0.35s ease; }
 	.lyric-line.active .lyric-text { font-size: 18px; font-weight: 600; color: var(--fg-primary); }
 	.lyric-line.past .lyric-text { color: var(--fg-quaternary); font-size: 12px; }
+
+	/* ── Queue ── */
+	.np-queue { flex-shrink: 0; min-height: 0; }
+	.np-queue-toggle {
+		display: inline-flex; align-items: center; gap: 6px;
+		padding: 6px 0; border: none; background: transparent;
+		color: var(--fg-tertiary); cursor: pointer; font-size: 12px;
+		transition: color 0.15s;
+	}
+	.np-queue-toggle:hover { color: var(--fg-secondary); }
+	.np-queue-toggle svg { transition: transform 0.2s; }
+	.np-queue-toggle svg.rotated { transform: rotate(180deg); }
+	.np-queue-list {
+		display: flex; flex-direction: column; gap: 2px;
+		max-height: 160px; overflow-y: auto;
+		border-radius: 8px;
+		background: rgba(255,255,255,0.03); border: 0.5px solid rgba(255,255,255,0.05);
+		padding: 4px;
+	}
+	.np-queue-list::-webkit-scrollbar { width: 3px; }
+	.np-queue-list::-webkit-scrollbar-thumb { background: var(--bg-active); border-radius: 2px; }
+	.np-queue-item {
+		display: flex; align-items: center; gap: 8px;
+		width: 100%; padding: 6px 8px;
+		border: none; border-radius: 6px;
+		background: transparent; color: var(--fg-secondary);
+		cursor: pointer; text-align: left;
+		transition: all 0.12s;
+	}
+	.np-queue-item:hover { background: rgba(255,255,255,0.06); color: var(--fg-primary); }
+	.np-queue-item:active { transform: scale(0.98); }
+	.np-queue-idx {
+		flex-shrink: 0; width: 18px; height: 18px;
+		display: flex; align-items: center; justify-content: center;
+		border-radius: 4px;
+		background: rgba(255,255,255,0.06);
+		font-size: 10px; color: var(--fg-tertiary);
+		font-variant-numeric: tabular-nums;
+	}
+	.np-queue-meta { flex: 1; min-width: 0; }
+	.np-queue-title { font-size: 12px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.np-queue-artist { font-size: 10px; color: var(--fg-tertiary); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 	/* ── Next up ── */
 	.np-nextup {
