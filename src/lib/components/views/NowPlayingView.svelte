@@ -126,11 +126,13 @@
 				</div>
 				<div class="np-art-glow" style={coverDataUrl ? `background-image: url(${coverDataUrl})` : ''}></div>
 			</div>
+			<div class="np-spectrum-wrap">
+				<SpectrumAnalyzer width={320} height={56} />
+			</div>
 		</div>
 
 		<!-- Right: content -->
 		<div class="np-main">
-			<div class="np-spectrum-bg"><SpectrumAnalyzer width={480} height={320} /></div>
 			<!-- Track info -->
 			{#key playback.currentTrack?.id}
 				<div class="np-meta">
@@ -329,13 +331,8 @@
 	}
 
 	/* ── Main content ── */
-	.np-main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; max-height: 80vh; }
-	.np-spectrum-bg {
-		position: absolute; inset: 0;
-		display: flex; align-items: flex-end; justify-content: center;
-		opacity: 0.25; pointer-events: none;
-		overflow: hidden; border-radius: 12px;
-	}
+	.np-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; max-height: 80vh; }
+	.np-spectrum-wrap { width: 100%; opacity: 0.85; }
 
 	/* ── Track meta ── */
 	.np-meta { animation: npMetaIn 0.3s ease-out; }
