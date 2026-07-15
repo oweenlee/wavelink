@@ -240,6 +240,7 @@ fn main() {
             commands::scan_dir,
             commands::get_scan_folders,
             commands::remove_scan_folder,
+            commands::reset_database,
             commands::search_tracks,
             commands::edit_tags,
             commands::delete_track,

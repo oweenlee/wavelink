@@ -569,3 +569,10 @@ pub fn delete_playlist(name: String) -> Result<(), String> {
     }
     Err(format!("播放列表 '{name}' 未找到"))
 }
+
+/// 清空数据库所有数据并重建（测试用后门）
+#[tauri::command]
+pub fn reset_database(state: State<AppState>) -> Result<(), String> {
+    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    db.reset_database().map_err(|e| format!("重置数据库失败: {e}"))
+}
