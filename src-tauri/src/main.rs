@@ -103,6 +103,9 @@ fn forward_engine_events(app_handle: tauri::AppHandle, event_rx: Receiver<Engine
                         serde_json::json!({ "paths": paths, "current": current }),
                     );
                 }
+                EngineEvent::Spectrum(bands) => {
+                    let _ = app_handle.emit("player:spectrum", &bands);
+                }
             }
         }
     });

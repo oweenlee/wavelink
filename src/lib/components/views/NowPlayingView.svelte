@@ -8,6 +8,7 @@
 	import { getLyricsState, loadForTrack } from '$lib/stores/lyrics.svelte';
 	import VolumeSlider from '$lib/components/controls/VolumeSlider.svelte';
 	import ProgressBar from '$lib/components/controls/ProgressBar.svelte';
+	import SpectrumAnalyzer from '$lib/components/controls/SpectrumAnalyzer.svelte';
 	import { X, Disc3, Shuffle, Repeat1, Repeat, List, SkipBack, SkipForward, Play, Pause, ChevronDown } from 'lucide-svelte';
 	const playback = getPlaybackState();
 	const ui = getUiState();
@@ -115,7 +116,7 @@
 	</button>
 
 	<div class="np-body">
-		<!-- Left: cover art -->
+		<!-- Left: cover art + spectrum -->
 		<div class="np-side">
 			<div class="np-art-wrap">
 				<div class="np-art" style={coverDataUrl ? `background-image: url(${coverDataUrl})` : ''}>
@@ -124,6 +125,9 @@
 					{/if}
 				</div>
 				<div class="np-art-glow" style={coverDataUrl ? `background-image: url(${coverDataUrl})` : ''}></div>
+			</div>
+			<div class="np-spectrum-wrap">
+				<SpectrumAnalyzer />
 			</div>
 		</div>
 
@@ -307,7 +311,8 @@
 	}
 
 	/* ── Cover art ── */
-	.np-side { flex-shrink: 0; }
+	.np-side { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+	.np-spectrum-wrap { width: 100%; opacity: 0.85; }
 	.np-art-wrap { position: relative; }
 	.np-art {
 		width: 320px; height: 320px; border-radius: 16px;
