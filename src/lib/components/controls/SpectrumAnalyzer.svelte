@@ -100,7 +100,7 @@
   });
 </script>
 
-<canvas bind:this={canvas} class="spectrum" style="width: {width}px; height: {height}px;" role="img" aria-label="频谱分析器"></canvas>
+<canvas bind:this={canvas} class="spectrum" style="width: {width}px; height: {height}px;"></canvas>
 
 <style>
   .spectrum {

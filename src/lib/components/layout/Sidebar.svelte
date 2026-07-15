@@ -2,7 +2,7 @@
 	import { getUiState } from '$lib/stores/ui.svelte';
 	import { getPlaylistState } from '$lib/stores/playlist.svelte';
 	import { browser } from '$app/environment';
-	import { Music, AudioLines, Settings, ChevronRight, ListMusic, Plus } from 'lucide-svelte';
+	import { Music, AudioLines, Settings, ChevronRight, ListMusic, Plus, HardDrive } from 'lucide-svelte';
 
 	const ui = getUiState();
 	const playlist = getPlaylistState();
@@ -41,6 +41,10 @@
 		<button class="nav-item" class:active={ui.view === 'settings'} onclick={() => ui.navigateTo('settings')}>
 			<Settings size={16} stroke-width={1.5} />
 			<span>设置</span>
+		</button>
+		<button class="nav-item" class:active={ui.view === 'nas'} onclick={() => ui.navigateTo('nas')}>
+			<HardDrive size={16} stroke-width={1.5} />
+			<span>NAS</span>
 		</button>
 	</nav>
 

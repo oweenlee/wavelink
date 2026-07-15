@@ -576,3 +576,56 @@ pub fn reset_database(state: State<AppState>) -> Result<(), String> {
     let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
     db.reset_database().map_err(|e| format!("重置数据库失败: {e}"))
 }
+
+// ── NAS 命令 ──
+
+#[tauri::command]
+pub fn nas_list(state: State<AppState>) -> Result<Vec<crate::nas::NasConnection>, String> {
+    state.nas_manager.list()
+}
+
+#[tauri::command]
+pub fn nas_add(
+    name: String,
+    server: String,
+    share: String,
+    username: String,
+    password: String,
+    auto_mount: bool,
+    state: State<AppState>,
+) -> Result<crate::nas::NasConnection, String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let mount_path = String::new();
+    let conn = crate::nas::NasConnection {
+        id: id.clone(),
+        name,
+        server,
+        share,
+        username,
+        auto_mount,
+        mount_path,
+    };
+    state.nas_manager.set_password(&id, &password)?;
+    state.nas_manager.add(&conn)?;
+    Ok(conn)
+}
+
+#[tauri::command]
+pub fn nas_remove(id: String, state: State<AppState>) -> Result<(), String> {
+    state.nas_manager.remove(&id)
+}
+
+#[tauri::command]
+pub fn nas_mount(id: String, state: State<AppState>) -> Result<String, String> {
+    state.nas_manager.mount(&id)
+}
+
+#[tauri::command]
+pub fn nas_unmount(id: String, state: State<AppState>) -> Result<(), String> {
+    state.nas_manager.unmount(&id)
+}
+
+#[tauri::command]
+pub fn nas_is_mounted(id: String, state: State<AppState>) -> bool {
+    state.nas_manager.is_mounted(&id)
+}

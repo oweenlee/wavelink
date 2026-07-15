@@ -5,6 +5,7 @@
 	import LibraryView from '$lib/components/views/LibraryView.svelte';
 	import EffectsView from '$lib/components/views/EffectsView.svelte';
 	import SettingsView from '$lib/components/views/SettingsView.svelte';
+	import NasView from '$lib/components/views/NasView.svelte';
 	import NowPlayingView from '$lib/components/views/NowPlayingView.svelte';
 	import LyricsPanel from '$lib/components/panels/LyricsPanel.svelte';
 	import PlaylistPanel from '$lib/components/panels/PlaylistPanel.svelte';
@@ -38,6 +39,8 @@
 							<EffectsView />
 						{:else if ui.view === 'settings'}
 							<SettingsView />
+						{:else if ui.view === 'nas'}
+							<NasView />
 						{/if}
 					</div>
 				{/key}

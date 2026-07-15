@@ -6,6 +6,7 @@ use sdk::library::LibraryDb;
 use sdk::{EngineHandle, PlayMode};
 
 use crate::media_bridge::MediaBridge;
+use crate::nas::NasManager;
 
 /// 全局状态
 pub struct AppState {
@@ -18,4 +19,5 @@ pub struct AppState {
     pub base_volume: Mutex<f64>,
     pub current_track: Mutex<Option<String>>,
     pub media_bridge: MediaBridge,
+    pub nas_manager: NasManager,
 }

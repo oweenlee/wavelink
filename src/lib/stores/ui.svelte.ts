@@ -3,7 +3,7 @@
  * Separated from playback/library/settings for single responsibility.
  */
 
-export type ViewName = 'library' | 'effects' | 'settings';
+export type ViewName = 'library' | 'effects' | 'settings' | 'nas';
 
 let _view = $state<ViewName>('library');
 let _showLyricsPanel = $state(false);

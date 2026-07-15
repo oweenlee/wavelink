@@ -9,6 +9,7 @@
 	import VolumeSlider from '$lib/components/controls/VolumeSlider.svelte';
 	import ProgressBar from '$lib/components/controls/ProgressBar.svelte';
 	import SpectrumAnalyzer from '$lib/components/controls/SpectrumAnalyzer.svelte';
+
 	import { X, Disc3, Shuffle, Repeat1, Repeat, List, SkipBack, SkipForward, Play, Pause, ChevronDown } from 'lucide-svelte';
 	const playback = getPlaybackState();
 	const ui = getUiState();
@@ -109,7 +110,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="np" onkeydown={handleKeydown} onclick={(e) => { if (e.target === e.currentTarget) close(); }}>
+<div class="np" class:np-playing={playback.isPlaying} style={coverDataUrl ? `--cover: url(${coverDataUrl})` : ''} onkeydown={handleKeydown} onclick={(e) => { if (e.target === e.currentTarget) close(); }}>
 	<!-- Close button -->
 	<button class="np-close" onclick={close} aria-label="关闭">
 		<X size={16} stroke-width={2.5} />
@@ -119,12 +120,15 @@
 		<!-- Left: cover art + spectrum -->
 		<div class="np-side">
 			<div class="np-art-wrap">
-				<div class="np-art" style={coverDataUrl ? `background-image: url(${coverDataUrl})` : ''}>
-					{#if !coverDataUrl}
-						<Disc3 class="np-no-cover" size={80} />
-					{/if}
+				<div class="np-vinyl">
+					<div class="np-vinyl-grooves"></div>
+					<div class="np-art" class:spinning={playback.isPlaying} style={coverDataUrl ? `background-image: var(--cover)` : ''}>
+						{#if !coverDataUrl}
+							<Disc3 class="np-no-cover" size={80} />
+						{/if}
+					</div>
+					<div class="np-vinyl-label"></div>
 				</div>
-				<div class="np-art-glow" style={coverDataUrl ? `background-image: url(${coverDataUrl})` : ''}></div>
 			</div>
 			<div class="np-spectrum-wrap">
 				<SpectrumAnalyzer width={320} height={56} />
@@ -283,11 +287,21 @@
 	/* ── Root ── */
 	.np {
 		position: fixed; inset: 0; z-index: 999;
-		background: rgba(8, 8, 16, 0.97);
-		backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+		overflow: hidden;
+		background: rgb(8, 8, 16);
 		display: flex; align-items: center; justify-content: center;
 		animation: npFadeIn 0.25s ease-out;
 	}
+	.np::before {
+		content: '';
+		position: absolute; inset: 0;
+		background: var(--cover, none) center/cover;
+		filter: blur(80px) saturate(1.2);
+		opacity: 0.25;
+		transition: opacity 0.6s;
+		pointer-events: none;
+	}
+	.np:not([style*="--cover"])::before { opacity: 0; }
 	@keyframes npFadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 	/* ── Close ── */
@@ -310,23 +324,48 @@
 		max-width: 960px; width: 100%; padding: 0 24px;
 	}
 
-	/* ── Cover art ── */
+	/* ── Vinyl record ── */
 	.np-side { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 16px; }
 	.np-art-wrap { position: relative; }
-	.np-art {
-		width: 320px; height: 320px; border-radius: 16px;
-		background: linear-gradient(135deg, #1a1a24, #2a2438);
-		background-size: cover; background-position: center;
-		box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+	.np-vinyl {
+		position: relative;
+		width: 320px; height: 320px;
+		border-radius: 50%;
 		display: flex; align-items: center; justify-content: center;
 		animation: npCoverIn 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 	@keyframes npCoverIn { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
-	.np-no-cover { width: 80px; height: 80px; color: rgba(255,255,255,0.08); }
-	.np-art-glow {
-		position: absolute; inset: -24px; border-radius: 32px;
+	.np-vinyl-grooves {
+		position: absolute; inset: 0; border-radius: 50%;
+		background:
+			repeating-radial-gradient(circle at 50% 50%,
+				transparent 0,
+				transparent 2px,
+				rgba(0,0,0,0.15) 2px,
+				rgba(0,0,0,0.15) 3px
+			),
+			linear-gradient(135deg, #1a1a24, #2a2438);
+		box-shadow: 0 16px 48px rgba(0,0,0,0.5), inset 0 0 60px rgba(0,0,0,0.3);
+	}
+	.np-art {
+		position: relative;
+		width: 180px; height: 180px; border-radius: 50%;
+		background: linear-gradient(135deg, #1a1a24, #2a2438);
 		background-size: cover; background-position: center;
-		filter: blur(40px); opacity: 0.15; z-index: -1;
+		box-shadow: 0 0 0 4px rgba(0,0,0,0.3), 0 4px 20px rgba(0,0,0,0.4);
+		display: flex; align-items: center; justify-content: center;
+		z-index: 1;
+		transition: transform 0.3s;
+	}
+	.np-art.spinning { animation: npSpin 6s linear infinite; }
+	@keyframes npSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+	.np-no-cover { width: 80px; height: 80px; color: rgba(255,255,255,0.08); }
+	.np-vinyl-label {
+		position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+		width: 24px; height: 24px; border-radius: 50%;
+		background: rgba(255,255,255,0.06);
+		border: 1px solid rgba(255,255,255,0.08);
+		z-index: 2;
 		pointer-events: none;
 	}
 
@@ -480,7 +519,8 @@
 	/* ── Responsive ── */
 	@media (max-width: 720px) {
 		.np-body { flex-direction: column; gap: 24px; max-width: 100%; }
-		.np-art { width: 200px; height: 200px; }
+		.np-vinyl { width: 200px; height: 200px; }
+		.np-art { width: 110px; height: 110px; }
 		.np-main { max-height: none; }
 	}
 </style>

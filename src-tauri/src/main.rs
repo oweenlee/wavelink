@@ -4,6 +4,7 @@
 mod commands;
 mod logging;
 mod media_bridge;
+mod nas;
 mod settings;
 mod state;
 mod tray;
@@ -17,6 +18,7 @@ use sdk::dsp::default_peq_bands;
 use sdk::library::LibraryDb;
 use sdk::{EngineEvent, EngineHandle, PlayMode};
 
+use nas::NasManager;
 use state::AppState;
 
 /// 设置 Windows 标题栏为深色模式，macOS 标题栏透明，以匹配深色玻璃 UI
@@ -147,6 +149,10 @@ fn main() {
             forward_engine_events(app.handle().clone(), event_rx);
 
             let media_bridge = media_bridge::MediaBridge::new();
+            let nas_manager = NasManager::new(&db_path);
+
+            // 自动挂载标记为 auto_mount 的 NAS 连接
+            nas_manager.auto_mount_all();
 
             app.manage(AppState {
                 engine,
@@ -158,6 +164,7 @@ fn main() {
                 base_volume: Mutex::new(1.0),
                 current_track: Mutex::new(None),
                 media_bridge,
+                nas_manager,
             });
 
             if let Some(window) = app.get_webview_window("main") {
@@ -166,7 +173,8 @@ fn main() {
                 // 关闭窗口时隐藏到托盘而非退出
                 let handle = app.handle().clone();
                 window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { .. } = event {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
                         let _ = handle.get_webview_window("main").map(|w| w.hide());
                     }
                 });
@@ -275,6 +283,12 @@ fn main() {
             commands::delete_playlist,
             settings::save_settings,
             settings::load_settings,
+            commands::nas_list,
+            commands::nas_add,
+            commands::nas_remove,
+            commands::nas_mount,
+            commands::nas_unmount,
+            commands::nas_is_mounted,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -284,6 +298,16 @@ fn main() {
                 if let Some(window) = app_handle.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.set_focus();
+                } else {
+                    // 窗口已销毁，重建
+                    let _ = tauri::WebviewWindowBuilder::new(
+                        app_handle,
+                        "main",
+                        tauri::WebviewUrl::App("index.html".into()),
+                    )
+                    .title("WaveLink")
+                    .inner_size(1100.0, 750.0)
+                    .build();
                 }
             }
         });
