@@ -157,7 +157,7 @@
 				<button class="np-btn" onclick={() => playback.previous()} aria-label="上一首">
 					<SkipBack size={22} fill="currentColor" />
 				</button>
-				<button class="np-btn np-btn-play" onclick={() => playback.toggle()} aria-label={playback.isPlaying ? '暂停' : '播放'}>
+				<button class="np-btn np-btn-play" onclick={() => playback.togglePlay()} aria-label={playback.isPlaying ? '暂停' : '播放'}>
 					{#if playback.isPlaying}
 						<Pause size={28} fill="currentColor" />
 					{:else}
