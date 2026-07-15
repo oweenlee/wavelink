@@ -53,50 +53,65 @@
       ctx.clearRect(0, 0, width, height);
 
       const barCount = 16;
-      const gap = width / 80;
-      const barW = (width - gap * (barCount - 1)) / barCount;
       const maxH = height;
 
-      // 底部微弱轨道
-      ctx.globalAlpha = 0.06;
-      ctx.fillStyle = '#a78bfa';
+      // 计算柱体顶点用于曲线
+      const pts: { x: number; y: number }[] = [];
+      const segW = width / (barCount - 1);
       for (let i = 0; i < barCount; i++) {
-        const x = i * (barW + gap);
-        const bh = Math.max(1, smooth[i] * maxH);
-        ctx.beginPath();
-        ctx.roundRect(x, maxH - 2, barW, 2, 1);
-        ctx.fill();
+        const x = i * segW;
+        const bh = Math.max(8, smooth[i] * maxH);
+        pts.push({ x, y: maxH - bh });
       }
-      ctx.globalAlpha = 1;
 
-      // 主柱
-      for (let i = 0; i < barCount; i++) {
-        const bh = Math.max(0, smooth[i] * maxH);
-        if (bh < 1) continue;
-        const x = i * (barW + gap);
-        const [r, g, b] = colors[Math.min(i, colors.length - 1)];
-        const alpha = 0.35 + smooth[i] * 0.45;
+      // 发光层（模糊曲线 + 填充）
+      const grad = ctx.createLinearGradient(0, 0, 0, maxH);
+      grad.addColorStop(0, 'rgba(167, 139, 250, 0.25)');
+      grad.addColorStop(0.5, 'rgba(244, 114, 182, 0.10)');
+      grad.addColorStop(1, 'rgba(167, 139, 250, 0)');
 
-        // 发光层（模糊阴影）
-        ctx.shadowColor = `rgba(${r}, ${g}, ${b}, ${alpha * 0.4})`;
-        ctx.shadowBlur = 8;
-        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
-        ctx.beginPath();
-        // 顶部圆角 + 底部直角
-        const rad = Math.min(barW / 2, 4);
-        ctx.roundRect(x, maxH - bh, barW, bh - rad, [rad, rad, 0, 0]);
-        ctx.fill();
-
-        // 顶部高光：细亮线
-        ctx.shadowBlur = 0;
-        ctx.globalAlpha = 0.5;
-        ctx.fillStyle = `rgba(255, 255, 255, ${0.15 + smooth[i] * 0.3})`;
-        ctx.beginPath();
-        ctx.roundRect(x + 1, maxH - bh, barW - 2, 2, [1, 1, 0, 0]);
-        ctx.fill();
-        ctx.globalAlpha = 1;
+      ctx.shadowColor = 'rgba(167, 139, 250, 0.3)';
+      ctx.shadowBlur = 16;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, maxH);
+      ctx.lineTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < barCount; i++) {
+        const xc = (pts[i - 1].x + pts[i].x) / 2;
+        const yc = (pts[i - 1].y + pts[i].y) / 2;
+        ctx.quadraticCurveTo(pts[i - 1].x, pts[i - 1].y, xc, yc);
       }
+      ctx.lineTo(pts[barCount - 1].x, maxH);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
       ctx.shadowBlur = 0;
+
+      // 主曲线（亮线）
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < barCount; i++) {
+        const xc = (pts[i - 1].x + pts[i].x) / 2;
+        const yc = (pts[i - 1].y + pts[i].y) / 2;
+        ctx.quadraticCurveTo(pts[i - 1].x, pts[i - 1].y, xc, yc);
+      }
+      ctx.lineTo(pts[barCount - 1].x, pts[barCount - 1].y);
+
+      const lineGrad = ctx.createLinearGradient(0, 0, width, 0);
+      lineGrad.addColorStop(0, '#a78bfa');
+      lineGrad.addColorStop(0.5, '#f472b6');
+      lineGrad.addColorStop(1, '#fbbf24');
+      ctx.strokeStyle = lineGrad;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // 顶点光点
+      for (const p of pts) {
+        const [r, g, b] = colors[Math.min(Math.round((p.y / maxH) * 15), 15)];
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.8)`;
+        ctx.fill();
+      }
 
       rafId = requestAnimationFrame(draw);
     }
