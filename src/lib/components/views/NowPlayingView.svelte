@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { fly } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
 	import { getUiState } from '$lib/stores/ui.svelte';
 	import { getPlaylistState } from '$lib/stores/playlist.svelte';
@@ -183,30 +184,6 @@
 				</div>
 			</div>
 
-			<!-- Queue -->
-			{#if upcomingTracks.length > 0}
-				<div class="np-queue">
-					<button class="np-queue-toggle" onclick={() => showQueue = !showQueue} aria-expanded={showQueue}>
-						<span>即将播放 ({upcomingTracks.length})</span>
-						<ChevronDown size={12} class={showQueue ? 'rotated' : ''} />
-					</button>
-					{#if showQueue}
-						<div class="np-queue-list" transition:fly={{ y: -8, duration: 200 }}>
-							{#each upcomingTracks as track, i}
-								{@const queueIdx = playlist.queue.findIndex(t => t.id === track.id)}
-								<button class="np-queue-item" onclick={() => playback.playFromQueue(queueIdx)}>
-									<span class="np-queue-idx">{i + 1}</span>
-									<div class="np-queue-meta">
-										<span class="np-queue-title">{track.title || track.path.split(/[/\\]/).pop()}</span>
-										<span class="np-queue-artist">{track.artist || '未知艺术家'}</span>
-									</div>
-								</button>
-							{/each}
-						</div>
-					{/if}
-				</div>
-			{/if}
-
 			<!-- Info toggle / panel -->
 			<div class="np-info-section">
 				<button class="np-info-toggle" onclick={() => showInfo = !showInfo} aria-expanded={showInfo}>
@@ -251,11 +228,39 @@
 		</div>
 	</div>
 
-	<!-- Next up — bottom-left corner -->
+	<!-- Next up — bottom-left -->
 	{#if nextTrack}
 		<div class="np-nextup">
 			<span class="np-nextup-label">下一首</span>
 			<span class="np-nextup-title">{nextTrack.title || nextTrack.path.split(/[/\\]/).pop()}</span>
+		</div>
+	{/if}
+
+	<!-- Queue button — bottom-right -->
+	<button class="np-queue-btn" onclick={() => showQueue = !showQueue} aria-label="播放列表">
+		<List size={18} />
+	</button>
+
+	<!-- Queue panel — slides in from right -->
+	{#if showQueue && upcomingTracks.length > 0}
+		<div class="np-queue-overlay" onclick={() => showQueue = false}></div>
+		<div class="np-queue-panel" transition:fly={{ x: 420, duration: 250, easing: cubicOut }}>
+			<div class="np-queue-header">
+				<span>播放列表 ({upcomingTracks.length})</span>
+				<button class="np-queue-close" onclick={() => showQueue = false}><X size={14} /></button>
+			</div>
+			<div class="np-queue-scroll">
+				{#each upcomingTracks as track, i}
+					{@const queueIdx = playlist.queue.findIndex(t => t.id === track.id)}
+					<button class="np-queue-item" onclick={() => { playback.playFromQueue(queueIdx); showQueue = false; }}>
+						<span class="np-queue-idx">{i + 1}</span>
+						<div class="np-queue-meta">
+							<span class="np-queue-title">{track.title || track.path.split(/[/\\]/).pop()}</span>
+							<span class="np-queue-artist">{track.artist || '未知艺术家'}</span>
+						</div>
+					</button>
+				{/each}
+			</div>
 		</div>
 	{/if}
 </div>
@@ -333,48 +338,6 @@
 	.lyric-line.active .lyric-text { font-size: 18px; font-weight: 600; color: var(--fg-primary); }
 	.lyric-line.past .lyric-text { color: var(--fg-quaternary); font-size: 12px; }
 
-	/* ── Queue ── */
-	.np-queue { flex-shrink: 0; min-height: 0; }
-	.np-queue-toggle {
-		display: inline-flex; align-items: center; gap: 6px;
-		padding: 6px 0; border: none; background: transparent;
-		color: var(--fg-tertiary); cursor: pointer; font-size: 12px;
-		transition: color 0.15s;
-	}
-	.np-queue-toggle:hover { color: var(--fg-secondary); }
-	.np-queue-toggle svg { transition: transform 0.2s; }
-	.np-queue-toggle svg.rotated { transform: rotate(180deg); }
-	.np-queue-list {
-		display: flex; flex-direction: column; gap: 2px;
-		max-height: 160px; overflow-y: auto;
-		border-radius: 8px;
-		background: rgba(255,255,255,0.03); border: 0.5px solid rgba(255,255,255,0.05);
-		padding: 4px;
-	}
-	.np-queue-list::-webkit-scrollbar { width: 3px; }
-	.np-queue-list::-webkit-scrollbar-thumb { background: var(--bg-active); border-radius: 2px; }
-	.np-queue-item {
-		display: flex; align-items: center; gap: 8px;
-		width: 100%; padding: 6px 8px;
-		border: none; border-radius: 6px;
-		background: transparent; color: var(--fg-secondary);
-		cursor: pointer; text-align: left;
-		transition: all 0.12s;
-	}
-	.np-queue-item:hover { background: rgba(255,255,255,0.06); color: var(--fg-primary); }
-	.np-queue-item:active { transform: scale(0.98); }
-	.np-queue-idx {
-		flex-shrink: 0; width: 18px; height: 18px;
-		display: flex; align-items: center; justify-content: center;
-		border-radius: 4px;
-		background: rgba(255,255,255,0.06);
-		font-size: 10px; color: var(--fg-tertiary);
-		font-variant-numeric: tabular-nums;
-	}
-	.np-queue-meta { flex: 1; min-width: 0; }
-	.np-queue-title { font-size: 12px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-	.np-queue-artist { font-size: 10px; color: var(--fg-tertiary); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
 	/* ── Next up ── */
 	.np-nextup {
 		position: absolute; bottom: 20px; left: 24px;
@@ -384,6 +347,73 @@
 	.np-nextup:hover { opacity: 0.6; }
 	.np-nextup-label { font-size: 10px; color: var(--fg-tertiary); letter-spacing: 0.3px; }
 	.np-nextup-title { font-size: 11px; color: var(--fg-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+
+	/* ── Queue button — bottom-right ── */
+	.np-queue-btn {
+		position: absolute; bottom: 20px; right: 24px; z-index: 10;
+		width: 36px; height: 36px; border-radius: 50%;
+		border: 0.5px solid rgba(255,255,255,0.08);
+		background: rgba(255,255,255,0.04); backdrop-filter: blur(16px);
+		-webkit-backdrop-filter: blur(16px);
+		color: var(--fg-secondary); cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
+		transition: all 0.15s;
+	}
+	.np-queue-btn:hover { background: rgba(255,255,255,0.1); color: var(--fg-primary); transform: scale(1.08); }
+	.np-queue-btn:active { transform: scale(0.94); }
+
+	/* ── Queue panel — slide from right ── */
+	.np-queue-overlay {
+		position: absolute; inset: 0; z-index: 19;
+		background: rgba(0,0,0,0.3);
+	}
+	.np-queue-panel {
+		position: absolute; top: 0; right: 0; bottom: 0; z-index: 20;
+		width: 320px;
+		background: rgba(12, 12, 22, 0.96);
+		backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+		border-left: 0.5px solid rgba(255,255,255,0.06);
+		display: flex; flex-direction: column;
+	}
+	.np-queue-header {
+		display: flex; align-items: center; justify-content: space-between;
+		padding: 16px 16px 12px;
+		font-size: 13px; font-weight: 500; color: var(--fg-primary);
+	}
+	.np-queue-close {
+		width: 28px; height: 28px; border-radius: 50%;
+		border: none; background: transparent;
+		color: var(--fg-secondary); cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
+		transition: all 0.12s;
+	}
+	.np-queue-close:hover { background: rgba(255,255,255,0.08); color: var(--fg-primary); }
+	.np-queue-scroll {
+		flex: 1; overflow-y: auto; padding: 0 8px 12px;
+	}
+	.np-queue-scroll::-webkit-scrollbar { width: 3px; }
+	.np-queue-scroll::-webkit-scrollbar-thumb { background: var(--bg-active); border-radius: 2px; }
+	.np-queue-item {
+		display: flex; align-items: center; gap: 8px;
+		width: 100%; padding: 8px;
+		border: none; border-radius: 6px;
+		background: transparent; color: var(--fg-secondary);
+		cursor: pointer; text-align: left;
+		transition: all 0.12s;
+	}
+	.np-queue-item:hover { background: rgba(255,255,255,0.06); color: var(--fg-primary); }
+	.np-queue-item:active { transform: scale(0.98); }
+	.np-queue-idx {
+		flex-shrink: 0; width: 20px; height: 20px;
+		display: flex; align-items: center; justify-content: center;
+		border-radius: 4px;
+		background: rgba(255,255,255,0.06);
+		font-size: 10px; color: var(--fg-tertiary);
+		font-variant-numeric: tabular-nums;
+	}
+	.np-queue-meta { flex: 1; min-width: 0; }
+	.np-queue-title { font-size: 12px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.np-queue-artist { font-size: 10px; color: var(--fg-tertiary); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 	/* ── Controls ── */
 	.np-ctrl { display: flex; flex-direction: column; gap: 10px; }
