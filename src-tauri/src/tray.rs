@@ -70,5 +70,15 @@ fn toggle_window<R: Runtime>(app: &AppHandle<R>) {
                 let _ = window.set_focus();
             }
         }
+    } else {
+        // macOS 上窗口已关闭，重建
+        let _ = tauri::WebviewWindowBuilder::new(
+            app,
+            "main",
+            tauri::WebviewUrl::App("index.html".into()),
+        )
+        .title("WaveLink")
+        .inner_size(1100.0, 750.0)
+        .build();
     }
 }

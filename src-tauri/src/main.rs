@@ -160,13 +160,16 @@ fn main() {
             if let Some(window) = app.get_webview_window("main") {
                 setup_window_appearance(&window);
 
-                // 关闭窗口时隐藏到托盘而非退出
-                let handle = app.handle().clone();
-                window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { .. } = event {
-                        let _ = handle.get_webview_window("main").map(|w| w.hide());
-                    }
-                });
+                // 关闭窗口时隐藏到托盘而非退出（macOS 上让窗口正常关闭，Dock 点击会重建）
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let handle = app.handle().clone();
+                    window.on_window_event(move |event| {
+                        if let tauri::WindowEvent::CloseRequested { .. } = event {
+                            let _ = handle.get_webview_window("main").map(|w| w.hide());
+                        }
+                    });
+                }
             }
 
             // 创建系统托盘
