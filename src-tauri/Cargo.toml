@@ -28,8 +28,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 # 文件编码检测
 encoding_rs = "0.8"
 
-# HTTP 请求（在线歌词）
-ureq = { version = "3", features = ["json"] }
+# HTTP 请求（在线歌词，已移除）
+# ureq = { version = "3", features = ["json"] }
 
 # 窗口句柄获取（用于 Windows DWM 标题栏设置）
 raw-window-handle = "0.6"

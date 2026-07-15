@@ -24,26 +24,7 @@ export function loadForTrack(track: Track | null) {
 				const text: string = await invoke('read_text_file', { path: lrcPath });
 				const parsed = parseLrc(text);
 				if (parsed.length > 0) { _lines = parsed; _loading = false; return; }
-			} catch { console.warn('[lyrics] LRC 文件读取失败, 回退网络查询'); }
-
-			const title = track.title || '';
-			const artist = track.artist || '';
-			if (!title && !artist) { _error = '无歌词'; _loading = false; return; }
-
-			const lrcText: string | null = await invoke('lrc_lookup', { title, artist, album: track.album });
-			if (lrcText) {
-				const parsed = parseLrc(lrcText);
-				if (parsed.length > 0) {
-					_lines = parsed;
-				} else {
-					_lines = lrcText.split('\n').filter(l => l.trim()).map((text, i) => ({
-						time: i * 10, text: text.trim()
-					}));
-				}
-				try { await invoke('save_text_file', { path: lrcPath, content: lrcText }); } catch { console.warn('[lyrics] LRC 保存失败'); }
-			} else {
-				_error = '未找到歌词';
-			}
+			} catch { _error = '暂无歌词'; }
 		} catch (e: unknown) {
 			console.error('[lyrics] error:', e);
 			_error = '查询失败';

@@ -424,67 +424,8 @@ pub fn get_file_cover_cmd(path: String) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-pub async fn lrc_lookup(artist: String, title: String, album: Option<String>) -> Result<Option<String>, String> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let result = do_lrc_lookup(&artist, &title, album.as_deref());
-        let _ = tx.send(result);
-    });
-    match rx.recv_timeout(std::time::Duration::from_secs(15)) {
-        Ok(result) => result,
-        Err(_) => Err("查询超时".to_string()),
-    }
-}
-
-fn do_lrc_lookup(artist: &str, title: &str, _album: Option<&str>) -> Result<Option<String>, String> {
-    let artist = urlencoding(artist);
-    let title = urlencoding(title);
-    let url = format!(
-        "https://lrclib.net/api/get?artist_name={}&track_name={}",
-        artist, title
-    );
-
-    tracing::debug!("LRCLIB 请求: {}", url);
-    let resp = ureq::get(&url)
-        .header("User-Agent", "WaveLink/0.1.0 (music-player)")
-        .call()
-        .map_err(|e| {
-            let msg = format!("LRCLIB 请求失败: {e}");
-            tracing::error!("{}", msg);
-            msg
-        })?;
-
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct LrcResponse {
-        synced_lyrics: Option<String>,
-        plain_lyrics: Option<String>,
-    }
-
-    let body: LrcResponse = resp.into_body().read_json().map_err(|e| {
-        let msg = format!("LRCLIB 解析失败: {e}");
-        tracing::error!("{}", msg);
-        msg
-    })?;
-    tracing::info!("LRCLIB 查询成功: artist={}, title={}", artist, title);
-    Ok(body.synced_lyrics.or(body.plain_lyrics))
-}
-
-fn urlencoding(s: &str) -> String {
-    let mut result = String::new();
-    for byte in s.as_bytes() {
-        match *byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                result.push(*byte as char);
-            }
-            b' ' => result.push_str("%20"),
-            b'&' => result.push_str("%26"),
-            b'=' => result.push_str("%3D"),
-            b'?' => result.push_str("%3F"),
-            _ => result.push_str(&format!("%{:02X}", byte)),
-        }
-    }
-    result
+pub async fn lrc_lookup(_artist: String, _title: String, _album: Option<String>) -> Result<Option<String>, String> {
+    Ok(None)
 }
 
 #[tauri::command]
