@@ -118,13 +118,32 @@
 		albumBriefs = await library.loadAllAlbums();
 		albumCovers = new Map();
 		browsingLoading = false;
-		// 懒加载封面
-		for (const ab of albumBriefs) {
-			loadCoverForAlbum(ab);
-		}
+		// 封面懒加载：由 IntersectionObserver action 按需加载
 	}
 
-	async function loadCoverForAlbum(ab: AlbumBrief) {
+	let coverObserver: IntersectionObserver | null = null;
+	function observeCover(node: HTMLElement, params: { id: number; path: string }) {
+		if (!browser) return;
+		if (!coverObserver) {
+			coverObserver = new IntersectionObserver((entries) => {
+				for (const entry of entries) {
+					if (entry.isIntersecting) {
+						const { id, path } = (entry.target as any).__coverParams;
+						loadCoverForAlbum({ first_track_id: id, first_track_path: path });
+						coverObserver!.unobserve(entry.target);
+					}
+				}
+			}, { rootMargin: '200px' });
+		}
+		(node as any).__coverParams = params;
+		coverObserver.observe(node);
+		return {
+			destroy() { coverObserver?.unobserve(node); }
+		};
+	}
+
+	async function loadCoverForAlbum(ab: { first_track_id: number; first_track_path: string }) {
+		if (albumCovers.has(ab.first_track_id)) return;
 		try {
 			const { invoke } = await import('@tauri-apps/api/core');
 			const data = await invoke('get_file_cover_cmd', { path: ab.first_track_path }) as string | null;
@@ -247,7 +266,7 @@
 				</div>
 			{:else}
 				{#each albumBriefs as ab}
-					<button class="album-card" onclick={() => { selectedArtist = ab.artist; selectedAlbum = ab.album; enterAlbumTracks(ab.artist, ab.album); }}>
+					<button class="album-card" use:observeCover={{ id: ab.first_track_id, path: ab.first_track_path }} onclick={() => { selectedArtist = ab.artist; selectedAlbum = ab.album; enterAlbumTracks(ab.artist, ab.album); }}>
 						<div class="album-cover" style={albumCovers.has(ab.first_track_id) ? `background-image: url(${albumCovers.get(ab.first_track_id)})` : ''}>
 							{#if !albumCovers.has(ab.first_track_id)}
 								<Disc3 size={28} stroke-width={1.5} opacity={0.3} />
