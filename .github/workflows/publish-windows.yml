@@ -29,8 +29,6 @@ jobs:
         with:
           node-version: 22
           cache: "npm"
-          cache-dependency-path: wavelink-app/package-lock.json
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -43,11 +41,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-        working-directory: wavelink-app
 
       - name: Build Tauri (MSI)
         run: npm run tauri build -- --bundles msi
-        working-directory: wavelink-app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PASSPHRASE: ${{ secrets.TAURI_SIGNING_PASSPHRASE || '' }}
@@ -61,7 +57,6 @@ jobs:
 
       - name: Init tauri-windows-bundle
         run: npx @choochmeque/tauri-windows-bundle@latest init
-        working-directory: wavelink-app
 
       - name: Configure MSIX bundle
         shell: pwsh
@@ -84,11 +79,9 @@ jobs:
           }
           '@
           $config | Out-File -FilePath src-tauri/gen/windows/bundle.config.json -Encoding utf8
-        working-directory: wavelink-app
 
       - name: Build MSIX
         run: npx @choochmeque/tauri-windows-bundle@latest build
-        working-directory: wavelink-app
         env:
           MSIX_SIGN_PFX: ${{ secrets.MSIX_PFX_BASE64 || '' }}
           MSIX_PFX_PASSWORD: ${{ secrets.MSIX_PFX_PASSWORD || '' }}
@@ -98,7 +91,7 @@ jobs:
         with:
           name: wavelink-msix
           path: |
-            wavelink-app/*.msix
-            wavelink-app/*.msixbundle
-            wavelink-app/src-tauri/gen/windows/**/*.msix*
+            *.msix
+            *.msixbundle
+            src-tauri/gen/windows/**/*.msix*
           if-no-files-found: warn
