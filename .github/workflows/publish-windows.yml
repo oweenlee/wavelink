@@ -81,7 +81,7 @@ jobs:
           $config | Out-File -FilePath src-tauri/gen/windows/bundle.config.json -Encoding utf8
 
       - name: Build MSIX
-        run: npx @choochmeque/tauri-windows-bundle@latest build
+        run: npx @choochmeque/tauri-windows-bundle@latest build --runner npm
         env:
           MSIX_SIGN_PFX: ${{ secrets.MSIX_PFX_BASE64 || '' }}
           MSIX_PFX_PASSWORD: ${{ secrets.MSIX_PFX_PASSWORD || '' }}
