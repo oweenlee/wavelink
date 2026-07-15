@@ -46,21 +46,22 @@
 
     function draw() {
       if (!ctx) { rafId = requestAnimationFrame(draw); return; }
-      // 慢速缓动，更优雅
+      // 中等缓动，配合后端自动归一化
       for (let i = 0; i < 16; i++) {
-        smooth[i] += (bands[i] - smooth[i]) * 0.12;
+        smooth[i] += (bands[i] - smooth[i]) * 0.18;
       }
       ctx.clearRect(0, 0, width, height);
 
       const barCount = 16;
       const maxH = height;
 
-      // 计算柱体顶点用于曲线
+      // 计算曲线顶点（power curve 提升低能量段的可见度）
       const pts: { x: number; y: number }[] = [];
       const segW = width / (barCount - 1);
       for (let i = 0; i < barCount; i++) {
         const x = i * segW;
-        const bh = Math.max(8, smooth[i] * maxH);
+        const val = Math.max(0, Math.pow(smooth[i], 0.7));
+        const bh = Math.max(8, val * maxH);
         pts.push({ x, y: maxH - bh });
       }
 
