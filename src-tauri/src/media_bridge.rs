@@ -2,6 +2,7 @@
 //! Windows: SMTC (SystemMediaTransportControls)
 //! macOS: MPNowPlayingInfoCenter (via objc2)
 
+#[cfg_attr(not(target_os = "windows"), allow(unused_imports))]
 use tracing::{debug, warn};
 
 /// 媒体桥接句柄
