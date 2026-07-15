@@ -19,7 +19,8 @@
         "width": 1100,
         "height": 750,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "visible": false
       },
       {
         "label": "lyrics",
@@ -43,6 +44,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "WaveLink Dev",
     "icon": [
       "icons/icon_32x32.png",
       "icons/icon_128x128.png",

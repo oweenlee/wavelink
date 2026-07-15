@@ -10,7 +10,10 @@
 	$effect(() => {
 		if (!browser) return;
 		import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-			isLyricsWindow = getCurrentWindow().label === 'lyrics';
+			const win = getCurrentWindow();
+			isLyricsWindow = win.label === 'lyrics';
+			// 主窗口：渲染完成后显示，消除白屏
+			if (win.label === 'main') win.show();
 		});
 	});
 </script>

@@ -188,7 +188,7 @@
 	.bar-progress { width: 100%; min-width: 150px; }
 
 	.ctrl-btn {
-		width: 30px; height: 30px; border-radius: 50%; border: none;
+		width: 30px; height: 30px; border-radius: 50%; border: none; outline: none;
 		background: transparent; color: var(--fg-tertiary);
 		cursor: pointer; display: flex; align-items: center; justify-content: center;
 		transition: all 0.15s;
@@ -197,7 +197,7 @@
 	.ctrl-btn:disabled { opacity: 0.15; cursor: default; }
 
 	.ctrl-play {
-		width: 36px; height: 36px; border-radius: 50%; border: none;
+		width: 36px; height: 36px; border-radius: 50%; border: none; outline: none;
 		background: var(--accent-dim); color: var(--accent);
 		cursor: pointer; display: flex; align-items: center; justify-content: center;
 		transition: all 0.15s var(--ease-spring);
@@ -210,7 +210,7 @@
 	.bar-right { display: flex; align-items: center; gap: var(--space-1); flex-shrink: 0; }
 
 	.bar-btn {
-		width: 30px; height: 30px; border-radius: var(--radius-sm); border: none;
+		width: 30px; height: 30px; border-radius: var(--radius-sm); border: none; outline: none;
 		background: transparent; color: var(--fg-quaternary);
 		cursor: pointer; display: flex; align-items: center; justify-content: center;
 		transition: all 0.12s;
