@@ -8,7 +8,7 @@ import { browser } from '$app/environment';
 let _theme = $state<'dark' | 'light'>('dark');
 let _accentColor = $state('#8888cc');
 let _sampleRate = $state(44100);
-let _bufferMs = $state(80);
+let _bufferMs = $state(280);
 let _crossfadeMs = $state(0);
 let _replaygainEnabled = $state(false);
 let _loaded = $state(false);

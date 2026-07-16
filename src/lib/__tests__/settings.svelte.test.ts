@@ -24,7 +24,7 @@ describe('getSettingsState', () => {
 		state.theme = 'dark';
 		state.accentColor = '#8888cc';
 		state.sampleRate = 44100;
-		state.bufferMs = 80;
+		state.bufferMs = 280;
 		state.crossfadeMs = 0;
 		state.replaygainEnabled = false;
 	});
@@ -33,7 +33,7 @@ describe('getSettingsState', () => {
 		expect(state.theme).toBe('dark');
 		expect(state.accentColor).toBe('#8888cc');
 		expect(state.sampleRate).toBe(44100);
-		expect(state.bufferMs).toBe(80);
+		expect(state.bufferMs).toBe(280);
 		expect(state.crossfadeMs).toBe(0);
 		expect(state.replaygainEnabled).toBe(false);
 		expect(state.loaded).toBe(false);
@@ -115,7 +115,7 @@ describe('getSettingsState', () => {
 		mockInvoke.mockResolvedValueOnce(undefined);
 		await state.applyEngineConfig();
 		expect(mockInvoke).toHaveBeenCalledWith('set_engine_config', {
-			sampleRate: 44100, channels: 2, bufferMs: 80, crossfadeMs: 0,
+			sampleRate: 44100, channels: 2, bufferMs: 280, crossfadeMs: 0,
 		});
 		// 会触发第二次 save 调用
 		expect(mockInvoke).toHaveBeenCalledTimes(2);
