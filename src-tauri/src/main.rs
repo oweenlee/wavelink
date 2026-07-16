@@ -234,6 +234,8 @@ fn main() {
             commands::stop,
             commands::get_underrun_count,
             commands::audio_info,
+            commands::list_audio_devices,
+            commands::set_audio_device,
             commands::read_text_file,
             commands::save_text_file,
             commands::load_ir,

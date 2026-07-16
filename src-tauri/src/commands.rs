@@ -273,6 +273,16 @@ pub fn audio_info() -> serde_json::Value {
 }
 
 #[tauri::command]
+pub fn list_audio_devices() -> Vec<String> {
+    sdk::output::list_device_names()
+}
+
+#[tauri::command]
+pub fn set_audio_device(name: String, state: State<AppState>) {
+    state.engine.set_output_device(name);
+}
+
+#[tauri::command]
 pub fn save_text_file(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, &content).map_err(|e| format!("写入文件失败: {e}"))
 }
@@ -486,6 +496,7 @@ pub fn set_engine_config(
         channels,
         buffer_ms,
         crossfade_ms: 0,
+        output_device: None,
     };
     state.engine.set_config(cfg);
 }

@@ -10,6 +10,7 @@
 
 	let _invoke: ((cmd: string, args?: any) => Promise<any>) | null = null;
 	let folders = $state<string[]>([]);
+	let devices = $state<string[]>([]);
 
 	$effect(() => {
 		if (!browser) return;
@@ -20,9 +21,15 @@
 				folders = await mod.invoke('get_scan_folders');
 				const mode = await mod.invoke('get_play_mode');
 				playback.playMode = mode as PlayMode;
+				devices = await mod.invoke('list_audio_devices');
 			} catch { console.warn('同步失败'); }
 		});
 	});
+
+	async function setAudioDevice(e: Event) {
+		const target = e.target as HTMLSelectElement;
+		await settings.setAudioDevice(target.value);
+	}
 
 	const accentColors = [
 		{ name: '极光紫', color: '#8888cc' }, { name: '海洋蓝', color: '#4488cc' },
@@ -90,6 +97,18 @@
 					<input type="range" min="20" max="300" step="10" bind:value={settings.bufferMs} onchange={applyEngineConfig} class="slider" style="--accent: {settings.accentColor};" />
 					<span class="slider-val">{settings.bufferMs} ms</span>
 				</div>
+			</div>
+			<div class="setting-row">
+				<div class="setting-label">
+					<span class="label-text">输出设备</span>
+					<span class="label-desc">音频输出设备（下次播放生效）</span>
+				</div>
+				<select class="select" value={settings.audioDevice} onchange={setAudioDevice}>
+					<option value="">系统默认</option>
+					{#each devices as d (d)}
+						<option value={d}>{d}</option>
+					{/each}
+				</select>
 			</div>
 		</div>
 	</div>

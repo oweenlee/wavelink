@@ -5,14 +5,24 @@ use std::path::PathBuf;
 
 /// 获取设置文件路径
 fn settings_path() -> Option<PathBuf> {
-    let home = std::env::var("HOME").ok()?;
     #[cfg(target_os = "macos")]
-    let base = PathBuf::from(&home)
-        .join("Library")
-        .join("Application Support")
-        .join("com.wavelink.app");
-    #[cfg(not(target_os = "macos"))]
-    let base = PathBuf::from(&home).join(".wavelink");
+    let base = {
+        let home = std::env::var("HOME").ok()?;
+        PathBuf::from(&home)
+            .join("Library")
+            .join("Application Support")
+            .join("com.wavelink.app")
+    };
+    #[cfg(target_os = "windows")]
+    let base = {
+        let appdata = std::env::var("APPDATA").ok()?;
+        PathBuf::from(appdata).join("com.wavelink.app")
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let base = {
+        let home = std::env::var("HOME").ok()?;
+        PathBuf::from(&home).join(".wavelink")
+    };
 
     std::fs::create_dir_all(&base).ok()?;
     Some(base.join("settings.json"))

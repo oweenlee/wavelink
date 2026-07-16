@@ -47,18 +47,6 @@
 		}
 	}
 
-	async function deleteTrack() {
-		if (!browser) return;
-		if (!confirm('确定删除"' + (track.title || track.path.split(/[/\\]/).pop()) + '"吗？')) return;
-		try {
-			const { invoke } = await import('@tauri-apps/api/core');
-			await invoke('delete_track', { trackPath: track.path, alsoDeleteFile: false });
-			onclose();
-		} catch (e: any) {
-			error = typeof e === 'string' ? e : '删除失败';
-		}
-	}
-
 	function onBackdropClick() {
 		if (!saving) onclose();
 	}
@@ -107,7 +95,7 @@
 	</div>
 
 	<div class="editor-footer">
-		<button class="btn btn-danger" onclick={deleteTrack} disabled={saving}>删除</button>
+		<div></div>
 		<div class="footer-right">
 			<button class="btn btn-cancel" onclick={onclose} disabled={saving}>取消</button>
 			<button class="btn btn-save" onclick={save} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
@@ -158,6 +146,4 @@
 	.btn-cancel:hover:not(:disabled) { background: var(--bg-active); }
 	.btn-save { background: var(--accent); color: white; }
 	.btn-save:hover:not(:disabled) { filter: brightness(1.1); }
-	.btn-danger { background: transparent; color: rgba(255, 80, 80, 0.5); border: 1px solid rgba(255, 80, 80, 0.15); }
-	.btn-danger:hover:not(:disabled) { background: rgba(255, 80, 80, 0.08); }
 </style>

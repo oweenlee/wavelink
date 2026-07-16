@@ -11,6 +11,7 @@ let _sampleRate = $state(44100);
 let _bufferMs = $state(280);
 let _crossfadeMs = $state(0);
 let _replaygainEnabled = $state(false);
+let _audioDevice = $state('');
 let _loaded = $state(false);
 
 /** Lazy-load Tauri invoke (SSR safe) */
@@ -40,6 +41,9 @@ export function getSettingsState() {
 		get replaygainEnabled() { return _replaygainEnabled; },
 		set replaygainEnabled(v: boolean) { _replaygainEnabled = v; },
 
+		get audioDevice() { return _audioDevice; },
+		set audioDevice(v: string) { _audioDevice = v; },
+
 		get loaded() { return _loaded; },
 
 		// ── Persistence ──
@@ -54,6 +58,7 @@ export function getSettingsState() {
 				if (typeof saved.bufferMs === 'number') _bufferMs = saved.bufferMs;
 				if (typeof saved.crossfadeMs === 'number') _crossfadeMs = saved.crossfadeMs;
 				if (typeof saved.replaygainEnabled === 'boolean') _replaygainEnabled = saved.replaygainEnabled;
+				if (typeof saved.audioDevice === 'string') _audioDevice = saved.audioDevice;
 				_loaded = true;
 				return saved;
 			} catch (err) {
@@ -75,6 +80,7 @@ export function getSettingsState() {
 						bufferMs: _bufferMs,
 						crossfadeMs: _crossfadeMs,
 						replaygainEnabled: _replaygainEnabled,
+						audioDevice: _audioDevice,
 						...extra,
 					},
 				});
@@ -107,6 +113,17 @@ export function getSettingsState() {
 					await invoke('set_replaygain', { enabled });
 					await this.save();
 				} catch { console.warn('[settings] ReplayGain 同步失败'); }
+			}
+		},
+
+		async setAudioDevice(device: string) {
+			_audioDevice = device;
+			if (browser) {
+				try {
+					const invoke = await lazyInvoke();
+					await invoke('set_audio_device', { name: device });
+					await this.save();
+				} catch { console.warn('[settings] 切换输出设备失败'); }
 			}
 		},
 
