@@ -71,7 +71,7 @@
 		</div>
 		{#if playlist.queue.length > 0}
 			<div class="queue-list">
-				{#each playlist.queue as track, i}
+				{#each playlist.queue as track, i (track.id)}
 					<div class="queue-item" class:active={i === playlist.currentIndex}>
 						<button class="qi-play" onclick={() => playlist.playFromIndex(i)} aria-label="播放">
 							<span class="qi-num">{i + 1}</span>
@@ -118,7 +118,7 @@
 		</div>
 		{#if playlist.savedPlaylists.length > 0}
 			<div class="saved-list">
-				{#each playlist.savedPlaylists as name}
+				{#each playlist.savedPlaylists as name (name)}
 					<div class="saved-item">
 						<button class="si-play" onclick={() => loadPlaylist(name)}>
 							<ListMusic size={14} stroke-width={1.5} />

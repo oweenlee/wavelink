@@ -67,10 +67,10 @@
   --font-size-xl: 22px;
   --font-size-2xl: 26px;
 
-  /* ── Shadow ── */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.55);
+  /* ── Shadow (tinted to bg hue, no pure black) ── */
+  --shadow-sm: 0 1px 3px rgba(10, 10, 14, 0.7);
+  --shadow-md: 0 4px 16px rgba(10, 10, 14, 0.8);
+  --shadow-lg: 0 12px 48px rgba(10, 10, 14, 0.85);
 
   /* ── Easing ── */
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);

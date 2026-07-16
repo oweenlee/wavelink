@@ -1,8 +1,10 @@
 <script lang="ts">
 	import '../app.css';
+	import SplashScreen from '$lib/components/SplashScreen.svelte';
 	import { browser } from '$app/environment';
 
 	let { children } = $props();
+	let showSplash = $state(true);
 
 	$effect(() => {
 		if (!browser) return;
@@ -13,4 +15,8 @@
 	});
 </script>
 
-{@render children()}
+{#if showSplash}
+	<SplashScreen done={() => showSplash = false} />
+{:else}
+	{@render children()}
+{/if}

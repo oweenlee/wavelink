@@ -106,7 +106,7 @@
 					<span class="label-desc">自定义应用强调色</span>
 				</div>
 				<div class="color-row">
-					{#each accentColors as c}
+					{#each accentColors as c (c.color)}
 						<button class="color-dot" class:active={settings.accentColor === c.color} style="background: {c.color};" onclick={() => setAccentColor(c.color)} title={c.name}></button>
 					{/each}
 				</div>
@@ -142,7 +142,7 @@
 			{#if folders.length === 0}
 				<p class="empty-hint">暂无已扫描的文件夹</p>
 			{:else}
-				{#each folders as folder}
+				{#each folders as folder (folder)}
 					<div class="folder-row">
 						<div class="folder-path" title={folder}>{folder}</div>
 						<button class="btn-remove" onclick={() => removeFolder(folder)} title="删除此文件夹及音乐">

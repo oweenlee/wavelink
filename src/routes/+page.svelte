@@ -21,11 +21,16 @@
 
 	const onKeydown = createKeyboardHandler(playback);
 
+	let accentRgb = $derived.by(() => {
+		const c = settings.accentColor;
+		return `${parseInt(c.slice(1, 3), 16)}, ${parseInt(c.slice(3, 5), 16)}, ${parseInt(c.slice(5, 7), 16)}`;
+	});
+
 </script>
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="app" style="--accent: {settings.accentColor};">
+<div class="app" style="--accent: {settings.accentColor}; --accent-rgb: {accentRgb};">
 	<div class="app-layout">
 		<Sidebar />
 		<main class="main-panel">

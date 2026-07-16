@@ -45,6 +45,7 @@
 }
 
 .btn-base:hover { background: var(--bg-hover); color: var(--fg-primary); }
+.btn-base:active { transform: scale(0.97); }
 .btn-base:disabled { opacity: 0.15; cursor: default; }
 
 /* ── Icon button ── */
@@ -63,6 +64,7 @@
 }
 
 .icon-btn:hover { background: var(--bg-hover); color: var(--fg-primary); }
+.icon-btn:active { transform: scale(0.97); }
 .icon-btn:disabled { opacity: 0.15; cursor: default; }
 .icon-btn.active { color: var(--accent); }
 

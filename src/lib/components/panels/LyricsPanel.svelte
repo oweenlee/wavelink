@@ -84,7 +84,7 @@
 			<div class="status"><p>加载歌词...</p></div>
 		{:else if lyrics.lines.length > 0}
 			<div class="lyrics-scroll">
-				{#each lyrics.lines as line, i}
+				{#each lyrics.lines as line, i (i)}
 					<div class="lyric-line" class:active={i === lyrics.currentIndex} class:past={i < lyrics.currentIndex}>
 						<span class="lyric-text" style={i === lyrics.currentIndex ? `--progress: ${lyrics.progress()}` : ''}>{line.text}</span>
 					</div>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import { SvelteMap } from 'svelte/reactivity';
 	import { getLibraryState } from '$lib/stores/library.svelte';
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
 	import { formatTime } from '$lib/data/music';
@@ -19,7 +20,7 @@
 	let albumTracks = $state<Track[]>([]);
 	let browsingLoading = $state(false);
 	let albumBriefs = $state<AlbumBrief[]>([]);
-	let albumCovers = $state<Map<number, string>>(new Map());
+	let albumCovers = new SvelteMap<number, string>();
 
 	let editTrack = $state<Track | null>(null);
 	let deleteTarget = $state<Track | null>(null);
@@ -116,7 +117,7 @@
 		mode = 'albums_grid';
 		browsingLoading = true;
 		albumBriefs = await library.loadAllAlbums();
-		albumCovers = new Map();
+		albumCovers = new SvelteMap();
 		browsingLoading = false;
 		// 封面懒加载：由 IntersectionObserver action 按需加载
 	}
@@ -148,7 +149,7 @@
 			const { invoke } = await import('@tauri-apps/api/core');
 			const data = await invoke('get_file_cover_cmd', { path: ab.first_track_path }) as string | null;
 			if (data) {
-				albumCovers = new Map(albumCovers).set(ab.first_track_id, data);
+				albumCovers.set(ab.first_track_id, data);
 			}
 		} catch { console.warn('[Library] 封面加载失败:',); }
 	}
@@ -204,7 +205,13 @@
 	</div>
 
 	{#if browsingLoading}
-		<div class="loading">加载中...</div>
+		<div class="loading">
+			<div class="loading-dots">
+				<span class="dot"></span>
+				<span class="dot"></span>
+				<span class="dot"></span>
+			</div>
+		</div>
 
 	{:else if mode === 'tracks' && library.trackCount === 0}
 		<div class="empty-state">
@@ -230,7 +237,7 @@
 			</div>
 			<div class="track-list">
 				<div style="height: {topSpacerH}px;"></div>
-				{#each visTracks as track, vi}
+				{#each visTracks as track, vi (track.id)}
 					{@const i = visStart + vi}
 					<div class="track-row" class:active={playback.currentTrack?.id === track.id && playback.isPlaying} onclick={(e) => { if ((e.target as HTMLElement).closest('.td-actions')) return; playTrack(track, i); }} onkeydown={(e) => e.key === 'Enter' && playTrack(track, i)}>
 						<span class="td-num">{i + 1}</span>
@@ -265,7 +272,7 @@
 					<p class="empty-hint">导入音乐后将会显示专辑封面</p>
 				</div>
 			{:else}
-				{#each albumBriefs as ab}
+				{#each albumBriefs as ab (ab.first_track_id)}
 					<button class="album-card" use:observeCover={{ id: ab.first_track_id, path: ab.first_track_path }} onclick={() => { selectedArtist = ab.artist; selectedAlbum = ab.album; enterAlbumTracks(ab.artist, ab.album); }}>
 						<div class="album-cover" style={albumCovers.has(ab.first_track_id) ? `background-image: url(${albumCovers.get(ab.first_track_id)})` : ''}>
 							{#if !albumCovers.has(ab.first_track_id)}
@@ -286,7 +293,7 @@
 
 	{:else if mode === 'artists'}
 		<div class="browse-grid">
-			{#each artists as artist}
+			{#each artists as artist (artist)}
 				<button class="browse-card" onclick={() => enterAlbums(artist)}>
 					<div class="card-icon">
 						<User size={24} stroke-width={1.5} />
@@ -299,7 +306,7 @@
 
 	{:else if mode === 'albums'}
 		<div class="browse-grid">
-			{#each albums as album}
+			{#each albums as album (album)}
 				<button class="browse-card" onclick={() => enterAlbumTracks(selectedArtist, album)}>
 					<div class="card-icon">
 						<Disc3 size={24} stroke-width={1.5} />
@@ -318,7 +325,7 @@
 				<span class="th-duration">时长</span>
 			</div>
 			<div class="track-list">
-				{#each albumTracks as track, i}
+				{#each albumTracks as track, i (track.id)}
 					<div class="track-row" class:active={playback.currentTrack?.id === track.id && playback.isPlaying} onclick={(e) => { if ((e.target as HTMLElement).closest('.td-actions')) return; playback.playTrack(track); }} onkeydown={(e) => e.key === 'Enter' && playback.playTrack(track)}>
 						<span class="td-num">{i + 1}</span>
 						<span class="td-title">
@@ -373,7 +380,12 @@
 	.browse-card:hover { background: var(--bg-hover); }
 	.card-icon { color: var(--fg-quaternary); flex-shrink: 0; }
 	.card-label { flex: 1; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-	.loading { display: flex; align-items: center; justify-content: center; flex: 1; color: var(--fg-tertiary); font-size: 13px; }
+	.loading { display: flex; align-items: center; justify-content: center; flex: 1; }
+	.loading-dots { display: flex; gap: 6px; }
+	.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-dim); animation: loadPulse 1.2s ease-in-out infinite; }
+	.dot:nth-child(2) { animation-delay: 0.2s; }
+	.dot:nth-child(3) { animation-delay: 0.4s; }
+	@keyframes loadPulse { 0%, 80% { transform: scale(0.5); opacity: 0.3; } 40% { transform: scale(1); opacity: 1; } }
 	.empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-4); padding: 60px 40px; }
 	.empty-icon { color: var(--fg-quaternary); }
 	.empty-title { font-size: 16px; font-weight: 500; color: var(--fg-secondary); }

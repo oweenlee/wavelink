@@ -57,7 +57,7 @@
 		</div>
 		{#if showPlaylists}
 			{#if playlist.savedPlaylists.length > 0}
-				{#each playlist.savedPlaylists as name}
+				{#each playlist.savedPlaylists as name (name)}
 					<button class="nav-item playlist-item" onclick={() => { playlist.loadPlaylist(name); ui.navigateTo('library'); }}>
 						<ListMusic size={14} stroke-width={1.5} />
 						<span class="playlist-name">{name}</span>
@@ -129,8 +129,9 @@
 	}
 	.nav-item.active::before { transform: scaleY(1); }
 
-	.nav-item:hover { background: var(--bg-hover); color: var(--fg-primary); }
-	.nav-item.active { background: var(--bg-active); color: var(--fg-primary); font-weight: 500; }
+.nav-item:hover { background: var(--bg-hover); color: var(--fg-primary); }
+.nav-item:active { transform: scale(0.97); }
+.nav-item.active { background: var(--bg-active); color: var(--fg-primary); font-weight: 500; }
 
 	.nav-item svg { flex-shrink: 0; opacity: 0.6; }
 	.nav-item.active svg { opacity: 1; color: var(--accent); }

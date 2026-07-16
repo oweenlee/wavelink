@@ -107,7 +107,7 @@
 
 		{#if library.searchQuery && searchResults.length > 0}
 			<div class="search-results">
-				{#each searchResults as track, i}
+				{#each searchResults as track, i (track.id)}
 					<button class="search-row" style="animation-delay: {i * 25}ms" onclick={() => { playback.playTrack(track); closeSearch(); }}>
 						<div class="sr-body">
 							<span class="sr-title">{track.title || track.path.split(/[/\\]/).pop()}</span>

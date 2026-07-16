@@ -152,7 +152,7 @@
 					<p class="np-lyrics-status">加载歌词中...</p>
 				{:else if lyrics.lines.length > 0}
 					<div class="np-lyrics-scroll">
-						{#each lyrics.lines as line, i}
+						{#each lyrics.lines as line, i (i)}
 							<div class="lyric-line" class:active={i === lyrics.currentIndex} class:past={i < lyrics.currentIndex}>
 								<span class="lyric-text" style={i === lyrics.currentIndex ? `--progress: ${lyrics.progress()}` : ''}>{line.text}</span>
 							</div>
@@ -269,7 +269,7 @@
 				<button class="np-queue-close" onclick={() => showQueue = false}><X size={14} /></button>
 			</div>
 			<div class="np-queue-scroll">
-				{#each upcomingTracks as track, i}
+				{#each upcomingTracks as track, i (track.id)}
 					<button class="np-queue-item" onclick={() => playQueueItem(currentQueueIndex + 1 + i)}>
 						<span class="np-queue-idx">{i + 1}</span>
 						<div class="np-queue-meta">

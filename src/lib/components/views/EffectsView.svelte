@@ -43,7 +43,6 @@
 				}
 			} catch { console.warn('[Effects] 设置加载/同步失败'); }
 
-			eq10 = getEq10();
 		});
 	});
 
@@ -84,9 +83,7 @@
 		return eqBands.map(b => b.gain_db);
 	}
 
-	let eq10 = $state<number[]>(EQ_BANDS.map(() => 0));
-
-	$effect(() => { eq10 = getEq10(); });
+	let eq10 = $derived(getEq10());
 
 	// ── IR ──
 	async function handleLoadIr() {
@@ -281,7 +278,6 @@
 		if (!_invoke) return;
 		const bands: any = await _invoke('get_eq_bands');
 		eqBands = bands as PeqBand[];
-		eq10 = getEq10(); // 立即更新 eq10（不等 $effect 异步执行）
 		saveAll();
 	}
 
@@ -533,7 +529,7 @@
 			<div class="card-actions">
 				<select class="preset-select" bind:value={_activePreset} onchange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; if (v) setEqPreset(v); }}>
 					<option value="">预设</option>
-					{#each eqPresets as p}<option value={p}>{presetLabels[p] || p}</option>{/each}
+					{#each eqPresets as p (p)}<option value={p}>{presetLabels[p] || p}</option>{/each}
 				</select>
 				<button class="btn btn-sm" onclick={resetEq}>重置</button>
 			</div>

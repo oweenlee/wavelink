@@ -189,8 +189,9 @@
 		cursor: pointer; display: flex; align-items: center; justify-content: center;
 		transition: all 0.15s;
 	}
-	.ctrl-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--fg-primary); }
-	.ctrl-btn:disabled { opacity: 0.15; cursor: default; }
+.ctrl-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--fg-primary); }
+.ctrl-btn:active:not(:disabled) { transform: scale(0.92); }
+.ctrl-btn:disabled { opacity: 0.15; cursor: default; }
 
 	.ctrl-play {
 		width: 36px; height: 36px; border-radius: 50%; border: none; outline: none;
@@ -214,9 +215,10 @@
 		cursor: pointer; display: flex; align-items: center; justify-content: center;
 		transition: all 0.12s;
 	}
-	.bar-btn:hover { background: var(--bg-hover); color: var(--fg-secondary); }
-	.bar-btn:disabled { opacity: 0.15; cursor: default; }
-	.bar-btn.active { color: var(--accent); }
+.bar-btn:hover { background: var(--bg-hover); color: var(--fg-secondary); }
+.bar-btn:active:not(:disabled) { transform: scale(0.92); }
+.bar-btn:disabled { opacity: 0.15; cursor: default; }
+.bar-btn.active { color: var(--accent); }
 
 	/* ── Bar center ── */
 	.bar-ctrl { display: flex; align-items: center; gap: var(--space-2); }
