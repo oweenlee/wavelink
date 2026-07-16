@@ -163,13 +163,8 @@
 			<div class="about-logo">◈</div>
 			<div class="about-info">
 				<span class="about-name">WaveLink</span>
-				<span class="about-version">版本 0.1.0 · 果味玻璃风格高级音乐播放器</span>
+				<span class="about-version">版本 1.0.0</span>
 			</div>
-			<button class="reset-btn" onclick={async () => {
-				if (!_invoke || !confirm('确定清空所有数据？此操作不可撤销！')) return;
-				await _invoke('reset_database');
-				folders = await _invoke('get_scan_folders');
-			}}>清空数据库</button>
 		</div>
 	</div>
 </div>
@@ -219,6 +214,4 @@
 	.btn-remove { width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: var(--fg-tertiary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; }
 	.btn-remove:hover { background: rgba(239,68,68,0.15); color: #ef4444; }
 	.empty-hint { font-size: 12px; color: var(--fg-tertiary); text-align: center; padding: 8px 0; }
-	.reset-btn { margin-left: auto; padding: 4px 12px; border: none; border-radius: 6px; background: rgba(239,68,68,0.12); color: #ef4444; font-size: 11px; cursor: pointer; transition: all 0.15s; }
-	.reset-btn:hover { background: rgba(239,68,68,0.25); }
 </style>

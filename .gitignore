@@ -18,6 +18,7 @@ src-tauri/gen/
 *.swo
 
 # 系统
+**/.DS_Store
 .DS_Store
 Thumbs.db
 

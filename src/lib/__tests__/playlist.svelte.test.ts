@@ -26,18 +26,13 @@ vi.mock('$lib/audio/engine.svelte', () => ({
 
 vi.mock('$app/environment', () => ({ browser: true }));
 
-const mockInvoke = vi.hoisted(() => vi.fn());
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mockInvoke }));
-
 // ---- tests ----
 describe('getPlaylistState', () => {
 	let state: ReturnType<typeof import('$lib/stores/playlist.svelte')['getPlaylistState']>;
 
 	beforeEach(async () => {
 		vi.clearAllMocks();
-		mockInvoke.mockReset();
 		mockEngineFn.playTrack.mockReset();
-		// 重新 import（模块缓存，但手动 reset 内部 $state）
 		const mod = await import('$lib/stores/playlist.svelte');
 		state = mod.getPlaylistState();
 		state.clearQueue();
@@ -123,19 +118,5 @@ describe('getPlaylistState', () => {
 	it('playFromIndex does nothing for out-of-range index', async () => {
 		await state.playFromIndex(5);
 		expect(mockEngineFn.playTrack).not.toHaveBeenCalled();
-	});
-
-	it('loadPlaylistNames calls invoke list_playlists', async () => {
-		mockInvoke.mockResolvedValueOnce(['Favorites', 'Chill']);
-		await state.loadPlaylistNames();
-		expect(mockInvoke).toHaveBeenCalledWith('list_playlists');
-	});
-
-	it('saveCurrentAs calls invoke save_playlist', async () => {
-		mockInvoke.mockResolvedValueOnce(undefined);
-		mockInvoke.mockResolvedValueOnce(undefined);
-		state.setQueue([mockTrack, mockTrack2]);
-		await state.saveCurrentAs('Test');
-		expect(mockInvoke).toHaveBeenCalledWith('save_playlist', { name: 'Test', paths: ['/music/song.mp3', '/music/song2.mp3'] });
 	});
 });

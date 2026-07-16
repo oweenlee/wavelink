@@ -3,17 +3,15 @@
 	import { getPlaybackState, type PlayMode } from '$lib/stores/playback.svelte';
 	import { getUiState } from '$lib/stores/ui.svelte';
 	import { getSettingsState } from '$lib/stores/settings.svelte';
-	import { getPlaylistState } from '$lib/stores/playlist.svelte';
 	import ProgressBar from '$lib/components/controls/ProgressBar.svelte';
 	import VolumeSlider from '$lib/components/controls/VolumeSlider.svelte';
-	import { SkipBack, SkipForward, Play, Pause, List, Repeat, Repeat1, Shuffle, Disc3, ListMusic, Expand, Mic2 } from 'lucide-svelte';
+	import { SkipBack, SkipForward, Play, Pause, List, Repeat, Repeat1, Shuffle, Disc3, Expand, Mic2 } from 'lucide-svelte';
 
 	import type { Track } from '$lib/audio/types';
 
 	const playback = getPlaybackState();
 	const ui = getUiState();
 	const settings = getSettingsState();
-	const playlist = getPlaylistState();
 
 	let coverDataUrl = $state('');
 	let _invoke: ((cmd: string, args?: any) => Promise<any>) | null = null;
@@ -57,26 +55,15 @@
 	});
 	let trackArtist = $derived.by(() => (playback.currentTrack as Track | null)?.artist ?? '');
 
-	// Cover loading + accent color extraction
+	// 加载封面
 	$effect(() => {
 		const track = playback.currentTrack;
 		const invoke = _invoke;
 		if (!track || !invoke) { coverDataUrl = ''; return; }
 		let cancelled = false;
-		invoke('get_file_cover_cmd', { path: track.path }).then(async (data: any) => {
+		invoke('get_file_cover_cmd', { path: track.path }).then((data: any) => {
 			if (cancelled) return;
-			if (data && typeof data === 'string') {
-				coverDataUrl = data;
-				const { extractColorFromDataUrl } = await import('$lib/utils/colorExtractor');
-				extractColorFromDataUrl(data).then(color => {
-					if (!cancelled) {
-						settings.accentColor = color;
-						settings.save({ volume: playback.volume, playMode: playback.playMode });
-					}
-				}).catch(() => console.warn('[NowPlayingBar] 颜色提取失败'));
-			} else {
-				coverDataUrl = '';
-			}
+			coverDataUrl = (data && typeof data === 'string') ? data : '';
 		}).catch(() => { coverDataUrl = ''; });
 		return () => { cancelled = true; };
 	});
@@ -135,9 +122,6 @@
 				{:else}
 					<Shuffle size={13} />
 				{/if}
-			</button>
-			<button class="bar-btn" onclick={() => ui.togglePlaylistPanel()} class:active={ui.showPlaylistPanel} aria-label="播放列表">
-				<ListMusic size={13} />
 			</button>
 			<button class="bar-btn" onclick={() => ui.toggleNowPlaying()} disabled={!hasTrack} aria-label="全屏播放">
 				<Expand size={13} />

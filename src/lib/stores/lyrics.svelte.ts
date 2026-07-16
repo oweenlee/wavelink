@@ -34,7 +34,7 @@ export function loadForTrack(track: Track | null) {
 	})();
 }
 
-let _currentIndex = $derived.by(() => {
+const _currentIndex = $derived.by(() => {
 	if (_lines.length === 0) return -1;
 	const ct = playback.currentTime;
 	let idx = -1;

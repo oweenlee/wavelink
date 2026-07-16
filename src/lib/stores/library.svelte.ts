@@ -19,8 +19,8 @@ async function lazyInvoke() {
 }
 
 /** Sorted tracks — recomputed only when _tracks or _sortBy change */
-let _sortedTracks = $derived.by(() => {
-	let result = [..._tracks];
+const _sortedTracks = $derived.by(() => {
+	const result = [..._tracks];
 	switch (_sortBy) {
 		case 'title':
 			result.sort((a, b) => (a.title || '').localeCompare(b.title || ''));

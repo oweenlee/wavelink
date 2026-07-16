@@ -6,8 +6,8 @@ use tauri::Emitter;
 
 use sdk::dsp::{default_peq_bands, preset_bands, PeqBand, PresetName};
 use sdk::library::{
-    analyze_loudness as rg_analyze, edit_audio_tags, export_playlist,
-    gain_for_loudness, get_file_cover, import_playlist, Scanner,
+    analyze_loudness as rg_analyze, edit_audio_tags,
+    gain_for_loudness, get_file_cover, Scanner,
     AlbumBrief, TagUpdate, Track,
 };
 use sdk::{analyze_file, AnalysisResult, PlayMode};
@@ -303,16 +303,6 @@ pub fn clear_ir(state: State<AppState>) {
 }
 
 #[tauri::command]
-pub fn import_playlist_cmd(path: String) -> Result<Vec<String>, String> {
-    import_playlist(&std::path::PathBuf::from(&path))
-}
-
-#[tauri::command]
-pub fn export_playlist_cmd(path: String, entries: Vec<String>) -> Result<(), String> {
-    export_playlist(&std::path::PathBuf::from(&path), &entries)
-}
-
-#[tauri::command]
 pub fn scan_dir(path: String, state: State<AppState>) -> Result<serde_json::Value, String> {
     let dir = PathBuf::from(&path);
     let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
@@ -438,11 +428,6 @@ pub fn get_file_cover_cmd(path: String) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-pub async fn lrc_lookup(_artist: String, _title: String, _album: Option<String>) -> Result<Option<String>, String> {
-    Ok(None)
-}
-
-#[tauri::command]
 pub fn get_eq_bands(state: State<AppState>) -> Result<Vec<PeqBand>, String> {
     let bands = state.peq_bands.lock().map_err(|e| format!("锁失败: {e}"))?;
     Ok(bands.clone())
@@ -503,71 +488,6 @@ pub fn set_engine_config(
         crossfade_ms: 0,
     };
     state.engine.set_config(cfg);
-}
-
-fn playlists_dir() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "无法获取 HOME 目录".to_string())?;
-    #[cfg(target_os = "macos")]
-    let dir = PathBuf::from(&home)
-        .join("Music")
-        .join("WaveLink")
-        .join("playlists");
-    #[cfg(not(target_os = "macos"))]
-    let dir = PathBuf::from(&home).join(".wavelink").join("playlists");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("创建播放列表目录失败: {e}"))?;
-    Ok(dir)
-}
-
-#[tauri::command]
-pub fn list_playlists() -> Result<Vec<String>, String> {
-    let dir = playlists_dir()?;
-    let mut names: Vec<String> = Vec::new();
-    for entry in std::fs::read_dir(&dir).map_err(|e| format!("读取目录失败: {e}"))? {
-        let entry = entry.map_err(|e| format!("读取条目失败: {e}"))?;
-        let path = entry.path();
-        if let Some(ext) = path.extension() {
-            if ext == "m3u" || ext == "m3u8" || ext == "pls" {
-                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                    names.push(stem.to_string());
-                }
-            }
-        }
-    }
-    names.sort();
-    Ok(names)
-}
-
-#[tauri::command]
-pub fn save_playlist(name: String, paths: Vec<String>) -> Result<(), String> {
-    let dir = playlists_dir()?;
-    let path = dir.join(format!("{}.m3u8", name));
-    export_playlist(&path, &paths)
-}
-
-#[tauri::command]
-pub fn load_playlist(name: String) -> Result<Vec<String>, String> {
-    let dir = playlists_dir()?;
-    for ext in &["m3u8", "m3u", "pls"] {
-        let path = dir.join(format!("{}.{}", name, ext));
-        if path.exists() {
-            return import_playlist(&path);
-        }
-    }
-    Err(format!("播放列表 '{name}' 未找到"))
-}
-
-#[tauri::command]
-pub fn delete_playlist(name: String) -> Result<(), String> {
-    let dir = playlists_dir()?;
-    for ext in &["m3u8", "m3u", "pls"] {
-        let path = dir.join(format!("{}.{}", name, ext));
-        if path.exists() {
-            std::fs::remove_file(&path)
-                .map_err(|e| format!("删除播放列表失败: {e}"))?;
-            return Ok(());
-        }
-    }
-    Err(format!("播放列表 '{name}' 未找到"))
 }
 
 /// 清空数据库所有数据并重建（测试用后门）

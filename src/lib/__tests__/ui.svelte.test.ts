@@ -44,18 +44,6 @@ describe('getUiState', () => {
 		expect(state.showSearch).toBe(false);
 	});
 
-	it('toggles playlist panel', () => {
-		state.togglePlaylistPanel();
-		expect(state.showPlaylistPanel).toBe(true);
-		state.togglePlaylistPanel();
-		expect(state.showPlaylistPanel).toBe(false);
-	});
-
-	it('sets showPlaylistPanel', () => {
-		state.showPlaylistPanel = true;
-		expect(state.showPlaylistPanel).toBe(true);
-	});
-
 	it('sets showSearch', () => {
 		state.showSearch = true;
 		expect(state.showSearch).toBe(true);

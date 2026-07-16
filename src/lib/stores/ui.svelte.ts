@@ -9,7 +9,6 @@ let _view = $state<ViewName>('library');
 let _showLyricsPanel = $state(false);
 let _showNowPlaying = $state(false);
 let _showSearch = $state(false);
-let _showPlaylistPanel = $state(false);
 
 export function getUiState() {
 	return {
@@ -25,14 +24,10 @@ export function getUiState() {
 		get showSearch() { return _showSearch; },
 		set showSearch(v: boolean) { _showSearch = v; },
 
-		get showPlaylistPanel() { return _showPlaylistPanel; },
-		set showPlaylistPanel(v: boolean) { _showPlaylistPanel = v; },
-
 		navigateTo(v: ViewName) { _view = v; },
 		toggleLyrics() { _showLyricsPanel = !_showLyricsPanel; },
 		toggleNowPlaying() { _showNowPlaying = !_showNowPlaying; },
 		toggleSearch() { _showSearch = !_showSearch; },
-		togglePlaylistPanel() { _showPlaylistPanel = !_showPlaylistPanel; },
 	};
 }
 

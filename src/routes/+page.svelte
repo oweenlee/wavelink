@@ -8,7 +8,6 @@
 	import NasView from '$lib/components/views/NasView.svelte';
 	import NowPlayingView from '$lib/components/views/NowPlayingView.svelte';
 	import LyricsPanel from '$lib/components/panels/LyricsPanel.svelte';
-	import PlaylistPanel from '$lib/components/panels/PlaylistPanel.svelte';
 
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
 	import { getUiState } from '$lib/stores/ui.svelte';
@@ -59,7 +58,6 @@
 
 	<NowPlayingBar />
 	<LyricsPanel />
-	<PlaylistPanel />
 </div>
 
 <style>

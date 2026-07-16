@@ -23,7 +23,7 @@ export type PlayMode = 'normal' | 'repeat_one' | 'repeat_all' | 'shuffle';
  */
 
 let _playMode = $state<PlayMode>('normal');
-let _engine = getEngineRef();
+const _engine = getEngineRef();
 
 // Wire up engine's onended → auto-advance queue
 setOnEnded(() => {

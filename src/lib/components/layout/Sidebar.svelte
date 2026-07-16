@@ -1,25 +1,8 @@
 <script lang="ts">
 	import { getUiState } from '$lib/stores/ui.svelte';
-	import { getPlaylistState } from '$lib/stores/playlist.svelte';
-	import { browser } from '$app/environment';
-	import { Music, AudioLines, Settings, ChevronRight, ListMusic, Plus, HardDrive } from 'lucide-svelte';
+	import { Music, AudioLines, Settings, HardDrive } from 'lucide-svelte';
 
 	const ui = getUiState();
-	const playlist = getPlaylistState();
-
-	// Load saved playlists on mount
-	$effect(() => {
-		if (browser) playlist.loadPlaylistNames();
-	});
-
-	let showPlaylists = $state(true);
-
-	async function togglePlaylists() {
-		showPlaylists = !showPlaylists;
-		if (showPlaylists && playlist.savedPlaylists.length === 0) {
-			await playlist.loadPlaylistNames();
-		}
-	}
 </script>
 
 <aside class="sidebar">
@@ -47,31 +30,6 @@
 			<span>NAS</span>
 		</button>
 	</nav>
-
-	<nav class="nav secondary">
-		<div class="nav-section-header">
-			<p class="nav-label">播放列表</p>
-			<button class="nav-toggle" onclick={togglePlaylists} aria-label="展开播放列表">
-				<ChevronRight size={12} style="transform: rotate({showPlaylists ? 90 : 0}deg); transition: transform 0.2s;" />
-			</button>
-		</div>
-		{#if showPlaylists}
-			{#if playlist.savedPlaylists.length > 0}
-				{#each playlist.savedPlaylists as name (name)}
-					<button class="nav-item playlist-item" onclick={() => { playlist.loadPlaylist(name); ui.navigateTo('library'); }}>
-						<ListMusic size={14} stroke-width={1.5} />
-						<span class="playlist-name">{name}</span>
-					</button>
-				{/each}
-			{:else}
-				<p class="nav-empty">暂无播放列表</p>
-			{/if}
-			<button class="nav-item new-playlist" onclick={() => ui.showPlaylistPanel = true}>
-				<Plus size={14} />
-				<span>新建播放列表</span>
-			</button>
-		{/if}
-	</nav>
 </aside>
 
 <style>
@@ -93,22 +51,13 @@
 	.logo-mark { font-size: 22px; color: var(--accent); }
 	.logo-text { font-size: 16px; font-weight: 600; color: var(--fg-primary); letter-spacing: 0.5px; }
 
-	.nav { display: flex; flex-direction: column; gap: 1px; margin-bottom: var(--space-6); }
-	.nav.secondary { margin-top: auto; }
+	.nav { display: flex; flex-direction: column; gap: 1px; }
 
-	.nav-section-header { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-2); margin-bottom: var(--space-2); }
 	.nav-label {
 		font-size: 10px; font-weight: 600; color: var(--fg-tertiary);
 		text-transform: uppercase; letter-spacing: 1.2px;
+		margin-bottom: var(--space-2);
 	}
-
-	.nav-toggle {
-		width: 20px; height: 20px; border: none; border-radius: var(--radius-sm);
-		background: transparent; color: var(--fg-tertiary); cursor: pointer;
-		display: flex; align-items: center; justify-content: center;
-		transition: all 0.12s;
-	}
-	.nav-toggle:hover { background: var(--bg-hover); color: var(--fg-secondary); }
 
 	.nav-item {
 		display: flex; align-items: center; gap: var(--space-2);
@@ -129,17 +78,10 @@
 	}
 	.nav-item.active::before { transform: scaleY(1); }
 
-.nav-item:hover { background: var(--bg-hover); color: var(--fg-primary); }
-.nav-item:active { transform: scale(0.97); }
-.nav-item.active { background: var(--bg-active); color: var(--fg-primary); font-weight: 500; }
+	.nav-item:hover { background: var(--bg-hover); color: var(--fg-primary); }
+	.nav-item:active { transform: scale(0.97); }
+	.nav-item.active { background: var(--bg-active); color: var(--fg-primary); font-weight: 500; }
 
 	.nav-item svg { flex-shrink: 0; opacity: 0.6; }
 	.nav-item.active svg { opacity: 1; color: var(--accent); }
-
-	.playlist-item { padding-left: var(--space-4); }
-	.playlist-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-	.new-playlist { color: var(--fg-tertiary); margin-top: var(--space-1); }
-	.new-playlist:hover { color: var(--accent) !important; }
-
-	.nav-empty { font-size: 11px; color: var(--fg-quaternary); padding: var(--space-1) var(--space-4); }
 </style>
