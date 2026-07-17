@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Volume2, Volume1, Volume, VolumeX } from 'lucide-svelte';
+	import { t } from '$lib/i18n/i18n.svelte';
+import { Volume2, Volume1, Volume, VolumeX } from 'lucide-svelte';
 	interface Props {
 		value: number;
 		max?: number;
@@ -38,7 +39,7 @@
 	});
 </script>
 
-<div class="vol" onwheel={onWheel} title="滚轮调节音量">
+<div class="vol" onwheel={onWheel} title={t('volume_scroll_hint')}>
 	<Icon size={13} style="color: var(--fg-tertiary); flex-shrink: 0;" />
 	<div class="track" bind:this={trackEl} onmousedown={onDown} role="slider" tabindex="0" aria-valuemin={0} aria-valuemax={max} aria-valuenow={value}>
 		<div class="track-bg" class:dragging={isDragging}>

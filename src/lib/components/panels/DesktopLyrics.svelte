@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { getSettingsState } from '$lib/stores/settings.svelte';
+	import { t } from '$lib/i18n/i18n.svelte';
 
 	const settings = getSettingsState();
 
@@ -74,8 +75,8 @@
 			{/if}
 		</div>
 		<div class="lyrics-controls">
-			<button class="ctrl-btn" onclick={togglePassthrough} title="穿透">⊘</button>
-			<button class="ctrl-btn close" onclick={closeWindow} title="关闭">✕</button>
+			<button class="ctrl-btn" onclick={togglePassthrough} title={t('desktop_lyrics.passthrough')}>⊘</button>
+			<button class="ctrl-btn close" onclick={closeWindow} title={t('desktop_lyrics.close')}>✕</button>
 		</div>
 	{/if}
 </div>

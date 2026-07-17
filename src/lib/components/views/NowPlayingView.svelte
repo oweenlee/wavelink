@@ -10,6 +10,7 @@
 	import ProgressBar from '$lib/components/controls/ProgressBar.svelte';
 	import SpectrumAnalyzer from '$lib/components/controls/SpectrumAnalyzer.svelte';
 
+	import { t } from '$lib/i18n/i18n.svelte';
 	import { X, Disc3, Shuffle, Repeat1, Repeat, List, SkipBack, SkipForward, Play, Pause, ChevronDown } from 'lucide-svelte';
 	const playback = getPlaybackState();
 	const ui = getUiState();
@@ -112,7 +113,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="np" class:np-playing={playback.isPlaying} style={coverDataUrl ? `--cover: url(${coverDataUrl})` : ''} onkeydown={handleKeydown} onclick={(e) => { if (e.target === e.currentTarget) close(); }}>
 	<!-- Close button -->
-	<button class="np-close" onclick={close} aria-label="关闭">
+	<button class="np-close" onclick={close} aria-label={t('nowplaying.close')}>
 		<X size={16} stroke-width={2.5} />
 	</button>
 
@@ -140,8 +141,8 @@
 			<!-- Track info -->
 			{#key playback.currentTrack?.id}
 				<div class="np-meta">
-					<h1 class="np-title">{playback.currentTrack?.title || '未选择曲目'}</h1>
-					<p class="np-artist">{playback.currentTrack?.artist || '未知艺术家'}</p>
+					<h1 class="np-title">{playback.currentTrack?.title || t('nowplaying.no_track')}</h1>
+					<p class="np-artist">{playback.currentTrack?.artist || t('nowplaying.unknown_artist')}</p>
 					{#if trackFormat}<p class="np-format">{trackFormat}</p>{/if}
 				</div>
 			{/key}
@@ -149,7 +150,7 @@
 			<!-- Lyrics -->
 			<div class="np-lyrics" bind:this={lyricsScrollEl}>
 				{#if lyrics.loading}
-					<p class="np-lyrics-status">加载歌词中...</p>
+					<p class="np-lyrics-status">{t('nowplaying.loading_lyrics')}</p>
 				{:else if lyrics.lines.length > 0}
 					<div class="np-lyrics-scroll">
 						{#each lyrics.lines as line, i (i)}
@@ -159,7 +160,7 @@
 						{/each}
 					</div>
 				{:else}
-					<p class="np-lyrics-status">{lyrics.error || '暂无歌词'}</p>
+					<p class="np-lyrics-status">{lyrics.error || t('nowplaying.no_lyrics')}</p>
 				{/if}
 			</div>
 
@@ -173,7 +174,7 @@
 				/>
 
 				<div class="np-btns">
-			<button class="np-btn" onclick={() => playback.cyclePlayMode()} class:on={playback.playMode !== 'normal'} aria-label="播放模式" title={playback.playMode === 'shuffle' ? '随机播放' : playback.playMode === 'repeat_one' ? '单曲循环' : playback.playMode === 'repeat_all' ? '列表循环' : '顺序播放'}>
+			<button class="np-btn" onclick={() => playback.cyclePlayMode()} class:on={playback.playMode !== 'normal'} aria-label={t('nowplaying.play_mode')} title={playback.playMode === 'shuffle' ? t('nowplaying.shuffle') : playback.playMode === 'repeat_one' ? t('nowplaying.repeat_one') : playback.playMode === 'repeat_all' ? t('nowplaying.repeat_all') : t('nowplaying.sequential')}>
 				{#if playback.playMode === 'shuffle'}
 					<Shuffle size={18} />
 				{:else if playback.playMode === 'repeat_one'}
@@ -184,16 +185,16 @@
 					<List size={18} />
 				{/if}
 			</button>
-				<button class="np-btn" onclick={() => playback.previous()} aria-label="上一首">
+				<button class="np-btn" onclick={() => playback.previous()} aria-label={t('nowplaying.prev')}>
 					<SkipBack size={22} fill="currentColor" />
 				</button>
-				<button class="np-btn np-btn-play" onclick={() => playback.togglePlay()} aria-label={playback.isPlaying ? '暂停' : '播放'}>
+				<button class="np-btn np-btn-play" onclick={() => playback.togglePlay()} aria-label={playback.isPlaying ? t('nowplaying.pause') : t('nowplaying.play')}>
 					<div class="icon-wrap">
 						<div class="icon-layer" class:show={playback.isPlaying}><Pause size={28} fill="currentColor" /></div>
 						<div class="icon-layer" class:show={!playback.isPlaying}><Play size={28} fill="currentColor" /></div>
 					</div>
 				</button>
-				<button class="np-btn" onclick={() => playback.next()} aria-label="下一首">
+				<button class="np-btn" onclick={() => playback.next()} aria-label={t('nowplaying.next')}>
 					<SkipForward size={22} fill="currentColor" />
 				</button>
 			</div>
@@ -206,7 +207,7 @@
 			<!-- Info toggle / panel -->
 			<div class="np-info-section">
 				<button class="np-info-toggle" onclick={() => showInfo = !showInfo} aria-expanded={showInfo}>
-					<span>{showInfo ? '收起详情' : '详细信息'}</span>
+					<span>{showInfo ? t('nowplaying.collapse_info') : t('nowplaying.expand_info')}</span>
 					<ChevronDown size={12} class={showInfo ? 'rotated' : ''} />
 				</button>
 
@@ -214,31 +215,31 @@
 				<div class="np-info-panel" transition:fly={{ y: -8, duration: 200 }}>
 					<div class="np-info-grid">
 						{#if playback.currentTrack?.format}
-							<div class="np-info-item"><span class="np-info-k">格式</span><span class="np-info-v">{playback.currentTrack!.format!.toUpperCase()}</span></div>
+							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.format')}</span><span class="np-info-v">{playback.currentTrack!.format!.toUpperCase()}</span></div>
 						{/if}
 						{#if playback.currentTrack?.sample_rate}
-							<div class="np-info-item"><span class="np-info-k">采样率</span><span class="np-info-v">{(playback.currentTrack!.sample_rate! / 1000).toFixed(1)} kHz</span></div>
+							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.sample_rate')}</span><span class="np-info-v">{(playback.currentTrack!.sample_rate! / 1000).toFixed(1)} kHz</span></div>
 						{/if}
 						{#if playback.currentTrack?.channels}
-							<div class="np-info-item"><span class="np-info-k">声道</span><span class="np-info-v">{playback.currentTrack!.channels === 1 ? 'Mono' : 'Stereo'}</span></div>
+							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.channels')}</span><span class="np-info-v">{playback.currentTrack!.channels === 1 ? 'Mono' : 'Stereo'}</span></div>
 						{/if}
 						{#if playback.currentTrack?.bitrate}
-							<div class="np-info-item"><span class="np-info-k">比特率</span><span class="np-info-v">{playback.currentTrack!.bitrate} kbps</span></div>
+							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.bitrate')}</span><span class="np-info-v">{playback.currentTrack!.bitrate} kbps</span></div>
 						{/if}
 						{#if fileSize}
-							<div class="np-info-item"><span class="np-info-k">文件大小</span><span class="np-info-v">{fileSize}</span></div>
+							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.file_size')}</span><span class="np-info-v">{fileSize}</span></div>
 						{/if}
 						{#if playback.currentTrack?.year}
-							<div class="np-info-item"><span class="np-info-k">年份</span><span class="np-info-v">{playback.currentTrack!.year}</span></div>
+							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.year')}</span><span class="np-info-v">{playback.currentTrack!.year}</span></div>
 						{/if}
 						{#if playback.currentTrack?.genre}
-							<div class="np-info-item"><span class="np-info-k">流派</span><span class="np-info-v">{playback.currentTrack!.genre}</span></div>
+							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.genre')}</span><span class="np-info-v">{playback.currentTrack!.genre}</span></div>
 						{/if}
 						{#if playback.currentTrack?.track_number}
-							<div class="np-info-item"><span class="np-info-k">音轨号</span><span class="np-info-v">{playback.currentTrack!.track_number}</span></div>
+							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.track_number')}</span><span class="np-info-v">{playback.currentTrack!.track_number}</span></div>
 						{/if}
 						{#if playback.currentTrack?.album_artist}
-							<div class="np-info-item"><span class="np-info-k">专辑艺术家</span><span class="np-info-v">{playback.currentTrack!.album_artist}</span></div>
+							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.album_artist')}</span><span class="np-info-v">{playback.currentTrack!.album_artist}</span></div>
 						{/if}
 					</div>
 					</div>
@@ -250,13 +251,13 @@
 	<!-- Next up — bottom-left -->
 	{#if nextTrack}
 		<div class="np-nextup">
-			<span class="np-nextup-label">下一首</span>
+			<span class="np-nextup-label">{t('nowplaying.next_up')}</span>
 			<span class="np-nextup-title">{nextTrack.title || nextTrack.path.split(/[/\\]/).pop()}</span>
 		</div>
 	{/if}
 
 	<!-- Queue button — bottom-right -->
-	<button class="np-queue-btn" onclick={() => showQueue = !showQueue} aria-label="播放列表">
+	<button class="np-queue-btn" onclick={() => showQueue = !showQueue} aria-label={t('nowplaying.playlist')}>
 		<List size={18} />
 	</button>
 
@@ -265,7 +266,7 @@
 		<div class="np-queue-overlay" onclick={() => showQueue = false}></div>
 		<div class="np-queue-panel" transition:fly={{ x: 420, duration: 250, easing: cubicOut }}>
 			<div class="np-queue-header">
-				<span>播放列表 ({upcomingTracks.length})</span>
+				<span>{t('nowplaying.playlist')} ({upcomingTracks.length})</span>
 				<button class="np-queue-close" onclick={() => showQueue = false}><X size={14} /></button>
 			</div>
 			<div class="np-queue-scroll">
@@ -274,7 +275,7 @@
 						<span class="np-queue-idx">{i + 1}</span>
 						<div class="np-queue-meta">
 							<span class="np-queue-title">{track.title || track.path.split(/[/\\]/).pop()}</span>
-							<span class="np-queue-artist">{track.artist || '未知艺术家'}</span>
+							<span class="np-queue-artist">{track.artist || t('nowplaying.unknown_artist')}</span>
 						</div>
 					</button>
 				{/each}

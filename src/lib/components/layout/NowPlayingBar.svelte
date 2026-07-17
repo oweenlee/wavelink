@@ -6,6 +6,7 @@
 	import ProgressBar from '$lib/components/controls/ProgressBar.svelte';
 	import VolumeSlider from '$lib/components/controls/VolumeSlider.svelte';
 	import { SkipBack, SkipForward, Play, Pause, List, Repeat, Repeat1, Shuffle, Disc3, Expand, Mic2 } from 'lucide-svelte';
+	import { t } from '$lib/i18n/i18n.svelte';
 
 	import type { Track } from '$lib/audio/types';
 
@@ -91,16 +92,16 @@
 
 		<div class="bar-center">
 			<div class="bar-ctrl">
-				<button class="ctrl-btn" onclick={() => playback.prev()} disabled={!hasTrack} aria-label="上一首">
+				<button class="ctrl-btn" onclick={() => playback.prev()} disabled={!hasTrack} aria-label={t('nowplaying_bar.prev')}>
 					<SkipBack size={12} />
 				</button>
-				<button class="ctrl-play" onclick={() => playback.togglePlay()} disabled={!hasTrack} aria-label={playback.isPlaying ? '暂停' : '播放'}>
+				<button class="ctrl-play" onclick={() => playback.togglePlay()} disabled={!hasTrack} aria-label={playback.isPlaying ? t('nowplaying_bar.pause') : t('nowplaying_bar.play')}>
 					<div class="icon-wrap">
 						<div class="icon-layer" class:show={playback.isPlaying}><Pause size={14} /></div>
 						<div class="icon-layer" class:show={!playback.isPlaying}><Play size={14} /></div>
 					</div>
 				</button>
-				<button class="ctrl-btn" onclick={() => playback.next()} disabled={!hasTrack} aria-label="下一首">
+				<button class="ctrl-btn" onclick={() => playback.next()} disabled={!hasTrack} aria-label={t('nowplaying_bar.next')}>
 					<SkipForward size={12} />
 				</button>
 			</div>
@@ -112,7 +113,7 @@
 
 		<div class="bar-right">
 			<VolumeSlider value={playback.volume} oninput={onVolumeInput} />
-			<button class="bar-btn" onclick={cyclePlayMode} title="播放模式">
+			<button class="bar-btn" onclick={cyclePlayMode} title={t('nowplaying_bar.play_mode')}>
 				{#if playback.playMode === 'normal'}
 					<List size={13} />
 				{:else if playback.playMode === 'repeat_all'}
@@ -123,10 +124,10 @@
 					<Shuffle size={13} />
 				{/if}
 			</button>
-			<button class="bar-btn" onclick={() => ui.toggleNowPlaying()} disabled={!hasTrack} aria-label="全屏播放">
+			<button class="bar-btn" onclick={() => ui.toggleNowPlaying()} disabled={!hasTrack} aria-label={t('nowplaying_bar.fullscreen')}>
 				<Expand size={13} />
 			</button>
-			<button class="bar-btn" onclick={() => ui.toggleLyrics()} class:active={ui.showLyricsPanel} aria-label="歌词">
+			<button class="bar-btn" onclick={() => ui.toggleLyrics()} class:active={ui.showLyricsPanel} aria-label={t('nowplaying_bar.lyrics')}>
 				<Mic2 size={13} />
 			</button>
 		</div>

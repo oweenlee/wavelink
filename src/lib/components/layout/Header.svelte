@@ -8,6 +8,7 @@
 	import { browser } from '$app/environment';
 	import type { Track } from '$lib/audio/types';
 	import { Search, Folder, X } from 'lucide-svelte';
+	import { t } from '$lib/i18n/i18n.svelte';
 
 	const ui = getUiState();
 	const library = getLibraryState();
@@ -22,9 +23,9 @@
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const viewTitles: Record<string, string> = {
-		library: '本地音乐',
-		effects: '音效设置',
-		settings: '设置',
+		library: t('header.view_library'),
+		effects: t('header.view_effects'),
+		settings: t('header.view_settings'),
 	};
 
 	function openSearch() {
@@ -75,13 +76,13 @@
 
 <header class="header">
 	<div class="header-left">
-		<h1 class="page-title">{title || viewTitles[ui.view] || '本地音乐'}</h1>
+		<h1 class="page-title">{title || viewTitles[ui.view] || t('header.default_title')}</h1>
 	</div>
 	<div class="header-right">
-		<button class="icon-btn" title="搜索 (⌘K)" onclick={openSearch}>
+		<button class="icon-btn" title={t('header.search')} onclick={openSearch}>
 			<Search size={16} />
 		</button>
-		<button class="icon-btn" title="扫描目录" onclick={handleScan}>
+		<button class="icon-btn" title={t('header.scan')} onclick={handleScan}>
 			<Folder size={16} />
 		</button>
 		<div class="avatar" style="background: linear-gradient(135deg, {settings.accentColor}, color-mix(in srgb, {settings.accentColor} 70%, #fff));">W</div>
@@ -99,8 +100,8 @@
 		>
 		<div class="search-bar">
 			<Search size={16} style="color: var(--fg-tertiary); flex-shrink: 0;" />
-			<input bind:this={searchInput} type="text" class="search-input" placeholder="搜索曲目、艺术家、专辑..." value={library.searchQuery} oninput={onSearchInput} onkeydown={onSearchKeydown} />
-			<button class="search-close" onclick={closeSearch} aria-label="关闭">
+			<input bind:this={searchInput} type="text" class="search-input" placeholder={t('header.search_placeholder')} value={library.searchQuery} oninput={onSearchInput} onkeydown={onSearchKeydown} />
+			<button class="search-close" onclick={closeSearch} aria-label={t('header.close')}>
 				<X size={14} />
 			</button>
 		</div>
@@ -118,7 +119,7 @@
 			</div>
 		{:else if library.searchQuery}
 			<div class="search-empty">
-				<span>未找到匹配结果</span>
+				<span>{t('header.search_empty')}</span>
 			</div>
 		{/if}
 	</motion.div>

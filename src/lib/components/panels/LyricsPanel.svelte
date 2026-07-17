@@ -4,6 +4,7 @@
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
 	import { getLyricsState, loadForTrack } from '$lib/stores/lyrics.svelte';
 	import { Disc3, X, Mic2 } from 'lucide-svelte';
+	import { t } from '$lib/i18n/i18n.svelte';
 
 	const ui = getUiState();
 	const playback = getPlaybackState();
@@ -74,14 +75,14 @@
 				<p class="track-artist">{trackArtist}</p>
 			</div>
 		</div>
-		<button class="close-btn" onclick={closePanel} aria-label="关闭">
+		<button class="close-btn" onclick={closePanel} aria-label={t('lyrics_panel.close')}>
 			<X size={18} />
 		</button>
 	</div>
 
 	<div class="lyrics-body" bind:this={lyricsContainer}>
 		{#if lyrics.loading}
-			<div class="status"><p>加载歌词...</p></div>
+			<div class="status"><p>{t('lyrics_panel.loading')}</p></div>
 		{:else if lyrics.lines.length > 0}
 			<div class="lyrics-scroll">
 				{#each lyrics.lines as line, i (i)}
@@ -93,7 +94,7 @@
 		{:else}
 			<div class="status">
 				<Mic2 size={42} stroke-width={1.5} opacity={0.25} />
-				<p>{lyrics.error || '暂无歌词'}</p>
+				<p>{lyrics.error || t('lyrics_panel.no_lyrics')}</p>
 			</div>
 		{/if}
 	</div>

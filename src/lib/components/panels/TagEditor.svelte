@@ -4,6 +4,7 @@
 	import { cubicOut } from 'svelte/easing';
 	import type { Track } from '$lib/audio/types';
 	import { X } from 'lucide-svelte';
+	import { t } from '$lib/i18n/i18n.svelte';
 
 	let { track, onclose }: { track: Track; onclose: () => void } = $props();
 
@@ -41,7 +42,7 @@
 			success = true;
 			setTimeout(onclose, 800);
 		} catch (e: any) {
-			error = typeof e === 'string' ? e : '保存失败';
+			error = typeof e === 'string' ? e : t('tag_editor.save_failed');
 		} finally {
 			saving = false;
 		}
@@ -56,49 +57,49 @@
 
 <div class="editor" transition:fly={{ y: 40, duration: 250, easing: cubicOut, opacity: 0 }}>
 	<div class="editor-header">
-		<h3 class="editor-title">编辑标签</h3>
-		<button class="editor-close" onclick={onclose} disabled={saving} aria-label="关闭">
+		<h3 class="editor-title">{t('tag_editor.title')}</h3>
+		<button class="editor-close" onclick={onclose} disabled={saving} aria-label={t('tag_editor.close')}>
 			<X size={16} />
 		</button>
 	</div>
 
 	<div class="editor-body">
 		<label class="field">
-			<span class="field-label">标题</span>
-			<input type="text" class="field-input" bind:value={title} placeholder="曲目名称" />
+			<span class="field-label">{t('tag_editor.title_field')}</span>
+			<input type="text" class="field-input" bind:value={title} placeholder={t('tag_editor.title_placeholder')} />
 		</label>
 		<label class="field">
-			<span class="field-label">艺术家</span>
-			<input type="text" class="field-input" bind:value={artist} placeholder="艺术家名称" />
+			<span class="field-label">{t('tag_editor.artist')}</span>
+			<input type="text" class="field-input" bind:value={artist} placeholder={t('tag_editor.artist_placeholder')} />
 		</label>
 		<label class="field">
-			<span class="field-label">专辑</span>
-			<input type="text" class="field-input" bind:value={album} placeholder="专辑名称" />
+			<span class="field-label">{t('tag_editor.album')}</span>
+			<input type="text" class="field-input" bind:value={album} placeholder={t('tag_editor.album_placeholder')} />
 		</label>
 		<div class="field-row">
 			<label class="field half">
-				<span class="field-label">音轨号</span>
-				<input type="number" class="field-input" bind:value={trackNumber} placeholder="-" min="1" max="99" />
+				<span class="field-label">{t('tag_editor.track_number')}</span>
+				<input type="number" class="field-input" bind:value={trackNumber} placeholder={t('tag_editor.num_placeholder')} min="1" max="99" />
 			</label>
 			<label class="field half">
-				<span class="field-label">年份</span>
-				<input type="number" class="field-input" bind:value={year} placeholder="-" min="1900" max="2100" />
+				<span class="field-label">{t('tag_editor.year')}</span>
+				<input type="number" class="field-input" bind:value={year} placeholder={t('tag_editor.num_placeholder')} min="1900" max="2100" />
 			</label>
 		</div>
 		<label class="field">
-			<span class="field-label">流派</span>
-			<input type="text" class="field-input" bind:value={genre} placeholder="流派" />
+			<span class="field-label">{t('tag_editor.genre')}</span>
+			<input type="text" class="field-input" bind:value={genre} placeholder={t('tag_editor.genre_placeholder')} />
 		</label>
 
 		{#if error}<div class="msg error">{error}</div>{/if}
-		{#if success}<div class="msg success">已保存</div>{/if}
+		{#if success}<div class="msg success">{t('tag_editor.saved')}</div>{/if}
 	</div>
 
 	<div class="editor-footer">
 		<div></div>
 		<div class="footer-right">
-			<button class="btn btn-cancel" onclick={onclose} disabled={saving}>取消</button>
-			<button class="btn btn-save" onclick={save} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+			<button class="btn btn-cancel" onclick={onclose} disabled={saving}>{t('tag_editor.cancel')}</button>
+			<button class="btn btn-save" onclick={save} disabled={saving}>{saving ? t('tag_editor.saving') : t('tag_editor.save')}</button>
 		</div>
 	</div>
 </div>

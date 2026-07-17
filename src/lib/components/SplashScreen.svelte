@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { t } from '$lib/i18n/i18n.svelte';
 
   let { done = () => {} } = $props();
   let visible = $state(true);
@@ -212,7 +213,7 @@
         ctx.font = '400 13px -apple-system, "SF Pro Text", "PingFang SC", sans-serif';
         ctx.fillStyle = MUTED;
         ctx.textAlign = 'center';
-        ctx.fillText('高音质音乐播放器', W() / 2, H() / 2 + 78);
+        ctx.fillText(t('splash.subtitle'), W() / 2, H() / 2 + 78);
         ctx.globalAlpha = 1;
       }
 
@@ -225,7 +226,7 @@
         ctx.font = '400 11px -apple-system, "SF Pro Text", "PingFang SC", sans-serif';
         ctx.fillStyle = '#555';
         ctx.textAlign = 'center';
-        ctx.fillText('点击跳过', W() / 2, H() - 40);
+        ctx.fillText(t('splash.skip'), W() / 2, H() - 40);
         ctx.globalAlpha = 1;
       }
 

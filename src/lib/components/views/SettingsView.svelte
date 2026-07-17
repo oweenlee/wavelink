@@ -4,6 +4,7 @@
 	import { getPlaybackState, type PlayMode } from '$lib/stores/playback.svelte';
 	import { Trash2 } from 'lucide-svelte';
 	import { open } from '@tauri-apps/plugin-dialog';
+	import { t } from '$lib/i18n/i18n.svelte';
 
 	const settings = getSettingsState();
 	const playback = getPlaybackState();
@@ -32,9 +33,9 @@
 	}
 
 	const accentColors = [
-		{ name: '极光紫', color: '#8888cc' }, { name: '海洋蓝', color: '#4488cc' },
-		{ name: '翡翠绿', color: '#44aa88' }, { name: '琥珀橙', color: '#cc8844' },
-		{ name: '玫瑰红', color: '#cc4488' }, { name: '月光银', color: '#aabbcc' },
+		{ name: t('settings.purple'), color: '#8888cc' }, { name: t('settings.blue'), color: '#4488cc' },
+		{ name: t('settings.green'), color: '#44aa88' }, { name: t('settings.amber'), color: '#cc8844' },
+		{ name: t('settings.rose'), color: '#cc4488' }, { name: t('settings.silver'), color: '#aabbcc' },
 	];
 
 	async function setAccentColor(color: string) {
@@ -50,7 +51,7 @@
 	}
 
 	async function addFolder() {
-		const selected = await open({ directory: true, multiple: false, title: '选择音乐文件夹' });
+		const selected = await open({ directory: true, multiple: false, title: t('settings.select_folder') });
 		if (!selected || !_invoke) return;
 		try {
 			const result = await _invoke('scan_dir', { path: selected });
@@ -73,25 +74,25 @@
 	<!-- ── 引擎配置 ── -->
 	<div class="card">
 		<div class="card-header">
-			<h3 class="card-title">音频引擎</h3>
+			<h3 class="card-title">{t('settings.audio_engine')}</h3>
 		</div>
 		<div class="card-body">
 			<div class="setting-row">
 				<div class="setting-label">
-					<span class="label-text">采样率</span>
-					<span class="label-desc">输出音频的采样率 (Hz)</span>
+					<span class="label-text">{t('settings.sample_rate')}</span>
+					<span class="label-desc">{t('settings.sample_rate_desc')}</span>
 				</div>
 				<select class="select" bind:value={settings.sampleRate} onchange={applyEngineConfig}>
-					<option value={44100}>44100 Hz (CD)</option>
-					<option value={48000}>48000 Hz (DVD)</option>
-					<option value={96000}>96000 Hz (Hi-Res)</option>
-					<option value={192000}>192000 Hz (Hi-Res)</option>
+					<option value={44100}>{t('settings.cd')}</option>
+					<option value={48000}>{t('settings.dvd')}</option>
+					<option value={96000}>{t('settings.hi_res_96')}</option>
+					<option value={192000}>{t('settings.hi_res_192')}</option>
 				</select>
 			</div>
 			<div class="setting-row">
 				<div class="setting-label">
-					<span class="label-text">缓冲区大小</span>
-					<span class="label-desc">音频输出缓冲时长 (ms)，越小延迟越低</span>
+					<span class="label-text">{t('settings.buffer_size')}</span>
+					<span class="label-desc">{t('settings.buffer_desc')}</span>
 				</div>
 				<div class="slider-row">
 					<input type="range" min="20" max="300" step="10" bind:value={settings.bufferMs} onchange={applyEngineConfig} class="slider" style="--accent: {settings.accentColor};" />
@@ -100,8 +101,8 @@
 			</div>
 			<div class="setting-row">
 				<div class="setting-label">
-					<span class="label-text">交叉淡入淡出</span>
-					<span class="label-desc">切歌时的重叠时长 (ms)，0 为关闭</span>
+					<span class="label-text">{t('settings.crossfade')}</span>
+					<span class="label-desc">{t('settings.crossfade_desc')}</span>
 				</div>
 				<div class="slider-row">
 					<input type="range" min="0" max="5000" step="100" bind:value={settings.crossfadeMs} onchange={applyEngineConfig} class="slider" style="--accent: {settings.accentColor};" />
@@ -110,11 +111,11 @@
 			</div>
 			<div class="setting-row">
 				<div class="setting-label">
-					<span class="label-text">输出设备</span>
-					<span class="label-desc">音频输出设备（下次播放生效）</span>
+					<span class="label-text">{t('settings.output_device')}</span>
+					<span class="label-desc">{t('settings.output_device_desc')}</span>
 				</div>
 				<select class="select" value={settings.audioDevice} onchange={setAudioDevice}>
-					<option value="">系统默认</option>
+					<option value="">{t('settings.default_device')}</option>
 					{#each devices as d (d)}
 						<option value={d}>{d}</option>
 					{/each}
@@ -126,13 +127,13 @@
 	<!-- ── 外观 ── -->
 	<div class="card">
 		<div class="card-header">
-			<h3 class="card-title">外观</h3>
+			<h3 class="card-title">{t('settings.appearance')}</h3>
 		</div>
 		<div class="card-body">
 			<div class="setting-row">
 				<div class="setting-label">
-					<span class="label-text">主题色</span>
-					<span class="label-desc">自定义应用强调色</span>
+					<span class="label-text">{t('settings.accent_color')}</span>
+					<span class="label-desc">{t('settings.accent_desc')}</span>
 				</div>
 				<div class="color-row">
 					{#each accentColors as c (c.color)}
@@ -146,15 +147,15 @@
 	<!-- ── 播放 ── -->
 	<div class="card">
 		<div class="card-header">
-			<h3 class="card-title">播放</h3>
+			<h3 class="card-title">{t('settings.playback')}</h3>
 		</div>
 		<div class="card-body">
 			<div class="setting-row">
 				<div class="setting-label">
-					<span class="label-text">ReplayGain</span>
-					<span class="label-desc">统一不同曲目的响度，避免切歌时音量突变</span>
+					<span class="label-text">{t('settings.replaygain')}</span>
+					<span class="label-desc">{t('settings.replaygain_desc')}</span>
 				</div>
-				<button class="toggle" class:active={settings.replaygainEnabled} onclick={toggleReplaygain} aria-label="切换 ReplayGain">
+				<button class="toggle" class:active={settings.replaygainEnabled} onclick={toggleReplaygain} aria-label={t('settings.toggle_replaygain')}>
 					<span class="toggle-knob"></span>
 				</button>
 			</div>
@@ -164,17 +165,17 @@
 	<!-- ── 文件夹管理 ── -->
 	<div class="card">
 		<div class="card-header">
-			<h3 class="card-title">扫描文件夹</h3>
-			<button class="btn-add" onclick={addFolder} title="添加文件夹">+ 添加</button>
+			<h3 class="card-title">{t('settings.scan_folders')}</h3>
+			<button class="btn-add" onclick={addFolder} title={t('settings.add_folder')}>{t('settings.add_folder_short')}</button>
 		</div>
 		<div class="card-body">
 			{#if folders.length === 0}
-				<p class="empty-hint">暂无已扫描的文件夹</p>
+				<p class="empty-hint">{t('settings.no_folders')}</p>
 			{:else}
 				{#each folders as folder (folder)}
 					<div class="folder-row">
 						<div class="folder-path" title={folder}>{folder}</div>
-						<button class="btn-remove" onclick={() => removeFolder(folder)} title="删除此文件夹及音乐">
+						<button class="btn-remove" onclick={() => removeFolder(folder)} title={t('settings.remove_folder')}>
 							<Trash2 size={14} />
 						</button>
 					</div>
@@ -186,13 +187,13 @@
 	<!-- ── 关于 ── -->
 	<div class="card about">
 		<div class="card-header">
-			<h3 class="card-title">关于</h3>
+			<h3 class="card-title">{t('settings.about')}</h3>
 		</div>
 		<div class="about-body">
 			<div class="about-logo">◈</div>
 			<div class="about-info">
 				<span class="about-name">WaveLink</span>
-				<span class="about-version">版本 1.0.0</span>
+				<span class="about-version">{t('settings.version')}</span>
 			</div>
 		</div>
 	</div>

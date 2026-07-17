@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getUiState } from '$lib/stores/ui.svelte';
 	import { Music, AudioLines, Settings, HardDrive } from 'lucide-svelte';
+	import { t } from '$lib/i18n/i18n.svelte';
 
 	const ui = getUiState();
 </script>
@@ -12,22 +13,22 @@
 	</div>
 
 	<nav class="nav">
-		<p class="nav-label">浏览</p>
+		<p class="nav-label">{t('sidebar.browse')}</p>
 		<button class="nav-item" class:active={ui.view === 'library'} onclick={() => ui.navigateTo('library')}>
 			<Music size={16} stroke-width={1.5} />
-			<span>本地音乐</span>
+			<span>{t('sidebar.library')}</span>
 		</button>
 		<button class="nav-item" class:active={ui.view === 'effects'} onclick={() => ui.navigateTo('effects')}>
 			<AudioLines size={16} stroke-width={1.5} />
-			<span>音效设置</span>
+			<span>{t('sidebar.effects')}</span>
 		</button>
 		<button class="nav-item" class:active={ui.view === 'settings'} onclick={() => ui.navigateTo('settings')}>
 			<Settings size={16} stroke-width={1.5} />
-			<span>设置</span>
+			<span>{t('sidebar.settings')}</span>
 		</button>
 		<button class="nav-item" class:active={ui.view === 'nas'} onclick={() => ui.navigateTo('nas')}>
 			<HardDrive size={16} stroke-width={1.5} />
-			<span>NAS</span>
+			<span>{t('sidebar.nas')}</span>
 		</button>
 	</nav>
 </aside>

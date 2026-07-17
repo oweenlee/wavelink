@@ -7,6 +7,7 @@
 	import type { Track, AlbumBrief } from '$lib/audio/types';
 	import TagEditor from '$lib/components/panels/TagEditor.svelte';
 	import { ChevronLeft, Play, Music, Upload, Pencil, Trash2, Disc3, User, ChevronRight } from 'lucide-svelte';
+	import { t } from '$lib/i18n/i18n.svelte';
 
 	const library = getLibraryState();
 	const playback = getPlaybackState();
@@ -172,26 +173,26 @@
 	<div class="lib-header">
 		<h2 class="lib-title">
 			{#if mode === 'album_tracks'}
-				<button class="back-btn" onclick={backToAlbums} aria-label="返回">
+				<button class="back-btn" onclick={backToAlbums} aria-label={t('library.back')}>
 					<ChevronLeft size={18} />
 				</button>
 				{selectedAlbum}
 			{:else if mode === 'albums'}
-				<button class="back-btn" onclick={backToArtists} aria-label="返回">
+				<button class="back-btn" onclick={backToArtists} aria-label={t('library.back')}>
 					<ChevronLeft size={18} />
 				</button>
 				{selectedArtist}
 			{:else if mode === 'albums_grid'}
-				{library.trackCount} 首歌曲
+				{t('library.track_count', { count: library.trackCount })}
 			{:else}
-				{library.trackCount} 首歌曲
+				{t('library.track_count', { count: library.trackCount })}
 			{/if}
 		</h2>
 		<div class="lib-actions">
 			{#if mode === 'tracks' && library.trackCount > 0}
 				<button class="action-btn action-play-all" onclick={() => playback.playAllAsQueue(library.tracks)}>
 					<Play size={16} fill="currentColor" />
-					<span>播放全部</span>
+					<span>{t('library.play_all')}</span>
 				</button>
 			{/if}
 		</div>
@@ -199,9 +200,9 @@
 
 	<!-- Browse mode tabs -->
 	<div class="browse-tabs">
-		<button class="browse-tab" class:active={mode === 'tracks'} onclick={backToTracks}>曲目</button>
-		<button class="browse-tab" class:active={mode === 'albums_grid'} onclick={enterAlbumGrid}>专辑</button>
-		<button class="browse-tab" class:active={mode === 'artists' || mode === 'albums' || mode === 'album_tracks'} onclick={enterArtists}>艺术家</button>
+		<button class="browse-tab" class:active={mode === 'tracks'} onclick={backToTracks}>{t('library.tracks')}</button>
+		<button class="browse-tab" class:active={mode === 'albums_grid'} onclick={enterAlbumGrid}>{t('library.albums')}</button>
+		<button class="browse-tab" class:active={mode === 'artists' || mode === 'albums' || mode === 'album_tracks'} onclick={enterArtists}>{t('library.artists')}</button>
 	</div>
 
 	{#if browsingLoading}
@@ -218,11 +219,11 @@
 			<div class="empty-icon">
 				<Music size={48} stroke-width={1.5} />
 			</div>
-			<h3 class="empty-title">导入本地音乐</h3>
-			<p class="empty-hint">点击「扫描目录」选择音乐文件夹</p>
+			<h3 class="empty-title">{t('library.import_title')}</h3>
+			<p class="empty-hint">{t('library.import_hint')}</p>
 			<button class="scan-btn" onclick={handleScan}>
 				<Upload size={16} />
-				<span>选择音乐目录</span>
+				<span>{t('library.scan_btn')}</span>
 			</button>
 		</div>
 
@@ -230,10 +231,10 @@
 		<div class="track-table" bind:this={trackTableEl} onscroll={onTableScroll}>
 			<div class="track-header">
 				<span class="th-num">#</span>
-				<span class="th-title">标题</span>
-				<span class="th-artist">艺术家</span>
-				<span class="th-album">专辑</span>
-				<span class="th-duration">时长</span>
+				<span class="th-title">{t('library.header_title')}</span>
+				<span class="th-artist">{t('library.header_artist')}</span>
+				<span class="th-album">{t('library.header_album')}</span>
+				<span class="th-duration">{t('library.header_duration')}</span>
 			</div>
 			<div class="track-list">
 				<div style="height: {topSpacerH}px;"></div>
@@ -244,15 +245,15 @@
 						<span class="td-title">
 							<span class="td-title-text">{track.title || track.path.split(/[/\\]/).pop()}</span>
 							<span class="td-actions">
-								<button type="button" class="td-action" onclick={() => openEditor(track)} title="编辑标签">
+								<button type="button" class="td-action" onclick={() => openEditor(track)} title={t('library.edit_tag')}>
 									<Pencil size={12} />
 								</button>
-								<button type="button" class="td-action td-action-del" onclick={() => deleteTarget = track} title="从曲库删除">
+								<button type="button" class="td-action td-action-del" onclick={() => deleteTarget = track} title={t('library.delete_from_lib')}>
 									<Trash2 size={12} />
 								</button>
 							</span>
 						</span>
-						<span class="td-artist">{track.artist || '未知艺术家'}</span>
+						<span class="td-artist">{track.artist || t('library.unknown_artist')}</span>
 						<span class="td-album">{track.album || '-'}</span>
 						<span class="td-duration">{track.duration ? formatTime(track.duration) : '--:--'}</span>
 					</div>
@@ -268,8 +269,8 @@
 				<div class="empty-icon">
 					<Disc3 size={48} stroke-width={1.5} />
 				</div>
-					<h3 class="empty-title">暂无专辑</h3>
-					<p class="empty-hint">导入音乐后将会显示专辑封面</p>
+					<h3 class="empty-title">{t('library.no_albums')}</h3>
+					<p class="empty-hint">{t('library.album_hint')}</p>
 				</div>
 			{:else}
 				{#each albumBriefs as ab (ab.first_track_id)}
@@ -311,7 +312,7 @@
 					<div class="card-icon">
 						<Disc3 size={24} stroke-width={1.5} />
 					</div>
-					<span class="card-label">{album || '(未知专辑)'}</span>
+					<span class="card-label">{album || t('library.unknown_album')}</span>
 									<ChevronRight class="card-chevron" size={14} />
 				</button>
 			{/each}
@@ -321,8 +322,8 @@
 		<div class="track-table">
 			<div class="track-header">
 				<span class="th-num">#</span>
-				<span class="th-title">标题</span>
-				<span class="th-duration">时长</span>
+				<span class="th-title">{t('library.header_title')}</span>
+				<span class="th-duration">{t('library.header_duration')}</span>
 			</div>
 			<div class="track-list">
 				{#each albumTracks as track, i (track.id)}
@@ -331,10 +332,10 @@
 						<span class="td-title">
 							<span class="td-title-text">{track.title || track.path.split(/[/\\]/).pop()}</span>
 							<span class="td-actions">
-								<button type="button" class="td-action" onclick={() => openEditor(track)} title="编辑标签">
+								<button type="button" class="td-action" onclick={() => openEditor(track)} title={t('library.edit_tag')}>
 									<Pencil size={12} />
 								</button>
-								<button type="button" class="td-action td-action-del" onclick={() => deleteTarget = track} title="从曲库删除">
+								<button type="button" class="td-action td-action-del" onclick={() => deleteTarget = track} title={t('library.delete_from_lib')}>
 									<Trash2 size={12} />
 								</button>
 							</span>
@@ -353,10 +354,10 @@
 	{#if deleteTarget}
 		<div class="backdrop" onclick={() => deleteTarget = null} role="button" tabindex="0" onkeydown={(e) => e.key === 'Escape' && (deleteTarget = null)}></div>
 		<div class="confirm-dialog">
-			<p class="confirm-msg">确定从曲库中删除"{deleteTarget.title || deleteTarget.path.split(/[/\\]/).pop()}"吗？</p>
+			<p class="confirm-msg">{t('library.confirm_delete', { name: deleteTarget.title || deleteTarget.path.split(/[/\\]/).pop() })}</p>
 			<div class="confirm-actions">
-				<button class="btn-cancel" onclick={() => deleteTarget = null}>取消</button>
-				<button class="btn-danger" onclick={() => executeDelete()}>删除</button>
+				<button class="btn-cancel" onclick={() => deleteTarget = null}>{t('library.cancel')}</button>
+				<button class="btn-danger" onclick={() => executeDelete()}>{t('library.delete')}</button>
 			</div>
 		</div>
 	{/if}

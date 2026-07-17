@@ -4,6 +4,7 @@
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
 	import type { PeqBand } from '$lib/audio/types';
 	import { Upload } from 'lucide-svelte';
+	import { t } from '$lib/i18n/i18n.svelte';
 
 	const settings = getSettingsState();
 	const playback = getPlaybackState();
@@ -93,7 +94,7 @@
 	async function handleLoadIr() {
 		if (!_invoke) return;
 		const { open } = await import('@tauri-apps/plugin-dialog');
-		const path = await open({ filters: [{ name: 'IR WAV', extensions: ['wav'] }], title: '选择 IR 脉冲响应' });
+		const path = await open({ filters: [{ name: t('ir_filter_name'), extensions: ['wav'] }], title: t('ir_select_title') });
 		if (path) { await _invoke('load_ir', { path }); irLoaded = true; saveAll(); }
 	}
 	async function handleClearIr() { if (!_invoke) return; await _invoke('clear_ir'); irLoaded = false; saveAll(); }
@@ -110,9 +111,9 @@
 
 	// 预设名称的显示映射
 	const presetLabels: Record<string, string> = {
-		flat: '平直', rock: '摇滚', pop: '流行', dance: '舞曲',
-		classical: '古典', soft: '柔和', full_bass: '重低音',
-		full_treble: '高音增强', techno: '电子', vocals: '人声',
+		flat: t('effects.flat'), rock: t('effects.rock'), pop: t('effects.pop'), dance: t('effects.dance'),
+		classical: t('effects.classical'), soft: t('effects.soft'), full_bass: t('effects.full_bass'),
+		full_treble: t('effects.full_treble'), techno: t('effects.techno'), vocals: t('effects.vocals'),
 	};
 
 	// ── 交互式 EQ 曲线 Canvas ──
@@ -530,13 +531,13 @@
 	<!-- ── EQ ── -->
 	<div class="effect-card eq-card">
 		<div class="card-header">
-			<h3 class="card-title">均衡器</h3>
+			<h3 class="card-title">{t('effects.equalizer')}</h3>
 			<div class="card-actions">
 				<select class="preset-select" bind:value={_activePreset} onchange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; if (v) setEqPreset(v); }}>
-					<option value="">预设</option>
+					<option value="">{t('effects.preset')}</option>
 					{#each eqPresets as p (p)}<option value={p}>{presetLabels[p] || p}</option>{/each}
 				</select>
-				<button class="btn btn-sm" onclick={resetEq}>重置</button>
+				<button class="btn btn-sm" onclick={resetEq}>{t('effects.reset')}</button>
 			</div>
 		</div>
 		<div class="eq-canvas-wrap" bind:this={canvasContainer}>
@@ -548,36 +549,36 @@
 				onmouseleave={onCanvasMouseLeave}
 			></canvas>
 		</div>
-		<div class="eq-hint">拖拽曲线上圆点调节各频段增益 ({EQ_BANDS.map(b => b.label).join(' / ')})</div>
+		<div class="eq-hint">{t('effects.eq_hint', { bands: EQ_BANDS.map(b => b.label).join(' / ') })}</div>
 	</div>
 
 	<!-- ── Audio effects grid ── -->
 	<div class="effects-grid">
 		<div class="effect-card small">
-			<h3 class="card-title">IR 卷积混响</h3>
-			<p class="card-desc">加载真实声学空间的脉冲响应，模拟混响效果</p>
+			<h3 class="card-title">{t('effects.ir_convolution')}</h3>
+			<p class="card-desc">{t('effects.ir_desc')}</p>
 			<div class="card-actions">
 			<button class="btn" onclick={handleLoadIr}>
 				<Upload size={14} />
-				<span>加载 WAV</span>
+				<span>{t('effects.load_wav')}</span>
 			</button>
-				{#if irLoaded}<button class="btn danger" onclick={handleClearIr}>清除</button>{/if}
+				{#if irLoaded}<button class="btn danger" onclick={handleClearIr}>{t('effects.clear')}</button>{/if}
 				<span class="status-dot" class:active={irLoaded}></span>
-				<span class="status-text">{irLoaded ? '已加载' : '未加载'}</span>
+				<span class="status-text">{irLoaded ? t('effects.loaded') : t('effects.not_loaded')}</span>
 			</div>
 		</div>
 
 		<div class="effect-card small">
-			<h3 class="card-title">立体声展宽</h3>
-			<p class="card-desc">扩展立体声场，提升空间感</p>
+			<h3 class="card-title">{t('effects.stereo_widener')}</h3>
+			<p class="card-desc">{t('effects.stereo_desc')}</p>
 			<div class="card-body">
 				<button class="toggle" class:active={stereoWidener} onclick={toggleStereoWidener}>
 					<span class="toggle-knob"></span>
-					<span class="toggle-label">{stereoWidener ? '开启' : '关闭'}</span>
+					<span class="toggle-label">{stereoWidener ? t('effects.on') : t('effects.off')}</span>
 				</button>
 				{#if stereoWidener}
 					<div class="slider-row">
-						<span class="slider-label">宽度</span>
+						<span class="slider-label">{t('effects.width')}</span>
 						<input type="range" min="0" max="1" step="0.05" bind:value={stereoWidth} oninput={updateStereoWidth} class="slider" style="--accent: {settings.accentColor};" />
 						<span class="slider-val">{Math.round(stereoWidth * 100)}%</span>
 					</div>
@@ -586,12 +587,12 @@
 		</div>
 
 		<div class="effect-card small">
-			<h3 class="card-title">ReplayGain</h3>
-			<p class="card-desc">统一不同曲目的响度，避免切歌时音量突变</p>
+			<h3 class="card-title">{t('effects.replaygain')}</h3>
+			<p class="card-desc">{t('effects.replaygain_desc')}</p>
 			<div class="card-body">
 				<button class="toggle" class:active={settings.replaygainEnabled} onclick={() => settings.setReplaygain(!settings.replaygainEnabled)}>
 					<span class="toggle-knob"></span>
-					<span class="toggle-label">{settings.replaygainEnabled ? '开启' : '关闭'}</span>
+					<span class="toggle-label">{settings.replaygainEnabled ? t('effects.on') : t('effects.off')}</span>
 				</button>
 			</div>
 		</div>

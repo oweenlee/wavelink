@@ -3,6 +3,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { browser } from '$app/environment';
 	import { HardDrive, Plus, Trash2, Play, Square, Server, X, Loader, Upload } from 'lucide-svelte';
+	import { t } from '$lib/i18n/i18n.svelte';
 
 	const nas = nasStore;
 
@@ -63,15 +64,15 @@
 
 <div class="nas-view">
 	<div class="header">
-		<h1>NAS 网络共享</h1>
+		<h1>{t('nas.title')}</h1>
 		<button class="btn-primary" onclick={() => (showAddDialog = true)}>
 			<Plus size={16} />
-			<span>添加 NAS</span>
+			<span>{t('nas.add')}</span>
 		</button>
 	</div>
 
 	{#if nas.loading}
-		<div class="loading"><Loader size={20} class="spin" /> 加载中...</div>
+		<div class="loading"><Loader size={20} class="spin" /> {t('nas.loading')}</div>
 	{/if}
 
 	{#if nas.error}
@@ -81,8 +82,8 @@
 	{#if nas.connections.length === 0 && !nas.loading}
 		<div class="empty">
 			<Server size={48} stroke-width={1} />
-			<p>没有已保存的 NAS 连接</p>
-			<p class="hint">添加 NAS 后可挂载到本地并扫描音乐文件</p>
+			<p>{t('nas.empty')}</p>
+			<p class="hint">{t('nas.empty_hint')}</p>
 		</div>
 	{/if}
 
@@ -98,7 +99,7 @@
 						smb://{conn.server}/{conn.share}
 					</div>
 					<div class="card-status" class:connected={conn.mounted}>
-						{conn.mounted ? '已挂载' : '未挂载'}
+						{conn.mounted ? t('nas.mounted') : t('nas.unmounted')}
 						{#if conn.mount_path} — {conn.mount_path}{/if}
 					</div>
 				</div>
@@ -108,7 +109,7 @@
 						class:btn-mount={!conn.mounted}
 						class:btn-unmount={conn.mounted}
 						disabled={mounting.has(conn.id)}
-						title={conn.mounted ? '卸载' : '挂载'}
+						title={conn.mounted ? t('nas.unmount') : t('nas.mount')}
 						onclick={() => handleMount(conn.id, conn)}
 					>
 						{#if mounting.has(conn.id)}
@@ -119,7 +120,7 @@
 							<Play size={14} />
 						{/if}
 					</button>
-					<button class="btn-icon btn-danger" title="删除" onclick={() => handleRemove(conn.id)}>
+					<button class="btn-icon btn-danger" title={t('nas.delete')} onclick={() => handleRemove(conn.id)}>
 						<Trash2 size={14} />
 					</button>
 				</div>
@@ -128,7 +129,7 @@
 	</div>
 
 	{#if scanning}
-		<div class="scan-bar"><Loader size={14} class="spin" /> 扫描中...</div>
+		<div class="scan-bar"><Loader size={14} class="spin" /> {t('nas.scanning')}</div>
 	{/if}
 </div>
 
@@ -137,40 +138,40 @@
 	<div class="overlay" onclick={() => (showAddDialog = false)}>
 		<div class="dialog" onclick={(e) => e.stopPropagation()}>
 			<div class="dialog-header">
-				<h2>添加 NAS 连接</h2>
+				<h2>{t('nas.dialog_title')}</h2>
 				<button class="btn-icon" onclick={() => (showAddDialog = false)}><X size={18} /></button>
 			</div>
 			<div class="dialog-body">
 				<label class="field">
-					<span>名称</span>
-					<input type="text" bind:value={form.name} placeholder="例如: 家庭NAS" />
+					<span>{t('nas.name')}</span>
+					<input type="text" bind:value={form.name} placeholder={t('nas.name_placeholder')} />
 				</label>
 				<label class="field">
-					<span>服务器地址</span>
-					<input type="text" bind:value={form.server} placeholder="192.168.1.100 或 nas.local" />
+					<span>{t('nas.server')}</span>
+					<input type="text" bind:value={form.server} placeholder={t('nas.server_placeholder')} />
 				</label>
 				<label class="field">
-					<span>共享文件夹</span>
-					<input type="text" bind:value={form.share} placeholder="Music" />
+					<span>{t('nas.share')}</span>
+					<input type="text" bind:value={form.share} placeholder={t('nas.share_placeholder')} />
 				</label>
 				<label class="field">
-					<span>用户名（可选）</span>
-					<input type="text" bind:value={form.username} placeholder="guest" />
+					<span>{t('nas.username')}</span>
+					<input type="text" bind:value={form.username} placeholder={t('nas.username_placeholder')} />
 				</label>
 				<label class="field">
-					<span>密码（可选）</span>
-					<input type="password" bind:value={form.password} placeholder="密码存储在系统钥匙串" />
+					<span>{t('nas.password')}</span>
+					<input type="password" bind:value={form.password} placeholder={t('nas.password_placeholder')} />
 				</label>
 				<label class="checkbox">
 					<input type="checkbox" bind:checked={form.autoMount} />
-					<span>启动时自动挂载</span>
+					<span>{t('nas.auto_mount')}</span>
 				</label>
 			</div>
 			<div class="dialog-footer">
-				<button class="btn-secondary" onclick={() => (showAddDialog = false)}>取消</button>
+				<button class="btn-secondary" onclick={() => (showAddDialog = false)}>{t('nas.cancel')}</button>
 				<button class="btn-primary" disabled={!form.name || !form.server || !form.share} onclick={handleAdd}>
 					<Plus size={14} />
-					<span>添加</span>
+					<span>{t('nas.add_btn')}</span>
 				</button>
 			</div>
 		</div>
