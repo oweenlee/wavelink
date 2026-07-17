@@ -25,9 +25,10 @@
 
     const W = () => canvas.clientWidth || innerWidth;
     const H = () => canvas.clientHeight || innerHeight;
-    const ACCENT = '#a78bfa';
-    const FG = '#eeeeee';
-    const MUTED = '#999999';
+	const ACCENT = '#a78bfa';
+	const ACCENT2 = '#7ec8e3';
+	const FG = '#eeeeee';
+	const MUTED = '#999999';
 
     // particles
     const pCount = 24;
@@ -143,46 +144,72 @@
         });
       }
 
-      // ---- diamond logo ----
-      if (t > 0.6 && t < 2.0) {
-        const p = Math.min((t - 0.6) / 1.0, 1);
-        const ep = 1 - Math.pow(1 - p, 3);
-        logoAlpha = ep;
-        dGlowAlpha = ep * 0.3;
-        logoScale = 0.6 + ep * 0.4;
-      }
+	// ---- interlocking waves logo ----
+		if (t > 0.6 && t < 2.0) {
+			const p = Math.min((t - 0.6) / 1.0, 1);
+			const ep = 1 - Math.pow(1 - p, 3);
+			logoAlpha = ep;
+			dGlowAlpha = ep * 0.3;
+			logoScale = 0.6 + ep * 0.4;
+		}
 
-      const cx = W() / 2;
-      const cy = H() / 2 - 55;
-      const s = 22 * logoScale;
+		const cx = W() / 2;
+		const cy = H() / 2 - 55;
+		const sw = 35 * logoScale;
 
-      // diamond glow
-      if (dGlowAlpha > 0.01 || (t > 1.5 && t < DURATION - FADE_DURATION)) {
-        const dg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 50 * logoScale);
-        const da = t > 1.5 && t < DURATION - FADE_DURATION
-          ? (0.25 + Math.sin(t * 1.5) * 0.1) * logoAlpha
-          : dGlowAlpha;
-        dg.addColorStop(0, `rgba(167,139,250,${da})`);
-        dg.addColorStop(1, 'rgba(167,139,250,0)');
-        ctx.fillStyle = dg;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 50 * logoScale, 0, Math.PI * 2);
-        ctx.fill();
-      }
+		// wave glow
+		if (dGlowAlpha > 0.01 || (t > 1.5 && t < DURATION - FADE_DURATION)) {
+			const dg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 80 * logoScale);
+			const da = t > 1.5 && t < DURATION - FADE_DURATION
+				? (0.25 + Math.sin(t * 1.5) * 0.1) * logoAlpha
+				: dGlowAlpha;
+			dg.addColorStop(0, `rgba(167,139,250,${da})`);
+			dg.addColorStop(1, 'rgba(167,139,250,0)');
+			ctx.fillStyle = dg;
+			ctx.beginPath();
+			ctx.arc(cx, cy, 80 * logoScale, 0, Math.PI * 2);
+			ctx.fill();
+		}
 
-      // diamond shape
-      if (logoAlpha > 0.01) {
-        ctx.globalAlpha = logoAlpha;
-        ctx.fillStyle = ACCENT;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy - s);
-        ctx.lineTo(cx + s, cy);
-        ctx.lineTo(cx, cy + s);
-        ctx.lineTo(cx - s, cy);
-        ctx.closePath();
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      }
+		// interlocking waves
+		if (logoAlpha > 0.01) {
+			ctx.save();
+			ctx.globalAlpha = logoAlpha;
+
+			// wave 1 (purple): dips down then rises
+			ctx.beginPath();
+			ctx.moveTo(cx - sw * 2.2, cy - sw * 0.2);
+			ctx.bezierCurveTo(cx - sw * 1.1, cy - sw * 0.5, cx - sw * 1.1, cy + sw * 0.5, cx, cy + sw * 0.2);
+			ctx.bezierCurveTo(cx + sw * 1.1, cy + sw * 0.5, cx + sw * 1.1, cy - sw * 0.5, cx + sw * 2.2, cy - sw * 0.2);
+			ctx.strokeStyle = ACCENT;
+			ctx.lineWidth = 4 * logoScale;
+			ctx.lineCap = 'round';
+			ctx.stroke();
+
+			// wave 2 (teal): arches up then falls
+			ctx.beginPath();
+			ctx.moveTo(cx - sw * 2.2, cy + sw * 0.2);
+			ctx.bezierCurveTo(cx - sw * 1.1, cy + sw * 0.5, cx - sw * 1.1, cy - sw * 0.5, cx, cy - sw * 0.2);
+			ctx.bezierCurveTo(cx + sw * 1.1, cy - sw * 0.5, cx + sw * 1.1, cy + sw * 0.5, cx + sw * 2.2, cy + sw * 0.2);
+			ctx.strokeStyle = ACCENT2;
+			ctx.lineWidth = 3 * logoScale;
+			ctx.lineCap = 'round';
+			ctx.stroke();
+
+			// link nodes
+			const dotR = 2.5 * logoScale;
+			ctx.fillStyle = '#c4b5fd';
+			ctx.beginPath();
+			ctx.arc(cx - sw * 1.1, cy, dotR, 0, Math.PI * 2);
+			ctx.fill();
+
+			ctx.fillStyle = '#67e8f9';
+			ctx.beginPath();
+			ctx.arc(cx + sw * 1.1, cy, dotR, 0, Math.PI * 2);
+			ctx.fill();
+
+			ctx.restore();
+		}
 
       // ---- title ----
       if (t > 1.0 && t < 2.2) {

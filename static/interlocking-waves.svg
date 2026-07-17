@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e1e36"/>
+      <stop offset="100%" stop-color="#1a1a2e"/>
+    </linearGradient>
+    <linearGradient id="w1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="50%" stop-color="#c4b5fd"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+    <linearGradient id="w2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7ec8e3"/>
+      <stop offset="50%" stop-color="#67e8f9"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="112" fill="none" stroke="#2a2a50" stroke-width="2"/>
+  <path d="M72 184C160 176 160 336 256 336C352 336 352 176 440 184" fill="none" stroke="url(#w1)" stroke-width="20" stroke-linecap="round" filter="url(#glow)"/>
+  <path d="M72 328C160 336 160 176 256 176C352 176 352 336 440 328" fill="none" stroke="url(#w2)" stroke-width="16" stroke-linecap="round" filter="url(#glow)"/>
+  <circle cx="160" cy="256" r="10" fill="#c4b5fd"/>
+  <circle cx="352" cy="256" r="10" fill="#67e8f9"/>
+</svg>

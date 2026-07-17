@@ -8,7 +8,22 @@
 
 <aside class="sidebar">
 	<div class="logo">
-		<span class="logo-mark">◈</span>
+		<svg class="logo-svg" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+			<defs>
+				<linearGradient id="sw1" x1="0" y1="0" x2="24" y2="0">
+					<stop offset="0" stop-color="#a78bfa"/>
+					<stop offset="100" stop-color="#818cf8"/>
+				</linearGradient>
+				<linearGradient id="sw2" x1="0" y1="0" x2="24" y2="0">
+					<stop offset="0" stop-color="#7ec8e3"/>
+					<stop offset="100" stop-color="#818cf8"/>
+				</linearGradient>
+			</defs>
+			<path d="M2 8C7 7 7 17 12 17C17 17 17 7 22 8" fill="none" stroke="url(#sw1)" stroke-width="2.5" stroke-linecap="round"/>
+			<path d="M2 16C7 17 7 7 12 7C17 7 17 17 22 16" fill="none" stroke="url(#sw2)" stroke-width="2" stroke-linecap="round"/>
+			<circle cx="7" cy="12" r="1.3" fill="#c4b5fd"/>
+			<circle cx="17" cy="12" r="1.3" fill="#67e8f9"/>
+		</svg>
 		<span class="logo-text">WaveLink</span>
 	</div>
 
@@ -49,7 +64,7 @@
 		margin-bottom: var(--space-8);
 	}
 
-	.logo-mark { font-size: 22px; color: var(--accent); }
+	.logo-svg { flex-shrink: 0; }
 	.logo-text { font-size: 16px; font-weight: 600; color: var(--fg-primary); letter-spacing: 0.5px; }
 
 	.nav { display: flex; flex-direction: column; gap: 1px; }
