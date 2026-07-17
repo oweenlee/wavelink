@@ -28,7 +28,7 @@
 				// 引擎无 EQ 数据时使用默认
 			}
 
-			// 2. 再从保存的设置覆盖（仅当波段数匹配时才覆盖：31 段或 10 段）
+			// 2. 再从保存的设置覆盖
 			try {
 				const saved: Record<string, any> = await mod.invoke('load_settings');
 				if (typeof saved.irLoaded === 'boolean') irLoaded = saved.irLoaded;
@@ -40,6 +40,9 @@
 						const b = saved.eqBands[i];
 						await mod.invoke('set_peq_band', { index: i, freq: b.freq, gainDb: b.gain_db, q: b.q });
 					}
+				}
+				if (typeof saved.eqPreset === 'string' && saved.eqPreset && eqPresets.includes(saved.eqPreset)) {
+					_activePreset = saved.eqPreset;
 				}
 			} catch { console.warn('[Effects] 设置加载/同步失败'); }
 
@@ -56,6 +59,7 @@
 					eqBands: eqBands.map(b => ({ freq: b.freq, gain_db: b.gain_db, q: b.q })),
 					irLoaded, stereoWidener, stereoWidth,
 					replaygainEnabled: settings.replaygainEnabled,
+					eqPreset: _activePreset,
 				},
 			});
 		} catch { console.warn('[Effects] 保存设置失败'); }
@@ -244,6 +248,7 @@
 	function onCanvasMouseUp() {
 		if (_dragIndex >= 0) {
 			_dragIndex = -1;
+			_activePreset = '';
 			if (canvasEl) canvasEl.style.cursor = 'default';
 			saveAll();
 			drawEqCurve();

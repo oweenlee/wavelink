@@ -100,6 +100,16 @@
 			</div>
 			<div class="setting-row">
 				<div class="setting-label">
+					<span class="label-text">交叉淡入淡出</span>
+					<span class="label-desc">切歌时的重叠时长 (ms)，0 为关闭</span>
+				</div>
+				<div class="slider-row">
+					<input type="range" min="0" max="5000" step="100" bind:value={settings.crossfadeMs} onchange={applyEngineConfig} class="slider" style="--accent: {settings.accentColor};" />
+					<span class="slider-val">{settings.crossfadeMs} ms</span>
+				</div>
+			</div>
+			<div class="setting-row">
+				<div class="setting-label">
 					<span class="label-text">输出设备</span>
 					<span class="label-desc">音频输出设备（下次播放生效）</span>
 				</div>
