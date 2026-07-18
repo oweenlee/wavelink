@@ -1,0 +1,110 @@
+import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+
+class ProgressSliderWidget extends StatelessWidget {
+  final double progress;
+  final double? buffered;
+  final String current;
+  final String total;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onDragging;
+
+  const ProgressSliderWidget({
+    super.key,
+    required this.progress,
+    this.buffered,
+    required this.current,
+    required this.total,
+    required this.onChanged,
+    this.onDragging,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SliderTheme(
+          data: SliderThemeData(
+            trackHeight: 4,
+            thumbShape: _ThumbShape(),
+            activeTrackColor: AppTheme.accentBlue,
+            inactiveTrackColor: AppTheme.textTertiary.withValues(alpha: 0.3),
+            overlayColor: AppTheme.accentBlue.withValues(alpha: 0.1),
+          ),
+          child: Slider(
+            value: progress.clamp(0.0, 1.0),
+            onChanged: (v) {
+              onChanged(v);
+              onDragging?.call(v);
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                current,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.textTertiary,
+                ),
+              ),
+              Text(
+                total,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.textTertiary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ThumbShape extends SliderComponentShape {
+  @override
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) {
+    return const Size(16, 16);
+  }
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    required bool isDiscrete,
+    required TextPainter labelPainter,
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required TextDirection textDirection,
+    required double value,
+    required double textScaleFactor,
+    required Size sizeWithOverflow,
+  }) {
+    final canvas = context.canvas;
+    final radius = activationAnimation.value * 4 + 8;
+
+    // Glow
+    final glowPaint = Paint()
+      ..color = AppTheme.accentBlue.withValues(
+        alpha: 0.2 * activationAnimation.value,
+      )
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+    canvas.drawCircle(center, radius + 4, glowPaint);
+
+    // Thumb
+    final thumbPaint = Paint()..color = AppTheme.accentBlue;
+    canvas.drawCircle(center, radius, thumbPaint);
+
+    // Inner highlight
+    final innerPaint = Paint()..color = Colors.white.withValues(alpha: 0.4);
+    canvas.drawCircle(center - const Offset(1, 1), radius * 0.4, innerPaint);
+  }
+}

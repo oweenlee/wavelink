@@ -1,0 +1,654 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../models/song.dart';
+import '../providers/playback_provider.dart';
+import '../theme/app_theme.dart';
+import '../widgets/song_tile.dart';
+import 'album_detail_page.dart';
+import 'artist_detail_page.dart';
+
+class LibraryPage extends StatefulWidget {
+  const LibraryPage({super.key});
+
+  @override
+  State<LibraryPage> createState() => _LibraryPageState();
+}
+
+class _LibraryPageState extends State<LibraryPage>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 4, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const SizedBox(height: 8),
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: AppTheme.surfaceDark.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: TabBar(
+            controller: _tabController,
+            indicator: BoxDecoration(
+              color: AppTheme.accentBlue.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            indicatorSize: TabBarIndicatorSize.tab,
+            dividerColor: Colors.transparent,
+            labelColor: AppTheme.accentBlue,
+            unselectedLabelColor: AppTheme.textTertiary,
+            labelStyle: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+            unselectedLabelStyle: const TextStyle(fontSize: 13),
+            tabs: const [
+              Tab(text: '歌曲'),
+              Tab(text: '专辑'),
+              Tab(text: '艺术家'),
+              Tab(text: '播放列表'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _SongsTab(),
+              _AlbumsTab(),
+              _ArtistsTab(),
+              _PlaylistsTab(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Empty State ──
+
+class _EmptyLibrary extends StatelessWidget {
+  final String message;
+  const _EmptyLibrary({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.library_music_outlined,
+              size: 64,
+              color: AppTheme.textTertiary.withValues(alpha: 0.3),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              style: const TextStyle(
+                fontSize: 15,
+                color: AppTheme.textSecondary,
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Songs Tab ──
+
+class _SongsTab extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final player = context.watch<PlaybackProvider>();
+    final songs = player.allSongs;
+
+    return Column(
+      children: [
+        _ImportHeader(importCount: songs.length),
+        Expanded(
+          child: songs.isEmpty
+              ? _EmptyLibrary(
+                  message: '还没有导入音乐\n点击上方"导入音乐"添加歌曲',
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 80),
+                  itemCount: songs.length,
+                  itemBuilder: (context, index) {
+                    final song = songs[index];
+                    final isPlaying =
+                        player.isPlaying && player.currentSong?.id == song.id;
+                    return SongTile(
+                      song: song,
+                      isPlaying: isPlaying,
+                      onTap: () => player.playSong(song),
+                      onMore: () => _showContextMenu(context, song, player),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ImportHeader extends StatelessWidget {
+  final int importCount;
+  const _ImportHeader({required this.importCount});
+
+  @override
+  Widget build(BuildContext context) {
+    final player = context.read<PlaybackProvider>();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Row(
+        children: [
+          const Icon(Icons.folder_open_rounded,
+              size: 18, color: AppTheme.accentBlue),
+          const SizedBox(width: 8),
+          Text(
+            importCount > 0 ? '导入 ($importCount)' : '导入音乐',
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+          const Spacer(),
+          GestureDetector(
+            onTap: () => player.rescanImported(),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: AppTheme.textTertiary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.refresh_rounded,
+                  size: 16, color: AppTheme.textSecondary),
+            ),
+          ),
+          GestureDetector(
+            onTap: () => player.importFromPicker(),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppTheme.accentBlue.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add_rounded, size: 16, color: AppTheme.accentBlue),
+                  SizedBox(width: 4),
+                  Text(
+                    '导入',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: AppTheme.accentBlue,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Albums Tab ──
+
+class _AlbumsTab extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final player = context.watch<PlaybackProvider>();
+    final songs = player.allSongs;
+
+    // group by album
+    final albumNames = songs.map((s) => s.album).toSet().toList();
+    if (albumNames.isEmpty) {
+      return const _EmptyLibrary(message: '暂无专辑信息');
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 80, left: 16, right: 16, top: 8),
+      itemCount: albumNames.length,
+      itemBuilder: (context, index) {
+        final name = albumNames[index];
+        final albumSongs = songs.where((s) => s.album == name).toList();
+        final color = albumSongs.first.dominantColor;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: GestureDetector(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ChangeNotifierProvider.value(
+                  value: context.read<PlaybackProvider>(),
+                  child: AlbumDetailPage(album: Album(
+                    id: name,
+                    title: name,
+                    artist: albumSongs.first.artist,
+                    year: 0,
+                    songs: albumSongs,
+                    dominantColor: color,
+                  )),
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      Icons.album_rounded,
+                      color: Colors.white.withValues(alpha: 0.5),
+                      size: 28,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${albumSongs.first.artist} · ${albumSongs.length} 首',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppTheme.textTertiary,
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Artists Tab ──
+
+class _ArtistsTab extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final player = context.watch<PlaybackProvider>();
+    final songs = player.allSongs;
+
+    final artistNames = songs.map((s) => s.artist).toSet().toList();
+    if (artistNames.isEmpty) {
+      return const _EmptyLibrary(message: '暂无艺术家信息');
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 80, left: 16, right: 16, top: 8),
+      itemCount: artistNames.length,
+      itemBuilder: (context, index) {
+        final name = artistNames[index];
+        final count = songs.where((s) => s.artist == name).length;
+        final artistColor = songs.firstWhere((s) => s.artist == name).dominantColor;
+
+        return GestureDetector(
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ChangeNotifierProvider.value(
+                value: context.read<PlaybackProvider>(),
+                child: ArtistDetailPage(
+                  artistName: name,
+                  artistColor: artistColor,
+                ),
+              ),
+            ),
+          ),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: artistColor,
+                    borderRadius: BorderRadius.circular(26),
+                  ),
+                  child: Center(
+                    child: Text(
+                      name.isNotEmpty ? name[0] : '?',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$count 首歌曲',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppTheme.textTertiary,
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Playlists Tab ──
+
+class _PlaylistsTab extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final playlists = [
+      {'name': '我喜欢的音乐', 'count': 0, 'color': AppTheme.danger},
+      {'name': '最近播放', 'count': 0, 'color': AppTheme.accentPurple},
+      {'name': '深夜聆听', 'count': 0, 'color': const Color(0xFF2C3E50)},
+      {'name': '古典精选', 'count': 0, 'color': const Color(0xFF8B4513)},
+    ];
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 80, left: 16, right: 16, top: 8),
+      itemCount: playlists.length + 1,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            child: GestureDetector(
+              onTap: () {},
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppTheme.accentBlue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppTheme.accentBlue.withValues(alpha: 0.3),
+                    width: 1,
+                  ),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.add_rounded,
+                      color: AppTheme.accentBlue,
+                      size: 20,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      '新建播放列表',
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: AppTheme.accentBlue,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        final pl = playlists[index - 1];
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: pl['color'] as Color,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: Icon(
+                    Icons.playlist_play_rounded,
+                    color: Colors.white.withValues(alpha: 0.6),
+                    size: 24,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      pl['name'] as String,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${pl['count']} 首歌曲',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppTheme.textTertiary,
+                size: 20,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Context Menu ──
+
+void _showContextMenu(
+  BuildContext context,
+  Song song,
+  PlaybackProvider player,
+) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) => Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceDark,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: song.dominantColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        song.title,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${song.artist} · ${song.album}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          _MenuItem(
+            icon: Icons.skip_next_rounded,
+            label: '播放下一首',
+            onTap: () {
+              player.playNext(song);
+              Navigator.pop(ctx);
+            },
+          ),
+          _MenuItem(
+            icon: Icons.queue_music_rounded,
+            label: '加入队列',
+            onTap: () {
+              player.addToQueue(song);
+              Navigator.pop(ctx);
+            },
+          ),
+          _MenuItem(
+            icon: Icons.playlist_add_rounded,
+            label: '添加到播放列表',
+            onTap: () => Navigator.pop(ctx),
+          ),
+          _MenuItem(
+            icon: Icons.favorite_border_rounded,
+            label: '收藏',
+            onTap: () => Navigator.pop(ctx),
+          ),
+          const Divider(height: 1),
+          _MenuItem(
+            icon: Icons.delete_outline_rounded,
+            label: '从曲库删除',
+            isDestructive: true,
+            onTap: () => Navigator.pop(ctx),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _MenuItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool isDestructive;
+
+  const _MenuItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.isDestructive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(
+        icon,
+        color: isDestructive ? AppTheme.danger : AppTheme.textPrimary,
+        size: 22,
+      ),
+      title: Text(
+        label,
+        style: TextStyle(
+          fontSize: 15,
+          color: isDestructive ? AppTheme.danger : AppTheme.textPrimary,
+        ),
+      ),
+      onTap: onTap,
+      dense: true,
+    );
+  }
+}
