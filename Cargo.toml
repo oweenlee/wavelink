@@ -1,0 +1,40 @@
+[package]
+name = "audio-core"
+version = "0.1.0"
+edition = "2021"
+description = "纯 Rust 音频引擎：解码 + DSP 管线"
+
+[features]
+default = ["cpal-backend"]
+cpal-backend = ["cpal"]
+
+[dependencies]
+cpal = { version = "0.15", optional = true }
+crossbeam-channel = "0.5"
+ringbuf = "0.4"
+fastrand = "2"
+fft-convolver = "0.4"
+bs2b = "0.2"
+hound = "3.5"
+tracing = "0.1"
+
+# 分析模块（BPM / Key）
+realfft = "3"
+
+# 序列化（引擎事件）
+serde = { version = "1", features = ["derive"] }
+
+# 纯 Rust 解码器
+symphonia = { version = "0.6", default-features = false, features = [
+    "mp3", "flac", "pcm", "vorbis", "aac", "alac", "isomp4", "ogg", "wav", "aiff"
+] }
+symphonia-adapter-oporus = "0.1"
+wavpack-rs = { git = "https://github.com/lexicone42/wavpack-rs" }
+rubato = "0.10"
+dsd-reader = "0.3"
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[lib]
+crate-type = ["staticlib", "lib"]
