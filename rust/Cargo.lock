@@ -69,6 +69,7 @@ checksum = "c59bdb34bc650a32731b31bd8f0829cc15d24a708ee31559e0bb34f2bc320cba"
 [[package]]
 name = "audio-core"
 version = "0.1.0"
+source = "git+ssh://git@github.com/qinlaoban/wavelink-core.git?tag=v0.1.0#8bea82f727b3d318be30837433d1fc72c9b9f67a"
 dependencies = [
  "bs2b",
  "crossbeam-channel",
