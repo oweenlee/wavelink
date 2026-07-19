@@ -1,4 +1,7 @@
-# audio-core
+# audio-core（wavelink-audio-core）
+
+> 跨端纯 Rust 音频核心。被 `wavelink-engine/sdk` 与 `wavelink_mobile/rust` 以 git tag 依赖。
+> 发布新版本见根目录 `../README.md` 的发版顺序。
 
 纯 Rust 音频引擎。零 C 依赖，macOS/Windows/Linux/Android/iOS 均可编译。
 
