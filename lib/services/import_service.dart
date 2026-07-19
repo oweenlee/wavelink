@@ -39,6 +39,7 @@ class ImportService {
 
   /// 批量将文件转为 Song 对象（优先用 Rust 读取真实元数据）
   static Future<List<Song>> _filesToSongs(List<File> files) async {
+    final cacheDir = await _coverCacheDir();
     final songs = <Song>[];
     for (final file in files) {
       Song? song;
@@ -53,6 +54,19 @@ class ImportService {
               ? Duration(milliseconds: (meta.durationSecs * 1000).round())
               : _estimateDuration(file);
 
+          // 提取封面并缓存
+          String? coverUrl;
+          if (meta.hasCover) {
+            try {
+              final bytes = await rs.getCoverBytes(file.path);
+              final cacheFile = File('${cacheDir.path}/${file.path.hashCode}.jpg');
+              await cacheFile.writeAsBytes(bytes);
+              coverUrl = cacheFile.path;
+            } catch (_) {
+              // 封面提取失败，不阻塞导入
+            }
+          }
+
           song = Song(
             id: 'imp_${file.path.hashCode}',
             title: title,
@@ -61,6 +75,7 @@ class ImportService {
             duration: duration,
             dominantColor: _colorFromPath(file.path),
             path: file.path,
+            coverUrl: coverUrl,
             hasCover: meta.hasCover,
           );
         } catch (_) {
@@ -90,6 +105,14 @@ class ImportService {
     final hash = path.hashCode;
     final palette = AppPalette.colors;
     return palette[hash.abs() % palette.length];
+  }
+
+  /// 封面缓存目录
+  static Future<Directory> _coverCacheDir() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final dir = Directory('${appDir.path}/.covers');
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir;
   }
 
   /// 纯文件名猜测降级（不含 Rust 调用）

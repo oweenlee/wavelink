@@ -6,3 +6,6 @@ void audio_output_fill_buffer_stereo(float * _Nonnull left, float * _Nonnull rig
 
 // 清空 ringbuf 残留（暂停恢复时丢弃积压数据，避免磁带滑）
 void audio_output_clear_ringbuf(void);
+
+// 设置硬件采样率（从 AVAudioSession 获取后传入 Rust）
+void set_hw_sample_rate(unsigned int rate);

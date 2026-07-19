@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
 import '../models/lyric_line.dart';
 import '../services/native_audio_service.dart';
@@ -73,9 +75,39 @@ class PlaybackProvider extends ChangeNotifier {
       _importedSongs = songs;
       _queue = List.from(songs);
       _currentIndex = 0;
+      // 批量提取缺失的封面
+      _batchExtractCovers(songs);
     }
     _scanDone = true;
     notifyListeners();
+  }
+
+  /// 后台批量提取缺失封面
+  Future<void> _batchExtractCovers(List<Song> songs) async {
+    if (!rs.rustAvailable) return;
+    final appDir = await getApplicationDocumentsDirectory();
+    final cacheDir = Directory('${appDir.path}/.covers');
+    if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
+
+    var changed = false;
+    for (final song in songs) {
+      if (!song.hasCover || song.path == null || song.coverUrl != null) continue;
+      final cacheFile = File('${cacheDir.path}/${song.path!.hashCode}.jpg');
+      if (await cacheFile.exists()) {
+        song.coverUrl = cacheFile.path;
+        changed = true;
+        continue;
+      }
+      try {
+        final bytes = await rs.getCoverBytes(song.path!);
+        await cacheFile.writeAsBytes(bytes);
+        song.coverUrl = cacheFile.path;
+        changed = true;
+      } catch (_) {
+        // 单个提取失败不影响其他
+      }
+    }
+    if (changed) notifyListeners();
   }
 
   Future<void> _initNative() async {
@@ -87,6 +119,8 @@ class PlaybackProvider extends ChangeNotifier {
           _progressTimer?.cancel();
           _position = 0;
           next();
+        } else if (event is RemoteCommand) {
+          _handleRemoteCommand(event);
         }
       });
       if (rs.rustAvailable) {
@@ -100,7 +134,6 @@ class PlaybackProvider extends ChangeNotifier {
   @override
   void dispose() {
     _progressTimer?.cancel();
-    _seekThrottleTimer?.cancel();
     _eventSub?.cancel();
     _nativeAudio.dispose();
     super.dispose();
@@ -182,6 +215,7 @@ class PlaybackProvider extends ChangeNotifier {
     _isPlaying = true;
     _startProgressTimer();
     _nativeAudio.play();
+    _updateLockScreenMetadata();
     notifyListeners();
   }
 
@@ -234,6 +268,7 @@ class PlaybackProvider extends ChangeNotifier {
 
     if (token == _playToken) {
       _analyzeCurrent();
+      await _updateLockScreenMetadata();
       startPlayback();
     }
   }
@@ -244,11 +279,32 @@ class PlaybackProvider extends ChangeNotifier {
       debugPrint('[Playback] start Rust decoder for ${song.title}');
       await rs.stopDecoder();
       await rs.startDecoder(song.path!, seekSecs: null);
+      await _waitFirstFrame();
+      await _bufferRingbuf();
     } else {
       debugPrint('[Playback] no path or rust, skipping play');
     }
     // 解码器重置完成后，钩子可触发后续（测试用它注入延迟/记录）
     await startDecoderHook(song);
+  }
+
+  /// 等待解码器首帧就绪（首帧到后 ringbuf 开始填充）
+  Future<void> _waitFirstFrame() async {
+    try {
+      await audio_out.waitForReady(timeoutMs: BigInt.from(3000));
+    } catch (_) {}
+  }
+
+  /// 等待 ringbuf 缓冲足够数据
+  Future<void> _bufferRingbuf() async {
+    const targetSamples = 16384;
+    for (var i = 0; i < 100; i++) {
+      try {
+        final occ = await audio_out.debugOccupied();
+        if (occ >= BigInt.from(targetSamples)) return;
+      } catch (_) {}
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
   }
 
   /// 从 seek 位置重启 Rust 解码器
@@ -257,22 +313,17 @@ class PlaybackProvider extends ChangeNotifier {
     final seekSecs = (posMs / 1000.0).clamp(0.0, double.infinity);
     debugPrint('[Seek] restart decoder at ${seekSecs}s');
 
-    // 注意：不能调用 _nativeAudio.pause() 再 play()。
-    // AVAudioEngine.pause()/start() 在 AVAudioSourceNode 上会导致渲染时钟跳变，
-    // resume 时重复/错位最后缓冲帧 = 拖动进度时的"磁带滑"。
-    // 这里依赖 Rust stopDecoder 内部的 clear_ringbuf 清空 ringbuf，
-    // sourceNode 在 engine 持续运行期间只会拉到静音（空 ringbuf），
-    // 再由 startDecoder 推入新帧，过渡干净无跳变。
+    // seek 期间暂停 native 输出，避免 ringbuf 清空/重建时回调拉空产生杂音
+    await _nativeAudio.pause();
+    if (token != null && token != _seekToken) return;
     await rs.stopDecoder();
-    // 防重入：若期间又来了新的 seek（token 变化），放弃本次耗时解码，
-    // 避免旧解码覆盖新位置导致卡顿/错位。
     if (token != null && token != _seekToken) return;
     await rs.startDecoder(path, seekSecs: seekSecs);
     if (token != null && token != _seekToken) return;
-    // 仅当原本就在播放时才恢复输出。play() 幂等：engine 已运行时不会再次
-    // engine.start()，避免 AVAudioSourceNode 的 resume 时钟跳变（磁带滑）。
-    // 若原本处于暂停态（如用户主动暂停后拖动进度），保持暂停静音，
-    // 不触发 engine.start()，因此也不会产生跳变。
+    await _waitFirstFrame();
+    if (token != null && token != _seekToken) return;
+    await _bufferRingbuf();
+    if (token != null && token != _seekToken) return;
     if (_isPlaying) {
       _nativeAudio.play();
     }
@@ -285,12 +336,12 @@ class PlaybackProvider extends ChangeNotifier {
       final song = currentSong;
       if (song == null) return;
       _position += 250;
+      // 更新锁屏进度
+      _nativeAudio.updatePosition(_position);
       if (_position >= song.duration.inMilliseconds) {
         _position = song.duration.inMilliseconds.toDouble();
         _progressTimer?.cancel();
-        // 通知 iOS 停止
         _nativeAudio.stop();
-        // 触发下一首
         next();
       }
       notifyListeners();
@@ -299,11 +350,7 @@ class PlaybackProvider extends ChangeNotifier {
 
   //── seek ──
 
-  /// 拖动进度条时的连续回调：节流执行，避免快速滑动触发 seek 风暴
-  /// （m4a 等格式的 format.seek 较重，叠加会拖垮解码线程导致卡顿）。
-  Timer? _seekThrottleTimer;
-  double? _pendingSeekMs;
-
+  /// 拖动进度条：拖动中只更新 UI，不 seek。抬手时（immediate=true）才跳转
   void seek(double value, {bool immediate = false}) {
     final song = currentSong;
     if (song == null) return;
@@ -312,21 +359,8 @@ class PlaybackProvider extends ChangeNotifier {
     notifyListeners();
 
     if (immediate) {
-      // 拖动结束：取消节流，立即精确 seek 到落点
-      _seekThrottleTimer?.cancel();
-      _pendingSeekMs = null;
       _seekToPosition(_position);
-      return;
     }
-    // 拖动中节流：最多每 160ms 真正 seek 一次（略大于 m4a 单次 seek 耗时
-    // ~140ms，保证每次 seek 都能产出数据再被下一次覆盖），且始终使用最新目标。
-    _pendingSeekMs = _position;
-    _seekThrottleTimer?.cancel();
-    _seekThrottleTimer = Timer(const Duration(milliseconds: 160), () {
-      final target = _pendingSeekMs;
-      _pendingSeekMs = null;
-      if (target != null) _seekToPosition(target);
-    });
   }
 
   /// 切歌 token：每次 seek 自增，旧的重启流程若发现 token 变化则放弃，
@@ -678,6 +712,68 @@ class PlaybackProvider extends ChangeNotifier {
           _queue.length;
     }
     return (_currentIndex + 1) % _queue.length;
+  }
+
+  // ── 锁屏控制 ──
+
+  /// 处理锁屏/控制中心远程命令
+  void _handleRemoteCommand(RemoteCommand cmd) {
+    switch (cmd.command) {
+      case 'play':
+      case 'togglePlayPause':
+        togglePlay();
+      case 'pause':
+        pause();
+      case 'next':
+        next();
+      case 'previous':
+        previous();
+      case 'seek':
+        if (cmd.seekPosition != null) {
+          final song = currentSong;
+          if (song != null) {
+            final posMs = cmd.seekPosition! * 1000;
+            seek(posMs / song.duration.inMilliseconds);
+          }
+        }
+    }
+  }
+
+  /// 更新锁屏显示信息
+  Future<void> _updateLockScreenMetadata() async {
+    if (!_nativeReady) return;
+    final song = currentSong;
+    if (song == null) return;
+    // 惰性提取封面缓存
+    await _ensureCoverCached(song);
+    await _nativeAudio.updateMetadata(
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      duration: song.duration.inMilliseconds / 1000.0,
+      filePath: song.path,
+    );
+  }
+
+  /// 确保封面已缓存（已有缓存或没封面则跳过）
+  Future<void> _ensureCoverCached(Song song) async {
+    if (!song.hasCover || song.path == null) return;
+    if (song.coverUrl != null) return;
+    final appDir = await getApplicationDocumentsDirectory();
+    final cacheFile = File('${appDir.path}/.covers/${song.path!.hashCode}.jpg');
+    if (await cacheFile.exists()) {
+      song.coverUrl = cacheFile.path;
+      notifyListeners();
+      return;
+    }
+    try {
+      final bytes = await rs.getCoverBytes(song.path!);
+      final cacheDir = Directory('${appDir.path}/.covers');
+      if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
+      await cacheFile.writeAsBytes(bytes);
+      song.coverUrl = cacheFile.path;
+      notifyListeners();
+    } catch (_) {}
   }
 }
 

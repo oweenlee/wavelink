@@ -5,10 +5,8 @@
 //!   4. 解码吞吐（对比实时要求 1x）
 //!
 //! 运行：cargo test --test measure_latency -- --nocapture --test-threads=1
-use rust_lib_wavelink_mobile::audio_output::{
-    audio_output_fill_buffer_stereo, debug_occupied, init_audio_ringbuf, start_file_decoder,
-    stop_file_decoder,
-};
+use rust_lib_wavelink_mobile::audio_output::{debug_occupied, init_audio_ringbuf, start_file_decoder, stop_file_decoder};
+use rust_lib_wavelink_mobile::ffi::audio_output_fill_buffer_stereo;
 
 const FILE: &str = "/Users/qin/Desktop/demos/a_music/梁博-出现又离开.m4a";
 const SR: f64 = 44100.0;

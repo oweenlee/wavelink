@@ -5,10 +5,8 @@
 //! "稳态播放时 ringbuf 是否被抽干 / 是否有跳变"。
 //!
 //! 运行：cargo test --test diag -- --nocapture
-use rust_lib_wavelink_mobile::audio_output::{
-    audio_output_fill_buffer_stereo, debug_occupied, init_audio_ringbuf, start_file_decoder,
-    stop_file_decoder,
-};
+use rust_lib_wavelink_mobile::audio_output::{debug_occupied, init_audio_ringbuf, start_file_decoder, stop_file_decoder};
+use rust_lib_wavelink_mobile::ffi::audio_output_fill_buffer_stereo;
 
 const FILE: &str = "/Users/qin/Desktop/demos/a_music/梁博-出现又离开.m4a";
 

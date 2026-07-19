@@ -6,6 +6,12 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These functions are ignored because they are not marked as `pub`: `extract_cover_lofty`
+
+/// 读取音频文件封面图（JPEG/PNG 原始字节），用 lofty 提取
+Future<Uint8List> getCoverBytes({required String path}) =>
+    RustLib.instance.api.crateApiMetadataGetCoverBytes(path: path);
+
 /// 读取音频文件元数据（标题/艺术家/专辑/封面/时长）
 Future<MetadataResult> readMetadata({required String path}) =>
     RustLib.instance.api.crateApiMetadataReadMetadata(path: path);

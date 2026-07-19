@@ -14,9 +14,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use rust_lib_wavelink_mobile::audio_output::{
-    audio_output_fill_buffer_stereo, init_audio_ringbuf, start_file_decoder, stop_file_decoder,
-};
+use rust_lib_wavelink_mobile::audio_output::{init_audio_ringbuf, start_file_decoder, stop_file_decoder};
+use rust_lib_wavelink_mobile::ffi::audio_output_fill_buffer_stereo;
 use rust_lib_wavelink_mobile::decode::decode_file;
 
 const WINDOW: usize = 64; // 窗口样本数（交错，含双声道）

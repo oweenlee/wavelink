@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import AVFoundation
+import MediaPlayer
 
 // ── Audio Output Manager ─────────────────────────────────────
 
@@ -10,14 +11,22 @@ class AudioOutputManager {
     private var isPlayingFlag = false
     private var eventSink: FlutterEventSink?
 
+    // 当前曲目元数据
+    private var nowTitle = ""
+    private var nowArtist = ""
+    private var nowAlbum = ""
+    private var nowDuration: Double = 0
+    private var nowPosition: Double = 0
+
     init() {
         setupSourceNode()
+        setupRemoteCommands()
     }
 
     private func setupSourceNode() {
-        // 非交错格式：mixer 只接受这个格式
+        let hwRate = AVAudioSession.sharedInstance().sampleRate
         let fmt = AVAudioFormat(commonFormat: .pcmFormatFloat32,
-                                sampleRate: 44100,
+                                sampleRate: hwRate,
                                 channels: 2,
                                 interleaved: false)!
 
@@ -28,15 +37,12 @@ class AudioOutputManager {
                   let rightBuf = abl[1].mData?.assumingMemoryBound(to: Float.self)
             else { return noErr }
 
-            // 暂停时引擎持续运行（避免 AVAudioSourceNode 的渲染时钟跳变），
-            // 但回调里直接填静音，不消费 ringbuf。
             if !self.isPlayingFlag {
                 let n = Int(frameCount)
                 for i in 0..<n { leftBuf[i] = 0; rightBuf[i] = 0 }
                 return noErr
             }
 
-            // Rust 从交错 ringbuf 读出并分别写入左右声道 buffer
             audio_output_fill_buffer_stereo(leftBuf, rightBuf, UInt32(frameCount))
             return noErr
         }
@@ -47,6 +53,82 @@ class AudioOutputManager {
         }
     }
 
+    // ── 锁屏 / 控制中心 ──
+
+    private func setupRemoteCommands() {
+        let cmd = MPRemoteCommandCenter.shared()
+
+        cmd.playCommand.addTarget { [weak self] _ in
+            self?.sendEvent("remote:play")
+            return .success
+        }
+        cmd.pauseCommand.addTarget { [weak self] _ in
+            self?.sendEvent("remote:pause")
+            return .success
+        }
+        cmd.togglePlayPauseCommand.addTarget { [weak self] _ in
+            self?.sendEvent("remote:togglePlayPause")
+            return .success
+        }
+        cmd.nextTrackCommand.addTarget { [weak self] _ in
+            self?.sendEvent("remote:next")
+            return .success
+        }
+        cmd.previousTrackCommand.addTarget { [weak self] _ in
+            self?.sendEvent("remote:previous")
+            return .success
+        }
+        cmd.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let e = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            self?.sendEvent("remote:seek:\(e.positionTime)")
+            return .success
+        }
+    }
+
+    /// 更新锁屏显示信息（含封面图）
+    /// filePath 传音频文件路径，iOS 用 AVAsset 提取内嵌封面
+    func updateNowPlaying(title: String, artist: String, album: String, duration: Double, filePath: String = "") {
+        nowTitle = title
+        nowArtist = artist
+        nowAlbum = album
+        nowDuration = duration
+
+        // 提取封面图
+        var coverImage: UIImage? = nil
+        if !filePath.isEmpty {
+            let asset = AVAsset(url: URL(fileURLWithPath: filePath))
+            let items = AVMetadataItem.metadataItems(from: asset.commonMetadata, filteredByIdentifier: .commonIdentifierArtwork)
+            if let data = items.first?.dataValue {
+                coverImage = UIImage(data: data)
+            }
+        }
+        refreshNowPlaying(cover: coverImage)
+    }
+
+    /// 更新播放进度
+    func updatePosition(_ positionMs: Double) {
+        nowPosition = positionMs / 1000.0
+        refreshNowPlaying()
+    }
+
+    /// 刷新锁屏显示
+    private func refreshNowPlaying(cover: UIImage? = nil) {
+        var info = [String: Any]()
+        info[MPMediaItemPropertyTitle] = nowTitle
+        info[MPMediaItemPropertyArtist] = nowArtist
+        info[MPMediaItemPropertyAlbumTitle] = nowAlbum
+        info[MPMediaItemPropertyPlaybackDuration] = nowDuration
+        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = nowPosition
+        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlayingFlag ? 1.0 : 0.0
+        if let image = cover {
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            info[MPMediaItemPropertyArtwork] = artwork
+        }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    // ── 播放控制 ──
+
     var isPlaying: Bool { isPlayingFlag }
 
     func play() {
@@ -55,32 +137,36 @@ class AudioOutputManager {
         if !engine.isRunning {
             do { try engine.start() } catch { return }
         }
+        refreshNowPlaying()
     }
 
     func pause() {
         isPlayingFlag = false
-        // 注意：不调用 engine.pause()。AVAudioSourceNode 在 engine.pause 后回调会
-        // 完全停摆，但 Rust 解码线程仍在往 ringbuf 推数据；resume 时一次性把暂停期间
-        // 积压的数据吐出 = "磁带滑"。这里让引擎持续运行、回调填静音即可。
+        refreshNowPlaying()
     }
 
     func resume() {
         isPlayingFlag = true
-        // 丢弃暂停期间 ringbuf 里积压的旧数据，恢复后无缝接上实时解码
         audio_output_clear_ringbuf()
         if !engine.isRunning {
             try? AVAudioSession.sharedInstance().setActive(true)
             try? engine.start()
         }
+        refreshNowPlaying()
     }
 
     func stop() {
         isPlayingFlag = false
-        // 引擎持续运行，回调在 isPlayingFlag=false 时填静音；
-        // 真正停止解码由 Rust 侧 stop_file_decoder 处理（Dart 层已调用）。
+        refreshNowPlaying()
     }
 
+    // ── 事件通道 ──
+
     func setEventSink(_ sink: FlutterEventSink?) { eventSink = sink }
+
+    func sendEvent(_ event: String) {
+        eventSink?(event)
+    }
 }
 
 // ── App Delegate ──────────────────────────────────────────────
@@ -95,6 +181,10 @@ class AudioOutputManager {
     ) -> Bool {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
         try? AVAudioSession.sharedInstance().setActive(true)
+
+        // 将硬件采样率传给 Rust，避免 48kHz 文件无谓重采样
+        let hwRate = AVAudioSession.sharedInstance().sampleRate
+        set_hw_sample_rate(UInt32(hwRate))
 
         GeneratedPluginRegistrant.register(with: self)
 
@@ -128,7 +218,24 @@ class AudioOutputManager {
         case "pause": audio.pause(); result(nil)
         case "resume": audio.resume(); result(nil)
         case "stop": audio.stop(); result(nil)
-        default: result(FlutterMethodNotImplemented)
+        case "updateMetadata":
+            if let args = call.arguments as? [String: Any],
+               let title = args["title"] as? String,
+               let artist = args["artist"] as? String,
+               let album = args["album"] as? String,
+               let duration = args["duration"] as? Double {
+                let filePath = args["filePath"] as? String ?? ""
+                audio.updateNowPlaying(title: title, artist: artist, album: album, duration: duration, filePath: filePath)
+            }
+            result(nil)
+        case "updatePosition":
+            if let args = call.arguments as? [String: Any],
+               let positionMs = args["positionMs"] as? Double {
+                audio.updatePosition(positionMs)
+            }
+            result(nil)
+        default:
+            result(FlutterMethodNotImplemented)
         }
     }
 
@@ -164,7 +271,34 @@ class AudioOutputManager {
 extension AppDelegate: UIDocumentPickerDelegate {
     func documentPicker(_ controller: UIDocumentPickerViewController,
                         didPickDocumentsAt urls: [URL]) {
-        let paths = urls.map { $0.path }
+        var paths: [String] = []
+        for url in urls {
+            // iCloud 文件需要安全作用域访问
+            let gotAccess = url.startAccessingSecurityScopedResource()
+            defer { if gotAccess { url.stopAccessingSecurityScopedResource() } }
+
+            // 复制到 Documents/Imported/ 下，避免 Inbox 路径问题
+            let destName = url.lastPathComponent
+            if let dest = try? FileManager.default
+                .url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+                .appendingPathComponent("Imported")
+                .appendingPathComponent(destName) {
+                // 避免覆盖已有文件
+                if !FileManager.default.fileExists(atPath: dest.path) {
+                    do {
+                        try FileManager.default.copyItem(at: url, to: dest)
+                        paths.append(dest.path)
+                    } catch {
+                        // 复制失败时 fallback 到原始路径
+                        paths.append(url.path)
+                    }
+                } else {
+                    paths.append(dest.path)
+                }
+            } else {
+                paths.append(url.path)
+            }
+        }
         filePickerCompletion?(paths)
         filePickerCompletion = nil
     }

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/song.dart';
 import '../theme/app_theme.dart';
@@ -26,16 +27,8 @@ class SongTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
           children: [
-            // Album art placeholder
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: song.dominantColor,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: isPlaying ? const Center(child: _EqualizerBars()) : null,
-            ),
+            // Album art
+            _AlbumArt(song: song, isPlaying: isPlaying),
             const SizedBox(width: 12),
             // Title & artist
             Expanded(
@@ -97,6 +90,56 @@ class SongTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 专辑封面组件：有缓存封面则显示图片，否则显示纯色占位
+class _AlbumArt extends StatelessWidget {
+  final Song song;
+  final bool isPlaying;
+
+  const _AlbumArt({required this.song, required this.isPlaying});
+
+  /// 获取封面缓存文件（coverUrl 优先，否则按 path hash 查找）
+  File? _coverFile() {
+    if (song.coverUrl != null) {
+      final f = File(song.coverUrl!);
+      if (f.existsSync()) return f;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final coverFile = _coverFile();
+    final hasCover = coverFile != null && coverFile.existsSync();
+
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: song.dominantColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: hasCover
+          ? Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.file(
+                  coverFile,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                ),
+                if (isPlaying)
+                  Container(
+                    color: Colors.black26,
+                    child: const Center(child: _EqualizerBars()),
+                  ),
+              ],
+            )
+          : (isPlaying ? const Center(child: _EqualizerBars()) : null),
     );
   }
 }

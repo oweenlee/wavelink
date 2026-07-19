@@ -5,9 +5,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use rust_lib_wavelink_mobile::audio_output::{
-    audio_output_fill_buffer_stereo, init_audio_ringbuf, start_file_decoder,
-};
+use rust_lib_wavelink_mobile::audio_output::{init_audio_ringbuf, start_file_decoder};
+use rust_lib_wavelink_mobile::ffi::audio_output_fill_buffer_stereo;
 
 fn run(path: &str, label: &str) {
     if !std::path::Path::new(path).exists() { eprintln!("{label}: 文件缺失"); return; }

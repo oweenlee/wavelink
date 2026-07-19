@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:flutter/services.dart';
 
-/// iOS 音频输出管理器
+/// iOS 音频输出 + 锁屏控制管理器
 /// 实际音频数据走 Rust ringbuf → AVAudioSourceNode 直出，
-/// Flutter 只发控制命令（play/pause/stop）和接收事件
+/// Flutter 发控制命令（play/pause/stop）和更新锁屏信息
 class NativeAudioService {
   static const _methodChannel = MethodChannel('wavelink/audio');
   static const _eventChannel = EventChannel('wavelink/audio_events');
@@ -23,30 +23,58 @@ class NativeAudioService {
           if (data == 'completed') {
             _eventController.add(const AudioCompleted());
           } else if (data is String && data.startsWith('error:')) {
-            _eventController.add(AudioError(data));
+            _eventController.add(AudioError(data.substring(6)));
+          } else if (data is String && data.startsWith('remote:')) {
+            final parts = data.substring(7).split(':');
+            final cmd = parts[0];
+            final arg = parts.length > 1 ? double.tryParse(parts[1]) : null;
+            _eventController.add(RemoteCommand(cmd, arg));
           }
         },
-        onError: (_) {
-          // macOS：无原生事件通道
-        },
+        onError: (_) {},
         cancelOnError: false,
       );
-    } catch (_) {
-      // macOS：receiveBroadcastStream 同步抛 MissingPluginException
-    }
+    } catch (_) {}
     _initialized = true;
   }
+
+  // ── 播放控制 ──
 
   Future<void> play() => _safeCall(_methodChannel.invokeMethod('play'));
   Future<void> pause() => _safeCall(_methodChannel.invokeMethod('pause'));
   Future<void> resume() => _safeCall(_methodChannel.invokeMethod('resume'));
   Future<void> stop() => _safeCall(_methodChannel.invokeMethod('stop'));
 
+  // ── 锁屏信息更新 ──
+
+  /// 更新锁屏显示的曲目元数据（含封面）
+  /// [filePath] 传音频文件路径，iOS 原生提取封面图
+  Future<void> updateMetadata({
+    required String title,
+    required String artist,
+    String album = '',
+    double duration = 0,
+    String? filePath,
+  }) =>
+      _safeCall(_methodChannel.invokeMethod('updateMetadata', {
+        'title': title,
+        'artist': artist,
+        'album': album,
+        'duration': duration,
+        'filePath': filePath ?? '',
+      }));
+
+  /// 更新锁屏显示播放进度
+  Future<void> updatePosition(double positionMs) =>
+      _safeCall(_methodChannel.invokeMethod('updatePosition', {
+        'positionMs': positionMs,
+      }));
+
   Future<void> _safeCall(Future<void> call) async {
     try {
       await call;
     } on MissingPluginException {
-      // 无原生实现时静默
+      // 无原生实现时静默（macOS）
     }
   }
 
@@ -55,6 +83,8 @@ class NativeAudioService {
     _eventController.close();
   }
 }
+
+// ── 事件类型 ──
 
 sealed class AudioEvent {
   const AudioEvent();
@@ -67,4 +97,12 @@ class AudioCompleted extends AudioEvent {
 class AudioError extends AudioEvent {
   final String message;
   const AudioError(this.message);
+}
+
+/// 锁屏/控制中心远程命令
+class RemoteCommand extends AudioEvent {
+  final String command;
+  /// seek 时的目标位置（秒），仅 command 为 "seek" 时有值
+  final double? seekPosition;
+  const RemoteCommand(this.command, [this.seekPosition]);
 }

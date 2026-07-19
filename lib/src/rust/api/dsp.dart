@@ -7,82 +7,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `dsp_global_init`, `dsp_global_is_enabled`, `dsp_global_process`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`
-
-/// 创建 DSP 管线
-Future<DspHandle> createDsp({
-  required int sampleRate,
-  required int channels,
-  required double volume,
-  required int bits,
-}) => RustLib.instance.api.crateApiDspCreateDsp(
-  sampleRate: sampleRate,
-  channels: channels,
-  volume: volume,
-  bits: bits,
-);
-
-/// 设置均衡器频段
-Future<void> dspSetEqBand({
-  required DspHandle handle,
-  required int index,
-  required EqBand band,
-}) => RustLib.instance.api.crateApiDspDspSetEqBand(
-  handle: handle,
-  index: index,
-  band: band,
-);
-
-/// 应用均衡器预设
-Future<void> dspApplyPreset({
-  required DspHandle handle,
-  required EqPreset preset,
-}) => RustLib.instance.api.crateApiDspDspApplyPreset(
-  handle: handle,
-  preset: preset,
-);
-
-/// 设置音量 (0.0~1.5)
-Future<void> dspSetVolume({
-  required DspHandle handle,
-  required double volume,
-}) => RustLib.instance.api.crateApiDspDspSetVolume(
-  handle: handle,
-  volume: volume,
-);
-
-/// 启用/关闭串音补偿
-Future<void> dspSetCrossfeed({
-  required DspHandle handle,
-  required bool enabled,
-}) => RustLib.instance.api.crateApiDspDspSetCrossfeed(
-  handle: handle,
-  enabled: enabled,
-);
-
-/// 启用/关闭立体声展宽
-Future<void> dspSetStereoWidener({
-  required DspHandle handle,
-  required bool enabled,
-  required double width,
-}) => RustLib.instance.api.crateApiDspDspSetStereoWidener(
-  handle: handle,
-  enabled: enabled,
-  width: width,
-);
-
-/// 处理 PCM 音频数据（f32 交错样本，原地处理并返回）
-Future<Float32List> dspProcess({
-  required DspHandle handle,
-  required List<double> samples,
-}) => RustLib.instance.api.crateApiDspDspProcess(
-  handle: handle,
-  samples: samples,
-);
-
-/// 重置 DSP 到默认状态
-Future<void> dspReset({required DspHandle handle}) =>
-    RustLib.instance.api.crateApiDspDspReset(handle: handle);
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`
 
 /// 整条管线开关
 Future<void> dspGlobalSetEnabled({required bool enabled}) =>
@@ -119,30 +44,6 @@ Future<void> dspGlobalSetVolume({required double volume}) =>
 
 Future<void> dspGlobalReset() =>
     RustLib.instance.api.crateApiDspDspGlobalReset();
-
-// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DspHandle>>
-abstract class DspHandle implements RustOpaqueInterface {}
-
-/// DSP 均衡器频段参数
-class EqBand {
-  final double freq;
-  final double gainDb;
-  final double q;
-
-  const EqBand({required this.freq, required this.gainDb, required this.q});
-
-  @override
-  int get hashCode => freq.hashCode ^ gainDb.hashCode ^ q.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is EqBand &&
-          runtimeType == other.runtimeType &&
-          freq == other.freq &&
-          gainDb == other.gainDb &&
-          q == other.q;
-}
 
 /// 预设均衡器名称
 enum EqPreset {

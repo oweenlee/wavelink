@@ -4,9 +4,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use rust_lib_wavelink_mobile::audio_output::{
-    audio_output_fill_buffer_stereo, init_audio_ringbuf, start_file_decoder, stop_file_decoder,
-};
+use rust_lib_wavelink_mobile::audio_output::{init_audio_ringbuf, start_file_decoder, stop_file_decoder};
+use rust_lib_wavelink_mobile::ffi::audio_output_fill_buffer_stereo;
 
 #[test]
 fn m4a_throttled_seek_stalls() {

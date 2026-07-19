@@ -11,11 +11,11 @@ class Song {
   final bool hasLyrics;
   final int? bpm;
   final String? key;
-  final String? coverUrl;
+  String? coverUrl;  // 可写，供导入后惰性提取封面时更新
   final String? path;
   final bool hasCover;
 
-  const Song({
+  Song({
     required this.id,
     required this.title,
     required this.artist,

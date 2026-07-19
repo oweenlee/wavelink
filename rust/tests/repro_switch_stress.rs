@@ -15,9 +15,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use rust_lib_wavelink_mobile::audio_output::{
-    audio_output_fill_buffer_stereo, init_audio_ringbuf, start_file_decoder, stop_file_decoder,
-};
+use rust_lib_wavelink_mobile::audio_output::{init_audio_ringbuf, start_file_decoder, stop_file_decoder};
+use rust_lib_wavelink_mobile::ffi::audio_output_fill_buffer_stereo;
 use rust_lib_wavelink_mobile::decode::decode_file;
 
 const WINDOW: usize = 64;

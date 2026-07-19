@@ -1,15 +1,15 @@
+import 'dart:typed_data';
 import '../src/rust/frb_generated.dart';
 import '../src/rust/api/decode.dart' as decode;
 import '../src/rust/api/analyze.dart' as analyze;
-import '../src/rust/api/dsp.dart' as dsp;
 import '../src/rust/api/metadata.dart' as meta;
 import '../src/rust/api/audio_output.dart' as audio_out;
 
 export '../src/rust/api/decode.dart' show DecodeResult, DecodeChunk, StreamDecoder;
 export '../src/rust/api/analyze.dart' show AnalyzeResult;
-export '../src/rust/api/dsp.dart' show DspHandle, EqBand, EqPreset;
+export '../src/rust/api/dsp.dart' show EqPreset;
 export '../src/rust/api/metadata.dart' show MetadataResult;
-export '../src/rust/api/audio_output.dart' show initAudioRingbuf, startFileDecoder, stopFileDecoder;
+export '../src/rust/api/audio_output.dart' show initAudioRingbuf, startFileDecoder, stopFileDecoder, waitForReady;
 
 /// Rust 后端是否已加载
 bool rustAvailable = false;
@@ -62,88 +62,8 @@ Future<meta.MetadataResult> readMetadata(String path) {
   return meta.readMetadata(path: path);
 }
 
-// ── DSP ──
-
-Future<dsp.DspHandle> createDsp({
-  int sampleRate = 44100,
-  int channels = 2,
-  double volume = 1.0,
-  int bits = 16,
-}) {
-  return dsp.createDsp(
-    sampleRate: sampleRate,
-    channels: channels,
-    volume: volume,
-    bits: bits,
-  );
-}
-
-Future<void> dspSetEqBand(
-  dsp.DspHandle handle,
-  int index,
-  dsp.EqBand band,
-) {
-  return dsp.dspSetEqBand(
-    handle: handle,
-    index: index,
-    band: band,
-  );
-}
-
-Future<void> dspApplyPreset(
-  dsp.DspHandle handle,
-  dsp.EqPreset preset,
-) {
-  return dsp.dspApplyPreset(
-    handle: handle,
-    preset: preset,
-  );
-}
-
-Future<void> dspSetVolume(
-  dsp.DspHandle handle,
-  double volume,
-) {
-  return dsp.dspSetVolume(
-    handle: handle,
-    volume: volume,
-  );
-}
-
-Future<void> dspSetCrossfeed(
-  dsp.DspHandle handle,
-  bool enabled,
-) {
-  return dsp.dspSetCrossfeed(
-    handle: handle,
-    enabled: enabled,
-  );
-}
-
-Future<void> dspSetStereoWidener(
-  dsp.DspHandle handle,
-  bool enabled,
-  double width,
-) {
-  return dsp.dspSetStereoWidener(
-    handle: handle,
-    enabled: enabled,
-    width: width,
-  );
-}
-
-Future<List<double>> dspProcess(
-  dsp.DspHandle handle,
-  List<double> samples,
-) async {
-  return (await dsp.dspProcess(
-    handle: handle,
-    samples: samples,
-  )).toList();
-}
-
-Future<void> dspReset(dsp.DspHandle handle) {
-  return dsp.dspReset(handle: handle);
+Future<Uint8List> getCoverBytes(String path) {
+  return meta.getCoverBytes(path: path);
 }
 
 // ── 音频输出 ringbuf ──

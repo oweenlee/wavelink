@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../providers/playback_provider.dart';
 import '../providers/locale_provider.dart';
+import 'diagnostic_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -20,11 +21,11 @@ class SettingsPage extends StatelessWidget {
         _Section(
           title: l10n.settingsAudio,
           children: [
-            _SettingItem(
+            _SwitchItem(
               icon: Icons.tune_rounded,
               label: l10n.dspPipeline,
-              trailing: dsp.enabled ? l10n.enabled : l10n.disabled,
-              onTap: () => player.toggleDspEnabled(),
+              value: dsp.enabled,
+              onChanged: (_) => player.toggleDspEnabled(),
             ),
             _SwitchItem(
               icon: Icons.graphic_eq_rounded,
@@ -127,6 +128,13 @@ class SettingsPage extends StatelessWidget {
               onTap: () {},
             ),
             _SettingItem(icon: Icons.code_rounded, label: l10n.licenses, onTap: () {}),
+            _SettingItem(
+              icon: Icons.bug_report_rounded,
+              label: '音频诊断',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DiagnosticPage()),
+              ),
+            ),
           ],
         ),
       ],
