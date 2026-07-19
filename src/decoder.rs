@@ -21,16 +21,24 @@ use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedOut
 
 use crate::dsd;
 
+/// 解码输出的一帧 PCM 数据。
 pub struct DecodedFrame {
+    /// 交错 PCM f32 样本（L/R/L/R/...）
     pub samples: Vec<f32>,
+    /// 本帧在音频流中的时间位置（秒）
     pub pts_secs: f64,
+    /// 输出采样率（通常 44100）
     pub sample_rate: u32,
+    /// 输出声道数（通常 2）
     pub channels: u32,
 }
 
+/// 流式解码器。后台线程持续解码，通过 crossbeam channel 逐帧输出。
+/// 用法：`Decoder::start(path, sr, ch, pos, seek) → (rx, handle)`
 pub struct Decoder {
     tx: Option<Sender<()>>,
     handle: Option<JoinHandle<()>>,
+    /// 解码进度（已输出样本数），可被外部读取
     pub position: Arc<AtomicU64>,
 }
 
@@ -42,6 +50,11 @@ impl Drop for Decoder {
 }
 
 impl Decoder {
+    /// 启动后台解码线程。返回 (帧接收器, 解码器句柄)。
+    /// - `path` — 音频文件路径
+    /// - `target_rate` / `target_channels` — 输出重采样目标
+    /// - `position` — 外部可读的解码进度（样本数）
+    /// - `seek_pos` — 可选起始位置（秒）
     pub fn start(
         path: &Path, target_rate: u32, target_channels: u32,
         position: Arc<AtomicU64>, seek_pos: Option<f64>,
@@ -53,6 +66,7 @@ impl Decoder {
         let handle = thread::spawn(move || run(&p, target_rate, target_channels, tx, srx, position, seek_pos));
         Ok((rx, Decoder { tx: Some(stx), handle: Some(handle), position: pos_clone }))
     }
+    /// 停止后台解码线程
     pub fn stop(&self) { if let Some(ref t) = self.tx { let _ = t.send(()); } }
 }
 
@@ -254,6 +268,8 @@ fn run(
     }
 }
 
+/// 将整个音频文件解码到内存，返回交错 PCM f32 样本。
+/// 适用于小文件（如音效、短片段）或离线分析。
 pub fn decode_to_memory(path: &Path, tr: u32, tc: u32) -> Result<Vec<f32>, String> {
     let (rx, dec) = Decoder::start(path, tr, tc, Arc::new(AtomicU64::new(0)), None)?;
     let mut all = Vec::new();
@@ -347,6 +363,51 @@ pub fn read_metadata(path: &Path) -> Result<Metadata, String> {
         duration_secs,
         has_cover,
     })
+}
+
+/// 读取音频文件内嵌封面图（JPEG/PNG 原始字节）
+pub fn read_cover(path: &Path) -> Result<Vec<u8>, String> {
+    let file = File::open(path).map_err(|e| format!("无法打开文件: {e}"))?;
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+
+    let mut format = symphonia::default::get_probe()
+        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+        .map_err(|e| format!("无法探测格式: {e}"))?;
+
+    if let Some(rev) = format.metadata().current() {
+        if let Some(visual) = rev.media.visuals.first() {
+            if visual.data.is_empty() {
+                return Err("封面数据为空".into());
+            }
+            return Ok(visual.data.to_vec());
+        }
+    }
+    Err("未找到封面".into())
+}
+
+/// 快速探测音频文件的采样率（不完整解码，只读文件头）
+pub fn probe_sample_rate(path: &Path) -> Option<u32> {
+    let file = File::open(path).ok()?;
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+    let mut format = symphonia::default::get_probe()
+        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+        .ok()?;
+    for track in format.tracks() {
+        if let Some(symphonia::core::codecs::CodecParameters::Audio(audio)) = &track.codec_params {
+            let rate = audio.sample_rate.unwrap_or(44100);
+            if rate > 0 { return Some(rate); }
+        }
+    }
+    None
 }
 
 // ── DSD 解码 ──────────────────────────────────────────────────────────

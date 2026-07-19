@@ -4,6 +4,8 @@
 //! 展宽: new_L = M + S * width, new_R = M - S * width
 //! width=1.0 → 原始, width=0.0 → 单声道, width>1.0 → 展宽
 
+/// 立体声展宽处理器（Mid/Side 处理）。
+/// width=1.0 → 原始, width=0.0 → 单声道, width>1.0 → 展宽
 pub struct StereoWidener {
     width: f32,
     enabled: bool,
@@ -16,19 +18,24 @@ impl Default for StereoWidener {
 }
 
 impl StereoWidener {
+    /// 创建默认关闭的展宽器
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 设置展宽系数（0.0 = 单声道, 1.0 = 原始, >1.0 = 展宽）
     pub fn set_width(&mut self, width: f32) {
         self.width = width.max(0.0);
     }
 
+    /// 启用/禁用展宽
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
 
+    /// 是否已启用
     pub fn enabled(&self) -> bool { self.enabled }
+    /// 当前展宽系数
     pub fn width(&self) -> f32 { self.width }
 
     /// 处理交错立体声缓冲 [L, R, L, R, ...]

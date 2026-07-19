@@ -14,9 +14,13 @@ use crate::TARGET_SAMPLE_RATE;
 /// 分析结果
 #[derive(Debug, Clone)]
 #[derive(serde::Serialize, serde::Deserialize)]
+/// 音频分析结果
 pub struct AnalysisResult {
+    /// 每分钟拍数，None 表示未检测到稳定节拍
     pub bpm: Option<f32>,
+    /// 调性（如 "C", "Gm"），None 表示无法识别
     pub key: Option<String>,
+    /// 能量值（0~1 左右），基于 RMS 计算
     pub energy: Option<f32>,
 }
 
@@ -47,6 +51,7 @@ pub fn analyze_file(path: &Path) -> Result<AnalysisResult, String> {
 }
 
 /// 从 PCM 样本分析 BPM + 调性 + 能量
+/// 从 PCM 样本数据中分析 BPM / 调性 / 能量
 pub fn analyze_from_samples(
     samples: &[f32],
     sample_rate: u32,

@@ -1,6 +1,6 @@
 //! IIR 双二阶滤波器（Biquad）
 //!
-//! 传输函数：y[n] = b0*x[n] + b1*x[n-1] + b2*x[n-2] - a1*y[n-1] - a2*y[n-2]
+//! 传输函数：y\[n\] = b0\*x\[n\] + b1\*x\[n-1\] + b2\*x\[n-2\] - a1\*y\[n-1\] - a2\*y\[n-2\]
 //! 所有系数按 audio EQ cookbook (Robert Bristow-Johnson) 计算。
 //! 定点无关，用 f32 处理；实时回调中零分配（状态是固定大小字段）。
 

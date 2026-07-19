@@ -15,6 +15,7 @@ use crate::dsp::dither::Dither;
 use crate::dsp::limiter::TruePeakLimiter;
 use crate::dsp::widener::StereoWidener;
 
+/// DSP 管线，按顺序串联：DC HPF → ReplayGain → 卷积 EQ → PEQ → Crossfeed → 展宽 → 限幅 → 音量 → 抖动
 pub struct DspPipeline {
     channels: usize,
     /// 每声道一个 DC HPF（独立状态）
@@ -33,11 +34,14 @@ pub struct DspPipeline {
     ch_buf: Vec<f32>,
 }
 
-/// 单段 PEQ 参数（ISO 频段）
+/// 单段 PEQ 参数（ISO 频段）。10 段典型配置见 `default_peq_bands()`。
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct PeqBand {
+    /// 中心频率（Hz）
     pub freq: f32,
+    /// 增益（dB，范围通常 ±12）
     pub gain_db: f32,
+    /// Q 值（影响带宽，典型 0.5~10）
     pub q: f32,
 }
 
@@ -73,7 +77,7 @@ impl DspPipeline {
             conv_eq: None,
             peq,
             crossfeed: if enable_crossfeed && channels >= 2 {
-                Some(Crossfeed::new(sr, 0.3, 700.0, 300.0))
+                Some(Crossfeed::new(sr))
             } else {
                 None
             },
@@ -89,7 +93,7 @@ impl DspPipeline {
     /// 运行时启用/关闭 Crossfeed（串音补偿）
     pub fn set_crossfeed(&mut self, enabled: bool) {
         if enabled && self.channels >= 2 {
-            self.crossfeed = Some(Crossfeed::new(self.sample_rate, 0.3, 700.0, 300.0));
+            self.crossfeed = Some(Crossfeed::new(self.sample_rate));
         } else {
             self.crossfeed = None;
         }

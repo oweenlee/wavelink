@@ -14,7 +14,6 @@ crossbeam-channel = "0.5"
 ringbuf = "0.4"
 fastrand = "2"
 fft-convolver = "0.4"
-bs2b = "0.2"
 hound = "3.5"
 tracing = "0.1"
 

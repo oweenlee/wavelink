@@ -9,6 +9,7 @@
 
 use tracing::warn;
 
+/// 真峰值限幅器。使用 4x 过采样检测采样间峰值（ISP），防止 DAC 重建削波。
 pub struct TruePeakLimiter {
     threshold: f32,
     /// 多相滤波器系数：4 相位 × 32 抽头
@@ -21,6 +22,9 @@ pub struct TruePeakLimiter {
 }
 
 impl TruePeakLimiter {
+    /// 创建限幅器。
+    /// - `channels`: 声道数
+    /// - `threshold_db`: 阈值（dBFS, 0 = 0dBFS, 负值更激进）
     pub fn new(channels: usize, threshold_db: f32) -> Self {
         let threshold = 10f32.powf(threshold_db / 20.0);
         TruePeakLimiter {

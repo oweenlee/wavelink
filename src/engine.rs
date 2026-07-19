@@ -2,18 +2,16 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crossbeam_channel::{bounded, select, unbounded, Receiver, Sender};
 use ringbuf::traits::Producer;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::decoder::{Decoder, DecodedFrame};
 use crate::dsp::{DspPipeline, PeqBand};
 use crate::output::{AudioOutput, AudioOutputInner, PcmProducer};
 use crate::EngineConfig;
-use realfft::num_complex::Complex;
-use realfft::RealFftPlanner;
 use std::fs::File;
 
 /// 播放模式
@@ -103,21 +101,33 @@ impl EngineHandle {
         (EngineHandle { tx, position, duration_us, playing, config }, event_rx)
     }
 
+    /// 开始播放指定路径的音频文件
     pub fn play(&self, path: String) { let _ = self.tx.send(EngineCommand::Play(path)); }
+    /// 设置播放队列并从第一首开始播放
     pub fn play_queue(&self, paths: Vec<String>) { let _ = self.tx.send(EngineCommand::PlayQueue(paths)); }
+    /// 下一首
     pub fn next_track(&self) { let _ = self.tx.send(EngineCommand::NextTrack); }
+    /// 暂停播放
     pub fn pause(&self) { let _ = self.tx.send(EngineCommand::Pause); }
+    /// 恢复播放
     pub fn resume(&self) { let _ = self.tx.send(EngineCommand::Resume); }
+    /// 停止播放并清空队列
     pub fn stop(&self) { let _ = self.tx.send(EngineCommand::Stop); }
+    /// 跳转到指定位置（秒）
     pub fn seek(&self, pos: f64) { let _ = self.tx.send(EngineCommand::Seek(pos)); }
+    /// 加载脉冲响应文件（卷积均衡器用）
     pub fn load_ir(&self, path: String) { let _ = self.tx.send(EngineCommand::LoadIr(path)); }
+    /// 清除脉冲响应（恢复平坦响应）
     pub fn clear_ir(&self) { let _ = self.tx.send(EngineCommand::ClearIr); }
+    /// 设置参数均衡器某频段的参数
     pub fn set_peq_band(&self, index: usize, band: PeqBand) {
         let _ = self.tx.send(EngineCommand::SetPeqBand { index, band });
     }
+    /// 设置立体声展宽
     pub fn set_stereo_widener(&self, enabled: bool, width: f32) {
         let _ = self.tx.send(EngineCommand::SetStereoWidener { enabled, width });
     }
+    /// 设置音量（0.0 ~ 2.0）
     pub fn set_volume(&self, vol: f32) { let _ = self.tx.send(EngineCommand::SetVolume(vol)); }
     /// 设置 ReplayGain 增益（dB），作为 Pre-amp 在 DSP 管线 HPF 后、EQ 前应用
     pub fn set_replaygain_gain_db(&self, gain_db: f32) { let _ = self.tx.send(EngineCommand::SetReplaygainGain(gain_db)); }
@@ -126,7 +136,9 @@ impl EngineHandle {
         // 发送到引擎线程，下次 play/seek 使用新配置
         let _ = self.tx.send(EngineCommand::SetConfig(config));
     }
+    /// 设置播放模式（普通 / 单曲循环 / 随机）
     pub fn set_play_mode(&self, mode: PlayMode) { let _ = self.tx.send(EngineCommand::SetPlayMode(mode)); }
+    /// 从队列中移除指定索引的曲目
     pub fn remove_from_queue(&self, index: usize) { let _ = self.tx.send(EngineCommand::RemoveFromQueue(index)); }
     /// 设置输出设备名称（None = 系统默认），下次播放时生效
     pub fn set_output_device(&self, name: String) {
@@ -756,7 +768,7 @@ fn crossfade_sample_count(sample_rate: u32, channels: u32, crossfade_ms: u32) ->
 /// spawn_consumer — crossfade_ms = 0 表示无间隙（不淡入）
 fn spawn_consumer(
     rx: Receiver<DecodedFrame>,
-    mut pcm: PcmProducer,
+    pcm: PcmProducer,
     dsp: Arc<Mutex<DspPipeline>>,
     stop_flag: Arc<AtomicBool>,
     position: Arc<AtomicU64>,
@@ -767,170 +779,47 @@ fn spawn_consumer(
     channels: u32,
     crossfade_ms: u32,
 ) -> thread::JoinHandle<()> {
-    let fade_total = crossfade_sample_count(sample_rate, channels, crossfade_ms);
     thread::spawn(move || {
-        // [macOS] 提升线程 QoS，避免 Spotlight 等操作挤占解码线程
+        // [macOS] 提升线程 QoS
         #[cfg(target_os = "macos")]
         {
-            // QOS_CLASS_USER_INTERACTIVE = 0x21，提升线程优先级避免 Spotlight 挤占
             extern "C" {
                 fn pthread_set_qos_class_self_np(class: u32, offset: i32) -> i32;
             }
             unsafe { pthread_set_qos_class_self_np(0x21, 0); }
         }
 
-        // 频谱分析（实时 FFT）
-        let fft_size = 1024usize;
-        let mut planner = RealFftPlanner::<f32>::new();
-        let fft = planner.plan_fft_forward(fft_size);
-        let mut hann = vec![0.0f32; fft_size];
-        for i in 0..fft_size {
-            let angle = 2.0 * std::f32::consts::PI * i as f32 / (fft_size - 1) as f32;
-            hann[i] = 0.5 * (1.0 - angle.cos());
-        }
-        let mut fft_input = vec![0.0f32; fft_size];
-        let mut fft_out = vec![Complex::new(0.0f32, 0.0f32); fft_size / 2 + 1];
-        let freq_per_bin = sample_rate as f32 / fft_size as f32;
-        // 16 个频段上限 (Hz)，低频段分布更宽以获得足够 FFT bin
-        let band_edges: [f32; SPECTRUM_BANDS] = [
-            120.0, 200.0, 300.0, 450.0, 650.0, 900.0, 1200.0, 1600.0,
-            2200.0, 3200.0, 4600.0, 6400.0, 8800.0, 12000.0, 16000.0, 22050.0,
-        ];
-        let mut bin_to_band = vec![0usize; fft_size / 2];
-        for bin in 0..fft_size / 2 {
-            let freq = bin as f32 * freq_per_bin;
-            if freq < 20.0 { bin_to_band[bin] = 0; continue; }
-            let mut band = SPECTRUM_BANDS - 1;
-            for (b, &edge) in band_edges.iter().enumerate() {
-                if freq < edge { band = b; break; }
-            }
-            bin_to_band[bin] = band;
-        }
+        let config = crate::consumer::ConsumerConfig {
+            sample_rate,
+            channels,
+            fft_interval: 3,
+            crossfade_ms,
+            recv_timeout_ms: 500,
+        };
 
-        let mut current_rx = rx;
-        let mut frame_count = 0u64;
-        let mut first_track = true;
-        let mut fade_remaining = 0usize; // 还有多少样本需要淡入
-        let mut dsp_time_ns: u64 = 0;
-        let mut push_time_ns: u64 = 0;
-
-        // 逐段峰值跟踪（自动归一化）
-        let mut band_peaks = vec![0.001f32; SPECTRUM_BANDS];
-        loop {
-            match current_rx.recv() {
-                Ok(frame) => {
-                    if stop_flag.load(Ordering::SeqCst) { break; }
-                    if first_track {
-                        let _ = ready_tx.send(true);
-                        first_track = false;
-                    }
-                    frame_count += 1;
-                    let count = frame.samples.len();
-                    let mut buf = frame.samples;
-                    let t0 = Instant::now();
-                    if let Ok(mut pipeline) = dsp.lock() {
-                        pipeline.process(&mut buf);
-                    }
-                    dsp_time_ns += t0.elapsed().as_nanos() as u64;
-
-                    // 实时频谱：每 3 帧做一次 FFT
-                    if frame_count % 3 == 0 && buf.len() >= fft_size * channels as usize {
-                        for i in 0..fft_size {
-                            let l = buf[i * channels as usize];
-                            let r = if channels >= 2 { buf[i * channels as usize + 1] } else { l };
-                            fft_input[i] = (l + r) * 0.5 * hann[i];
-                        }
-                        if fft.process(&mut fft_input, &mut fft_out).is_ok() {
-                            let mut bands = vec![0.0f32; SPECTRUM_BANDS];
-                            let mut band_counts = vec![0usize; SPECTRUM_BANDS];
-                            for (bin, &c) in fft_out.iter().enumerate().skip(1) {
-                                if bin >= bin_to_band.len() { break; }
-                                let b = bin_to_band[bin];
-                                bands[b] += c.norm_sqr().sqrt();
-                                band_counts[b] += 1;
-                            }
-                            for b in 0..SPECTRUM_BANDS {
-                                if band_counts[b] > 0 {
-                                    let avg = bands[b] / band_counts[b] as f32;
-                                    // 峰值跟踪：攻击立刻跟随，释放较快(0.93)提升动态感
-                                    let peak = band_peaks[b];
-                                    band_peaks[b] = if avg > peak {
-                                        avg * 1.1
-                                    } else {
-                                        peak * 0.93
-                                    };
-                                    bands[b] = (avg / band_peaks[b].max(0.001)).min(1.0);
-                                } else {
-                                    // 无 bin 的频段平滑归零
-                                    band_peaks[b] *= 0.90;
-                                }
-                            }
-                            let _ = event_tx.send(EngineEvent::Spectrum(bands));
-                        }
-                    }
-                    // 余弦淡入：切换后第一个帧开始应用，逐步从 0→1
-                    if fade_remaining > 0 {
-                        let n = fade_remaining.min(buf.len());
-                        let done = fade_total - fade_remaining;
-                        for i in 0..n {
-                            // 余弦淡入曲线: gain = 0.5 - 0.5*cos(π * i/n_total)
-                            let gain = (1.0 - ((done + i) as f32 / fade_total as f32 * std::f32::consts::PI).cos()) / 2.0;
-                            buf[i] *= gain;
-                        }
-                        fade_remaining -= n;
-                    }
-                    // 坏帧检测：全零或 NaN → 跳过，不污染 ringbuf
-                    let bad_frame = buf.iter().all(|&s| s == 0.0) || buf.iter().any(|&s| s.is_nan());
-                    if bad_frame {
-                        let _ = event_tx.send(EngineEvent::Error("解码器输出坏帧（全零/NaN），已跳过".into()));
-                        continue;
-                    }
-                    let t1 = Instant::now();
-                    let mut remaining: &[f32] = &buf;
-                    while !remaining.is_empty() && !stop_flag.load(Ordering::SeqCst) {
-                        let n = pcm.push_slice(remaining);
-                        if n == 0 { thread::sleep(Duration::from_millis(1)); }
-                        remaining = &remaining[n..];
-                    }
-                    push_time_ns += t1.elapsed().as_nanos() as u64;
-                    position.fetch_add(count as u64, Ordering::Release);
-                    if frame_count % 100 == 0 {
-                        debug!("consumer timing (100帧): DSP avg {:.1}µs, push avg {:.1}µs, buf {}samples",
-                            dsp_time_ns as f64 / 100_000.0,
-                            push_time_ns as f64 / 100_000.0,
-                            buf.len());
-                        dsp_time_ns = 0;
-                        push_time_ns = 0;
-                    }
+        let pcm_mutex = std::sync::Mutex::new(pcm);
+        crate::consumer::run_consumer_loop(
+            rx,
+            &config,
+            &|s| pcm_mutex.lock().unwrap_or_else(|e| e.into_inner()).push_slice(s),
+            &|buf| { if let Ok(mut pipeline) = dsp.lock() { pipeline.process(buf); } },
+            &|bands| { let _ = event_tx.send(EngineEvent::Spectrum(bands.to_vec())); },
+            &|| { let _ = event_tx.send(EngineEvent::Error("解码器输出坏帧（全零/NaN），已跳过".into())); },
+            &|n| { position.fetch_add(n, Ordering::Release); },
+            &|| {
+                let mut guard = next_rx.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(preloaded) = guard.take() {
+                    let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
+                    Some(preloaded)
+                } else {
+                    let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
+                    None
                 }
-                Err(_) => {
-                    // 解码器 channel 断开
-                    if stop_flag.load(Ordering::SeqCst) { break; }
-                    // 尝试切换到预加载的下一首解码器
-                    let switched = {
-                        let mut guard = next_rx.lock().unwrap_or_else(|e| e.into_inner());
-                        if let Some(preloaded) = guard.take() {
-                            current_rx = preloaded;
-                            frame_count = 0;
-                            true
-                        } else { false }
-                    };
-                    if switched {
-                        // 下次 recv OK 后对新曲应用淡入
-                        fade_remaining = fade_total;
-                        // 通知引擎 advance_queue
-                        let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
-                    } else {
-                        let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
-                        break;
-                    }
-                }
-            }
-        }
-        if frame_count == 0 && first_track && !stop_flag.load(Ordering::SeqCst) {
-            warn!("消费者未收到任何音频帧，可能解码失败");
-            let _ = ready_tx.send(false);
-        }
+            },
+            &stop_flag,
+            ready_tx,
+        );
+
         debug!("消费者线程结束");
     })
 }
