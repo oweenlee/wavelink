@@ -6,22 +6,27 @@ use once_cell::sync::OnceCell;
 use ringbuf::traits::{Consumer, Observer, Producer, Split};
 use ringbuf::{HeapCons, HeapProd, HeapRb};
 use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 use std::thread;
 
 /// 全局 ringbuf
 static PRODUCER: OnceCell<std::sync::Mutex<HeapProd<f32>>> = OnceCell::new();
 static CONSUMER_PTR: AtomicPtr<HeapCons<f32>> = AtomicPtr::new(std::ptr::null_mut());
 static DECODER_GEN: AtomicU64 = AtomicU64::new(0);
+/// 保证 PRODUCER 与 CONSUMER_PTR 原子地一起初始化且仅一次，
+/// 否则重复 init 会让 producer 写旧 ringbuf、consumer 读新 ringbuf 导致永久错位（全静音）。
+static INIT_ONCE: Once = Once::new();
 
 const RINGBUF_CAPACITY: usize = 44100 * 2 * 6;
 
 pub fn init_audio_ringbuf() {
-    let rb = HeapRb::<f32>::new(RINGBUF_CAPACITY);
-    let (prod, cons) = rb.split();
-    PRODUCER.set(std::sync::Mutex::new(prod)).ok();
-    let leaked = Box::leak(Box::new(cons));
-    CONSUMER_PTR.store(leaked as *mut HeapCons<f32>, Ordering::Release);
+    INIT_ONCE.call_once(|| {
+        let rb = HeapRb::<f32>::new(RINGBUF_CAPACITY);
+        let (prod, cons) = rb.split();
+        PRODUCER.set(std::sync::Mutex::new(prod)).ok();
+        let leaked = Box::leak(Box::new(cons));
+        CONSUMER_PTR.store(leaked as *mut HeapCons<f32>, Ordering::Release);
+    });
 }
 
 // ── 共享解码器 ──
@@ -40,18 +45,21 @@ fn run_decoder(path: String, seek_secs: Option<f64>, gen: u64) {
         match rx.recv_timeout(std::time::Duration::from_millis(500)) {
             Ok(frame) => {
                 let s = frame.samples;
-                let ch = frame.channels as u64;
-                let sr = frame.sample_rate as u64;
-                let dur = s.len() as u64 * 1000 / (ch * sr);
-                thread::sleep(std::time::Duration::from_millis(if dur > 5 { dur * 8 / 10 } else { dur }));
 
-                loop {
+                // 必须把整帧（可能 > ringbuf 剩余空间）全部写入，
+                // 不能丢弃。用偏移量循环 push 剩余部分。
+                let mut off = 0usize;
+                while off < s.len() {
                     if DECODER_GEN.load(Ordering::Acquire) != gen { break; }
                     let prod = PRODUCER.get().unwrap();
                     let mut p = prod.lock().unwrap();
-                    if p.push_slice(&s) > 0 { break; }
-                    drop(p);
-                    thread::sleep(std::time::Duration::from_millis(10));
+                    let pushed = p.push_slice(&s[off..]);
+                    if pushed > 0 {
+                        off += pushed;
+                    } else {
+                        drop(p);
+                        thread::sleep(std::time::Duration::from_millis(10));
+                    }
                 }
             }
             Err(crossbeam_channel::RecvTimeoutError::Timeout) => continue,
@@ -67,8 +75,23 @@ pub fn start_file_decoder(path: String, seek_secs: Option<f64>) {
     thread::spawn(move || run_decoder(p, seek_secs, gen));
 }
 
+#[allow(dead_code)]
+pub fn debug_occupied() -> usize {
+    let ptr = CONSUMER_PTR.load(Ordering::Acquire);
+    if ptr.is_null() { return 0; }
+    unsafe { (*ptr).occupied_len() }
+}
+
 pub fn stop_file_decoder() {
     DECODER_GEN.fetch_add(1, Ordering::AcqRel);
+    clear_ringbuf();
+}
+
+/// 清空 ringbuf 残留数据（丢弃读指针之前的积压样本）。
+/// 用于 iOS 暂停恢复场景：暂停期间解码线程仍在推数据，
+/// resume 时丢弃积压、无缝接上实时解码，避免"磁带滑"。
+#[no_mangle]
+pub extern "C" fn audio_output_clear_ringbuf() {
     clear_ringbuf();
 }
 

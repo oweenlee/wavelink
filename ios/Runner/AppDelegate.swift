@@ -28,6 +28,14 @@ class AudioOutputManager {
                   let rightBuf = abl[1].mData?.assumingMemoryBound(to: Float.self)
             else { return noErr }
 
+            // 暂停时引擎持续运行（避免 AVAudioSourceNode 的渲染时钟跳变），
+            // 但回调里直接填静音，不消费 ringbuf。
+            if !self.isPlayingFlag {
+                let n = Int(frameCount)
+                for i in 0..<n { leftBuf[i] = 0; rightBuf[i] = 0 }
+                return noErr
+            }
+
             // Rust 从交错 ringbuf 读出并分别写入左右声道 buffer
             audio_output_fill_buffer_stereo(leftBuf, rightBuf, UInt32(frameCount))
             return noErr
@@ -51,11 +59,15 @@ class AudioOutputManager {
 
     func pause() {
         isPlayingFlag = false
-        if engine.isRunning { engine.pause() }
+        // 注意：不调用 engine.pause()。AVAudioSourceNode 在 engine.pause 后回调会
+        // 完全停摆，但 Rust 解码线程仍在往 ringbuf 推数据；resume 时一次性把暂停期间
+        // 积压的数据吐出 = "磁带滑"。这里让引擎持续运行、回调填静音即可。
     }
 
     func resume() {
         isPlayingFlag = true
+        // 丢弃暂停期间 ringbuf 里积压的旧数据，恢复后无缝接上实时解码
+        audio_output_clear_ringbuf()
         if !engine.isRunning {
             try? AVAudioSession.sharedInstance().setActive(true)
             try? engine.start()
@@ -64,7 +76,8 @@ class AudioOutputManager {
 
     func stop() {
         isPlayingFlag = false
-        // AVAudioSourceNode 没有缓冲队列可以清，ringbuf 由 Rust 侧管理
+        // 引擎持续运行，回调在 isPlayingFlag=false 时填静音；
+        // 真正停止解码由 Rust 侧 stop_file_decoder 处理（Dart 层已调用）。
     }
 
     func setEventSink(_ sink: FlutterEventSink?) { eventSink = sink }

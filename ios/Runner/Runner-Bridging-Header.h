@@ -3,3 +3,6 @@
 // Rust ringbuf 填充函数（audio_output.rs 中 #[no_mangle] 导出）
 // 非交错格式：left/right 分别指向左右声道 buffer
 void audio_output_fill_buffer_stereo(float * _Nonnull left, float * _Nonnull right, unsigned int frames);
+
+// 清空 ringbuf 残留（暂停恢复时丢弃积压数据，避免磁带滑）
+void audio_output_clear_ringbuf(void);
