@@ -56,6 +56,7 @@ class SettingsPage extends StatelessWidget {
               value: player.replayGain,
               onChanged: (_) => player.setReplayGain(!player.replayGain),
             ),
+            _EqPresetSelector(),
             _SettingItem(
               icon: Icons.volume_up_rounded,
               label: l10n.outputDevice,
@@ -186,6 +187,67 @@ class _LanguageSelector extends StatelessWidget {
             ),
           );
         }).toList(),
+      ),
+    );
+  }
+}
+
+class _EqPresetSelector extends StatelessWidget {
+  const _EqPresetSelector();
+
+  static const _options = [
+    (EqPresetKind.flat, '平直'),
+    (EqPresetKind.rock, '摇滚'),
+    (EqPresetKind.pop, '流行'),
+    (EqPresetKind.dance, '舞曲'),
+    (EqPresetKind.classical, '古典'),
+    (EqPresetKind.soft, '柔和'),
+    (EqPresetKind.fullBass, '重低音'),
+    (EqPresetKind.fullTreble, '高音增强'),
+    (EqPresetKind.techno, '电子'),
+    (EqPresetKind.vocals, '人声'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final player = context.watch<PlaybackProvider>();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'EQ 预设',
+            style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _options.map((opt) {
+              final selected = player.dspSettings.preset == opt.$1;
+              return ChoiceChip(
+                label: Text(opt.$2),
+                selected: selected,
+                onSelected: (_) => player.applyEqPreset(opt.$1),
+                selectedColor: AppTheme.accentBlue.withValues(alpha: 0.2),
+                labelStyle: TextStyle(
+                  color: selected ? AppTheme.accentBlue : AppTheme.textSecondary,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                ),
+                backgroundColor: AppTheme.surfaceDark,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: BorderSide(
+                    color: selected
+                        ? AppTheme.accentBlue
+                        : AppTheme.textTertiary.withValues(alpha: 0.2),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }

@@ -882,6 +882,7 @@ dependencies = [
  "crossbeam-channel",
  "flutter_rust_bridge",
  "once_cell",
+ "realfft 3.5.0",
  "ringbuf",
 ]
 

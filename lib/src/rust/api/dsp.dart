@@ -6,6 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These functions are ignored because they are not marked as `pub`: `dsp_global_init`, `dsp_global_is_enabled`, `dsp_global_process`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`
 
 /// 创建 DSP 管线
@@ -82,6 +83,42 @@ Future<Float32List> dspProcess({
 /// 重置 DSP 到默认状态
 Future<void> dspReset({required DspHandle handle}) =>
     RustLib.instance.api.crateApiDspDspReset(handle: handle);
+
+/// 整条管线开关
+Future<void> dspGlobalSetEnabled({required bool enabled}) =>
+    RustLib.instance.api.crateApiDspDspGlobalSetEnabled(enabled: enabled);
+
+Future<void> dspGlobalSetEqBand({
+  required int index,
+  required double freq,
+  required double gainDb,
+  required double q,
+}) => RustLib.instance.api.crateApiDspDspGlobalSetEqBand(
+  index: index,
+  freq: freq,
+  gainDb: gainDb,
+  q: q,
+);
+
+Future<void> dspGlobalApplyPreset({required EqPreset preset}) =>
+    RustLib.instance.api.crateApiDspDspGlobalApplyPreset(preset: preset);
+
+Future<void> dspGlobalSetCrossfeed({required bool enabled}) =>
+    RustLib.instance.api.crateApiDspDspGlobalSetCrossfeed(enabled: enabled);
+
+Future<void> dspGlobalSetStereoWidener({
+  required bool enabled,
+  required double width,
+}) => RustLib.instance.api.crateApiDspDspGlobalSetStereoWidener(
+  enabled: enabled,
+  width: width,
+);
+
+Future<void> dspGlobalSetVolume({required double volume}) =>
+    RustLib.instance.api.crateApiDspDspGlobalSetVolume(volume: volume);
+
+Future<void> dspGlobalReset() =>
+    RustLib.instance.api.crateApiDspDspGlobalReset();
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<DspHandle>>
 abstract class DspHandle implements RustOpaqueInterface {}

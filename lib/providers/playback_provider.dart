@@ -7,6 +7,8 @@ import '../services/rust_service.dart' as rs;
 import '../services/import_service.dart';
 import '../services/preferences_service.dart';
 import '../src/rust/api/dsp.dart' as dsp;
+import '../src/rust/api/audio_output.dart' as audio_out;
+import '../src/rust/api/dsp.dart' show EqPreset;
 
 class PlaybackProvider extends ChangeNotifier {
   final NativeAudioService _nativeAudio = NativeAudioService();
@@ -29,7 +31,6 @@ class PlaybackProvider extends ChangeNotifier {
   double _coverBlur = 0.7;
 
   //── DSP ──
-  dsp.DspHandle? _dspHandle;
   DspSettings _dspSettings = DspSettings();
 
   /// 解码器启动钩子（默认走真实 Rust 解码；测试可替换以注入延迟/记录）
@@ -90,12 +91,8 @@ class PlaybackProvider extends ChangeNotifier {
       });
       if (rs.rustAvailable) {
         await rs.initRingbuf();
-        _dspHandle = await dsp.createDsp(
-          sampleRate: 44100,
-          channels: 2,
-          volume: _volume,
-          bits: 24,
-        );
+        // 应用已保存的 DSP 设置到全局管线
+        await _applyDsp();
       }
     } catch (_) {}
   }
@@ -521,7 +518,28 @@ class PlaybackProvider extends ChangeNotifier {
   //── DSP ──
 
   DspSettings get dspSettings => _dspSettings;
-  bool get dspAvailable => _dspHandle != null;
+  bool get dspAvailable => true;
+
+  /// 当前频谱（16 频段，0~1）。由 Rust 解码线程实时计算，UI 轮询。
+  Future<List<double>> getSpectrum() async {
+    if (!rs.rustAvailable) return List.filled(16, 0.0);
+    try {
+      final raw = await audio_out.getSpectrum();
+      return raw.map((e) => e.toDouble()).toList();
+    } catch (_) {
+      return List.filled(16, 0.0);
+    }
+  }
+
+  /// underrun 计数（缓冲区抽干次数）
+  Future<int> getUnderrunCount() async {
+    if (!rs.rustAvailable) return 0;
+    try {
+      return (await audio_out.getUnderrunCount()).toInt();
+    } catch (_) {
+      return 0;
+    }
+  }
 
   void toggleDspEnabled() {
     _dspSettings = _dspSettings.copyWith(enabled: !_dspSettings.enabled);
@@ -547,33 +565,62 @@ class PlaybackProvider extends ChangeNotifier {
   void toggleLimiter() {
     _dspSettings = _dspSettings.copyWith(limiter: !_dspSettings.limiter);
     PreferencesService.instance.setDspLimiter(_dspSettings.limiter);
-    _applyDsp();
+    // limiter 在 DspPipeline 中随 process 常驻（0dB 砖墙），此处仅持久化开关状态
     notifyListeners();
   }
 
   void toggleDither() {
     _dspSettings = _dspSettings.copyWith(dither: !_dspSettings.dither);
     PreferencesService.instance.setDspDither(_dspSettings.dither);
+    // dither 在 DspPipeline 中随 process 常驻，此处仅持久化开关状态
+    notifyListeners();
+  }
+
+  /// 应用 EQ 预设（10 段）
+  void applyEqPreset(EqPresetKind kind) {
+    _dspSettings = _dspSettings.copyWith(preset: kind);
     _applyDsp();
     notifyListeners();
   }
 
   Future<void> _applyDsp() async {
-    final handle = _dspHandle;
-    if (handle == null) return;
+    if (!rs.rustAvailable) return;
     try {
-      await dsp.dspSetCrossfeed(
-        handle: handle,
-        enabled: _dspSettings.crossfeed,
-      );
-      await dsp.dspSetStereoWidener(
-        handle: handle,
+      await dsp.dspGlobalSetEnabled(enabled: _dspSettings.enabled);
+      await dsp.dspGlobalSetCrossfeed(enabled: _dspSettings.crossfeed);
+      await dsp.dspGlobalSetStereoWidener(
         enabled: _dspSettings.widener,
         width: 0.5,
       );
-      // limiter / dither 在 Rust DspPipeline 中随 process 常驻，
-      // 这里仅持久化开关状态（见 DspSettings），后续可在 Rust 端加 set 接口。
+      // 预设：Flat 以外应用对应 PEQ 预设
+      final preset = _eqPresetFromKind(_dspSettings.preset);
+      await dsp.dspGlobalApplyPreset(preset: preset);
     } catch (_) {}
+  }
+
+  EqPreset _eqPresetFromKind(EqPresetKind kind) {
+    switch (kind) {
+      case EqPresetKind.flat:
+        return EqPreset.flat;
+      case EqPresetKind.rock:
+        return EqPreset.rock;
+      case EqPresetKind.pop:
+        return EqPreset.pop;
+      case EqPresetKind.dance:
+        return EqPreset.dance;
+      case EqPresetKind.classical:
+        return EqPreset.classical;
+      case EqPresetKind.soft:
+        return EqPreset.soft;
+      case EqPresetKind.fullBass:
+        return EqPreset.fullBass;
+      case EqPresetKind.fullTreble:
+        return EqPreset.fullTreble;
+      case EqPresetKind.techno:
+        return EqPreset.techno;
+      case EqPresetKind.vocals:
+        return EqPreset.vocals;
+    }
   }
 
   // ── 外观 / 增益设置（持久化）──
@@ -636,12 +683,26 @@ class PlaybackProvider extends ChangeNotifier {
 
 enum LoopMode { list, single, shuffle }
 
+enum EqPresetKind {
+  flat,
+  rock,
+  pop,
+  dance,
+  classical,
+  soft,
+  fullBass,
+  fullTreble,
+  techno,
+  vocals,
+}
+
 class DspSettings {
   final bool enabled;
   final bool crossfeed;
   final bool widener;
   final bool limiter;
   final bool dither;
+  final EqPresetKind preset;
 
   const DspSettings({
     this.enabled = false,
@@ -649,6 +710,7 @@ class DspSettings {
     this.widener = false,
     this.limiter = false,
     this.dither = false,
+    this.preset = EqPresetKind.flat,
   });
 
   DspSettings copyWith({
@@ -657,6 +719,7 @@ class DspSettings {
     bool? widener,
     bool? limiter,
     bool? dither,
+    EqPresetKind? preset,
   }) =>
       DspSettings(
         enabled: enabled ?? this.enabled,
@@ -664,6 +727,7 @@ class DspSettings {
         widener: widener ?? this.widener,
         limiter: limiter ?? this.limiter,
         dither: dither ?? this.dither,
+        preset: preset ?? this.preset,
       );
 }
 

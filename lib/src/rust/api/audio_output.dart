@@ -6,16 +6,27 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `audio_output_fill_buffer_stereo`, `clear_ringbuf`, `run_decoder`
+// These functions are ignored because they are not marked as `pub`: `audio_output_clear_ringbuf`, `audio_output_fill_buffer_stereo`, `clear_ringbuf`, `compute_spectrum`, `run_decoder`
 
 Future<void> initAudioRingbuf() =>
     RustLib.instance.api.crateApiAudioOutputInitAudioRingbuf();
+
+/// 读取当前频谱（16 频段，0~1）
+Future<Float32List> getSpectrum() =>
+    RustLib.instance.api.crateApiAudioOutputGetSpectrum();
+
+/// 读取 underrun 计数
+Future<BigInt> getUnderrunCount() =>
+    RustLib.instance.api.crateApiAudioOutputGetUnderrunCount();
 
 Future<void> startFileDecoder({required String path, double? seekSecs}) =>
     RustLib.instance.api.crateApiAudioOutputStartFileDecoder(
       path: path,
       seekSecs: seekSecs,
     );
+
+Future<BigInt> debugOccupied() =>
+    RustLib.instance.api.crateApiAudioOutputDebugOccupied();
 
 Future<void> stopFileDecoder() =>
     RustLib.instance.api.crateApiAudioOutputStopFileDecoder();

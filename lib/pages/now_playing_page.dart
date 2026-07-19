@@ -6,6 +6,7 @@ import '../models/song.dart';
 import '../providers/playback_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/progress_slider_widget.dart';
+import '../widgets/spectrum_bar.dart';
 
 class NowPlayingPage extends StatefulWidget {
   const NowPlayingPage({super.key});
@@ -163,6 +164,11 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                       lyrics: player.currentLyrics ?? [],
                       line: player.currentLyricLine,
                       onTap: _openLyrics,
+                    ),
+                    const SizedBox(height: 12),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 24),
+                      child: SpectrumBar(),
                     ),
                     const SizedBox(height: 8),
                     _BottomToolbar(
