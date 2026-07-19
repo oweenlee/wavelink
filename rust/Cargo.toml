@@ -8,7 +8,7 @@ crate-type = ["staticlib", "cdylib", "lib"]
 
 [dependencies]
 flutter_rust_bridge = "=2.13.0-beta.5"
-audio-core = { path = "../../wavelink-engine/audio-core", default-features = false }
+audio-core = { path = "../../wavelink-audio-core", default-features = false }
 crossbeam-channel = "0.5"
 ringbuf = "0.4"
 once_cell = "1"
