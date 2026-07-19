@@ -3268,11 +3268,12 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 [[package]]
 name = "sdk"
 version = "0.1.0"
-source = "git+ssh://git@github.com/qinlaoban/wavelink-engine.git?tag=v0.2.0#90cd226d722479e3e1680964ff93c64b5923dba7"
 dependencies = [
  "audio-core",
  "base64 0.22.1",
+ "crossbeam-channel",
  "encoding_rs",
+ "hound",
  "image",
  "lofty",
  "rusqlite",
