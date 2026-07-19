@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'services/rust_service.dart';
 import 'services/preferences_service.dart';
 import 'providers/playback_provider.dart';
+import 'providers/locale_provider.dart';
 import 'app.dart';
 
 Future<void> main() async {
@@ -20,8 +21,11 @@ Future<void> main() async {
     DeviceOrientation.portraitDown,
   ]);
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => PlaybackProvider(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => PlaybackProvider()),
+        ChangeNotifierProvider(create: (_) => LocaleProvider()),
+      ],
       child: const WaveLinkApp(),
     ),
   );

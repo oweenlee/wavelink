@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:wavelink_mobile/l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../models/lyric_line.dart';
 import '../models/song.dart';
@@ -71,6 +72,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final player = context.watch<PlaybackProvider>();
     final song = player.currentSong;
 
@@ -81,7 +83,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
           child: Column(
             children: [
               _TopBar(onClose: () => Navigator.of(context).pop()),
-              const Expanded(
+              Expanded(
                 child: Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -93,7 +95,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                       ),
                       SizedBox(height: 16),
                       Text(
-                        '没有正在播放的歌曲',
+                        l10n.nowPlayingEmpty,
                         style: TextStyle(
                           fontSize: 16,
                           color: AppTheme.textSecondary,
@@ -205,6 +207,7 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
@@ -219,7 +222,7 @@ class _TopBar extends StatelessWidget {
           ),
           const Spacer(),
           Text(
-            '当前播放',
+            l10n.currentPlaying,
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w500,
@@ -283,6 +286,7 @@ class _Tags extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final analysis = player.getAnalysis(song.id);
     final bpm = analysis?.bpm;
     final key = analysis?.key;
@@ -295,7 +299,7 @@ class _Tags extends StatelessWidget {
         if (key != null)
           _Tag(icon: Icons.music_note_rounded, label: key),
         if (player.isSongFavorite(song.id))
-          const _Tag(icon: Icons.favorite_rounded, label: '已收藏'),
+          _Tag(icon: Icons.favorite_rounded, label: l10n.favorited),
       ],
     );
   }
@@ -425,8 +429,9 @@ class _LyricsPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final hasLyrics = lyrics.isNotEmpty && line >= 0 && line < lyrics.length;
-    final text = hasLyrics ? lyrics[line].text : '暂无歌词';
+    final text = hasLyrics ? lyrics[line].text : l10n.noLyrics;
 
     return GestureDetector(
       onTap: hasLyrics ? onTap : null,
@@ -480,6 +485,7 @@ class _BottomToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
@@ -487,14 +493,14 @@ class _BottomToolbar extends StatelessWidget {
         children: [
           _BarItem(
             icon: Icons.queue_music_rounded,
-            label: '队列',
+            label: l10n.queue,
             onTap: onQueue,
             badge: '${player.queue.length}',
           ),
-          _BarItem(icon: Icons.tune_rounded, label: '音效', onTap: onEffects),
+          _BarItem(icon: Icons.tune_rounded, label: l10n.sound, onTap: onEffects),
           _BarItem(
             icon: lyricsActive ? Icons.lyrics_rounded : Icons.lyrics_outlined,
-            label: '歌词',
+            label: l10n.lyrics,
             active: lyricsActive,
             onTap: onLyrics,
           ),
@@ -502,7 +508,7 @@ class _BottomToolbar extends StatelessWidget {
             icon: player.isFavorite
                 ? Icons.favorite_rounded
                 : Icons.favorite_border_rounded,
-            label: '收藏',
+            label: l10n.favorite,
             active: player.isFavorite,
             activeColor: AppTheme.danger,
             onTap: () => player.toggleFavorite(),
@@ -598,13 +604,14 @@ class _QueueSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return _SheetShell(
-      title: '播放队列',
+      title: l10n.queueTitle,
       builder: (scroll) {
         if (player.queue.isEmpty) {
-          return const Center(
+          return Center(
             child: Text(
-              '队列为空',
+              l10n.queueEmpty,
               style: TextStyle(fontSize: 15, color: AppTheme.textTertiary),
             ),
           );
@@ -722,9 +729,10 @@ class _EffectsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final dsp = player.dspSettings;
     return _SheetShell(
-      title: '音效设置',
+      title: l10n.soundSettings,
       builder: (scroll) {
         return ListView(
           controller: scroll,
@@ -732,8 +740,8 @@ class _EffectsSheet extends StatelessWidget {
           children: [
             _EffectItem(
               icon: Icons.tune_rounded,
-              label: '均衡器 (10段 PEQ)',
-              subtitle: dsp.enabled ? '已启用' : '已禁用',
+              label: l10n.eq10Band,
+              subtitle: dsp.enabled ? l10n.enabled : l10n.disabled,
               trailing: _Toggle(
                 value: dsp.enabled,
                 onChanged: player.toggleDspEnabled,
@@ -742,8 +750,8 @@ class _EffectsSheet extends StatelessWidget {
             const _Divider(),
             _EffectItem(
               icon: Icons.vibration_rounded,
-              label: 'Crossfeed',
-              subtitle: dsp.crossfeed ? '已启用' : 'Bauer 交叉馈送',
+              label: l10n.bauerCrossfeed,
+              subtitle: dsp.crossfeed ? l10n.enabled : l10n.bauerCrossfeed,
               trailing: _Toggle(
                 value: dsp.crossfeed,
                 onChanged: player.toggleCrossfeed,
@@ -752,8 +760,8 @@ class _EffectsSheet extends StatelessWidget {
             const _Divider(),
             _EffectItem(
               icon: Icons.arrow_right_alt_rounded,
-              label: '立体声展宽',
-              subtitle: dsp.widener ? '已启用' : 'Stereo Widener',
+              label: l10n.stereoWidening,
+              subtitle: dsp.widener ? l10n.enabled : l10n.stereoWidening,
               trailing: _Toggle(
                 value: dsp.widener,
                 onChanged: player.toggleWidener,
@@ -762,8 +770,8 @@ class _EffectsSheet extends StatelessWidget {
             const _Divider(),
             _EffectItem(
               icon: Icons.volume_up_rounded,
-              label: '真峰值限幅器',
-              subtitle: dsp.limiter ? '已启用' : 'TruePeak Limiter',
+              label: l10n.truePeakLimiter,
+              subtitle: dsp.limiter ? l10n.enabled : l10n.truePeakLimiter,
               trailing: _Toggle(
                 value: dsp.limiter,
                 onChanged: player.toggleLimiter,
@@ -772,8 +780,8 @@ class _EffectsSheet extends StatelessWidget {
             const _Divider(),
             _EffectItem(
               icon: Icons.graphic_eq_rounded,
-              label: 'TPDF 抖动',
-              subtitle: dsp.dither ? '已启用' : 'Dither',
+              label: l10n.tpdfDither,
+              subtitle: dsp.dither ? l10n.enabled : l10n.tpdfDither,
               trailing: _Toggle(
                 value: dsp.dither,
                 onChanged: player.toggleDither,
@@ -837,6 +845,7 @@ class _LyricsOverlayState extends State<_LyricsOverlay> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       color: AppTheme.background.withValues(alpha: 0.97),
       child: SafeArea(
@@ -856,7 +865,7 @@ class _LyricsOverlayState extends State<_LyricsOverlay> {
                   ),
                   const Spacer(),
                   Text(
-                    '歌词',
+                    l10n.lyrics,
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w500,

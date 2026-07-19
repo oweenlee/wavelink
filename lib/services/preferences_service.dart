@@ -126,6 +126,12 @@ class PreferencesService {
     data[name] = songIds;
     await setPlaylists(data);
   }
+
+  // ── 语言偏好 ──
+  // 取值：'system' | 'zh' | 'en'；'system' 表示跟随系统
+  static const _kLocale = 'locale';
+  String get localePref => _prefs.getString(_kLocale) ?? 'system';
+  Future<void> setLocalePref(String v) => _prefs.setString(_kLocale, v);
 }
 
 // 简单的扁平 Map 编解码，避免引入额外依赖

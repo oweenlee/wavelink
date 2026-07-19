@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:wavelink_mobile/l10n/app_localizations.dart';
 
 class Song {
   final String id;
@@ -47,9 +48,9 @@ class Album {
   Duration get totalDuration =>
       songs.fold(Duration.zero, (sum, s) => sum + s.duration);
 
-  String get formattedDuration {
+  String formattedDurationOf(AppLocalizations l10n) {
     final m = totalDuration.inMinutes;
-    return '$m 分钟';
+    return l10n.minuteFormat(m);
   }
 
   const Album({

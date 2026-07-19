@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:wavelink_mobile/l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../providers/playback_provider.dart';
 import '../theme/app_theme.dart';
@@ -7,6 +8,8 @@ import '../services/preferences_service.dart';
 import '../widgets/song_tile.dart';
 import 'album_detail_page.dart';
 import 'artist_detail_page.dart';
+
+enum _ResultKind { songs, albums, artists }
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -36,7 +39,7 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
-  List<MapEntry<String, List<Song>>> get _results {
+  List<( _ResultKind, List<Song>)> get _results {
     if (_query.isEmpty) return [];
     final q = _query.toLowerCase();
     final player = context.read<PlaybackProvider>();
@@ -50,21 +53,39 @@ class _SearchPageState extends State<SearchPage> {
     final albumNames = matched.map((s) => s.album).toSet();
     final artistNames = matched.map((s) => s.artist).toSet();
 
-    final result = <MapEntry<String, List<Song>>>[];
-    if (matched.isNotEmpty) result.add(MapEntry('歌曲', matched));
+    final result = <( _ResultKind, List<Song>)>[];
+    if (matched.isNotEmpty) {
+      result.add((_ResultKind.songs, matched));
+    }
     if (albumNames.isNotEmpty) {
-      result.add(MapEntry('专辑', albumNames.map((name) =>
-          matched.firstWhere((s) => s.album == name)).toList()));
+      result.add((
+        _ResultKind.albums,
+        albumNames.map((name) => matched.firstWhere((s) => s.album == name)).toList(),
+      ));
     }
     if (artistNames.isNotEmpty) {
-      result.add(MapEntry('艺术家', artistNames.map((name) =>
-          matched.firstWhere((s) => s.artist == name)).toList()));
+      result.add((
+        _ResultKind.artists,
+        artistNames.map((name) => matched.firstWhere((s) => s.artist == name)).toList(),
+      ));
     }
     return result;
   }
 
+  String _sectionTitle(AppLocalizations l10n, _ResultKind kind) {
+    switch (kind) {
+      case _ResultKind.songs:
+        return l10n.libSongs;
+      case _ResultKind.albums:
+        return l10n.libAlbums;
+      case _ResultKind.artists:
+        return l10n.libArtists;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       children: [
         const SizedBox(height: 8),
@@ -84,7 +105,7 @@ class _SearchPageState extends State<SearchPage> {
             },
             style: const TextStyle(fontSize: 16, color: AppTheme.textPrimary),
             decoration: InputDecoration(
-              hintText: '搜索歌曲、专辑、艺术家',
+              hintText: l10n.searchHint,
               hintStyle: const TextStyle(
                 fontSize: 16,
                 color: AppTheme.textTertiary,
@@ -122,6 +143,7 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Widget _buildHistory() {
+    final l10n = AppLocalizations.of(context);
     final hasSongs = context.watch<PlaybackProvider>().allSongs.isNotEmpty;
 
     if (_history.isEmpty) {
@@ -136,7 +158,7 @@ class _SearchPageState extends State<SearchPage> {
             ),
             const SizedBox(height: 12),
             Text(
-              hasSongs ? '搜索你的音乐' : '导入音乐后即可搜索',
+              hasSongs ? l10n.searchYourMusic : l10n.importThenSearch,
               style: const TextStyle(fontSize: 15, color: AppTheme.textTertiary),
             ),
           ],
@@ -152,9 +174,9 @@ class _SearchPageState extends State<SearchPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                '搜索历史',
-                style: TextStyle(
+              Text(
+                l10n.searchHistory,
+                style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: AppTheme.textSecondary,
@@ -165,9 +187,9 @@ class _SearchPageState extends State<SearchPage> {
                   PreferencesService.instance.clearSearchHistory();
                   setState(() {});
                 },
-                child: const Text(
-                  '清空',
-                  style: TextStyle(
+                child: Text(
+                  l10n.clear,
+                  style: const TextStyle(
                     fontSize: 12,
                     color: AppTheme.textTertiary,
                   ),
@@ -229,6 +251,7 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Widget _buildResults() {
+    final l10n = AppLocalizations.of(context);
     final results = _results;
     if (results.isEmpty) {
       return Center(
@@ -241,9 +264,9 @@ class _SearchPageState extends State<SearchPage> {
               color: AppTheme.textTertiary.withValues(alpha: 0.3),
             ),
             const SizedBox(height: 12),
-            const Text(
-              '未找到结果',
-              style: TextStyle(fontSize: 15, color: AppTheme.textTertiary),
+            Text(
+              l10n.noResults,
+              style: const TextStyle(fontSize: 15, color: AppTheme.textTertiary),
             ),
           ],
         ),
@@ -255,12 +278,14 @@ class _SearchPageState extends State<SearchPage> {
     return ListView(
       padding: const EdgeInsets.only(bottom: 80),
       children: results.expand((entry) {
+        final kind = entry.$1;
+        final value = entry.$2;
         final items = <Widget>[];
         items.add(
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: Text(
-              entry.key,
+              _sectionTitle(l10n, kind),
               style: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
@@ -269,8 +294,8 @@ class _SearchPageState extends State<SearchPage> {
             ),
           ),
         );
-        if (entry.key == '歌曲') {
-          for (final s in entry.value) {
+        if (kind == _ResultKind.songs) {
+          for (final s in value) {
             items.add(
               SongTile(
                 song: s,
@@ -279,8 +304,8 @@ class _SearchPageState extends State<SearchPage> {
               ),
             );
           }
-        } else if (entry.key == '专辑') {
-          for (final s in entry.value) {
+        } else if (kind == _ResultKind.albums) {
+          for (final s in value) {
             final albumSongs = player.allSongs.where((x) => x.album == s.album).toList();
             items.add(
               ListTile(
@@ -326,7 +351,7 @@ class _SearchPageState extends State<SearchPage> {
             );
           }
         } else {
-          for (final s in entry.value) {
+          for (final s in value) {
             final count = player.allSongs.where((x) => x.artist == s.artist).length;
             items.add(
               ListTile(
@@ -347,7 +372,7 @@ class _SearchPageState extends State<SearchPage> {
                   ),
                 ),
                 subtitle: Text(
-                  '$count 首歌曲',
+                  l10n.songsCount(count),
                   style: const TextStyle(
                     fontSize: 13,
                     color: AppTheme.textSecondary,

@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:ui' show PlatformDispatcher;
+import 'package:wavelink_mobile/l10n/app_localizations.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
+import 'providers/locale_provider.dart';
 import 'pages/library_page.dart';
 import 'pages/search_page.dart';
 import 'pages/settings_page.dart';
@@ -12,10 +17,22 @@ class WaveLinkApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final localeProvider = Provider.of<LocaleProvider>(context);
+    final deviceLocale = PlatformDispatcher.instance.locale;
+    final locale = localeProvider.resolve(deviceLocale);
     return MaterialApp(
       title: 'WaveLink Mobile',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
+      // 国际化
+      locale: locale,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: LocaleProvider.supported,
       home: const AppShell(),
     );
   }
@@ -33,6 +50,7 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -103,27 +121,27 @@ class _AppShellState extends State<AppShell> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _NavItem(
+                     _NavItem(
                       icon: Icons.library_music_rounded,
-                      label: '曲库',
+                      label: l10n.tabLibrary,
                       isSelected: _currentTab == 0,
                       onTap: () => setState(() => _currentTab = 0),
                     ),
                     _NavItem(
                       icon: Icons.equalizer_rounded,
-                      label: '播放',
+                      label: l10n.tabPlay,
                       isSelected: _currentTab == 1,
                       onTap: () => _openNowPlaying(context),
                     ),
                     _NavItem(
                       icon: Icons.search_rounded,
-                      label: '搜索',
+                      label: l10n.tabSearch,
                       isSelected: _currentTab == 2,
                       onTap: () => setState(() => _currentTab = 2),
                     ),
                     _NavItem(
                       icon: Icons.settings_rounded,
-                      label: '设置',
+                      label: l10n.tabSettings,
                       isSelected: _currentTab == 3,
                       onTap: () => setState(() => _currentTab = 3),
                     ),
@@ -138,13 +156,14 @@ class _AppShellState extends State<AppShell> {
   }
 
   String _getTitle() {
+    final l10n = AppLocalizations.of(context);
     switch (_currentTab) {
       case 0:
-        return '曲库';
+        return l10n.titleLibrary;
       case 2:
-        return '搜索';
+        return l10n.titleSearch;
       case 3:
-        return '设置';
+        return l10n.titleSettings;
       default:
         return '';
     }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:wavelink_mobile/l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../models/song.dart';
 import '../providers/playback_provider.dart';
@@ -33,6 +34,7 @@ class _LibraryPageState extends State<LibraryPage>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       children: [
         const SizedBox(height: 8),
@@ -57,11 +59,11 @@ class _LibraryPageState extends State<LibraryPage>
               fontWeight: FontWeight.w500,
             ),
             unselectedLabelStyle: const TextStyle(fontSize: 13),
-            tabs: const [
-              Tab(text: '歌曲'),
-              Tab(text: '专辑'),
-              Tab(text: '艺术家'),
-              Tab(text: '播放列表'),
+            tabs: [
+              Tab(text: l10n.libSongs),
+              Tab(text: l10n.libAlbums),
+              Tab(text: l10n.libArtists),
+              Tab(text: l10n.libPlaylists),
             ],
           ),
         ),
@@ -123,6 +125,7 @@ class _EmptyLibrary extends StatelessWidget {
 class _SongsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final player = context.watch<PlaybackProvider>();
     final songs = player.allSongs;
 
@@ -132,7 +135,7 @@ class _SongsTab extends StatelessWidget {
         Expanded(
           child: songs.isEmpty
               ? _EmptyLibrary(
-                  message: '还没有导入音乐\n点击上方"导入音乐"添加歌曲',
+                  message: l10n.noMusicHint,
                 )
               : ListView.builder(
                   padding: const EdgeInsets.only(bottom: 80),
@@ -168,6 +171,7 @@ class _ImportHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final player = context.read<PlaybackProvider>();
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -177,7 +181,7 @@ class _ImportHeader extends StatelessWidget {
               size: 18, color: AppTheme.accentBlue),
           const SizedBox(width: 8),
           Text(
-            importCount > 0 ? '导入 ($importCount)' : '导入音乐',
+            importCount > 0 ? l10n.importN(importCount) : l10n.importMusic,
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -206,13 +210,13 @@ class _ImportHeader extends StatelessWidget {
                 color: AppTheme.accentBlue.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.add_rounded, size: 16, color: AppTheme.accentBlue),
                   SizedBox(width: 4),
                   Text(
-                    '导入',
+                    l10n.import,
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
@@ -234,13 +238,14 @@ class _ImportHeader extends StatelessWidget {
 class _AlbumsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final player = context.watch<PlaybackProvider>();
     final songs = player.allSongs;
 
     // group by album
     final albumNames = songs.map((s) => s.album).toSet().toList();
     if (albumNames.isEmpty) {
-      return const _EmptyLibrary(message: '暂无专辑信息');
+      return _EmptyLibrary(message: l10n.noAlbumInfo);
     }
 
     return ListView.builder(
@@ -301,7 +306,7 @@ class _AlbumsTab extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${albumSongs.first.artist} · ${albumSongs.length} 首',
+                        l10n.albumArtistCount(albumSongs.first.artist, albumSongs.length),
                         style: const TextStyle(
                           fontSize: 13,
                           color: AppTheme.textSecondary,
@@ -329,12 +334,13 @@ class _AlbumsTab extends StatelessWidget {
 class _ArtistsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final player = context.watch<PlaybackProvider>();
     final songs = player.allSongs;
 
     final artistNames = songs.map((s) => s.artist).toSet().toList();
     if (artistNames.isEmpty) {
-      return const _EmptyLibrary(message: '暂无艺术家信息');
+      return _EmptyLibrary(message: l10n.noArtistInfo);
     }
 
     return ListView.builder(
@@ -394,7 +400,7 @@ class _ArtistsTab extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '$count 首歌曲',
+                        l10n.songsCount(count),
                         style: const TextStyle(
                           fontSize: 13,
                           color: AppTheme.textSecondary,
@@ -422,6 +428,7 @@ class _ArtistsTab extends StatelessWidget {
 class _PlaylistsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final player = context.watch<PlaybackProvider>();
     final favorites = player.favoriteSongs;
     final saved = player.playlists;
@@ -429,7 +436,7 @@ class _PlaylistsTab extends StatelessWidget {
     // "我喜欢的音乐" 固定在最前，其余为已保存播放列表
     final entries = <_PlaylistEntry>[
       _PlaylistEntry(
-        name: '我喜欢的音乐',
+        name: l10n.favMusic,
         count: favorites.length,
         color: AppTheme.danger,
         songs: favorites,
@@ -462,7 +469,7 @@ class _PlaylistsTab extends StatelessWidget {
                     width: 1,
                   ),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
@@ -472,7 +479,7 @@ class _PlaylistsTab extends StatelessWidget {
                     ),
                     SizedBox(width: 8),
                     Text(
-                      '用当前队列新建播放列表',
+                      l10n.newPlaylistFromQueue,
                       style: TextStyle(
                         fontSize: 15,
                         color: AppTheme.accentBlue,
@@ -496,6 +503,7 @@ class _PlaylistsTab extends StatelessWidget {
                   title: pl.name,
                   songs: pl.songs,
                   accentColor: pl.color,
+                  isFavoriteList: pl.builtIn,
                 ),
               ),
             ),
@@ -536,7 +544,7 @@ class _PlaylistsTab extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${pl.count} 首歌曲',
+                        l10n.songsCount(pl.count),
                         style: const TextStyle(
                           fontSize: 13,
                           color: AppTheme.textSecondary,
@@ -559,18 +567,19 @@ class _PlaylistsTab extends StatelessWidget {
   }
 
   void _showCreatePlaylist(BuildContext context, PlaybackProvider player) {
+    final l10n = AppLocalizations.of(context);
     final ctrl = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.surfaceDark,
-        title: const Text('新建播放列表', style: TextStyle(color: AppTheme.textPrimary)),
+        title: Text(l10n.newPlaylist, style: const TextStyle(color: AppTheme.textPrimary)),
         content: TextField(
           controller: ctrl,
           autofocus: true,
           style: const TextStyle(color: AppTheme.textPrimary),
           decoration: InputDecoration(
-            hintText: '播放列表名称',
+            hintText: l10n.playlistNameHint,
             hintStyle: TextStyle(color: AppTheme.textTertiary),
             enabledBorder: UnderlineInputBorder(
               borderSide: BorderSide(color: AppTheme.textTertiary),
@@ -583,7 +592,7 @@ class _PlaylistsTab extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消', style: TextStyle(color: AppTheme.textSecondary)),
+            child: Text(l10n.cancel, style: const TextStyle(color: AppTheme.textSecondary)),
           ),
           TextButton(
             onPressed: () async {
@@ -593,7 +602,7 @@ class _PlaylistsTab extends StatelessWidget {
               }
               if (ctx.mounted) Navigator.pop(ctx);
             },
-            child: const Text('保存', style: TextStyle(color: AppTheme.accentBlue)),
+            child: Text(l10n.save, style: const TextStyle(color: AppTheme.accentBlue)),
           ),
         ],
       ),
@@ -623,6 +632,7 @@ void _showContextMenu(
   Song song,
   PlaybackProvider player,
 ) {
+  final l10n = AppLocalizations.of(context);
   showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
@@ -677,7 +687,7 @@ void _showContextMenu(
           const Divider(height: 1),
           _MenuItem(
             icon: Icons.skip_next_rounded,
-            label: '播放下一首',
+            label: l10n.playNext,
             onTap: () {
               player.playNext(song);
               Navigator.pop(ctx);
@@ -685,7 +695,7 @@ void _showContextMenu(
           ),
           _MenuItem(
             icon: Icons.queue_music_rounded,
-            label: '加入队列',
+            label: l10n.addToQueue,
             onTap: () {
               player.addToQueue(song);
               Navigator.pop(ctx);
@@ -693,14 +703,14 @@ void _showContextMenu(
           ),
           _MenuItem(
             icon: Icons.playlist_add_rounded,
-            label: '添加到播放列表',
+            label: l10n.addToPlaylist,
             onTap: () => _showAddToPlaylist(ctx, song, player),
           ),
           _MenuItem(
             icon: player.isSongFavorite(song.id)
                 ? Icons.favorite_rounded
                 : Icons.favorite_border_rounded,
-            label: player.isSongFavorite(song.id) ? '取消收藏' : '收藏',
+            label: player.isSongFavorite(song.id) ? l10n.unfavorite : l10n.favorite,
             onTap: () {
               player.setFavorite(song.id, !player.isSongFavorite(song.id));
               Navigator.pop(ctx);
@@ -709,7 +719,7 @@ void _showContextMenu(
           const Divider(height: 1),
           _MenuItem(
             icon: Icons.delete_outline_rounded,
-            label: '从曲库删除',
+            label: l10n.deleteFromLibrary,
             isDestructive: true,
             onTap: () => Navigator.pop(ctx),
           ),
@@ -758,6 +768,7 @@ void _showAddToPlaylist(
   Song song,
   PlaybackProvider player,
 ) {
+  final l10n = AppLocalizations.of(context);
   final saved = player.playlists;
   Navigator.pop(context);
   showModalBottomSheet(
@@ -775,7 +786,7 @@ void _showAddToPlaylist(
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Text(
-              '添加到播放列表',
+              l10n.addToPlaylist,
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -788,9 +799,9 @@ void _showAddToPlaylist(
             ListTile(
               leading: const Icon(Icons.info_outline_rounded,
                   color: AppTheme.textTertiary),
-              title: const Text(
-                '暂无播放列表，请在曲库-播放列表新建',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
+              title: Text(
+                l10n.noPlaylists,
+                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 14),
               ),
             ),
           ...saved.entries.map((e) => ListTile(

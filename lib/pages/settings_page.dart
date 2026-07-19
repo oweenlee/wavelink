@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:wavelink_mobile/l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../providers/playback_provider.dart';
+import '../providers/locale_provider.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final player = context.watch<PlaybackProvider>();
     final dsp = player.dspSettings;
 
@@ -15,70 +18,70 @@ class SettingsPage extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
       children: [
         _Section(
-          title: '音频',
+          title: l10n.settingsAudio,
           children: [
             _SettingItem(
               icon: Icons.tune_rounded,
-              label: 'DSP 管线配置',
-              trailing: dsp.enabled ? '已启用' : '已禁用',
+              label: l10n.dspPipeline,
+              trailing: dsp.enabled ? l10n.enabled : l10n.disabled,
               onTap: () => player.toggleDspEnabled(),
             ),
             _SwitchItem(
               icon: Icons.graphic_eq_rounded,
-              label: 'Crossfeed',
+              label: l10n.dspCrossfeed,
               value: dsp.crossfeed,
               onChanged: (_) => player.toggleCrossfeed(),
             ),
             _SwitchItem(
               icon: Icons.arrow_right_alt_rounded,
-              label: '立体声展宽',
+              label: l10n.stereoWidening,
               value: dsp.widener,
               onChanged: (_) => player.toggleWidener(),
             ),
             _SwitchItem(
               icon: Icons.volume_up_rounded,
-              label: '真峰值限幅器',
+              label: l10n.truePeakLimiter,
               value: dsp.limiter,
               onChanged: (_) => player.toggleLimiter(),
             ),
             _SwitchItem(
               icon: Icons.blur_on_rounded,
-              label: 'TPDF 抖动',
+              label: l10n.tpdfDither,
               value: dsp.dither,
               onChanged: (_) => player.toggleDither(),
             ),
             _SwitchItem(
               icon: Icons.auto_awesome_rounded,
-              label: 'ReplayGain',
+              label: l10n.replayGain,
               value: player.replayGain,
               onChanged: (_) => player.setReplayGain(!player.replayGain),
             ),
             _SettingItem(
               icon: Icons.volume_up_rounded,
-              label: '输出设备',
+              label: l10n.outputDevice,
               onTap: () {},
             ),
           ],
         ),
         const SizedBox(height: 24),
         _Section(
-          title: '外观',
+          title: l10n.settingsAppearance,
           children: [
             _SettingItem(
               icon: Icons.palette_rounded,
-              label: '主题',
-              trailing: '深色',
+              label: l10n.theme,
+              trailing: l10n.themeDark,
               onTap: () {},
             ),
             _SwitchItem(
               icon: Icons.colorize_rounded,
-              label: '动态取色',
+              label: l10n.dynamicColor,
               value: player.dynamicColor,
               onChanged: (_) => player.setDynamicColor(!player.dynamicColor),
             ),
             _SliderItem(
               icon: Icons.blur_on_rounded,
-              label: '封面模糊强度',
+              label: l10n.coverBlur,
               value: player.coverBlur,
               onChanged: player.setCoverBlur,
             ),
@@ -86,39 +89,104 @@ class SettingsPage extends StatelessWidget {
         ),
         const SizedBox(height: 24),
         _Section(
-          title: '曲库',
+          title: l10n.settingsLibrary,
           children: [
             _SettingItem(
               icon: Icons.folder_rounded,
-              label: '扫描目录',
+              label: l10n.scanDir,
               onTap: () {},
             ),
             _ActionItem(
               icon: Icons.refresh_rounded,
-              label: '重新扫描曲库',
+              label: l10n.rescanLibrary,
               onTap: () => context.read<PlaybackProvider>().rescanImported(),
             ),
             _SettingItem(
               icon: Icons.file_upload_outlined,
-              label: '导入/导出播放列表',
+              label: l10n.importExportPlaylist,
               onTap: () {},
             ),
           ],
         ),
         const SizedBox(height: 24),
         _Section(
-          title: '关于',
+          title: l10n.language,
+          children: [
+            _LanguageSelector(),
+          ],
+        ),
+        const SizedBox(height: 24),
+        _Section(
+          title: l10n.settingsAbout,
           children: [
             _SettingItem(
               icon: Icons.info_outline_rounded,
-              label: '版本',
-              trailing: 'v0.1.0',
+              label: l10n.version,
+              trailing: l10n.versionValue,
               onTap: () {},
             ),
-            _SettingItem(icon: Icons.code_rounded, label: '开源许可', onTap: () {}),
+            _SettingItem(icon: Icons.code_rounded, label: l10n.licenses, onTap: () {}),
           ],
         ),
       ],
+    );
+  }
+}
+
+class _LanguageSelector extends StatelessWidget {
+  const _LanguageSelector();
+
+  static const _options = [
+    ('system', ''),
+    ('zh', ''),
+    ('en', ''),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final locale = context.watch<LocaleProvider>();
+
+    // 跟随系统项的显示名需要本地化
+    String labelFor(String mode, AppLocalizations l) {
+      switch (mode) {
+        case 'zh':
+          return '中文';
+        case 'en':
+          return 'English';
+        default:
+          return l.systemDefault;
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Wrap(
+        spacing: 8,
+        children: _options.map((opt) {
+          final selected = locale.mode == opt.$1;
+          final label = labelFor(opt.$1, l10n);
+          return ChoiceChip(
+            label: Text(label),
+            selected: selected,
+            onSelected: (_) => locale.setMode(opt.$1),
+            selectedColor: AppTheme.accentBlue.withValues(alpha: 0.2),
+            labelStyle: TextStyle(
+              color: selected ? AppTheme.accentBlue : AppTheme.textSecondary,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            ),
+            backgroundColor: AppTheme.surfaceDark,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: BorderSide(
+                color: selected
+                    ? AppTheme.accentBlue
+                    : AppTheme.textTertiary.withValues(alpha: 0.2),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 }

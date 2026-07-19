@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:wavelink_mobile/l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../models/song.dart';
 import '../providers/playback_provider.dart';
@@ -133,6 +134,7 @@ class _AlbumInfo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final analysis = player.getAnalysis(album.songs.first.id);
     final bpm = analysis?.bpm;
     final key = analysis?.key;
@@ -151,7 +153,7 @@ class _AlbumInfo extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '${album.artist} · ${album.year} · ${album.songs.length} 首 · ${album.formattedDuration}',
+            '${album.artist} · ${album.year} · ${l10n.songsCount(album.songs.length)} · ${album.formattedDurationOf(l10n)}',
             style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
             textAlign: TextAlign.center,
           ),
@@ -208,6 +210,7 @@ class _ActionButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
@@ -233,9 +236,9 @@ class _ActionButtons extends StatelessWidget {
                       size: 20,
                     ),
                     const SizedBox(width: 6),
-                    const Text(
-                      '播放全部',
-                      style: TextStyle(
+                    Text(
+                      l10n.playAll,
+                      style: const TextStyle(
                         fontSize: 14,
                         color: AppTheme.accentBlue,
                         fontWeight: FontWeight.w500,
@@ -268,9 +271,9 @@ class _ActionButtons extends StatelessWidget {
                       size: 20,
                     ),
                     const SizedBox(width: 6),
-                    const Text(
-                      '随机播放',
-                      style: TextStyle(
+                    Text(
+                      l10n.shufflePlay,
+                      style: const TextStyle(
                         fontSize: 14,
                         color: AppTheme.accentPurple,
                         fontWeight: FontWeight.w500,

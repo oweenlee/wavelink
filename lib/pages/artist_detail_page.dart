@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:wavelink_mobile/l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../models/song.dart';
 import '../providers/playback_provider.dart';
@@ -15,6 +16,7 @@ class ArtistDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final player = context.watch<PlaybackProvider>();
     final songs = player.allSongs.where((s) => s.artist == artistName).toList();
     final albums = songs.map((s) => s.album).toSet().toList();
@@ -78,7 +80,7 @@ class ArtistDetailPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${songs.length} 首歌曲 · ${albums.length} 张专辑',
+                    l10n.artistSongsAlbums(songs.length, albums.length),
                     style: const TextStyle(
                       fontSize: 14,
                       color: AppTheme.textSecondary,
@@ -87,7 +89,7 @@ class ArtistDetailPage extends StatelessWidget {
                   const SizedBox(height: 16),
                   _ActionButton(
                     icon: Icons.shuffle_rounded,
-                    label: '随机播放全部',
+                    label: l10n.shuffleAll,
                     onTap: () {
                       final shuffled = List<Song>.from(songs)..shuffle();
                       player.playAlbum(shuffled);

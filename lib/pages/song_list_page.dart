@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:wavelink_mobile/l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../models/song.dart';
 import '../providers/playback_provider.dart';
@@ -10,16 +11,19 @@ class SongListPage extends StatelessWidget {
   final String title;
   final List<Song> songs;
   final Color accentColor;
+  final bool isFavoriteList;
 
   const SongListPage({
     super.key,
     required this.title,
     required this.songs,
     this.accentColor = AppTheme.accentBlue,
+    this.isFavoriteList = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final player = context.watch<PlaybackProvider>();
 
     return Scaffold(
@@ -64,7 +68,7 @@ class SongListPage extends StatelessWidget {
                     ),
                     child: Center(
                       child: Icon(
-                        title == '我喜欢的音乐'
+                        isFavoriteList
                             ? Icons.favorite_rounded
                             : Icons.playlist_play_rounded,
                         color: Colors.white.withValues(alpha: 0.85),
@@ -83,7 +87,7 @@ class SongListPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${songs.length} 首歌曲',
+                    l10n.songsCount(songs.length),
                     style: const TextStyle(
                       fontSize: 13,
                       color: AppTheme.textSecondary,
@@ -95,7 +99,7 @@ class SongListPage extends StatelessWidget {
                     children: [
                       _RoundBtn(
                         icon: Icons.shuffle_rounded,
-                        label: '随机播放',
+                        label: l10n.shufflePlay,
                         onTap: () {
                           if (songs.isEmpty) return;
                           player.toggleShuffle();
@@ -106,7 +110,7 @@ class SongListPage extends StatelessWidget {
                       const SizedBox(width: 32),
                       _RoundBtn(
                         icon: Icons.play_arrow_rounded,
-                        label: '播放',
+                        label: l10n.play,
                         filled: true,
                         onTap: () {
                           if (songs.isEmpty) return;
@@ -121,11 +125,11 @@ class SongListPage extends StatelessWidget {
             ),
           ),
           if (songs.isEmpty)
-            const SliverFillRemaining(
+            SliverFillRemaining(
               child: Center(
                 child: Text(
-                  '暂无歌曲',
-                  style: TextStyle(fontSize: 15, color: AppTheme.textTertiary),
+                  l10n.noSongs,
+                  style: const TextStyle(fontSize: 15, color: AppTheme.textTertiary),
                 ),
               ),
             )
@@ -157,6 +161,7 @@ class SongListPage extends StatelessWidget {
     Song song,
     PlaybackProvider player,
   ) {
+    final l10n = AppLocalizations.of(context);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -172,8 +177,8 @@ class SongListPage extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.play_arrow_rounded,
                   color: AppTheme.textPrimary),
-              title: const Text('播放',
-                  style: TextStyle(color: AppTheme.textPrimary)),
+              title: Text(l10n.play,
+                  style: const TextStyle(color: AppTheme.textPrimary)),
               onTap: () {
                 player.playSong(song);
                 Navigator.pop(ctx);
@@ -182,8 +187,8 @@ class SongListPage extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.skip_next_rounded,
                   color: AppTheme.textPrimary),
-              title: const Text('播放下一首',
-                  style: TextStyle(color: AppTheme.textPrimary)),
+              title: Text(l10n.playNext,
+                  style: const TextStyle(color: AppTheme.textPrimary)),
               onTap: () {
                 player.playNext(song);
                 Navigator.pop(ctx);
@@ -192,8 +197,8 @@ class SongListPage extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.queue_music_rounded,
                   color: AppTheme.textPrimary),
-              title: const Text('加入队列',
-                  style: TextStyle(color: AppTheme.textPrimary)),
+              title: Text(l10n.addToQueue,
+                  style: const TextStyle(color: AppTheme.textPrimary)),
               onTap: () {
                 player.addToQueue(song);
                 Navigator.pop(ctx);
@@ -207,7 +212,7 @@ class SongListPage extends StatelessWidget {
                 color: AppTheme.danger,
               ),
               title: Text(
-                player.isSongFavorite(song.id) ? '取消收藏' : '收藏',
+                player.isSongFavorite(song.id) ? l10n.unfavorite : l10n.favorite,
                 style: const TextStyle(color: AppTheme.textPrimary),
               ),
               onTap: () {
