@@ -7,6 +7,7 @@ class SongTile extends StatelessWidget {
   final bool isPlaying;
   final VoidCallback? onTap;
   final VoidCallback? onMore;
+  final Widget? trailing;
 
   const SongTile({
     super.key,
@@ -14,6 +15,7 @@ class SongTile extends StatelessWidget {
     this.isPlaying = false,
     this.onTap,
     this.onMore,
+    this.trailing,
   });
 
   @override
@@ -75,6 +77,11 @@ class SongTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
+            // 自定义 trailing（如收藏图标）
+            if (trailing != null) ...[
+              trailing!,
+              const SizedBox(width: 4),
+            ],
             // More button
             GestureDetector(
               onTap: onMore,

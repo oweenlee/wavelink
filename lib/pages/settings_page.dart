@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../providers/playback_provider.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final player = context.watch<PlaybackProvider>();
+    final dsp = player.dspSettings;
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
       children: [
@@ -15,28 +20,43 @@ class SettingsPage extends StatelessWidget {
             _SettingItem(
               icon: Icons.tune_rounded,
               label: 'DSP 管线配置',
-              onTap: () {},
+              trailing: dsp.enabled ? '已启用' : '已禁用',
+              onTap: () => player.toggleDspEnabled(),
             ),
-            _SettingItem(
-              icon: Icons.equalizer_rounded,
-              label: '均衡器 (10段 PEQ)',
-              onTap: () {},
-            ),
-            _SettingItem(
+            _SwitchItem(
               icon: Icons.graphic_eq_rounded,
               label: 'Crossfeed',
-              onTap: () {},
+              value: dsp.crossfeed,
+              onChanged: (_) => player.toggleCrossfeed(),
+            ),
+            _SwitchItem(
+              icon: Icons.arrow_right_alt_rounded,
+              label: '立体声展宽',
+              value: dsp.widener,
+              onChanged: (_) => player.toggleWidener(),
+            ),
+            _SwitchItem(
+              icon: Icons.volume_up_rounded,
+              label: '真峰值限幅器',
+              value: dsp.limiter,
+              onChanged: (_) => player.toggleLimiter(),
+            ),
+            _SwitchItem(
+              icon: Icons.blur_on_rounded,
+              label: 'TPDF 抖动',
+              value: dsp.dither,
+              onChanged: (_) => player.toggleDither(),
+            ),
+            _SwitchItem(
+              icon: Icons.auto_awesome_rounded,
+              label: 'ReplayGain',
+              value: player.replayGain,
+              onChanged: (_) => player.setReplayGain(!player.replayGain),
             ),
             _SettingItem(
               icon: Icons.volume_up_rounded,
               label: '输出设备',
               onTap: () {},
-            ),
-            _SwitchItem(
-              icon: Icons.auto_awesome_rounded,
-              label: 'ReplayGain',
-              value: true,
-              onChanged: (_) {},
             ),
           ],
         ),
@@ -53,14 +73,14 @@ class SettingsPage extends StatelessWidget {
             _SwitchItem(
               icon: Icons.colorize_rounded,
               label: '动态取色',
-              value: true,
-              onChanged: (_) {},
+              value: player.dynamicColor,
+              onChanged: (_) => player.setDynamicColor(!player.dynamicColor),
             ),
             _SliderItem(
               icon: Icons.blur_on_rounded,
               label: '封面模糊强度',
-              value: 0.7,
-              onChanged: (_) {},
+              value: player.coverBlur,
+              onChanged: player.setCoverBlur,
             ),
           ],
         ),
@@ -76,7 +96,7 @@ class SettingsPage extends StatelessWidget {
             _ActionItem(
               icon: Icons.refresh_rounded,
               label: '重新扫描曲库',
-              onTap: () {},
+              onTap: () => context.read<PlaybackProvider>().rescanImported(),
             ),
             _SettingItem(
               icon: Icons.file_upload_outlined,

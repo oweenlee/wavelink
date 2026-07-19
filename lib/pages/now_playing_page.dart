@@ -315,6 +315,7 @@ class _ProgressRow extends StatelessWidget {
       current: _fmt(player.position),
       total: song.formattedDuration,
       onChanged: (v) => player.seek(v),
+      onChangeEnd: (v) => player.seek(v, immediate: true),
     );
   }
 }
@@ -1011,57 +1012,46 @@ class _EffectItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final String subtitle;
-  final VoidCallback? onTap;
   final Widget? trailing;
   const _EffectItem({
     required this.icon,
     required this.label,
     required this.subtitle,
-    this.onTap,
     this.trailing,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: AppTheme.textSecondary),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      color: AppTheme.textPrimary,
-                    ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: AppTheme.textSecondary),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    color: AppTheme.textPrimary,
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textTertiary,
-                    ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textTertiary,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            ?trailing,
-            if (onTap != null)
-              const Icon(
-                Icons.chevron_right_rounded,
-                size: 20,
-                color: AppTheme.textTertiary,
-              ),
-          ],
-        ),
+          ),
+          ?trailing,
+        ],
       ),
     );
   }

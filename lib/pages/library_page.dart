@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../widgets/song_tile.dart';
 import 'album_detail_page.dart';
 import 'artist_detail_page.dart';
+import 'song_list_page.dart';
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key});
@@ -145,6 +146,13 @@ class _SongsTab extends StatelessWidget {
                       isPlaying: isPlaying,
                       onTap: () => player.playSong(song),
                       onMore: () => _showContextMenu(context, song, player),
+                      trailing: player.isSongFavorite(song.id)
+                          ? const Icon(
+                              Icons.favorite_rounded,
+                              size: 16,
+                              color: AppTheme.danger,
+                            )
+                          : null,
                     );
                   },
                 ),
@@ -414,22 +422,36 @@ class _ArtistsTab extends StatelessWidget {
 class _PlaylistsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final playlists = [
-      {'name': '我喜欢的音乐', 'count': 0, 'color': AppTheme.danger},
-      {'name': '最近播放', 'count': 0, 'color': AppTheme.accentPurple},
-      {'name': '深夜聆听', 'count': 0, 'color': const Color(0xFF2C3E50)},
-      {'name': '古典精选', 'count': 0, 'color': const Color(0xFF8B4513)},
+    final player = context.watch<PlaybackProvider>();
+    final favorites = player.favoriteSongs;
+    final saved = player.playlists;
+
+    // "我喜欢的音乐" 固定在最前，其余为已保存播放列表
+    final entries = <_PlaylistEntry>[
+      _PlaylistEntry(
+        name: '我喜欢的音乐',
+        count: favorites.length,
+        color: AppTheme.danger,
+        songs: favorites,
+        builtIn: true,
+      ),
+      ...saved.entries.map((e) => _PlaylistEntry(
+            name: e.key,
+            count: e.value.length,
+            color: AppTheme.accentPurple,
+            songs: player.playlistSongs(e.key),
+          )),
     ];
 
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 80, left: 16, right: 16, top: 8),
-      itemCount: playlists.length + 1,
+      itemCount: entries.length + 1,
       itemBuilder: (context, index) {
         if (index == 0) {
           return Container(
             margin: const EdgeInsets.only(bottom: 16),
             child: GestureDetector(
-              onTap: () {},
+              onTap: () => _showCreatePlaylist(context, player),
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -450,7 +472,7 @@ class _PlaylistsTab extends StatelessWidget {
                     ),
                     SizedBox(width: 8),
                     Text(
-                      '新建播放列表',
+                      '用当前队列新建播放列表',
                       style: TextStyle(
                         fontSize: 15,
                         color: AppTheme.accentBlue,
@@ -464,61 +486,134 @@ class _PlaylistsTab extends StatelessWidget {
           );
         }
 
-        final pl = playlists[index - 1];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          child: Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: pl['color'] as Color,
-                  borderRadius: BorderRadius.circular(12),
+        final pl = entries[index - 1];
+        return GestureDetector(
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ChangeNotifierProvider.value(
+                value: player,
+                child: SongListPage(
+                  title: pl.name,
+                  songs: pl.songs,
+                  accentColor: pl.color,
                 ),
-                child: Center(
-                  child: Icon(
-                    Icons.playlist_play_rounded,
-                    color: Colors.white.withValues(alpha: 0.6),
-                    size: 24,
+              ),
+            ),
+          ),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: pl.color,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      pl.builtIn
+                          ? Icons.favorite_rounded
+                          : Icons.playlist_play_rounded,
+                      color: Colors.white.withValues(alpha: 0.6),
+                      size: 24,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      pl['name'] as String,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textPrimary,
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        pl.name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.textPrimary,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${pl['count']} 首歌曲',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: AppTheme.textSecondary,
+                      const SizedBox(height: 4),
+                      Text(
+                        '${pl.count} 首歌曲',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.textSecondary,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: AppTheme.textTertiary,
-                size: 20,
-              ),
-            ],
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppTheme.textTertiary,
+                  size: 20,
+                ),
+              ],
+            ),
           ),
         );
       },
     );
   }
+
+  void _showCreatePlaylist(BuildContext context, PlaybackProvider player) {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceDark,
+        title: const Text('新建播放列表', style: TextStyle(color: AppTheme.textPrimary)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          style: const TextStyle(color: AppTheme.textPrimary),
+          decoration: InputDecoration(
+            hintText: '播放列表名称',
+            hintStyle: TextStyle(color: AppTheme.textTertiary),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: AppTheme.textTertiary),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: AppTheme.accentBlue),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () async {
+              final name = ctrl.text.trim();
+              if (name.isNotEmpty) {
+                await player.saveCurrentQueueAsPlaylist(name);
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('保存', style: TextStyle(color: AppTheme.accentBlue)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlaylistEntry {
+  final String name;
+  final int count;
+  final Color color;
+  final List<Song> songs;
+  final bool builtIn;
+  const _PlaylistEntry({
+    required this.name,
+    required this.count,
+    required this.color,
+    required this.songs,
+    this.builtIn = false,
+  });
 }
 
 // ── Context Menu ──
@@ -599,12 +694,17 @@ void _showContextMenu(
           _MenuItem(
             icon: Icons.playlist_add_rounded,
             label: '添加到播放列表',
-            onTap: () => Navigator.pop(ctx),
+            onTap: () => _showAddToPlaylist(ctx, song, player),
           ),
           _MenuItem(
-            icon: Icons.favorite_border_rounded,
-            label: '收藏',
-            onTap: () => Navigator.pop(ctx),
+            icon: player.isSongFavorite(song.id)
+                ? Icons.favorite_rounded
+                : Icons.favorite_border_rounded,
+            label: player.isSongFavorite(song.id) ? '取消收藏' : '收藏',
+            onTap: () {
+              player.setFavorite(song.id, !player.isSongFavorite(song.id));
+              Navigator.pop(ctx);
+            },
           ),
           const Divider(height: 1),
           _MenuItem(
@@ -651,4 +751,61 @@ class _MenuItem extends StatelessWidget {
       dense: true,
     );
   }
+}
+
+void _showAddToPlaylist(
+  BuildContext context,
+  Song song,
+  PlaybackProvider player,
+) {
+  final saved = player.playlists;
+  Navigator.pop(context);
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) => Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceDark,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              '添加到播放列表',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          if (saved.isEmpty)
+            ListTile(
+              leading: const Icon(Icons.info_outline_rounded,
+                  color: AppTheme.textTertiary),
+              title: const Text(
+                '暂无播放列表，请在曲库-播放列表新建',
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
+              ),
+            ),
+          ...saved.entries.map((e) => ListTile(
+                leading: const Icon(Icons.playlist_play_rounded,
+                    color: AppTheme.accentPurple),
+                title: Text(e.key,
+                    style: const TextStyle(color: AppTheme.textPrimary)),
+                onTap: () async {
+                  final ids = [...e.value, song.id];
+                  await player.savePlaylist(e.key, ids);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+              )),
+        ],
+      ),
+    ),
+  );
 }

@@ -8,6 +8,7 @@ class ProgressSliderWidget extends StatelessWidget {
   final String total;
   final ValueChanged<double> onChanged;
   final ValueChanged<double>? onDragging;
+  final ValueChanged<double>? onChangeEnd;
 
   const ProgressSliderWidget({
     super.key,
@@ -17,6 +18,7 @@ class ProgressSliderWidget extends StatelessWidget {
     required this.total,
     required this.onChanged,
     this.onDragging,
+    this.onChangeEnd,
   });
 
   @override
@@ -38,6 +40,11 @@ class ProgressSliderWidget extends StatelessWidget {
               onChanged(v);
               onDragging?.call(v);
             },
+            onChangeEnd: onChangeEnd == null
+                ? null
+                : (v) {
+                    onChangeEnd?.call(v);
+                  },
           ),
         ),
         Padding(

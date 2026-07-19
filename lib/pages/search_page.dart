@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/playback_provider.dart';
 import '../theme/app_theme.dart';
 import '../models/song.dart';
+import '../services/preferences_service.dart';
 import '../widgets/song_tile.dart';
 import 'album_detail_page.dart';
 import 'artist_detail_page.dart';
@@ -18,13 +19,21 @@ class _SearchPageState extends State<SearchPage> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   String _query = '';
-  final List<String> _history = [];
+  List<String> get _history => PreferencesService.instance.searchHistory;
 
   @override
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _commitQuery() {
+    final q = _controller.text.trim();
+    if (q.isNotEmpty) {
+      PreferencesService.instance.addSearchHistory(q);
+      setState(() {});
+    }
   }
 
   List<MapEntry<String, List<Song>>> get _results {
@@ -69,7 +78,10 @@ class _SearchPageState extends State<SearchPage> {
             controller: _controller,
             focusNode: _focusNode,
             autofocus: true,
-            onChanged: (v) => setState(() => _query = v),
+            onChanged: (v) {
+              setState(() => _query = v);
+              if (v.trim().isNotEmpty) _commitQuery();
+            },
             style: const TextStyle(fontSize: 16, color: AppTheme.textPrimary),
             decoration: InputDecoration(
               hintText: '搜索歌曲、专辑、艺术家',
@@ -110,27 +122,9 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Widget _buildHistory() {
+    final hasSongs = context.watch<PlaybackProvider>().allSongs.isNotEmpty;
+
     if (_history.isEmpty) {
-      final player = context.watch<PlaybackProvider>();
-      if (player.allSongs.isEmpty) {
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.search_rounded,
-                size: 48,
-                color: AppTheme.textTertiary.withValues(alpha: 0.3),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                '导入音乐后即可搜索',
-                style: TextStyle(fontSize: 15, color: AppTheme.textTertiary),
-              ),
-            ],
-          ),
-        );
-      }
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -141,9 +135,9 @@ class _SearchPageState extends State<SearchPage> {
               color: AppTheme.textTertiary.withValues(alpha: 0.3),
             ),
             const SizedBox(height: 12),
-            const Text(
-              '搜索你的音乐',
-              style: TextStyle(fontSize: 15, color: AppTheme.textTertiary),
+            Text(
+              hasSongs ? '搜索你的音乐' : '导入音乐后即可搜索',
+              style: const TextStyle(fontSize: 15, color: AppTheme.textTertiary),
             ),
           ],
         ),
@@ -155,15 +149,28 @@ class _SearchPageState extends State<SearchPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
+              const Text(
                 '搜索历史',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: AppTheme.textSecondary,
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  PreferencesService.instance.clearSearchHistory();
+                  setState(() {});
+                },
+                child: const Text(
+                  '清空',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textTertiary,
+                  ),
                 ),
               ),
             ],
@@ -179,7 +186,8 @@ class _SearchPageState extends State<SearchPage> {
                   setState(() => _query = h);
                 },
                 onLongPress: () {
-                  setState(() => _history.remove(h));
+                  PreferencesService.instance.removeSearchHistory(h);
+                  setState(() {});
                 },
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -193,12 +201,23 @@ class _SearchPageState extends State<SearchPage> {
                       color: AppTheme.textTertiary.withValues(alpha: 0.2),
                     ),
                   ),
-                  child: Text(
-                    h,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppTheme.textSecondary,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.history_rounded,
+                        size: 14,
+                        color: AppTheme.textTertiary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        h,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               );

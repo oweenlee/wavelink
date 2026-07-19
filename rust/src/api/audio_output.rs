@@ -86,22 +86,33 @@ fn clear_ringbuf() {
 // ── iOS: AVAudioSourceNode ──
 
 #[no_mangle]
-unsafe extern "C" fn audio_output_fill_buffer_stereo(
+pub unsafe extern "C" fn audio_output_fill_buffer_stereo(
     left_out: *mut f32, right_out: *mut f32, frames: u32,
 ) {
     let ptr = CONSUMER_PTR.load(Ordering::Acquire);
     if ptr.is_null() { return; }
     let cons = &mut *ptr;
+    // 支持任意 frameCount：循环拉取，避免大帧（>1024）时后半段被静音截断
+    let frames = frames as usize;
+    let mut done = 0usize;
     let mut buf = [0.0f32; 2048];
-    let n = cons.pop_slice(&mut buf[..(frames as usize * 2).min(2048)]);
-    let fc = n / 2;
-    for i in 0..fc {
-        *left_out.add(i) = buf[i * 2];
-        *right_out.add(i) = buf[i * 2 + 1];
-    }
-    for i in fc..(frames as usize) {
-        *left_out.add(i) = 0.0;
-        *right_out.add(i) = 0.0;
+    while done < frames {
+        let want = ((frames - done) * 2).min(2048);
+        let n = cons.pop_slice(&mut buf[..want]);
+        let fc = n / 2;
+        for i in 0..fc {
+            *left_out.add(done + i) = buf[i * 2];
+            *right_out.add(done + i) = buf[i * 2 + 1];
+        }
+        // 本批不足（ringbuf 空）→ 剩余补静音
+        if n < want {
+            for i in (done + fc)..frames {
+                *left_out.add(i) = 0.0;
+                *right_out.add(i) = 0.0;
+            }
+            break;
+        }
+        done += fc;
     }
 }
 

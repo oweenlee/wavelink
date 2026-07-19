@@ -83,6 +83,8 @@ class AudioOutputManager {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
         try? AVAudioSession.sharedInstance().setActive(true)
 
+        GeneratedPluginRegistrant.register(with: self)
+
         if let controller = window?.rootViewController as? FlutterViewController {
             registerChannels(with: controller.binaryMessenger)
         }
