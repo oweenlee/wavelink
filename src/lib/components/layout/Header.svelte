@@ -4,7 +4,7 @@
 	import { getLibraryState } from '$lib/stores/library.svelte';
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
 	import { getSettingsState } from '$lib/stores/settings.svelte';
-	import { formatTime } from '$lib/data/music';
+	import { formatTime } from '$lib/utils/time';
 	import { browser } from '$app/environment';
 	import type { Track } from '$lib/audio/types';
 	import { Search, Folder, X } from 'lucide-svelte';

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatTime } from '$lib/data/music';
+	import { formatTime } from '$lib/utils/time';
 
 	interface Props { value: number; max: number; currentTime: number; ondrag: (ratio: number) => void; color?: string; }
 	let { value, max, currentTime, ondrag, color = '#8888cc' }: Props = $props();

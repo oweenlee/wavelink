@@ -3,7 +3,7 @@
 	import { SvelteMap } from 'svelte/reactivity';
 	import { getLibraryState } from '$lib/stores/library.svelte';
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
-	import { formatTime } from '$lib/data/music';
+	import { formatTime } from '$lib/utils/time';
 	import type { Track, AlbumBrief } from '$lib/audio/types';
 	import TagEditor from '$lib/components/panels/TagEditor.svelte';
 	import { ChevronLeft, Play, Music, Upload, Pencil, Trash2, Disc3, User, ChevronRight } from 'lucide-svelte';

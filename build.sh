@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_NAME="WaveLink"
-ENGINE_DIR="../wavelink-engine"
+ENGINE_DIR="../wavelink-audio-core"
 
 usage() {
     echo "用法: ./build.sh <command>"
@@ -85,7 +85,7 @@ case "${1:-help}" in
             echo "错误: 未找到引擎目录 ($ENGINE_DIR)" >&2
             exit 1
         fi
-        (cd "$ENGINE_DIR" && cargo t)
+        (cd "$ENGINE_DIR" && cargo test)
         ;;
     engine:build)
         echo "==> 构建引擎"
@@ -93,6 +93,8 @@ case "${1:-help}" in
             echo "错误: 未找到引擎目录 ($ENGINE_DIR)" >&2
             exit 1
         fi
+        # path 依赖下，在 src-tauri workspace 内构建会自动编译 audio-core
+        echo "引擎在 app 构建时自动编译，无需单独构建"
         (cd "$ENGINE_DIR" && cargo build --release)
         ;;
     engine:docs)

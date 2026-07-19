@@ -66,12 +66,24 @@
     let waveAlpha = 0;
 
     const startTime = performance.now();
-    const DURATION = 3.8;
-    const FADE_DURATION = 0.8;
+    const DURATION = 1.5;
+    const FADE_DURATION = 0.5;
+
+    // 安全兜底：超时后无论动画是否正常都跳过
+    const fallbackTimer = setTimeout(() => {
+      if (!clicked) {
+        clicked = true;
+        cancelAnimationFrame(raf);
+        ro.disconnect();
+        done();
+        visible = false;
+      }
+    }, (DURATION + FADE_DURATION + 0.3) * 1000);
 
     const skip = () => {
       if (clicked) return;
       clicked = true;
+      clearTimeout(fallbackTimer);
       cancelAnimationFrame(raf);
       ro.disconnect();
       done();

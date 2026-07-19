@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatTime } from '$lib/data/music';
+import { formatTime } from '$lib/utils/time';
 
 describe('formatTime', () => {
 	it('formats seconds to m:ss', () => {
