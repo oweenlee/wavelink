@@ -1,6 +1,6 @@
 # wavelink-audio-core API Reference
 
-> 源码 hash: `358001546deb`  |  生成时间: 2026-07-20 21:12
+> 源码 hash: `7441815421dd`  |  生成时间: 2026-07-20 23:51
 > AI 助手优先读此文件，而非读 `src/` 源码。若 AI 返回的代码与当前签名不匹配，请重新运行 `bash doc-api.sh`。
 
 ---
@@ -198,9 +198,14 @@ pub title: Option<String>,
 pub performer: Option<String>,
 ```
 
-INDEX 01 在音频文件中的起始时间（秒），已扣除 PREGAP  
+INDEX 01 在音频文件中的起始时间（秒）  
 ```rust
 pub start_secs: f64,
+```
+
+PREGAP 时长（秒），虚拟静音，不存在于音频文件中  
+```rust
+pub pregap_secs: f64,
 ```
 
 音频文件路径（CUE 中声明的相对/绝对路径）  
@@ -367,6 +372,12 @@ pub album_peak: Option<f32>,
 pub fn convert_channel(dsd_bytes: &[u8], _dsd_rate: DsdRate) -> Vec<f32> { ...
 ```
 
+`pending` 包含上次的 FIR 重叠尾部 + 新的 stage1 样本。  
+返回本次可输出的 PCM 样本，并将 pending 截断为保留的尾部。  
+```rust
+pub fn stage2_fir_streaming(pending: &mut Vec<f32>) -> Vec<f32> { ...
+```
+
 `chan_bytes` — 每个声道的 DSD 字节数据  
 `dsd_rate` — DSD 速率  
 ```rust
@@ -376,6 +387,21 @@ pub fn convert_channels(chan_bytes: &[&[u8]], dsd_rate: DsdRate) -> Vec<f32> { .
 ---
 
 ### `dsd/mod.rs` — DSD 文件解码（DSF / DFF）
+
+创建流式解码器  
+```rust
+pub fn new(path: &Path) -> Result<Self, String> { ...
+```
+
+获取声道数  
+```rust
+pub fn channels(&self) -> usize { ...
+```
+
+获取 DSD 速率  
+```rust
+pub fn dsd_rate(&self) -> DsdRate { ...
+```
 
 ---
 
@@ -743,4 +769,4 @@ pub duration_secs: f64,
 
 ---
 
-> 123 个 pub 项。运行 `bash doc-api.sh` 刷新。
+> 128 个 pub 项。运行 `bash doc-api.sh` 刷新。
