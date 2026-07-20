@@ -23,7 +23,7 @@ fn decode_one(song: &SongTest) {
     let pos = Arc::new(AtomicU64::new(0));
     let start = Instant::now();
 
-    match Decoder::start(path, 44100, 2, pos, None) {
+    match Decoder::start(path, 44100, 2, pos, None, None) {
         Ok((rx, dec)) => {
             let mut frames = 0u64;
             let mut total = 0u64;

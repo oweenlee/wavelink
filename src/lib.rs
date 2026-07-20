@@ -11,14 +11,18 @@ pub mod consumer;
 pub mod decoder;
 /// DSD（DSF/DFF）格式直解为 PCM
 pub mod dsd;
+/// CUE 分轨解析
+pub mod cue;
 /// DSP 管线：参数均衡器 / 串音补偿 / 立体声展宽 / 限幅 / 抖动
 pub mod dsp;
 
-#[cfg(feature = "cpal-backend")]
-/// cpal 音频输出引擎（桌面端实时播放循环）
+#[cfg(feature = "ffi")]
+/// C 语言 FFI 绑定（引擎控制 / 元数据 / 音频分析）
+pub mod ffi;
+
+/// 音频引擎（桌面端 cpal / 移动端 HeadlessOutput）
 pub mod engine;
-#[cfg(feature = "cpal-backend")]
-/// cpal 音频输出抽象
+/// 音频输出抽象（cpal / HeadlessOutput）
 pub mod output;
 
 /// 目标输出采样率（默认 44100 Hz），可通过 EngineConfig 覆盖
@@ -53,13 +57,17 @@ impl Default for EngineConfig {
     }
 }
 
-/// 桌面端引擎事件（仅 cpal-backend 启用时可用）
-#[cfg(feature = "cpal-backend")]
+/// 引擎事件 / 引擎句柄 / 播放模式
 #[doc(inline)]
 pub use engine::{EngineEvent, EngineHandle, PlayMode};
 /// 音频文件元数据（标题/艺术家/专辑/时长/封面标志）
 #[doc(inline)]
-pub use decoder::{probe_sample_rate, read_cover, Metadata};
+pub use decoder::{probe_sample_rate, read_cover, read_replaygain, Metadata, ReplayGain};
+/// CUE 分轨解析入口及核心类型
+#[doc(inline)]
+pub use cue::{parse_cue, parse_cue_str, CueSheet, CueFile, CueTrack};
+/// 播放列表解析（M3U / M3U8 / PLS）
+pub mod playlist;
 /// DSP 管线核心类型：默认 PEQ 频段 / 预设 / 管线 / 单段均衡 / 预设名
 #[doc(inline)]
 pub use dsp::{default_peq_bands, preset_bands, DspPipeline, PeqBand, PresetName};

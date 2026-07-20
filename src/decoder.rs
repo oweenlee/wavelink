@@ -8,18 +8,20 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use crossbeam_channel::{Receiver, Sender, bounded, unbounded, TrySendError};
+use crossbeam_channel::{Receiver, Sender, bounded, unbounded, SendTimeoutError};
 use symphonia::core::codecs::audio::AudioDecoderOptions;
 use symphonia::core::codecs::registry::RegisterableAudioDecoder;
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::{MetadataOptions, RawValue, StandardTag};
+use symphonia::core::meta::MetadataOptions;
 use tracing::{debug, info, warn};
 
 use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedOut, WindowFunction};
 
 use crate::dsd;
+use lofty::prelude::*;
+use lofty::read_from_path;
 
 /// 解码输出的一帧 PCM 数据。
 pub struct DecodedFrame {
@@ -34,7 +36,7 @@ pub struct DecodedFrame {
 }
 
 /// 流式解码器。后台线程持续解码，通过 crossbeam channel 逐帧输出。
-/// 用法：`Decoder::start(path, sr, ch, pos, seek) → (rx, handle)`
+/// 用法：`Decoder::start(path, sr, ch, pos, seek, end) → (rx, handle)`  
 pub struct Decoder {
     tx: Option<Sender<()>>,
     handle: Option<JoinHandle<()>>,
@@ -55,33 +57,34 @@ impl Decoder {
     /// - `target_rate` / `target_channels` — 输出重采样目标
     /// - `position` — 外部可读的解码进度（样本数）
     /// - `seek_pos` — 可选起始位置（秒）
+    /// - `end_secs` — 可选结束位置（秒），到达后停止解码（CUE 分轨用）
     pub fn start(
         path: &Path, target_rate: u32, target_channels: u32,
         position: Arc<AtomicU64>, seek_pos: Option<f64>,
+        end_secs: Option<f64>,
     ) -> Result<(Receiver<DecodedFrame>, Self), String> {
         let (tx, rx) = bounded(8);
         let (stx, srx) = unbounded();
         let p = path.to_path_buf();
         let pos_clone = position.clone();
-        let handle = thread::spawn(move || run(&p, target_rate, target_channels, tx, srx, position, seek_pos));
+        let handle = thread::spawn(move || run(&p, target_rate, target_channels, tx, srx, position, seek_pos, end_secs));
         Ok((rx, Decoder { tx: Some(stx), handle: Some(handle), position: pos_clone }))
     }
     /// 停止后台解码线程
     pub fn stop(&self) { if let Some(ref t) = self.tx { let _ = t.send(()); } }
 }
 
-/// 有界 channel 发送：如果 channel 满则轮询 stop 信号，避免死锁
+/// 有界 channel 发送：利用 crossbeam 背压阻塞，每 10ms 检查 stop 信号避免死锁
 fn try_send_or_stop(tx: &Sender<DecodedFrame>, frame: DecodedFrame, stop_rx: &Receiver<()>) {
     let mut frame = frame;
     loop {
-        match tx.try_send(frame) {
+        match tx.send_timeout(frame, Duration::from_millis(10)) {
             Ok(()) => return,
-            Err(TrySendError::Full(f)) => {
+            Err(SendTimeoutError::Timeout(f)) => {
                 frame = f;
                 if stop_rx.len() > 0 { return; }
-                thread::sleep(Duration::from_millis(1));
             }
-            Err(TrySendError::Disconnected(_)) => return,
+            Err(SendTimeoutError::Disconnected(_)) => return,
         }
     }
 }
@@ -90,14 +93,15 @@ fn run(
     path: &Path, target_rate: u32, target_ch: u32,
     tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
     _position: Arc<AtomicU64>, seek_pos: Option<f64>,
+    end_secs: Option<f64>,
 ) {
     // 绕过 Symphonia 直解：DSD / WavPack
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         if ext.eq_ignore_ascii_case("dsf") || ext.eq_ignore_ascii_case("dff") {
-            return run_dsd(path, target_rate, target_ch, tx, stop_rx, seek_pos);
+            return run_dsd(path, target_rate, target_ch, tx, stop_rx, seek_pos, end_secs);
         }
         if ext.eq_ignore_ascii_case("wv") {
-            return run_wavpack(path, target_rate, target_ch, tx, stop_rx, seek_pos);
+            return run_wavpack(path, target_rate, target_ch, tx, stop_rx, seek_pos, end_secs);
         }
     }
 
@@ -188,6 +192,14 @@ fn run(
         };
         if packet.track_id != track_id { continue; }
 
+        // end_secs 分段截断
+        if let Some(end) = end_secs {
+            if (packet.pts.get() as f64 / src_rate as f64) >= end {
+                debug!("到达 end_secs={end}, 停止解码");
+                break;
+            }
+        }
+
         let decoded = match decoder.decode(&packet) {
             Ok(buf) => buf,
             Err(symphonia::core::errors::Error::DecodeError(_)) => continue,
@@ -271,7 +283,7 @@ fn run(
 /// 将整个音频文件解码到内存，返回交错 PCM f32 样本。
 /// 适用于小文件（如音效、短片段）或离线分析。
 pub fn decode_to_memory(path: &Path, tr: u32, tc: u32) -> Result<Vec<f32>, String> {
-    let (rx, dec) = Decoder::start(path, tr, tc, Arc::new(AtomicU64::new(0)), None)?;
+    let (rx, dec) = Decoder::start(path, tr, tc, Arc::new(AtomicU64::new(0)), None, None)?;
     let mut all = Vec::new();
     while let Ok(f) = rx.recv_timeout(Duration::from_secs(10)) { all.extend(f.samples); }
     dec.stop();
@@ -280,114 +292,184 @@ pub fn decode_to_memory(path: &Path, tr: u32, tc: u32) -> Result<Vec<f32>, Strin
 
 /// 音频文件元数据
 pub struct Metadata {
+    /// 曲名
     pub title: Option<String>,
+    /// 艺术家
     pub artist: Option<String>,
+    /// 专辑名
     pub album: Option<String>,
+    /// 流派
+    pub genre: Option<String>,
+    /// 发行年份
+    pub year: Option<i32>,
+    /// 音轨号
+    pub track_number: Option<u32>,
+    /// 光盘号
+    pub disc_number: Option<u32>,
+    /// 时长（秒）
     pub duration_secs: f64,
+    /// 是否含有内嵌封面
     pub has_cover: bool,
 }
 
-/// 读取音频文件元数据（标题/艺术家/专辑/封面/时长）
+/// 读取音频文件元数据（标题/艺术家/专辑/流派/年份/音轨号/光盘号/封面/时长）
 pub fn read_metadata(path: &Path) -> Result<Metadata, String> {
-    let file = File::open(path).map_err(|e| format!("无法打开文件: {e}"))?;
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    // 优先用 lofty 读取完整标签
+    if let Ok(tagged_file) = read_from_path(path) {
+        let duration_secs = tagged_file.properties().duration().as_secs_f64();
 
+        let mut meta = Metadata {
+            title: None, artist: None, album: None,
+            genre: None, year: None,
+            track_number: None, disc_number: None,
+            duration_secs, has_cover: false,
+        };
+
+        if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+            meta.title = tag.title().map(|s| s.to_string());
+            meta.artist = tag.artist().map(|s| s.to_string());
+            meta.album = tag.album().map(|s| s.to_string());
+            meta.genre = tag.genre().map(|s| s.to_string());
+            meta.year = tag.date().map(|d| d.year as i32);
+            meta.track_number = tag.track();
+            meta.disc_number = tag.disk();
+            meta.has_cover = !tag.pictures().is_empty();
+        }
+
+        return Ok(meta);
+    }
+
+    // lofty 不支持的格式（DSF/DFF/WavPack）回退到 Symphonia 探测时长
+    let duration_secs = probe_duration_secs(path).unwrap_or(0.0);
+
+    Ok(Metadata {
+        title: None, artist: None, album: None,
+        genre: None, year: None,
+        track_number: None, disc_number: None,
+        duration_secs, has_cover: false,
+    })
+}
+
+/// 用 Symphonia 探测音频时长（秒），不完整解码
+fn probe_duration_secs(path: &Path) -> Option<f64> {
+    let file = File::open(path).ok()?;
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
     }
-
-    let mut format = symphonia::default::get_probe()
-        .probe(
-            &hint,
-            mss,
-            FormatOptions::default(),
-            MetadataOptions::default(),
-        )
-        .map_err(|e| format!("无法探测格式: {e}"))?;
-
-    // 获取时长
-    let duration_secs = format
-        .tracks()
-        .iter()
-        .find(|t| {
-            matches!(
-                &t.codec_params,
-                Some(symphonia::core::codecs::CodecParameters::Audio(p))
-                    if p.codec != symphonia::core::codecs::audio::CODEC_ID_NULL_AUDIO
-            )
-        })
+    let format = symphonia::default::get_probe()
+        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+        .ok()?;
+    format.tracks().iter()
+        .find(|t| matches!(&t.codec_params, Some(symphonia::core::codecs::CodecParameters::Audio(p))
+            if p.codec != symphonia::core::codecs::audio::CODEC_ID_NULL_AUDIO))
         .and_then(|t| {
             let frames = t.num_frames?;
             let tb = t.time_base?;
             let secs = frames as f64 * tb.numer.get() as f64 / tb.denom.get() as f64;
             if secs > 0.0 { Some(secs) } else { None }
         })
-        .unwrap_or(0.0);
+}
 
-    // 读取标签
-    let mut title: Option<String> = None;
-    let mut artist: Option<String> = None;
-    let mut album: Option<String> = None;
-    let mut has_cover = false;
-
-    if let Some(rev) = format.metadata().current() {
-        for tag in &rev.media.tags {
-            if let Some(std) = &tag.std {
-                match std {
-                    StandardTag::TrackTitle(t) => title = Some(t.to_string()),
-                    StandardTag::Artist(t) => artist = Some(t.to_string()),
-                    StandardTag::Album(t) => album = Some(t.to_string()),
-                    _ => {}
+/// 读取音频文件内嵌封面图（JPEG/PNG 原始字节）
+/// 读取封面图片（JPEG/PNG/WEBP 原始字节）。
+/// 支持音频格式（lofty）以及 MKV/WebM 附件封面。
+pub fn read_cover(path: &Path) -> Result<Vec<u8>, String> {
+    // 先用 lofty 读音频 + MP4 封面
+    if let Ok(tagged_file) = read_from_path(path) {
+        if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+            if let Some(pic) = tag.pictures().first() {
+                let data = pic.data();
+                if !data.is_empty() {
+                    return Ok(data.to_vec());
                 }
-            } else {
-                let key = tag.raw.key.to_lowercase();
-                if let RawValue::String(s) = &tag.raw.value {
-                    let val = s.to_string();
-                    match key.as_str() {
-                        "title" => title = Some(val),
-                        "artist" => artist = Some(val),
-                        "album" => album = Some(val),
-                        _ => {}
+            }
+        }
+    }
+
+    // MKV/WebM 回退：从附件中找封面
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        if ext.eq_ignore_ascii_case("mkv") || ext.eq_ignore_ascii_case("webm") || ext.eq_ignore_ascii_case("mka") {
+            if let Ok(mkv) = matroska::open(path) {
+                for att in &mkv.attachments {
+                    let name = att.name.to_lowercase();
+                    if name.starts_with("cover") || name.contains("cover") {
+                        if !att.data.is_empty()
+                            && (att.mime_type == "image/jpeg"
+                                || att.mime_type == "image/png"
+                                || att.mime_type == "image/webp")
+                        {
+                            return Ok(att.data.clone());
+                        }
+                    }
+                }
+                // 没有命名规范匹配的，按魔数返回第一个图片附件
+                for att in &mkv.attachments {
+                    let d = &att.data;
+                    if d.len() >= 4
+                        && ((d[0] == 0xFF && d[1] == 0xD8)      // JPEG
+                            || d[0..4] == [0x89, 0x50, 0x4E, 0x47] // PNG
+                            || (d.len() >= 12 && d[0..4] == [0x52, 0x49, 0x46, 0x46] && d[8..12] == [0x57, 0x45, 0x42, 0x50])) // RIFF+WEBP
+                    {
+                        return Ok(d.clone());
                     }
                 }
             }
         }
-        has_cover = !rev.media.visuals.is_empty();
     }
 
-    Ok(Metadata {
-        title,
-        artist,
-        album,
-        duration_secs,
-        has_cover,
-    })
+    Err("未找到封面".into())
 }
 
-/// 读取音频文件内嵌封面图（JPEG/PNG 原始字节）
-pub fn read_cover(path: &Path) -> Result<Vec<u8>, String> {
-    let file = File::open(path).map_err(|e| format!("无法打开文件: {e}"))?;
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+/// ReplayGain 响度归一化增益值
+pub struct ReplayGain {
+    /// 音轨增益 (dB)，如 -5.23
+    pub track_gain_db: Option<f32>,
+    /// 专辑增益 (dB)，如 -7.14
+    pub album_gain_db: Option<f32>,
+    /// 音轨真峰值，如 0.999969
+    pub track_peak: Option<f32>,
+    /// 专辑真峰值
+    pub album_peak: Option<f32>,
+}
 
-    let mut hint = Hint::new();
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
-    }
+/// 从音频文件读取 ReplayGain 标签（REPLAYGAIN_TRACK/ALBUM_GAIN/PEAK）
+pub fn read_replaygain(path: &Path) -> Result<ReplayGain, String> {
+    let tagged_file = read_from_path(path)
+        .map_err(|e| format!("无法读取 ReplayGain: {e}"))?;
 
-    let mut format = symphonia::default::get_probe()
-        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
-        .map_err(|e| format!("无法探测格式: {e}"))?;
+    let mut rg = ReplayGain { track_gain_db: None, album_gain_db: None, track_peak: None, album_peak: None };
 
-    if let Some(rev) = format.metadata().current() {
-        if let Some(visual) = rev.media.visuals.first() {
-            if visual.data.is_empty() {
-                return Err("封面数据为空".into());
-            }
-            return Ok(visual.data.to_vec());
+    if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+        // 从 ItemKey 获取 ReplayGain 值（lofty 自动映射 ID3v2 TXXX / Vorbis / MP4）
+        if let Some(val) = tag.get_string(lofty::tag::ItemKey::ReplayGainTrackGain) {
+            rg.track_gain_db = parse_replaygain_str(val);
+        }
+        if let Some(val) = tag.get_string(lofty::tag::ItemKey::ReplayGainAlbumGain) {
+            rg.album_gain_db = parse_replaygain_str(val);
+        }
+        if let Some(val) = tag.get_string(lofty::tag::ItemKey::ReplayGainTrackPeak) {
+            rg.track_peak = val.trim().parse::<f32>().ok();
+        }
+        if let Some(val) = tag.get_string(lofty::tag::ItemKey::ReplayGainAlbumPeak) {
+            rg.album_peak = val.trim().parse::<f32>().ok();
         }
     }
-    Err("未找到封面".into())
+
+    Ok(rg)
+}
+
+/// 解析 "-5.23 dB" 格式的 ReplayGain 增益字符串
+fn parse_replaygain_str(s: &str) -> Option<f32> {
+    let s = s.trim();
+    // 去掉 " dB" 后缀
+    let num = if let Some(stripped) = s.strip_suffix(" dB").or_else(|| s.strip_suffix("db")) {
+        stripped
+    } else {
+        s
+    };
+    num.parse::<f32>().ok()
 }
 
 /// 快速探测音频文件的采样率（不完整解码，只读文件头）
@@ -398,7 +480,7 @@ pub fn probe_sample_rate(path: &Path) -> Option<u32> {
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
     }
-    let mut format = symphonia::default::get_probe()
+    let format = symphonia::default::get_probe()
         .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
         .ok()?;
     for track in format.tracks() {
@@ -416,124 +498,202 @@ fn run_dsd(
     path: &Path, target_rate: u32, target_ch: u32,
     tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
     seek_pos: Option<f64>,
+    end_secs: Option<f64>,
 ) {
-    let decoded = match dsd::decode_file(path) {
-        Ok(d) => d,
+    use dsd_reader::DsdReader;
+
+    // 流式解码器：恒定内存占用
+    let mut converter = match dsd::StreamingDsdDecoder::new(path) {
+        Ok(c) => c,
         Err(e) => { warn!("DSD 解码失败: {e}"); return; }
     };
-
-    let mut pcm = decoded.samples;
-    let src_rate = decoded.sample_rate;
-    let src_ch = decoded.channels as usize;
-
-    info!("DSD 解码: {} ({}Hz, {}ch)", path.display(), src_rate, src_ch);
-
-    // 跳转
-    if let Some(secs) = seek_pos {
-        let skip = (secs * src_rate as f64) as usize * src_ch;
-        if skip < pcm.len() {
-            pcm = pcm.split_off(skip);
-        }
-    }
-
-    // ── 声道混音到目标声道数 ──
+    let src_rate = converter.sample_rate();
+    let src_ch = converter.channels();
     let out_ch = target_ch as usize;
-    let in_ch = src_ch;
-    if in_ch != out_ch {
-        let in_frames = pcm.len() / in_ch;
-        let mut mixed = Vec::with_capacity(in_frames * out_ch);
-        for f in 0..in_frames {
-            let off = f * in_ch;
-            if out_ch == 1 {
-                mixed.push(pcm[off..off + in_ch].iter().sum::<f32>() / in_ch as f32);
-            } else {
-                let l = pcm[off];
-                let r = if in_ch >= 2 { pcm[off + 1] } else { l };
-                mixed.push(l);
-                mixed.push(r);
-            }
-        }
-        pcm = mixed;
-    }
 
-    // ── rubato 重采样（如需要）或直通 ──
+    info!("DSD 流式解码: {} ({}Hz, {}ch)", path.display(), src_rate, src_ch);
+
+    // 创建 DSD 迭代器
+    let reader = match DsdReader::from_container(path.to_path_buf()) {
+        Ok(r) => r,
+        Err(e) => { warn!("DSD 文件打开失败: {e}"); return; }
+    };
+    let iter = match reader.dsd_iter() {
+        Ok(i) => i,
+        Err(e) => { warn!("DSD 迭代器创建失败: {e}"); return; }
+    };
+
+    // Seek：计算需要跳过的 DSD 字节数（每声道）
+    // DSD bytes_per_sec_per_channel = src_rate * 8 (64x 降采样后得 src_rate PCM frames/s)
+    let mut skip_bytes: usize = if let Some(secs) = seek_pos {
+        (secs * src_rate as f64) as usize * 8
+    } else {
+        0
+    };
+
+    // end_secs 截止：跟踪已输出的 PCM 帧数
+    let max_output_frames: Option<u64> = if let Some(end) = end_secs {
+        let start = seek_pos.unwrap_or(0.0);
+        let dur = end - start;
+        if dur > 0.0 { Some((dur * src_rate as f64) as u64) } else { None }
+    } else {
+        None
+    };
+    let mut output_frames: u64 = 0;
+
+    // 重采样器（如需要）
     let need_resample = (src_rate as i64 - target_rate as i64).abs() > 1;
-
-    if need_resample && !pcm.is_empty() {
+    let mut resampler: Option<SincFixedOut<f64>> = if need_resample {
         let params = InterpolationParameters {
-            sinc_len: 256,
-            f_cutoff: 0.95,
+            sinc_len: 256, f_cutoff: 0.95,
             interpolation: InterpolationType::Linear,
             oversampling_factor: 256,
             window: WindowFunction::BlackmanHarris2,
         };
-        let mut resampler = SincFixedOut::<f64>::new(
-            target_rate as f64 / src_rate as f64,
-            params, 1024, out_ch,
-        );
-        let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
+        Some(SincFixedOut::<f64>::new(target_rate as f64 / src_rate as f64, params, 1024, out_ch))
+    } else {
+        None
+    };
+    let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
+    let mut pts = 0.0f64;
 
-        let mut pts = 0.0f64;
-        let total_frames = pcm.len() / out_ch;
-        let mut pos = 0usize;
-        while pos < total_frames {
-            if stop_rx.try_recv().is_ok() { return; }
-            // 每次喂 ~4096 帧
-            let end = (pos + 4096).min(total_frames);
-            for c in 0..out_ch {
-                rubato_buf[c].extend(
-                    pcm[pos..end].iter().skip(c).step_by(out_ch).map(|&s| s as f64)
-                );
+    // 主循环：流式读取 DSD 块 → 转换 → 混音 → 重采样 → 发送
+    for (_nread, chan_frames) in iter {
+        if stop_rx.try_recv().is_ok() { return; }
+
+        // Seek 跳过
+        if skip_bytes > 0 {
+            let block_len = chan_frames.first().map(|b| b.len()).unwrap_or(0);
+            if block_len == 0 { continue; }
+            if skip_bytes >= block_len {
+                skip_bytes -= block_len;
+                continue;
+            } else {
+                // 部分跳过：截断每个声道的前 N 字节
+                let skip = skip_bytes;
+                skip_bytes = 0;
+                let truncated: Vec<Box<[u8]>> = chan_frames.iter()
+                    .map(|b| b[skip..].to_vec().into_boxed_slice())
+                    .collect();
+                converter.feed(&truncated);
             }
-            pos = end;
+        } else {
+            converter.feed(&chan_frames);
+        }
 
+        // 达到阈值时 flush 并发送
+        // feed() 返回 bool 但我们每次都尝试 flush（小文件可能永远不达阈值）
+        let pcm = converter.flush();
+        if pcm.is_empty() { continue; }
+
+        // 声道混音
+        let mixed = mix_channels(&pcm, src_ch, out_ch);
+
+        // end_secs 截断
+        let mixed = if let Some(max_frames) = max_output_frames {
+            let remaining = max_frames.saturating_sub(output_frames);
+            let allowed_samples = remaining as usize * out_ch;
+            if mixed.len() > allowed_samples {
+                mixed[..allowed_samples].to_vec()
+            } else {
+                mixed
+            }
+        } else {
+            mixed
+        };
+        if mixed.is_empty() { break; }
+
+        // 重采样或直发
+        if let Some(ref mut resampler) = resampler {
+            for c in 0..out_ch {
+                rubato_buf[c].extend(mixed.iter().skip(c).step_by(out_ch).map(|&s| s as f64));
+            }
             loop {
                 let needed = resampler.nbr_frames_needed();
                 if rubato_buf[0].len() < needed { break; }
                 let waves_in: Vec<Vec<f64>> = rubato_buf.iter_mut()
-                    .map(|buf| buf.drain(..needed).collect())
-                    .collect();
+                    .map(|buf| buf.drain(..needed).collect()).collect();
                 match resampler.process(&waves_in) {
                     Ok(waves_out) => {
                         let out_frames = waves_out[0].len();
                         let mut samples = Vec::with_capacity(out_frames * out_ch);
                         for f in 0..out_frames {
-                            for c in 0..out_ch {
-                                samples.push(waves_out[c][f] as f32);
-                            }
+                            for c in 0..out_ch { samples.push(waves_out[c][f] as f32); }
                         }
                         try_send_or_stop(&tx, DecodedFrame {
-                            samples,
-                            pts_secs: pts,
-                            sample_rate: target_rate,
-                            channels: target_ch,
+                            samples, pts_secs: pts, sample_rate: target_rate, channels: target_ch,
                         }, &stop_rx);
                         pts += out_frames as f64 / target_rate as f64;
                     }
                     Err(e) => warn!("DSD rubato 重采样失败: {e:?}"),
                 }
             }
-        }
-    } else {
-        // 无需重采样，分块直发
-        let chunk_samples = 4096 * out_ch;
-        let mut pts = 0.0;
-        for chunk in pcm.chunks(chunk_samples) {
-            if stop_rx.try_recv().is_ok() {
-                break;
-            }
-            if chunk.len() < out_ch {
-                continue;
-            }
+        } else {
             try_send_or_stop(&tx, DecodedFrame {
-                samples: chunk.to_vec(),
-                pts_secs: pts,
-                sample_rate: target_rate,
-                channels: target_ch,
+                samples: mixed.clone(), pts_secs: pts, sample_rate: target_rate, channels: target_ch,
             }, &stop_rx);
-            pts += chunk.len() as f64 / (target_rate as f64 * out_ch as f64);
+            pts += (mixed.len() / out_ch) as f64 / target_rate as f64;
+        }
+
+        output_frames += (mixed.len() / out_ch) as u64;
+        if let Some(max_frames) = max_output_frames {
+            if output_frames >= max_frames { break; }
         }
     }
+
+    // 最终 flush：处理剩余数据
+    let pcm = converter.finalize();
+    if !pcm.is_empty() && stop_rx.try_recv().is_err() {
+        let mixed = mix_channels(&pcm, src_ch, out_ch);
+        if !mixed.is_empty() {
+            if let Some(ref mut resampler) = resampler {
+                for c in 0..out_ch {
+                    rubato_buf[c].extend(mixed.iter().skip(c).step_by(out_ch).map(|&s| s as f64));
+                }
+                // 刷新重采样器剩余
+                loop {
+                    let needed = resampler.nbr_frames_needed();
+                    if rubato_buf[0].len() < needed { break; }
+                    let waves_in: Vec<Vec<f64>> = rubato_buf.iter_mut()
+                        .map(|buf| buf.drain(..needed).collect()).collect();
+                    if let Ok(waves_out) = resampler.process(&waves_in) {
+                        let out_frames = waves_out[0].len();
+                        let mut samples = Vec::with_capacity(out_frames * out_ch);
+                        for f in 0..out_frames {
+                            for c in 0..out_ch { samples.push(waves_out[c][f] as f32); }
+                        }
+                        try_send_or_stop(&tx, DecodedFrame {
+                            samples, pts_secs: pts, sample_rate: target_rate, channels: target_ch,
+                        }, &stop_rx);
+                        pts += out_frames as f64 / target_rate as f64;
+                    }
+                }
+            } else {
+                try_send_or_stop(&tx, DecodedFrame {
+                    samples: mixed, pts_secs: pts, sample_rate: target_rate, channels: target_ch,
+                }, &stop_rx);
+            }
+        }
+    }
+}
+
+/// 声道混音：将交错 PCM 从 in_ch 混到 out_ch
+fn mix_channels(pcm: &[f32], in_ch: usize, out_ch: usize) -> Vec<f32> {
+    if in_ch == out_ch { return pcm.to_vec(); }
+    let in_frames = pcm.len() / in_ch;
+    let mut mixed = Vec::with_capacity(in_frames * out_ch);
+    for f in 0..in_frames {
+        let off = f * in_ch;
+        if out_ch == 1 {
+            mixed.push(pcm[off..off + in_ch].iter().sum::<f32>() / in_ch as f32);
+        } else {
+            let l = if in_ch >= 1 { pcm[off] } else { 0.0 };
+            let r = if in_ch >= 2 { pcm[off + 1] } else { l };
+            mixed.push(l);
+            mixed.push(r);
+        }
+    }
+    mixed
 }
 
 // ── WavPack 解码 ──────────────────────────────────────────────────────
@@ -542,6 +702,7 @@ fn run_wavpack(
     path: &Path, target_rate: u32, target_ch: u32,
     tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
     seek_pos: Option<f64>,
+    end_secs: Option<f64>,
 ) {
     let file = match File::open(path) {
         Ok(f) => f, Err(e) => { warn!("打开 WavPack 失败: {e}"); return; }
@@ -552,102 +713,149 @@ fn run_wavpack(
     let info = reader.info();
     let src_rate = info.sample_rate as u32;
     let src_ch = info.channels as usize;
-    info!("WavPack 解码: {} ({}Hz, {}ch, {}bit)", path.display(), src_rate, src_ch, info.bits_per_sample);
-
-    // 解码全部样本，转为 f32 交错
-    let max_val = (1i64 << (info.bits_per_sample - 1)) as f32;
-    let mut interleaved: Vec<i32> = Vec::new();
-    for result in reader.samples() {
-        match result {
-            Ok(sample) => interleaved.push(sample),
-            Err(e) => { warn!("WavPack 解码错误: {e}"); return; }
-        }
-    }
-    let total_frames = interleaved.len() / src_ch;
-    let mut pcm = Vec::with_capacity(total_frames * src_ch);
-    for f in 0..total_frames {
-        for c in 0..src_ch {
-            pcm.push(interleaved[f * src_ch + c] as f32 / max_val);
-        }
-    }
-
-    // 跳转
-    if let Some(secs) = seek_pos {
-        let skip = (secs * src_rate as f64) as usize * src_ch;
-        if skip < pcm.len() { pcm = pcm.split_off(skip); }
-    }
-
-    // 声道混音到目标声道数
     let out_ch = target_ch as usize;
-    if src_ch != out_ch {
-        let in_frames = pcm.len() / src_ch;
-        let mut mixed = Vec::with_capacity(in_frames * out_ch);
-        for f in 0..in_frames {
-            let off = f * src_ch;
-            if out_ch == 1 {
-                mixed.push(pcm[off..off + src_ch].iter().sum::<f32>() / src_ch as f32);
-            } else {
-                let l = pcm[off];
-                let r = if src_ch >= 2 { pcm[off + 1] } else { l };
-                mixed.push(l); mixed.push(r);
-            }
-        }
-        pcm = mixed;
-    }
+    info!("WavPack 流式解码: {} ({}Hz, {}ch, {}bit)", path.display(), src_rate, src_ch, info.bits_per_sample);
 
-    // 重采样或直发
+    let max_val = (1i64 << (info.bits_per_sample - 1)) as f32;
+
+    // Seek：跳过前 N 个样本
+    let skip_samples: usize = if let Some(secs) = seek_pos {
+        (secs * src_rate as f64) as usize * src_ch
+    } else {
+        0
+    };
+
+    // end_secs 截止
+    let max_output_frames: Option<u64> = if let Some(end) = end_secs {
+        let start = seek_pos.unwrap_or(0.0);
+        let dur = end - start;
+        if dur > 0.0 { Some((dur * src_rate as f64) as u64) } else { None }
+    } else {
+        None
+    };
+
+    // 重采样器
     let need_resample = (src_rate as i64 - target_rate as i64).abs() > 1;
-    if need_resample && !pcm.is_empty() {
+    let mut resampler: Option<SincFixedOut<f64>> = if need_resample {
         let params = InterpolationParameters {
             sinc_len: 256, f_cutoff: 0.95,
             interpolation: InterpolationType::Linear,
             oversampling_factor: 256,
             window: WindowFunction::BlackmanHarris2,
         };
-        let mut resampler = SincFixedOut::<f64>::new(
-            target_rate as f64 / src_rate as f64, params, 1024, out_ch,
-        );
-        let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
-        let total_frames2 = pcm.len() / out_ch;
-        let mut pos = 0usize;
-        while pos < total_frames2 {
-            if stop_rx.try_recv().is_ok() { return; }
-            let end = (pos + 4096).min(total_frames2);
-            for c in 0..out_ch {
-                rubato_buf[c].extend(pcm[pos..end].iter().skip(c).step_by(out_ch).map(|&s| s as f64));
+        Some(SincFixedOut::<f64>::new(target_rate as f64 / src_rate as f64, params, 1024, out_ch))
+    } else {
+        None
+    };
+    let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
+    let mut pts = 0.0f64;
+    let mut output_frames: u64 = 0;
+
+    // 流式读取：每次累积 4096 帧的样本，然后处理并发送
+    const BATCH_FRAMES: usize = 4096;
+    let batch_samples = BATCH_FRAMES * src_ch;
+    let mut batch: Vec<f32> = Vec::with_capacity(batch_samples);
+    let mut skipped: usize = 0;
+
+    for result in reader.samples() {
+        if stop_rx.try_recv().is_ok() { return; }
+
+        let sample = match result {
+            Ok(s) => s,
+            Err(e) => { warn!("WavPack 解码错误: {e}"); return; }
+        };
+
+        // Seek 跳过
+        if skipped < skip_samples {
+            skipped += 1;
+            continue;
+        }
+
+        batch.push(sample as f32 / max_val);
+
+        // 每累积够一批就处理发送
+        if batch.len() >= batch_samples {
+            let mixed = mix_channels(&batch, src_ch, out_ch);
+            batch.clear();
+
+            // end_secs 截断
+            let mixed = if let Some(max_f) = max_output_frames {
+                let remaining = max_f.saturating_sub(output_frames);
+                let allowed = remaining as usize * out_ch;
+                if mixed.len() > allowed { mixed[..allowed].to_vec() } else { mixed }
+            } else {
+                mixed
+            };
+            if mixed.is_empty() { break; }
+
+            // 重采样或直发
+            if let Some(ref mut resampler) = resampler {
+                for c in 0..out_ch {
+                    rubato_buf[c].extend(mixed.iter().skip(c).step_by(out_ch).map(|&s| s as f64));
+                }
+                loop {
+                    let needed = resampler.nbr_frames_needed();
+                    if rubato_buf[0].len() < needed { break; }
+                    let waves_in: Vec<Vec<f64>> = rubato_buf.iter_mut()
+                        .map(|buf| buf.drain(..needed).collect()).collect();
+                    match resampler.process(&waves_in) {
+                        Ok(waves_out) => {
+                            let out_frames = waves_out[0].len();
+                            let mut samples = Vec::with_capacity(out_frames * out_ch);
+                            for f in 0..out_frames {
+                                for c in 0..out_ch { samples.push(waves_out[c][f] as f32); }
+                            }
+                            try_send_or_stop(&tx, DecodedFrame {
+                                samples, pts_secs: pts, sample_rate: target_rate, channels: target_ch,
+                            }, &stop_rx);
+                            pts += out_frames as f64 / target_rate as f64;
+                        }
+                        Err(e) => warn!("WavPack 重采样失败: {e:?}"),
+                    }
+                }
+            } else {
+                try_send_or_stop(&tx, DecodedFrame {
+                    samples: mixed.clone(), pts_secs: pts, sample_rate: target_rate, channels: target_ch,
+                }, &stop_rx);
+                pts += (mixed.len() / out_ch) as f64 / target_rate as f64;
             }
-            pos = end;
-            loop {
-                let needed = resampler.nbr_frames_needed();
-                if rubato_buf[0].len() < needed { break; }
-                let waves_in: Vec<Vec<f64>> = rubato_buf.iter_mut()
-                    .map(|buf| buf.drain(..needed).collect()).collect();
-                match resampler.process(&waves_in) {
-                    Ok(waves_out) => {
-                        let out_frames2 = waves_out[0].len();
-                        let mut samples = Vec::with_capacity(out_frames2 * out_ch);
-                        for f in 0..out_frames2 {
+
+            output_frames += (mixed.len() / out_ch) as u64;
+            if let Some(max_f) = max_output_frames {
+                if output_frames >= max_f { break; }
+            }
+        }
+    }
+
+    // 处理剩余不足一批的样本
+    if !batch.is_empty() && stop_rx.try_recv().is_err() {
+        let mixed = mix_channels(&batch, src_ch, out_ch);
+        if !mixed.is_empty() {
+            if let Some(ref mut resampler) = resampler {
+                for c in 0..out_ch {
+                    rubato_buf[c].extend(mixed.iter().skip(c).step_by(out_ch).map(|&s| s as f64));
+                }
+                loop {
+                    let needed = resampler.nbr_frames_needed();
+                    if rubato_buf[0].len() < needed { break; }
+                    let waves_in: Vec<Vec<f64>> = rubato_buf.iter_mut()
+                        .map(|buf| buf.drain(..needed).collect()).collect();
+                    if let Ok(waves_out) = resampler.process(&waves_in) {
+                        let out_frames = waves_out[0].len();
+                        let mut samples = Vec::with_capacity(out_frames * out_ch);
+                        for f in 0..out_frames {
                             for c in 0..out_ch { samples.push(waves_out[c][f] as f32); }
                         }
                         try_send_or_stop(&tx, DecodedFrame {
-                            samples, pts_secs: 0.0, sample_rate: target_rate, channels: target_ch,
+                            samples, pts_secs: pts, sample_rate: target_rate, channels: target_ch,
                         }, &stop_rx);
                     }
-                    Err(e) => warn!("WavPack 重采样失败: {e:?}"),
                 }
+            } else {
+                try_send_or_stop(&tx, DecodedFrame {
+                    samples: mixed, pts_secs: pts, sample_rate: target_rate, channels: target_ch,
+                }, &stop_rx);
             }
-        }
-    } else {
-        let chunk_samples = 4096 * out_ch;
-        let mut pts = 0.0;
-        for chunk in pcm.chunks(chunk_samples) {
-            if stop_rx.try_recv().is_ok() { break; }
-            if chunk.len() < out_ch { continue; }
-            try_send_or_stop(&tx, DecodedFrame {
-                samples: chunk.to_vec(), pts_secs: pts,
-                sample_rate: target_rate, channels: target_ch,
-            }, &stop_rx);
-            pts += chunk.len() as f64 / (target_rate as f64 * out_ch as f64);
         }
     }
 }
@@ -660,7 +868,7 @@ mod tests {
     fn test_decode(path: &str) -> Option<u64> {
         let p = std::path::Path::new(path);
         if !p.exists() { return None; }
-        let (rx, _decoder) = match Decoder::start(p, TARGET_SAMPLE_RATE, TARGET_CHANNELS, Arc::new(AtomicU64::new(0)), None) {
+        let (rx, _decoder) = match Decoder::start(p, TARGET_SAMPLE_RATE, TARGET_CHANNELS, Arc::new(AtomicU64::new(0)), None, None) {
             Ok(v) => v,
             Err(_) => return None,
         };
@@ -703,7 +911,7 @@ mod tests {
         let (rx, dec) = Decoder::start(
             std::path::Path::new("/tmp/_test_stop.wav"),
             TARGET_SAMPLE_RATE, TARGET_CHANNELS,
-            Arc::new(AtomicU64::new(0)), None,
+            Arc::new(AtomicU64::new(0)), None, None,
         ).unwrap();
         // 接收少量帧后立即停止
         let mut count = 0u64;
@@ -730,7 +938,7 @@ mod tests {
             let _ = Decoder::start(
                 std::path::Path::new(&path),
                 TARGET_SAMPLE_RATE, TARGET_CHANNELS,
-                Arc::new(AtomicU64::new(0)), None,
+                Arc::new(AtomicU64::new(0)), None, None,
             );
             std::fs::remove_file(&path).ok();
         }
@@ -742,7 +950,7 @@ mod tests {
         let (rx, _dec) = Decoder::start(
             std::path::Path::new("/tmp/_test_seek.wav"),
             TARGET_SAMPLE_RATE, TARGET_CHANNELS,
-            Arc::new(AtomicU64::new(0)), Some(0.1),
+            Arc::new(AtomicU64::new(0)), Some(0.1), None,
         ).unwrap();
         let mut frames = Vec::new();
         loop { match rx.recv_timeout(Duration::from_secs(3)) { Ok(f) => frames.push(f), Err(_) => break } }

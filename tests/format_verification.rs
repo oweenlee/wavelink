@@ -12,7 +12,7 @@ fn decode_count(path: &str) -> Result<(u64, usize), String> {
     let (rx, _decoder) = Decoder::start(
         std::path::Path::new(path),
         TARGET_SAMPLE_RATE, TARGET_CHANNELS,
-        Arc::new(AtomicU64::new(0)), None,
+        Arc::new(AtomicU64::new(0)), None, None,
     ).map_err(|e| format!("Decoder::start 失败: {e}"))?;
     let mut total = 0u64;
     let mut chunks = 0usize;

@@ -108,6 +108,65 @@ pub fn convert_channel(dsd_bytes: &[u8], _dsd_rate: DsdRate) -> Vec<f32> {
     stage2_fir(&stage1, STAGE1_DECIM)
 }
 
+/// 公开的 stage1 boxcar（供流式解码器调用）
+pub fn stage1_boxcar_pub(dsd_bytes: &[u8]) -> Vec<f32> {
+    stage1_boxcar(dsd_bytes)
+}
+
+/// 流式 FIR 降采样：从 pending 缓冲中取出可计算的输出，保留尾部重叠供下次使用。
+///
+/// `pending` 包含上次的 FIR 重叠尾部 + 新的 stage1 样本。
+/// 返回本次可输出的 PCM 样本，并将 pending 截断为保留的尾部。
+pub fn stage2_fir_streaming(pending: &mut Vec<f32>) -> Vec<f32> {
+    let decim = STAGE1_DECIM;
+    let taps = 64usize.max(decim * 4); // = 64
+    let half = taps / 2; // = 32
+
+    if pending.len() < taps {
+        // 不够一个完整滤波器窗口，不输出
+        return Vec::new();
+    }
+
+    // 计算可输出的样本数：center 范围 [half, len - half + 1)，步长 decim
+    let max_center = pending.len() - half; // 最后一个有效 center（exclusive: center+half-1 < len）
+    let first_center = half;
+    if max_center <= first_center {
+        return Vec::new();
+    }
+    let out_count = (max_center - first_center) / decim;
+    if out_count == 0 {
+        return Vec::new();
+    }
+
+    // 设计 FIR 滤波器（每次 flush 重新计算，开销忽略不计）
+    let fc = 0.45 / decim as f64;
+    let coeffs = design_fir(fc, taps);
+
+    let mut out = Vec::with_capacity(out_count);
+    for i in 0..out_count {
+        let center = first_center + i * decim;
+        let mut sum = 0.0f64;
+        for j in 0..taps {
+            let idx = center + j - half;
+            sum += pending[idx] as f64 * coeffs[j];
+        }
+        out.push(sum as f32);
+    }
+
+    // 保留尾部重叠：下次需要 center - half 起的样本
+    // 最后一个已处理的 center = first_center + (out_count-1)*decim
+    // 下次第一个 center 应紧接其后，需要的最早样本 = next_center - half
+    // 保留从 (last_center + decim - half) 开始的尾部
+    let keep_from = first_center + out_count * decim - half;
+    if keep_from < pending.len() {
+        pending.drain(..keep_from);
+    } else {
+        pending.clear();
+    }
+
+    out
+}
+
 /// 将多声道 DSD 数据转换为交错 PCM f32
 ///
 /// `chan_bytes` — 每个声道的 DSD 字节数据

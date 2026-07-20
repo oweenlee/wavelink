@@ -21,7 +21,7 @@ fn check_timed_out_files() {
         let pos = Arc::new(AtomicU64::new(0));
         let start = Instant::now();
 
-        match Decoder::start(p, 44100, 2, pos, None) {
+        match Decoder::start(p, 44100, 2, pos, None, None) {
             Ok((rx, dec)) => {
                 let mut first_frame = None;
                 let mut total = 0u64;

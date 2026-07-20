@@ -26,7 +26,7 @@ fn test_real_wav_through_consumer() {
     let pos = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let (rx, _dec) = Decoder::start(
         std::path::Path::new(&path),
-        44100, 2, pos, None,
+        44100, 2, pos, None, None,
     )
     .expect("Decoder::start 失败");
 
@@ -88,7 +88,7 @@ fn test_consumer_output_count_matches() {
 
     let pos = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let (rx, _dec) =
-        Decoder::start(std::path::Path::new(&path), 44100, 2, pos, None).expect("Decoder::start");
+        Decoder::start(std::path::Path::new(&path), 44100, 2, pos, None, None).expect("Decoder::start");
 
     let output_count = Arc::new(Mutex::new(0u64));
     let oc = output_count.clone();
@@ -143,7 +143,7 @@ fn test_48k_wav_through_consumer() {
 
     let pos = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let (rx, _dec) =
-        Decoder::start(std::path::Path::new(&path), 48000, 2, pos, None).expect("Decoder::start");
+        Decoder::start(std::path::Path::new(&path), 48000, 2, pos, None, None).expect("Decoder::start");
 
     let total_pushed = Arc::new(Mutex::new(0usize));
     let tp = total_pushed.clone();
@@ -201,7 +201,7 @@ fn test_consumer_stop_during_decoding() {
 
     let pos = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let (rx, _dec) =
-        Decoder::start(std::path::Path::new(&path), 44100, 2, pos, None).expect("Decoder::start");
+        Decoder::start(std::path::Path::new(&path), 44100, 2, pos, None, None).expect("Decoder::start");
 
     let stop = Arc::new(AtomicBool::new(false));
     let s = stop.clone();

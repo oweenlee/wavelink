@@ -25,7 +25,7 @@ fn diagnose_384k() {
         let start = Instant::now();
         let timeout = Duration::from_secs(30);
 
-        let (rx, dec) = Decoder::start(path, target_rate, 2, pos, None).unwrap();
+        let (rx, dec) = Decoder::start(path, target_rate, 2, pos, None, None).unwrap();
 
         let mut samples = 0u64;
         let mut frames = 0u64;

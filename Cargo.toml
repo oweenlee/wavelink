@@ -7,6 +7,7 @@ description = "纯 Rust 音频引擎：解码 + DSP 管线"
 [features]
 default = ["cpal-backend"]
 cpal-backend = ["cpal"]
+ffi = []
 
 [dependencies]
 cpal = { version = "0.15", optional = true }
@@ -23,6 +24,9 @@ realfft = "3"
 # 序列化（引擎事件）
 serde = { version = "1", features = ["derive"] }
 
+# 元数据标签读取（lofty 替代 Symphonia 的 minimal 标签解析）
+lofty = "0.24"
+
 # 纯 Rust 解码器
 symphonia = { version = "0.6", default-features = false, features = [
     "mp3", "flac", "pcm", "vorbis", "aac", "alac", "isomp4", "ogg", "wav", "aiff"
@@ -31,6 +35,9 @@ symphonia-adapter-oporus = "0.1"
 wavpack-rs = { git = "https://github.com/lexicone42/wavpack-rs" }
 rubato = "0.10"
 dsd-reader = "0.3"
+
+# 视频容器封面提取（MKV/WebM）
+matroska = "0.30"
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

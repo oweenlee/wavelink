@@ -168,6 +168,70 @@ impl EngineHandle {
     }
 }
 
+/// 队列条目（普通文件或 CUE 分轨）
+#[derive(Debug, Clone)]
+struct QueueEntry {
+    /// 显示名称（TrackChanged/QueueChanged 事件用）
+    display: String,
+    /// 实际解码的音频文件路径
+    audio_file: String,
+    /// 文件内起始偏移（秒）
+    start_secs: f64,
+    /// 文件内结束位置（秒），<= 0 表示播放到文件末尾
+    end_secs: f64,
+}
+
+impl QueueEntry {
+    fn for_file(path: String) -> Self {
+        QueueEntry { display: path.clone(), audio_file: path, start_secs: 0.0, end_secs: 0.0 }
+    }
+    fn seek_pos(&self) -> Option<f64> {
+        if self.start_secs > 0.0 { Some(self.start_secs) } else { None }
+    }
+    fn end_secs_opt(&self) -> Option<f64> {
+        if self.end_secs > 0.0 { Some(self.end_secs) } else { None }
+    }
+}
+
+/// 将路径列表解析为 QueueEntry 列表，展开 .cue 文件中的虚轨
+fn resolve_entries(paths: Vec<String>) -> Vec<QueueEntry> {
+    let mut entries = Vec::new();
+    for p in paths {
+        let path = std::path::Path::new(&p);
+        if path.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("cue")).unwrap_or(false) {
+            match crate::cue::parse_cue(path) {
+                Ok(sheet) => {
+                    let parent = path.parent().unwrap_or(std::path::Path::new(""));
+                    for file in &sheet.files {
+                        let audio = parent.join(&file.path);
+                        let audio_str = audio.to_string_lossy().to_string();
+                        for (i, track) in file.tracks.iter().enumerate() {
+                            let end = if i + 1 < file.tracks.len() {
+                                file.tracks[i + 1].start_secs
+                            } else {
+                                0.0
+                            };
+                            let title = track.title.as_deref().unwrap_or(&track.num);
+                            entries.push(QueueEntry {
+                                display: format!("{} - {}", p, title),
+                                audio_file: audio_str.clone(),
+                                start_secs: track.start_secs,
+                                end_secs: end,
+                            });
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("CUE 解析失败 {p}: {e}");
+                }
+            }
+        } else {
+            entries.push(QueueEntry::for_file(p));
+        }
+    }
+    entries
+}
+
 /// 引擎内部运行状态（只存在于引擎线程）
 pub struct EngineState {
     config: EngineConfig,
@@ -182,22 +246,22 @@ pub struct EngineState {
     current_volume: f32,
     pending_ir: Option<String>,
     pending_replaygain_db: Option<f32>,
-    current_path: Option<String>,
+    current_entry: Option<QueueEntry>,
     position: Arc<AtomicU64>,
-    queue: Vec<String>,
+    queue: Vec<QueueEntry>,
     external_tx: Sender<EngineEvent>,
     internal_event_tx: Sender<EngineEvent>,
     peq_bands: Vec<PeqBand>,
     duration_us: Arc<AtomicU64>,
     playing: Arc<AtomicBool>,
     /// 预加载的下一首（无缝播放）
-    next_path: Option<String>,
+    next_entry: Option<QueueEntry>,
     next_decoder: Option<Decoder>,
     next_rx: Arc<Mutex<Option<Receiver<DecodedFrame>>>>,
     /// 播放模式
     play_mode: PlayMode,
     /// 原始播放队列（RepeatAll 时用于重新填充）
-    original_queue: Vec<String>,
+    original_queue: Vec<QueueEntry>,
 }
 
 impl EngineState {
@@ -215,7 +279,7 @@ impl EngineState {
             current_volume: 1.0,
             pending_ir: None,
             pending_replaygain_db: None,
-            current_path: None,
+            current_entry: None,
             position,
             queue: Vec::new(),
             external_tx,
@@ -223,7 +287,7 @@ impl EngineState {
             peq_bands: crate::dsp::default_peq_bands(),
             duration_us,
             playing,
-            next_path: None,
+            next_entry: None,
             next_decoder: None,
             next_rx: Arc::new(Mutex::new(None)),
             play_mode: PlayMode::Normal,
@@ -231,15 +295,16 @@ impl EngineState {
         }
     }
 
-    fn play_file(&mut self, path: &str) {
-        info!("play_file 开始: {path}");
+    fn play_entry(&mut self, entry: &QueueEntry) {
+        info!("播放: {} (file={}, start={}s, end={}s)",
+            entry.display, entry.audio_file, entry.start_secs, entry.end_secs);
         self.stop_playback();
-        self.current_path = Some(path.to_string());
-        let path_buf = Path::new(path).to_path_buf();
+        self.current_entry = Some(entry.clone());
+        let path_buf = Path::new(&entry.audio_file).to_path_buf();
 
         if !path_buf.exists() {
-            error!("文件不存在: {path}");
-            self.emit(EngineEvent::Error(format!("文件不存在: {path}")));
+            error!("文件不存在: {}", entry.audio_file);
+            self.emit(EngineEvent::Error(format!("文件不存在: {}", entry.audio_file)));
             self.advance_queue();
             return;
         }
@@ -247,8 +312,14 @@ impl EngineState {
         let sr = self.config.sample_rate;
         let ch = self.config.channels;
 
-        // 用 Symphonia 探测时长
-        let dur = probe_duration_symphonia(&path_buf).unwrap_or(0);
+        // 计算时长（CUE 分轨使用虚轨时长）
+        let dur = if entry.end_secs > 0.0 {
+            ((entry.end_secs - entry.start_secs) * 1_000_000.0) as u64
+        } else {
+            // 最后一轨：播放到文件末尾，需减去起始偏移
+            let full = probe_duration_symphonia(&path_buf).unwrap_or(0);
+            full.saturating_sub((entry.start_secs * 1_000_000.0) as u64)
+        };
         self.duration_us.store(dur, Ordering::Release);
 
         // 复用已有 audio output（仅首次创建），避免重建 cpal stream
@@ -273,7 +344,10 @@ impl EngineState {
             }
         };
 
-        let (rx, decoder) = match Decoder::start(&path_buf, actual_sr, actual_ch, self.position.clone(), None) {
+        let (rx, decoder) = match Decoder::start(
+            &path_buf, actual_sr, actual_ch, self.position.clone(),
+            entry.seek_pos(), entry.end_secs_opt(),
+        ) {
             Ok(v) => v,
             Err(e) => {
                 error!("启动解码失败: {e}");
@@ -295,9 +369,9 @@ impl EngineState {
         match ready_rx.recv_timeout(Duration::from_secs(3)) {
             Ok(true) => {
                 output.resume();
-                info!("开始播放: {path}");
+                info!("播放: {}", entry.display);
                 self.playing.store(true, Ordering::Release);
-                let _ = self.external_tx.send(EngineEvent::TrackChanged(path.to_string()));
+                let _ = self.external_tx.send(EngineEvent::TrackChanged(entry.display.clone()));
                 let dur = self.duration_us.load(Ordering::Acquire);
                 if dur > 0 {
                     let _ = self.external_tx.send(EngineEvent::DurationSecs(dur as f64 / 1_000_000.0));
@@ -305,8 +379,8 @@ impl EngineState {
                 self.emit_queue();
             }
             _ => {
-                error!("解码失败（无有效音频帧）: {path}");
-                self.emit(EngineEvent::Error(format!("解码失败: {path} - 无有效音频数据")));
+                error!("解码失败（无有效音频帧）: {}", entry.display);
+                self.emit(EngineEvent::Error(format!("解码失败: {} - 无有效音频数据", entry.display)));
                 self.stop_playback();
                 self.advance_queue();
                 return;
@@ -345,25 +419,26 @@ impl EngineState {
 
     fn preload_next(&mut self) {
         if self.queue.is_empty() { return; }
-        let path = self.queue[0].clone();
-        let path_buf = Path::new(&path).to_path_buf();
+        let entry = &self.queue[0];
+        let path_buf = Path::new(&entry.audio_file).to_path_buf();
         if !path_buf.exists() {
-            error!("预加载文件不存在: {path}");
+            error!("预加载文件不存在: {}", entry.audio_file);
             return;
         }
         let dummy_pos = Arc::new(AtomicU64::new(0));
         let sr = self.output_sample_rate;
         let ch = self.config.channels;
         let (rx, decoder) = match Decoder::start(
-            &path_buf, sr, ch, dummy_pos, None,
+            &path_buf, sr, ch, dummy_pos,
+            entry.seek_pos(), entry.end_secs_opt(),
         ) {
             Ok(v) => v,
             Err(e) => { error!("预加载解码失败: {e}"); return; }
         };
         *self.next_rx.lock().unwrap_or_else(|e| e.into_inner()) = Some(rx);
         self.next_decoder = Some(decoder);
-        self.next_path = Some(path);
-        debug!("已预加载: {}", self.next_path.as_ref().unwrap());
+        self.next_entry = Some(entry.clone());
+        debug!("已预加载: {}", self.next_entry.as_ref().unwrap().display);
     }
 
     fn advance_queue(&mut self) {
@@ -378,17 +453,20 @@ impl EngineState {
     fn advance_normal(&mut self) {
         if !self.queue.is_empty() {
             let next = self.queue.remove(0);
-            if self.next_path.as_deref() == Some(&next) {
-                debug!("无缝切换至: {next}");
-                self.current_path = self.next_path.take();
+            let match_seamless = self.next_entry.as_ref()
+                .map(|e| e.display == next.display)
+                .unwrap_or(false);
+            if match_seamless {
+                debug!("无缝切换至: {}", next.display);
+                self.current_entry = self.next_entry.take();
                 self.decoder = self.next_decoder.take();
                 self.position.store(0, Ordering::SeqCst);
-                let _ = self.external_tx.send(EngineEvent::TrackChanged(next.clone()));
+                let _ = self.external_tx.send(EngineEvent::TrackChanged(next.display.clone()));
                 self.emit_queue();
                 self.preload_next();
             } else {
-                debug!("自动播下一曲: {next}");
-                self.play_file(&next);
+                debug!("自动播下一曲: {}", next.display);
+                self.play_entry(&next);
             }
         } else {
             self.emit(EngineEvent::PlaybackStopped);
@@ -396,24 +474,22 @@ impl EngineState {
     }
 
     fn advance_repeat_one(&mut self) {
-        if let Some(path) = self.current_path.clone() {
-            self.queue.insert(0, path);
+        if let Some(entry) = self.current_entry.clone() {
+            self.queue.insert(0, entry);
         }
         self.advance_normal();
     }
 
     fn advance_repeat_all(&mut self) {
         if self.queue.is_empty() && !self.original_queue.is_empty() {
-            // 重新填充队列（从第二首开始，当前曲结束后下一首应是列首）
-            let current = self.current_path.clone();
+            let current = self.current_entry.as_ref().map(|e| &e.display);
             self.queue = self.original_queue.iter()
-                .filter(|p| Some(p.as_str()) != current.as_deref())
+                .filter(|e| Some(&e.display) != current)
                 .cloned()
                 .collect();
             if self.queue.is_empty() {
-                // 只有一首歌
-                if let Some(ref path) = self.current_path {
-                    self.queue.push(path.clone());
+                if let Some(ref entry) = self.current_entry {
+                    self.queue.push(entry.clone());
                 }
             }
         }
@@ -427,31 +503,35 @@ impl EngineState {
         }
         let idx = fastrand::usize(..self.queue.len());
         let next = self.queue.remove(idx);
-        if self.next_path.as_deref() == Some(&next) {
-            debug!("无缝切换至: {next}");
-            self.current_path = self.next_path.take();
+        let match_seamless = self.next_entry.as_ref()
+            .map(|e| e.display == next.display)
+            .unwrap_or(false);
+        if match_seamless {
+            debug!("无缝切换至: {}", next.display);
+            self.current_entry = self.next_entry.take();
             self.decoder = self.next_decoder.take();
-                self.position.store(0, Ordering::SeqCst);
-                let _ = self.external_tx.send(EngineEvent::TrackChanged(next.clone()));
-                self.emit_queue();
-                self.preload_next();
+            self.position.store(0, Ordering::SeqCst);
+            let _ = self.external_tx.send(EngineEvent::TrackChanged(next.display.clone()));
+            self.emit_queue();
+            self.preload_next();
         } else {
-            debug!("随机播下一曲: {next}");
-            self.play_file(&next);
+            debug!("随机播下一曲: {}", next.display);
+            self.play_entry(&next);
         }
     }
 
     fn set_queue(&mut self, paths: Vec<String>) {
-        if paths.is_empty() {
+        let entries = resolve_entries(paths);
+        if entries.is_empty() {
             self.stop_full();
             self.queue.clear();
             self.original_queue.clear();
             return;
         }
-        self.original_queue = paths.clone();
-        let first = paths[0].clone();
-        self.queue = paths[1..].to_vec();
-        self.play_file(&first);
+        let first = entries[0].clone();
+        self.queue = entries[1..].to_vec();
+        self.original_queue = entries;
+        self.play_entry(&first);
     }
 
     fn next_track(&mut self) {
@@ -459,21 +539,39 @@ impl EngineState {
         self.advance_queue();
     }
 
+    fn play_file(&mut self, path: &str) {
+        let entries = resolve_entries(vec![path.to_string()]);
+        if entries.is_empty() {
+            self.emit(EngineEvent::Error(format!("无法解析音轨: {path}")));
+            return;
+        }
+        if entries.len() == 1 {
+            self.play_entry(&entries[0]);
+        } else {
+            // .cue 文件展开为多虚拟轨
+            let first = entries[0].clone();
+            self.queue = entries[1..].to_vec();
+            self.original_queue = entries;
+            self.play_entry(&first);
+        }
+    }
+
     fn seek(&mut self, pos: f64) {
-        let path = match &self.current_path {
-            Some(p) => p.clone(),
+        let entry = match &self.current_entry {
+            Some(e) => e.clone(),
             None => { error!("seek 时无当前曲目"); return; }
         };
-        info!("seek_to: {pos:.2}s");
+        // pos 是虚轨内偏移，需要转成文件内的绝对位置
+        let file_pos = entry.start_secs + pos;
+        info!("seek_to: track={pos:.2}s, file={file_pos:.2}s");
         let sr = self.output_sample_rate;
         let ch = self.config.channels;
         let target_samples = (pos * sr as f64 * ch as f64) as u64;
         self.stop_playback();
-        // stop_playback resets position to 0 — restore to seek target AFTER cleanup
         self.position.store(target_samples, Ordering::SeqCst);
-        let path_buf = Path::new(&path).to_path_buf();
+        let path_buf = Path::new(&entry.audio_file).to_path_buf();
         if !path_buf.exists() {
-            error!("文件不存在: {path}");
+            error!("文件不存在: {}", entry.audio_file);
             return;
         }
 
@@ -482,7 +580,10 @@ impl EngineState {
             o.swap_consumer(self.config.buffer_ms, sr, ch)
         }).expect("seek 时 output 应已存在");
 
-        let (rx, decoder) = match Decoder::start(&path_buf, sr, ch, self.position.clone(), Some(pos)) {
+        let (rx, decoder) = match Decoder::start(
+            &path_buf, sr, ch, self.position.clone(),
+            Some(file_pos), entry.end_secs_opt(),
+        ) {
             Ok(v) => v,
             Err(e) => { error!("seek 启动解码失败: {e}"); return; }
         };
@@ -499,11 +600,11 @@ impl EngineState {
         match ready_rx.recv_timeout(Duration::from_secs(3)) {
             Ok(true) => {
                 output.resume();
-                info!("seek 到 {pos:.2}s 后恢复播放: {path}");
+                info!("seek 到 {pos:.2}s 后恢复播放: {}", entry.display);
             }
             _ => {
-                error!("seek 后解码失败: {path}");
-                let _ = self.internal_event_tx.send(EngineEvent::Error(format!("seek 后解码失败: {path}")));
+                error!("seek 后解码失败: {}", entry.audio_file);
+                let _ = self.internal_event_tx.send(EngineEvent::Error(format!("seek 后解码失败: {}", entry.audio_file)));
                 return;
             }
         }
@@ -591,8 +692,8 @@ impl EngineState {
         let q_idx = idx - 1;
         if q_idx < self.queue.len() {
             let removed = self.queue.remove(q_idx);
-            info!("从队列移除: {removed}");
-            self.original_queue.retain(|p| *p != removed);
+            info!("从队列移除: {}", removed.display);
+            self.original_queue.retain(|e| e.display != removed.display);
             self.emit_queue();
         }
     }
@@ -621,24 +722,28 @@ impl EngineState {
         if let Some(t) = self.consumer_thread.take() { let _ = t.join(); }
         self.decoder = None;
         self.next_decoder = None;
-        self.next_path = None;
+        self.next_entry = None;
         self.consumer_stop = None;
         self.dsp = None;
         self.position.store(0, Ordering::SeqCst);
     }
 
     fn emit(&self, event: EngineEvent) {
-        let _ = self.external_tx.send(event);
+        if self.external_tx.send(event).is_err() {
+            tracing::warn!("事件发送失败：事件接收器已断开");
+        }
     }
 
     fn emit_queue(&self) {
-        if let Some(ref path) = self.current_path {
-            let full = if self.original_queue.is_empty() {
-                vec![path.clone()]
+        if let Some(ref entry) = self.current_entry {
+            let full: Vec<String> = if self.original_queue.is_empty() {
+                vec![entry.display.clone()]
             } else {
-                self.original_queue.clone()
+                self.original_queue.iter().map(|e| e.display.clone()).collect()
             };
-            let _ = self.external_tx.send(EngineEvent::QueueChanged(full, path.clone()));
+            if self.external_tx.send(EngineEvent::QueueChanged(full, entry.display.clone())).is_err() {
+                tracing::warn!("QueueChanged 事件发送失败：事件接收器已断开");
+            }
         }
     }
 }
@@ -837,6 +942,7 @@ mod tests {
         let duration = Arc::new(AtomicU64::new(0));
         let playing = Arc::new(AtomicBool::new(false));
         let (internal_tx, _) = unbounded();
+        let queue_entries: Vec<QueueEntry> = queue.into_iter().map(|s| QueueEntry::for_file(s)).collect();
         let s = EngineState {
             config: EngineConfig::default(),
             output: None,
@@ -849,19 +955,22 @@ mod tests {
             current_volume: 1.0,
             pending_ir: None,
             pending_replaygain_db: None,
-            current_path: Some("/tmp/test.wav".into()),
+            current_entry: Some(QueueEntry::for_file("/tmp/test.wav".into())),
             position,
-            queue,
+            queue: queue_entries,
             external_tx: tx.clone(),
             internal_event_tx: internal_tx,
             peq_bands: crate::dsp::default_peq_bands(),
             duration_us: duration,
             playing,
-            next_path: None,
+            next_entry: None,
             next_decoder: None,
             next_rx: Arc::new(Mutex::new(None)),
             play_mode: mode,
-            original_queue: vec!["/tmp/a.wav".into(), "/tmp/b.wav".into()],
+            original_queue: vec![
+                QueueEntry::for_file("/tmp/a.wav".into()),
+                QueueEntry::for_file("/tmp/b.wav".into()),
+            ],
         };
         (s, rx)
     }
@@ -904,49 +1013,48 @@ mod tests {
             PlayMode::RepeatOne,
         );
         let before = state.queue.len();
-        // 手动模拟 repeat_one 的核心逻辑
-        if let Some(path) = state.current_path.clone() {
-            state.queue.insert(0, path);
+        if let Some(entry) = state.current_entry.clone() {
+            state.queue.insert(0, entry);
         }
-        assert_eq!(state.queue.len(), before + 1, "应为 current_path 插入队首");
-        assert_eq!(state.queue[0], "/tmp/test.wav", "应插回 current_path");
+        assert_eq!(state.queue.len(), before + 1, "应为 current_entry 插入队首");
+        assert_eq!(state.queue[0].display, "/tmp/test.wav", "应插回 current_entry");
     }
 
     #[test]
     fn test_repeat_all_refills_queue_on_empty() {
         let (mut state, _rx) = make_state(vec![], PlayMode::RepeatAll);
-        let current = state.current_path.clone();
+        let current = state.current_entry.as_ref().map(|e| e.display.clone());
         state.queue = state.original_queue.iter()
-            .filter(|p| Some(p.as_str()) != current.as_deref())
+            .filter(|e| Some(e.display.as_str()) != current.as_deref())
             .cloned()
             .collect();
         if state.queue.is_empty() {
-            if let Some(ref path) = state.current_path {
-                state.queue.push(path.clone());
+            if let Some(ref entry) = state.current_entry {
+                state.queue.push(entry.clone());
             }
         }
         assert_eq!(state.queue.len(), 2, "RepeatAll 应填入 2 首");
-        assert_eq!(state.queue[0], "/tmp/a.wav");
-        assert_eq!(state.queue[1], "/tmp/b.wav");
+        assert_eq!(state.queue[0].display, "/tmp/a.wav");
+        assert_eq!(state.queue[1].display, "/tmp/b.wav");
     }
 
     #[test]
     fn test_repeat_all_single_track_refills() {
         let (mut state, _rx) = make_state(vec![], PlayMode::RepeatAll);
-        state.current_path = Some("/tmp/a.wav".into());
-        state.original_queue = vec!["/tmp/a.wav".into()];
-        let current = state.current_path.clone();
+        state.current_entry = Some(QueueEntry::for_file("/tmp/a.wav".into()));
+        state.original_queue = vec![QueueEntry::for_file("/tmp/a.wav".into())];
+        let current = state.current_entry.as_ref().map(|e| e.display.clone());
         state.queue = state.original_queue.iter()
-            .filter(|p| Some(p.as_str()) != current.as_deref())
+            .filter(|e| Some(e.display.as_str()) != current.as_deref())
             .cloned()
             .collect();
         if state.queue.is_empty() {
-            if let Some(ref path) = state.current_path {
-                state.queue.push(path.clone());
+            if let Some(ref entry) = state.current_entry {
+                state.queue.push(entry.clone());
             }
         }
         assert_eq!(state.queue.len(), 1, "单曲 RepeatAll 应填入到 1");
-        assert_eq!(state.queue[0], "/tmp/a.wav");
+        assert_eq!(state.queue[0].display, "/tmp/a.wav");
     }
 
     #[test]
@@ -986,7 +1094,7 @@ mod tests {
         // idx=1 移除 song1（队列中的第 0 首）
         state.remove_from_queue(1);
         assert_eq!(state.queue.len(), 2, "应移除一首");
-        assert!(!state.queue.contains(&"/tmp/song1.wav".into()), "song1 应从队列移除");
+        assert!(!state.queue.iter().any(|e| e.display == "/tmp/song1.wav"), "song1 应从队列移除");
     }
 
     #[test]
@@ -1033,8 +1141,8 @@ mod tests {
     #[test]
     fn test_seek_no_current_path_does_nothing() {
         let (mut state, _rx) = make_state(vec![], PlayMode::Normal);
-        state.current_path = None;
-        // seek 在无 current_path 时应直接返回
+        state.current_entry = None;
+        // seek 在无 current_entry 时应直接返回
         state.seek(10.0);
         // 没有 panic，就是成功
     }
@@ -1055,12 +1163,12 @@ mod tests {
             vec!["/tmp/next1.wav".into()],
             PlayMode::RepeatOne,
         );
-        // advance_repeat_one 的核心：将 current_path 插入队首
-        if let Some(path) = state.current_path.clone() {
-            state.queue.insert(0, path);
+        // advance_repeat_one 的核心：将 current_entry 插入队首
+        if let Some(entry) = state.current_entry.clone() {
+            state.queue.insert(0, entry);
         }
         assert_eq!(state.queue.len(), 2, "RepeatOne 后队列应包含 current + 原有 next1");
-        assert_eq!(state.queue[0], "/tmp/test.wav", "current_path 应插回队首");
+        assert_eq!(state.queue[0].display, "/tmp/test.wav", "current_entry 应插回队首");
     }
 
     #[test]
@@ -1070,31 +1178,33 @@ mod tests {
             vec!["/tmp/next1.wav".into()],
             PlayMode::Normal,
         );
-        state.next_path = Some("/tmp/next1.wav".into());
-        state.current_path = Some("/tmp/current.wav".into());
-        // 模拟 advance_normal 中匹配 next_path 的逻辑
+        state.next_entry = Some(QueueEntry::for_file("/tmp/next1.wav".into()));
+        state.current_entry = Some(QueueEntry::for_file("/tmp/current.wav".into()));
+        // 模拟 advance_normal 中匹配 next_entry 的逻辑
         if !state.queue.is_empty() {
             let next = state.queue.remove(0);
-            if state.next_path.as_deref() == Some(&next) {
-                state.current_path = state.next_path.take();
+            let match_seamless = state.next_entry.as_ref()
+                .map(|e| e.display == next.display)
+                .unwrap_or(false);
+            if match_seamless {
+                state.current_entry = state.next_entry.take();
                 state.decoder = state.next_decoder.take();
                 state.position.store(0, Ordering::SeqCst);
             }
         }
         assert!(state.queue.is_empty(), "队列应已清空");
-        assert_eq!(state.current_path.as_deref(), Some("/tmp/next1.wav"));
-        assert!(state.next_path.is_none(), "next_path 应被消费");
+        assert_eq!(state.current_entry.as_ref().map(|e| e.display.as_str()), Some("/tmp/next1.wav"));
+        assert!(state.next_entry.is_none(), "next_entry 应被消费");
     }
 
     #[test]
-    fn test_emit_queue_with_current_path() {
+    fn test_emit_queue_with_current_entry() {
         let (state, rx) = make_state(
             vec!["/tmp/song1.wav".into()],
             PlayMode::Normal,
         );
         state.emit_queue();
-        // 应收到 QueueChanged 事件（通过 next_state_event 的过滤）
-        // 我们用直接检查 external_tx 的方式
+        // 应收到 QueueChanged 事件
         let ev = rx.recv_timeout(Duration::from_millis(200));
         assert!(ev.is_ok(), "应发出事件");
     }

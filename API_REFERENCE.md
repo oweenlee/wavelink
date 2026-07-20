@@ -1,11 +1,16 @@
 # wavelink-audio-core API Reference
 
-> 源码 hash: `5329a3568d19`  |  生成时间: 2026-07-19 17:35
+> 源码 hash: `358001546deb`  |  生成时间: 2026-07-20 21:12
 > AI 助手优先读此文件，而非读 `src/` 源码。若 AI 返回的代码与当前签名不匹配，请重新运行 `bash doc-api.sh`。
 
 ---
 
 ### `lib.rs` — 纯 Rust 跨端音频引擎：解码 / DSP 管线 / 频谱分析 / BPM 调性检测。
+
+平台无关的解码→DSP→ringbuf 循环（PC 和 Mobile 共享）  
+```rust
+pub mod consumer;
+```
 
 音频文件解码（Symphonia 流式解码 + WavPack + DSD）  
 ```rust
@@ -17,9 +22,19 @@ DSD（DSF/DFF）格式直解为 PCM
 pub mod dsd;
 ```
 
+CUE 分轨解析  
+```rust
+pub mod cue;
+```
+
 DSP 管线：参数均衡器 / 串音补偿 / 立体声展宽 / 限幅 / 抖动  
 ```rust
 pub mod dsp;
+```
+
+音频输出抽象（cpal / HeadlessOutput）  
+```rust
+pub mod output;
 ```
 
 目标输出声道数（默认 2 = 立体声）  
@@ -54,7 +69,17 @@ pub output_device: Option<String>,
 
 音频文件元数据（标题/艺术家/专辑/时长/封面标志）  
 ```rust
-pub use decoder::Metadata;
+pub use decoder:: { ...
+```
+
+CUE 分轨解析入口及核心类型  
+```rust
+pub use cue:: { ...
+```
+
+播放列表解析（M3U / M3U8 / PLS）  
+```rust
+pub mod playlist;
 ```
 
 DSP 管线核心类型：默认 PEQ 频段 / 预设 / 管线 / 单段均衡 / 预设名  
@@ -109,6 +134,107 @@ pub fn analyze_from_samples(
 
 ---
 
+### `consumer.rs` — 平台无关的解码→DSP→ringbuf 循环。
+
+输出采样率  
+```rust
+pub sample_rate: u32,
+```
+
+声道数  
+```rust
+pub channels: u32,
+```
+
+每 N 帧做一次频谱 FFT（PC=3, Mobile=4）  
+```rust
+pub fft_interval: u32,
+```
+
+切歌淡入时长（毫秒），0 = 无淡入。仅 PC 用，Mobile 保持 0  
+```rust
+pub crossfade_ms: u32,
+```
+
+解码帧接收超时（毫秒）  
+```rust
+pub recv_timeout_ms: u64,
+```
+
+从 `rx` 接收解码帧，依次过 `process_dsp`、可选 crossfade、坏帧检测、`push_samples`。  
+每 `fft_interval` 帧计算一次频谱，通过 `on_spectrum` 回调。  
+当 `rx` 断开（曲目播完）时调 `on_end_of_track`：返回新的 rx 继续循环，返回 None 退出。  
+# 参数  
+- `rx` — 解码帧接收器  
+- `config` — 采样率、声道数、FFT 间隔、crossfade 等配置  
+- `push_samples` — 将处理后的样本写入 ringbuf，返回实际写入的样本数  
+- `process_dsp` — 过 DSP 管线，原地修改样本  
+- `on_spectrum` — 16 频段频谱回调，每 `fft_interval` 帧调用一次  
+- `on_bad_frame` — 检测到坏帧时回调（全零/NaN）  
+- `on_samples_output` — 每帧输出后回调，参数为输出样本数（用于进度追踪）  
+- `on_end_of_track` — 当前解码器结束时回调，返回新解码器可无缝切歌  
+- `stop` — 停止信号，设 true 后循环尽快退出  
+- `ready_tx` — 首帧就绪时发送 true，通知播放器可以起播  
+```rust
+pub fn run_consumer_loop(
+```
+
+---
+
+### `cue/mod.rs` — CUE 分轨解析。将 `.cue` 文件解析为音轨列表（含曲名、艺术家、起始时间）。
+
+轨号（如 "01", "02"）  
+```rust
+pub num: String,
+```
+
+曲名  
+```rust
+pub title: Option<String>,
+```
+
+艺术家  
+```rust
+pub performer: Option<String>,
+```
+
+INDEX 01 在音频文件中的起始时间（秒），已扣除 PREGAP  
+```rust
+pub start_secs: f64,
+```
+
+音频文件路径（CUE 中声明的相对/绝对路径）  
+```rust
+pub path: String,
+```
+
+该文件包含的音轨  
+```rust
+pub tracks: Vec<CueTrack>,
+```
+
+整碟标题  
+```rust
+pub title: Option<String>,
+```
+
+整碟艺术家  
+```rust
+pub performer: Option<String>,
+```
+
+音频文件列表  
+```rust
+pub files: Vec<CueFile>,
+```
+
+展平所有音轨，返回 `(音频文件路径, 音轨)` 列表  
+```rust
+pub fn all_tracks(&self) -> Vec<(&str, &CueTrack)> { ...
+```
+
+---
+
 ### `decoder.rs` — 解码器（Symphonia 流式解码 + DSD 文件直解）
 
 交错 PCM f32 样本（L/R/L/R/...）  
@@ -131,7 +257,7 @@ pub sample_rate: u32,
 pub channels: u32,
 ```
 
-用法：`Decoder::start(path, sr, ch, pos, seek) → (rx, handle)`  
+用法：`Decoder::start(path, sr, ch, pos, seek, end) → (rx, handle)`    
 ```rust
 pub struct Decoder { ...
 ```
@@ -146,6 +272,7 @@ pub position: Arc<AtomicU64>,
 - `target_rate` / `target_channels` — 输出重采样目标  
 - `position` — 外部可读的解码进度（样本数）  
 - `seek_pos` — 可选起始位置（秒）  
+- `end_secs` — 可选结束位置（秒），到达后停止解码（CUE 分轨用）  
 ```rust
 pub fn start(
 ```
@@ -158,6 +285,77 @@ pub fn stop(&self) { ...
 适用于小文件（如音效、短片段）或离线分析。  
 ```rust
 pub fn decode_to_memory(path: &Path, tr: u32, tc: u32) -> Result<Vec<f32>, String> { ...
+```
+
+曲名  
+```rust
+pub title: Option<String>,
+```
+
+艺术家  
+```rust
+pub artist: Option<String>,
+```
+
+专辑名  
+```rust
+pub album: Option<String>,
+```
+
+流派  
+```rust
+pub genre: Option<String>,
+```
+
+发行年份  
+```rust
+pub year: Option<i32>,
+```
+
+音轨号  
+```rust
+pub track_number: Option<u32>,
+```
+
+光盘号  
+```rust
+pub disc_number: Option<u32>,
+```
+
+时长（秒）  
+```rust
+pub duration_secs: f64,
+```
+
+是否含有内嵌封面  
+```rust
+pub has_cover: bool,
+```
+
+读取封面图片（JPEG/PNG/WEBP 原始字节）。  
+支持音频格式（lofty）以及 MKV/WebM 附件封面。  
+```rust
+pub fn read_cover(path: &Path) -> Result<Vec<u8>, String> { ...
+```
+
+音轨增益 (dB)，如 -5.23  
+```rust
+pub track_gain_db: Option<f32>,
+```
+
+专辑增益 (dB)，如 -7.14  
+```rust
+pub album_gain_db: Option<f32>,
+```
+
+音轨真峰值，如 0.999969  
+```rust
+pub track_peak: Option<f32>,
+```
+
+专辑真峰值  
+```rust
+pub album_peak: Option<f32>,
 ```
 
 ---
@@ -409,6 +607,99 @@ pub fn underrun_count(&self) -> u64 { ...
 
 ---
 
+### `ffi.rs` — C 语言 FFI 绑定。通过 `extern "C"` 导出函数供移动端（Kotlin/Swift）调用。
+
+event_type: 0=TrackChanged, 1=PlaybackStopped, 2=Position,  
+            3=DurationSecs, 4=Error, 5=QueueChanged, 6=Spectrum  
+```rust
+pub struct AcEvent { ...
+```
+
+曲目路径 / 错误消息  
+```rust
+pub path: [c_char; 1024],
+```
+
+时间值（Position / DurationSecs）  
+```rust
+pub value: c_double,
+```
+
+频谱 16 频段（Spectrum）  
+```rust
+pub spectrum: [c_float; 16],
+```
+
+曲名  
+```rust
+pub title: [c_char; 512],
+```
+
+艺术家  
+```rust
+pub artist: [c_char; 512],
+```
+
+专辑名  
+```rust
+pub album: [c_char; 512],
+```
+
+流派  
+```rust
+pub genre: [c_char; 128],
+```
+
+发行年份（0=未知）  
+```rust
+pub year: c_int,
+```
+
+音轨号（0=未知）  
+```rust
+pub track_number: c_int,
+```
+
+光盘号（0=未知）  
+```rust
+pub disc_number: c_int,
+```
+
+时长（秒）  
+```rust
+pub duration_secs: c_double,
+```
+
+是否含有内嵌封面  
+```rust
+pub has_cover: c_int,
+```
+
+output_device 传空串或 null 使用系统默认设备。  
+```rust
+pub unsafe extern "C" fn ac_engine_create(
+```
+
+buffer: 调用方分配的 float 缓冲区  
+samples: 期望读取的样本数（stereo 每帧=2 样本）  
+返回: 实际读取的样本数（0 = 无数据）  
+```rust
+pub unsafe extern "C" fn ac_audio_read(
+```
+
+成功时写入 out_data 和 out_len，返回 0。失败返回非 0。  
+```rust
+pub unsafe extern "C" fn ac_cover_read(
+```
+
+track_gain_db / album_gain_db 为 dB 值（如 -5.23），无标签时为 0.0。  
+has_track_gain / has_album_gain 指示对应值是否有效。  
+```rust
+pub unsafe extern "C" fn ac_replaygain_read(
+```
+
+---
+
 ### `output.rs` — 音频输出抽象层
 
 ringbuf 消费者端，回调通过它读取样本  
@@ -421,10 +712,35 @@ underrun 计数（回调读不到数据时递增）
 pub underrun_count: AtomicU64,
 ```
 
+桌面端（cpal-backend feature）优先使用 cpal 后端连接物理设备；  
+若 cpal 不可用或未启用 feature，回退到 HeadlessOutput（ringbuf 无输出设备）。  
+```rust
+pub fn open(
+```
+
 ---
 
 ### `output/output_cpal.rs` — cpal 音频输出后端
 
 ---
 
-> 67 个 pub 项。运行 `bash doc-api.sh` 刷新。
+### `playlist/mod.rs` — 播放列表解析：M3U / M3U8 / PLS。
+
+音频文件路径（已解析为绝对路径或原样保留）  
+```rust
+pub path: String,
+```
+
+曲名（EXTINF / PLS 标题），可能为空  
+```rust
+pub title: Option<String>,
+```
+
+时长（秒，EXTINF / PLS Length），可能为 0  
+```rust
+pub duration_secs: f64,
+```
+
+---
+
+> 123 个 pub 项。运行 `bash doc-api.sh` 刷新。

@@ -203,12 +203,12 @@ pub fn run_consumer_loop(
                     continue;
                 }
 
-                // 5) 推入 ringbuf
+                // 5) 推入 ringbuf（ringbuf 无阻塞 API，满时短暂让出 CPU）
                 let mut remaining: &[f32] = &buf;
                 while !remaining.is_empty() && !stop.load(Ordering::SeqCst) {
                     let n = push_samples(remaining);
                     if n == 0 {
-                        std::thread::sleep(Duration::from_millis(1));
+                        std::thread::sleep(Duration::from_millis(5));
                     }
                     remaining = &remaining[n..];
                 }
