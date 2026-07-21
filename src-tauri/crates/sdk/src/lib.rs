@@ -3,7 +3,7 @@
 //! 播放器 UI 层只通过此 crate 与音频引擎交互，不直接依赖 audio-core。
 
 /// 引擎控制
-pub use audio_core::{EngineConfig, EngineEvent, EngineHandle, PlayMode, TARGET_CHANNELS, TARGET_SAMPLE_RATE};
+pub use audio_core::{EngineConfig, EngineEvent, EngineHandle, Levels, PlayMode, TARGET_CHANNELS, TARGET_SAMPLE_RATE};
 
 /// 音频输出设备
 pub mod output {

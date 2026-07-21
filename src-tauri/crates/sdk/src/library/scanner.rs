@@ -6,10 +6,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use base64::Engine as _;
 use encoding_rs::GBK;
 use image::{imageops::FilterType, ImageFormat};
-use lofty::file::AudioFile;
-use lofty::file::TaggedFileExt;
-use lofty::read_from_path;
-use lofty::tag::Accessor;
 use tracing::{debug, info, warn};
 
 use super::db::{LibraryDb, Track};
@@ -225,7 +221,6 @@ pub struct ScannerResult {
 }
 
 fn scan_file(path: &Path) -> Result<Option<Track>, String> {
-    // 读取文件元数据
     let meta = fs::metadata(path).map_err(|e| format!("读取文件信息失败: {e}"))?;
     let file_size = meta.len() as i64;
     let file_modified = meta.modified()
@@ -233,27 +228,23 @@ fn scan_file(path: &Path) -> Result<Option<Track>, String> {
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map(|d| d.as_secs() as i64);
 
-    // 获取扩展名作为格式
     let format = path.extension()
         .and_then(|e| e.to_str())
         .map(|s| s.to_lowercase());
 
-    // 读取标签
-    let tagged = match read_from_path(path) {
-        Ok(f) => f,
+    // 用 audio-core 读取元数据
+    let metadata = match audio_core::read_metadata(path) {
+        Ok(m) => m,
         Err(e) => {
-            debug!("lofty 无法读取 {}: {e}", path.display());
+            debug!("audio_core 无法读取 {}: {e}", path.display());
             return Ok(None);
         }
     };
 
-    // 取主标签（优先 ID3v2/FLAC/Vorbis）
-    let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
-
-    // 提取封面（取第一张图片，base64 编码）
-    let cover_base64 = tag.and_then(|t| {
-        t.pictures().first().and_then(|pic| resize_and_encode(pic.data()))
-    });
+    // 用 audio-core 读取封面
+    let cover_base64 = audio_core::read_cover(path)
+        .ok()
+        .and_then(|data| resize_and_encode(&data));
 
     let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
     let inferred = infer_from_filename(file_stem);
@@ -261,24 +252,21 @@ fn scan_file(path: &Path) -> Result<Option<Track>, String> {
     let track = Track {
         id: 0,
         path: path.to_string_lossy().into_owned(),
-        title: tag.and_then(|t| t.title().map(|s| fix_gbk_tag(&s))).or_else(|| {
+        title: metadata.title.map(|s| fix_gbk_tag(&s)).or_else(|| {
             inferred.title.or(Some(file_stem.to_string()))
         }),
-        artist: tag.and_then(|t| t.artist().map(|s| fix_gbk_tag(&s))).or_else(|| {
+        artist: metadata.artist.map(|s| fix_gbk_tag(&s)).or_else(|| {
             if inferred.artist.is_some() { inferred.artist } else { Some("未知艺术家".into()) }
         }),
-        album: tag.and_then(|t| t.album().map(|s| fix_gbk_tag(&s))).or_else(|| Some("未知专辑".into())),
+        album: metadata.album.map(|s| fix_gbk_tag(&s)).or_else(|| Some("未知专辑".into())),
         album_artist: None,
-        track_number: tag.and_then(|t| t.get_string(lofty::tag::ItemKey::TrackNumber).and_then(|s| s.parse::<i32>().ok())).or(inferred.track_number),
-        disc_number: tag.and_then(|t| t.get_string(lofty::tag::ItemKey::DiscNumber).and_then(|s| s.parse::<i32>().ok())),
-        year: tag.and_then(|t| t.get_string(lofty::tag::ItemKey::Year).and_then(|s| s.parse::<i32>().ok())),
-        genre: tag.and_then(|t| t.genre().map(|s| fix_gbk_tag(&s))),
-            duration: {
-                let d = tagged.properties().duration().as_secs_f64();
-                if d > 0.1 { Some(d) } else { None }
-            },
-        sample_rate: tagged.properties().sample_rate().map(|r| r as i32),
-        channels: tagged.properties().channels().map(|c| c as i32),
+        track_number: metadata.track_number.map(|n| n as i32).or(inferred.track_number),
+        disc_number: metadata.disc_number.map(|n| n as i32),
+        year: metadata.year,
+        genre: metadata.genre.map(|s| fix_gbk_tag(&s)),
+        duration: if metadata.duration_secs > 0.1 { Some(metadata.duration_secs) } else { None },
+        sample_rate: metadata.sample_rate.map(|r| r as i32),
+        channels: metadata.channels.map(|c| c as i32),
         format,
         file_size: Some(file_size),
         file_modified,
@@ -298,171 +286,12 @@ fn scan_file(path: &Path) -> Result<Option<Track>, String> {
     Ok(Some(track))
 }
 
-/// 从音频文件直接读取封面（data URI 格式），不依赖数据库
-///
-/// 支持的格式：
-/// - ID3v2（MP3）APIC 帧
-/// - FLAC METADATA_BLOCK_PICTURE
-/// - MP4/M4A、WMA 等请使用 lofty（scan_file）
+/// 从音频文件读取封面（data URI 格式），委托给 audio-core
 pub fn get_file_cover(path: &Path) -> Result<Option<String>, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("读取文件失败: {e}"))?;
-    if bytes.len() < 8 {
-        return Ok(None);
+    match audio_core::read_cover(path) {
+        Ok(data) => Ok(resize_and_encode(&data)),
+        Err(_) => Ok(None),
     }
-
-    // ── FLAC：查找 METADATA_BLOCK_PICTURE ──
-    if &bytes[0..4] == b"fLaC" {
-        return extract_flac_cover(&bytes);
-    }
-
-    // ── MP3/ID3v2 ──
-    if &bytes[0..3] != b"ID3" {
-        return Ok(None);
-    }
-
-    extract_id3v2_apic(&bytes)
-}
-
-/// 从 FLAC 文件提取封面（METADATA_BLOCK_PICTURE）
-fn extract_flac_cover(bytes: &[u8]) -> Result<Option<String>, String> {
-    let mut pos: usize = 4; // skip "fLaC"
-    loop {
-        if pos + 4 > bytes.len() {
-            return Ok(None);
-        }
-        let is_last = (bytes[pos] & 0x80) != 0;
-        let block_type = bytes[pos] & 0x7f;
-        let block_len = u32::from_be_bytes([0, bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]]) as usize;
-        pos += 4;
-
-        if pos + block_len > bytes.len() {
-            return Ok(None);
-        }
-
-        // METADATA_BLOCK_PICTURE type = 6
-        if block_type == 6 {
-            let data = &bytes[pos..pos + block_len];
-            // 跳过 picture type (4 bytes)
-            if data.len() < 4 { return Ok(None); }
-            // MIME type (null-terminated string)
-            let mime_end = data[4..].iter().position(|&b| b == 0).unwrap_or(data.len() - 4);
-            let desc_start = 4 + mime_end + 1;
-            // 跳过 description (null-terminated)
-            let desc_end = data[desc_start..].iter().position(|&b| b == 0).unwrap_or(data.len() - desc_start);
-            let img_start = desc_start + desc_end + 1;
-            // 跳过 width (4), height (4), color_depth (4), colors_used (4) = 16 bytes
-            let _pixel_data_start = img_start + 16;
-            // 跳过 picture length (4 bytes before pixel data)
-            let _pic_len = u32::from_be_bytes(
-                data[img_start..img_start + 4].try_into().unwrap_or([0; 4]),
-            );
-            // Actually the spec says: picture type(4) + mime + null + desc + null + width(4) + height(4) + color_depth(4) + colors_used(4) + pic_len(4) + pic_data
-            // Let me redo this properly:
-            // offset 0: picture type (u32 BE)
-            // offset 4: MIME type (null-terminated string)
-            let mime_end2 = data[4..].iter().position(|&b| b == 0).unwrap_or(0);
-            let desc_start2 = 4 + mime_end2 + 1;
-            // offset desc_start2: description (null-terminated)
-            let desc_end2 = data[desc_start2..].iter().position(|&b| b == 0).unwrap_or(data.len() - desc_start2);
-            let pixel_meta_start = desc_start2 + desc_end2 + 1;
-            // pixel_meta: width(4) + height(4) + color_depth(4) + colors_used(4) = 16 bytes
-            // then: picture_data_length(4) + picture_data
-            if pixel_meta_start + 20 > data.len() {
-                return Ok(None);
-            }
-            let pic_data_len = u32::from_be_bytes(
-                data[pixel_meta_start + 16..pixel_meta_start + 20].try_into().unwrap_or([0; 4]),
-            ) as usize;
-            let pic_data_start = pixel_meta_start + 20;
-            if pic_data_start + pic_data_len > data.len() {
-                return Ok(None);
-            }
-            let img_data = &data[pic_data_start..pic_data_start + pic_data_len];
-            return Ok(resize_and_encode(img_data));
-        }
-
-        pos += block_len;
-        if is_last {
-            break;
-        }
-    }
-    Ok(None)
-}
-
-/// 从 ID3v2 标签提取 APIC 帧中的封面
-fn extract_id3v2_apic(bytes: &[u8]) -> Result<Option<String>, String> {
-    if bytes.len() < 10 || &bytes[0..3] != b"ID3" {
-        return Ok(None);
-    }
-
-    let tag_size = ((bytes[6] as usize) << 21)
-        | ((bytes[7] as usize) << 14)
-        | ((bytes[8] as usize) << 7)
-        | (bytes[9] as usize);
-
-    let mut pos = 10;
-    let end = 10 + tag_size;
-
-    while pos + 10 <= end {
-        let frame_id = &bytes[pos..pos + 4];
-        let frame_size = u32::from_be_bytes([bytes[pos + 4], bytes[pos + 5], bytes[pos + 6], bytes[pos + 7]]) as usize;
-
-        // 结束标记
-        if frame_id == [0, 0, 0, 0] {
-            break;
-        }
-
-        // 找到 APIC 帧
-        if &frame_id == b"APIC" {
-            if pos + 10 + frame_size > bytes.len() {
-                break;
-            }
-            let frame_data = &bytes[pos + 10..pos + 10 + frame_size];
-            let _encoding = frame_data[0];
-
-            // 找 MIME 类型（null 结尾）
-            let mut mime_end = 1;
-            while mime_end < frame_data.len() && frame_data[mime_end] != 0 {
-                mime_end += 1;
-            }
-            if mime_end + 1 >= frame_data.len() {
-                break;
-            }
-            let _mime = &frame_data[1..mime_end];
-            let _pic_type = frame_data[mime_end + 1];
-
-            // 跳过描述字段
-            let mut desc_start = mime_end + 2;
-            if _encoding == 0 || _encoding == 2 {
-                while desc_start < frame_data.len() && frame_data[desc_start] != 0 {
-                    desc_start += 1;
-                }
-                desc_start += 1;
-            } else if _encoding == 1 {
-                while desc_start + 1 < frame_data.len() && !(frame_data[desc_start] == 0 && frame_data[desc_start + 1] == 0) {
-                    desc_start += 1;
-                }
-                desc_start += 2;
-            } else if _encoding == 3 {
-                while desc_start < frame_data.len() && frame_data[desc_start] != 0 {
-                    desc_start += 1;
-                }
-                desc_start += 1;
-            } else {
-                break;
-            }
-
-            if desc_start < frame_data.len() {
-                let img_data = &frame_data[desc_start..];
-                return Ok(resize_and_encode(img_data));
-            }
-            break;
-        }
-
-        pos += 10 + frame_size;
-    }
-
-    Ok(None)
 }
 
 #[cfg(test)]
@@ -472,6 +301,7 @@ mod tests {
     #[test]
     fn test_get_file_cover_id3v2() {
         // 构造一个最小 ID3v2 文件：ID3v2.3 头 + APIC 帧（1×1 红色像素 PNG）
+        // 委托给 audio_core::read_cover（内部使用 lofty）
         let png_data: &[u8] = &[
             0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
             0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR chunk

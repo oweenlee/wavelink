@@ -100,6 +100,7 @@ fn main() {
             commands::playback::play,
             commands::playback::play_queue,
             commands::playback::next_track,
+            commands::playback::prev_track,
             commands::playback::pause,
             commands::playback::resume,
             commands::playback::stop,
@@ -205,7 +206,7 @@ fn register_global_shortcuts(app: &mut tauri::App) {
     if let Err(e) = gs.on_shortcut("MediaPreviousTrack", |app: &tauri::AppHandle, _shortcut, event| {
         if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
             let state = app.state::<AppState>();
-            state.engine.seek(0.0);
+            state.engine.prev_track();
         }
     }) {
         tracing::warn!("注册 MediaPreviousTrack 快捷键失败: {e}");

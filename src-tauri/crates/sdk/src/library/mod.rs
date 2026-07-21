@@ -2,7 +2,7 @@
 //!
 //! 职责：
 //! - `db` — SQLite 数据库定义与 CRUD
-//! - `scanner` — 递归扫描目录，用 lofty 读标签写入数据库
+//! - `scanner` — 递归扫描目录，用 audio-core 读标签写入数据库
 
 pub mod db;
 pub mod editor;

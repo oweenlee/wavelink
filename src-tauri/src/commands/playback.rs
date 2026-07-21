@@ -23,6 +23,9 @@ pub fn play_queue(paths: Vec<String>, state: State<AppState>) {
 pub fn next_track(state: State<AppState>) { state.engine.next_track(); }
 
 #[tauri::command]
+pub fn prev_track(state: State<AppState>) { state.engine.prev_track(); }
+
+#[tauri::command]
 pub fn pause(state: State<AppState>) { state.engine.pause(); }
 
 #[tauri::command]
