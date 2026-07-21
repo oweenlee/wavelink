@@ -134,6 +134,56 @@ fn resolve_path(path_str: &str, list_dir: &Path) -> String {
     }
 }
 
+/// 导出 M3U 播放列表
+pub fn export_m3u(path: &Path, entries: &[PlaylistEntry]) -> Result<(), String> {
+    let mut content = String::from("#EXTM3U\n");
+    for entry in entries {
+        let dur = if entry.duration_secs > 0.0 {
+            entry.duration_secs.round() as i64
+        } else {
+            -1
+        };
+        let title = entry.title.as_deref().unwrap_or("");
+        content.push_str(&format!("#EXTINF:{},{}\n", dur, title));
+        content.push_str(&entry.path);
+        content.push('\n');
+    }
+    std::fs::write(path, content).map_err(|e| format!("写入 M3U 失败: {e}"))
+}
+
+/// 导出 PLS 播放列表
+pub fn export_pls(path: &Path, entries: &[PlaylistEntry]) -> Result<(), String> {
+    let mut content = String::from("[playlist]\n");
+    for (i, entry) in entries.iter().enumerate() {
+        let num = i + 1;
+        let title = entry.title.as_deref().unwrap_or("");
+        let dur = if entry.duration_secs > 0.0 {
+            entry.duration_secs.round() as i64
+        } else {
+            -1
+        };
+        content.push_str(&format!("File{num}={}\n", entry.path));
+        content.push_str(&format!("Title{num}={title}\n"));
+        content.push_str(&format!("Length{num}={dur}\n"));
+    }
+    content.push_str(&format!("NumberOfEntries={}\n", entries.len()));
+    content.push_str("Version=2\n");
+    std::fs::write(path, content).map_err(|e| format!("写入 PLS 失败: {e}"))
+}
+
+/// 根据扩展名自动推导导出格式并写入播放列表
+pub fn export_playlist(path: &Path, entries: &[PlaylistEntry]) -> Result<(), String> {
+    let ext = path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "m3u" | "m3u8" => export_m3u(path, entries),
+        "pls" => export_pls(path, entries),
+        _ => Err(format!("不支持的播放列表格式: .{ext}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -64,7 +64,7 @@ impl Default for EngineConfig {
 pub use engine::{EngineEvent, EngineHandle, Levels, PlayMode};
 /// 音频文件元数据（标题/艺术家/专辑/时长/封面标志）
 #[doc(inline)]
-pub use decoder::{probe_sample_rate, read_cover, read_replaygain, Metadata, ReplayGain};
+pub use decoder::{probe_sample_rate, read_cover, read_metadata, read_replaygain, Metadata, ReplayGain};
 /// CUE 分轨解析入口及核心类型
 #[doc(inline)]
 pub use cue::{parse_cue, parse_cue_str, CueSheet, CueFile, CueTrack};

@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
 
@@ -32,7 +32,6 @@ pub enum PlayMode {
 pub const SPECTRUM_BANDS: usize = 16;
 
 /// 发给引擎线程的命令
-/// 发给引擎线程的命令
 pub enum EngineCommand {
     /// 播放单个文件
     Play(String),
@@ -40,6 +39,8 @@ pub enum EngineCommand {
     PlayQueue(Vec<String>),
     /// 下一首
     NextTrack,
+    /// 上一首（播放超过 3 秒则回到开头，否则切回上一曲）
+    PrevTrack,
     /// 暂停播放
     Pause,
     /// 恢复播放
@@ -121,7 +122,7 @@ pub enum EngineEvent {
 }
 
 /// 实时音频电平：每帧计算 RMS 和峰值（各声道最大值）
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Levels {
     /// RMS 音量（归一化 0.0~1.0，各声道 RMS 的最大值）
     pub rms: f32,
@@ -148,8 +149,8 @@ pub struct EngineHandle {
     duration_us: Arc<AtomicU64>,
     /// 播放状态（是否正在播放）
     playing: Arc<AtomicBool>,
-    /// 引擎配置
-    config: EngineConfig,
+    /// 引擎配置（与引擎线程共享，SetConfig 时同步更新）
+    config: Arc<RwLock<EngineConfig>>,
     /// 实时电平
     levels: Arc<Mutex<Levels>>,
 }
@@ -172,9 +173,10 @@ impl EngineHandle {
         let dur_clone = Arc::clone(&duration_us);
         let playing_clone = Arc::clone(&playing);
         let levels_clone = Arc::clone(&levels);
-        let config_clone = config.clone();
-        thread::spawn(move || run_engine(cmd_rx, event_tx, pos_clone, dur_clone, playing_clone, config_clone, levels_clone));
-        (EngineHandle { tx, position, duration_us, playing, config, levels }, event_rx)
+        let config_shared = Arc::new(RwLock::new(config.clone()));
+        let config_for_engine = Arc::clone(&config_shared);
+        thread::spawn(move || run_engine(cmd_rx, event_tx, pos_clone, dur_clone, playing_clone, config, config_for_engine, levels_clone));
+        (EngineHandle { tx, position, duration_us, playing, config: config_shared, levels }, event_rx)
     }
 
     /// 获取当前音频电平（RMS / 峰值 / 削波标志）
@@ -188,6 +190,8 @@ impl EngineHandle {
     pub fn play_queue(&self, paths: Vec<String>) { let _ = self.tx.send(EngineCommand::PlayQueue(paths)); }
     /// 下一首
     pub fn next_track(&self) { let _ = self.tx.send(EngineCommand::NextTrack); }
+    /// 上一首（播放超过 3 秒则回到开头，否则切回上一曲）
+    pub fn prev_track(&self) { let _ = self.tx.send(EngineCommand::PrevTrack); }
     /// 暂停播放
     pub fn pause(&self) { let _ = self.tx.send(EngineCommand::Pause); }
     /// 恢复播放
@@ -228,8 +232,9 @@ impl EngineHandle {
     /// 获取当前播放位置（秒）
     pub fn position_secs(&self) -> f64 {
         let samples = self.position.load(Ordering::Acquire);
-        let sr = self.config.sample_rate as f64;
-        let ch = self.config.channels as f64;
+        let cfg = self.config.read().unwrap_or_else(|e| e.into_inner());
+        let sr = cfg.sample_rate as f64;
+        let ch = cfg.channels as f64;
         samples as f64 / (sr * ch)
     }
     /// 获取当前曲目时长（秒），0 表示未知
@@ -367,6 +372,8 @@ pub struct EngineState {
     play_mode: PlayMode,
     /// 原始播放队列（RepeatAll 时用于重新填充）
     original_queue: Vec<QueueEntry>,
+    /// 播放历史栈（用于“上一首”）
+    history: Vec<QueueEntry>,
     /// 变速共享状态
     speed: Arc<Mutex<f32>>,
     /// 实时电平
@@ -401,6 +408,7 @@ impl EngineState {
             next_rx: Arc::new(Mutex::new(None)),
             play_mode: PlayMode::Normal,
             original_queue: Vec::new(),
+            history: Vec::new(),
             speed: Arc::new(Mutex::new(1.0)),
             levels,
         }
@@ -409,6 +417,15 @@ impl EngineState {
     fn play_entry(&mut self, entry: &QueueEntry) {
         info!("播放: {} (file={}, start={}s, end={}s)",
             entry.display, entry.audio_file, entry.start_secs, entry.end_secs);
+        // 记录历史（用于“上一首”）
+        if let Some(ref cur) = self.current_entry {
+            if cur.display != entry.display {
+                self.history.push(cur.clone());
+                if self.history.len() > 100 {
+                    self.history.remove(0);
+                }
+            }
+        }
         self.stop_playback();
         self.current_entry = Some(entry.clone());
         let path_buf = Path::new(&entry.audio_file).to_path_buf();
@@ -561,6 +578,34 @@ impl EngineState {
         }
     }
 
+    /// 计算 QueueEntry 的时长（微秒）
+    fn compute_duration_us(&self, entry: &QueueEntry) -> u64 {
+        if entry.end_secs > 0.0 {
+            ((entry.end_secs - entry.start_secs) * 1_000_000.0) as u64
+        } else {
+            let path_buf = Path::new(&entry.audio_file).to_path_buf();
+            let full = probe_duration_symphonia(&path_buf).unwrap_or(0);
+            full.saturating_sub((entry.start_secs * 1_000_000.0) as u64)
+        }
+    }
+
+    /// 无缝切歌时更新元数据（时长 + 事件）
+    fn seamless_switch(&mut self, next: &QueueEntry) {
+        debug!("无缝切换至: {}", next.display);
+        self.current_entry = self.next_entry.take();
+        self.decoder = self.next_decoder.take();
+        self.position.store(0, Ordering::SeqCst);
+        // 更新时长
+        let dur = self.compute_duration_us(next);
+        self.duration_us.store(dur, Ordering::Release);
+        let _ = self.external_tx.send(EngineEvent::TrackChanged(next.display.clone()));
+        if dur > 0 {
+            let _ = self.external_tx.send(EngineEvent::DurationSecs(dur as f64 / 1_000_000.0));
+        }
+        self.emit_queue();
+        self.preload_next();
+    }
+
     fn advance_normal(&mut self) {
         if !self.queue.is_empty() {
             let next = self.queue.remove(0);
@@ -568,13 +613,7 @@ impl EngineState {
                 .map(|e| e.display == next.display)
                 .unwrap_or(false);
             if match_seamless {
-                debug!("无缝切换至: {}", next.display);
-                self.current_entry = self.next_entry.take();
-                self.decoder = self.next_decoder.take();
-                self.position.store(0, Ordering::SeqCst);
-                let _ = self.external_tx.send(EngineEvent::TrackChanged(next.display.clone()));
-                self.emit_queue();
-                self.preload_next();
+                self.seamless_switch(&next);
             } else {
                 debug!("自动播下一曲: {}", next.display);
                 self.play_entry(&next);
@@ -618,13 +657,7 @@ impl EngineState {
             .map(|e| e.display == next.display)
             .unwrap_or(false);
         if match_seamless {
-            debug!("无缝切换至: {}", next.display);
-            self.current_entry = self.next_entry.take();
-            self.decoder = self.next_decoder.take();
-            self.position.store(0, Ordering::SeqCst);
-            let _ = self.external_tx.send(EngineEvent::TrackChanged(next.display.clone()));
-            self.emit_queue();
-            self.preload_next();
+            self.seamless_switch(&next);
         } else {
             debug!("随机播下一曲: {}", next.display);
             self.play_entry(&next);
@@ -648,6 +681,26 @@ impl EngineState {
     fn next_track(&mut self) {
         self.stop_playback();
         self.advance_queue();
+    }
+
+    fn prev_track(&mut self) {
+        // 播放超过 3 秒→ 回到开头；否则切回上一曲
+        let pos_secs = {
+            let samples = self.position.load(Ordering::Acquire) as f64;
+            let sr = self.config.sample_rate as f64;
+            let ch = self.config.channels as f64;
+            samples / (sr * ch)
+        };
+        if pos_secs > 3.0 {
+            self.seek(0.0);
+            return;
+        }
+        if let Some(prev) = self.history.pop() {
+            self.play_entry(&prev);
+        } else {
+            // 无历史，回到开头
+            self.seek(0.0);
+        }
     }
 
     fn play_file(&mut self, path: &str) {
@@ -819,14 +872,12 @@ impl EngineState {
 
     fn pause(&mut self) {
         self.playing.store(false, Ordering::Release);
-        // 淡出防 pop（~5ms）
+        // 淡出防 pop（~5ms），由 consumer 线程在 DSP 中实时应用
         if let Some(dsp) = &self.dsp {
             if let Ok(mut p) = dsp.lock() {
                 p.start_fade_out(5);
             }
         }
-        // 等淡出完成后再暂停物理输出
-        thread::sleep(Duration::from_millis(6));
         if let Some(o) = &self.output { o.pause(); }
     }
     fn resume(&self) {
@@ -841,13 +892,12 @@ impl EngineState {
     }
 
     fn stop_full(&mut self) {
-        // 用户主动停止：淡出防 pop
+        // 用户主动停止：淡出防 pop（由 consumer DSP 应用）
         if let Some(dsp) = &self.dsp {
             if let Ok(mut p) = dsp.lock() {
                 p.start_fade_out(3);
             }
         }
-        thread::sleep(Duration::from_millis(5));
         self.stop_playback();
         self.output = None;
         self.output_inner = None;
@@ -927,6 +977,7 @@ fn run_engine(
     duration_us: Arc<AtomicU64>,
     playing: Arc<AtomicBool>,
     config: EngineConfig,
+    config_shared: Arc<RwLock<EngineConfig>>,
     levels: Arc<Mutex<Levels>>,
 ) {
     let mut state = EngineState::new(config, position, duration_us, playing, external_tx.clone(), levels);
@@ -949,6 +1000,7 @@ fn run_engine(
                         Ok(EngineCommand::Play(p)) => state.play_file(&p),
                         Ok(EngineCommand::PlayQueue(paths)) => state.set_queue(paths),
                         Ok(EngineCommand::NextTrack) => state.next_track(),
+                        Ok(EngineCommand::PrevTrack) => state.prev_track(),
                         Ok(EngineCommand::Pause) => state.pause(),
                         Ok(EngineCommand::Resume) => state.resume(),
                         Ok(EngineCommand::Stop) => state.stop_full(),
@@ -961,8 +1013,12 @@ fn run_engine(
                         Ok(EngineCommand::SetReplaygainGain(gain)) => state.set_replaygain_db(gain),
                         Ok(EngineCommand::SetConfig(cfg)) => {
                             let device = state.config.output_device.take();
-                            state.config = cfg;
+                            state.config = cfg.clone();
                             state.config.output_device = device;
+                            // 同步到 Handle 共享配置
+                            if let Ok(mut shared) = config_shared.write() {
+                                *shared = state.config.clone();
+                            }
                             info!("引擎配置更新: {}/{}ch/{}ms", state.config.sample_rate, state.config.channels, state.config.buffer_ms);
                         },
                         Ok(EngineCommand::SetSpeed(speed)) => state.set_speed(speed),
@@ -1034,9 +1090,7 @@ fn run_engine(
     info!("引擎线程退出");
 }
 
-/// 消费者线程：从解码 channel 读取帧，经 DSP 处理后推入 ring buffer
-#[allow(clippy::too_many_arguments)]
-/// 切歌淡入时长（毫秒），0 = 真·无间隙播放
+/// 计算切歌淡入所需的样本数
 fn crossfade_sample_count(sample_rate: u32, channels: u32, crossfade_ms: u32) -> usize {
     if crossfade_ms == 0 { return 0; }
     (sample_rate as usize * channels as usize) * crossfade_ms as usize / 1000
@@ -1070,21 +1124,21 @@ fn spawn_consumer(
             }
 
             let config = crate::consumer::ConsumerConfig {
-            sample_rate,
-            channels,
-            fft_interval: 3,
-            crossfade_ms,
-            recv_timeout_ms: 500,
-        };
+                sample_rate,
+                channels,
+                fft_interval: 3,
+                crossfade_ms,
+                recv_timeout_ms: 500,
+            };
 
-        let pcm_mutex = std::sync::Mutex::new(pcm);
-        crate::consumer::run_consumer_loop(
+            let pcm_mutex = std::sync::Mutex::new(pcm);
+            crate::consumer::run_consumer_loop(
             rx,
             &config,
             &|s| pcm_mutex.lock().unwrap_or_else(|e| e.into_inner()).push_slice(s),
             &|buf| {
                 if let Ok(mut pipeline) = dsp.lock() { pipeline.process(buf); }
-                // 计算 RMS 和峰值
+                // 计算 RMS 和峰值（峰值保持+衰减：攻击瞬发、释放缓降）
                 let mut sum_sq = 0.0f32;
                 let mut peak_val = 0.0f32;
                 for &s in buf.iter() {
@@ -1096,7 +1150,7 @@ fn spawn_consumer(
                 let rms = (sum_sq / n).sqrt();
                 if let Ok(mut lv) = levels.lock() {
                     lv.rms = rms;
-                    lv.peak = peak_val;
+                    lv.peak = lv.peak.max(peak_val) * 0.95;
                     lv.clip = peak_val >= 1.0;
                 }
             },
@@ -1172,6 +1226,7 @@ mod tests {
                 QueueEntry::for_file("/tmp/a.wav".into()),
                 QueueEntry::for_file("/tmp/b.wav".into()),
             ],
+            history: Vec::new(),
             speed: Arc::new(Mutex::new(1.0)),
             levels: Arc::new(Mutex::new(Levels::default())),
         };

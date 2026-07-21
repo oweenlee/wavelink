@@ -321,6 +321,10 @@ pub struct Metadata {
     pub duration_secs: f64,
     /// 是否含有内嵌封面
     pub has_cover: bool,
+    /// 采样率（Hz）
+    pub sample_rate: Option<u32>,
+    /// 声道数
+    pub channels: Option<u32>,
 }
 
 /// 读取音频文件元数据（标题/艺术家/专辑/流派/年份/音轨号/光盘号/封面/时长）
@@ -334,6 +338,7 @@ pub fn read_metadata(path: &Path) -> Result<Metadata, String> {
             genre: None, year: None,
             track_number: None, disc_number: None,
             duration_secs, has_cover: false,
+            sample_rate: None, channels: None,
         };
 
         if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
@@ -347,6 +352,9 @@ pub fn read_metadata(path: &Path) -> Result<Metadata, String> {
             meta.has_cover = !tag.pictures().is_empty();
         }
 
+        meta.sample_rate = tagged_file.properties().sample_rate();
+        meta.channels = tagged_file.properties().channels().map(|c| c as u32);
+
         return Ok(meta);
     }
 
@@ -358,6 +366,7 @@ pub fn read_metadata(path: &Path) -> Result<Metadata, String> {
         genre: None, year: None,
         track_number: None, disc_number: None,
         duration_secs, has_cover: false,
+        sample_rate: None, channels: None,
     })
 }
 
