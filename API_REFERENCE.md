@@ -1,6 +1,6 @@
 # wavelink-audio-core API Reference
 
-> 源码 hash: `7441815421dd`  |  生成时间: 2026-07-20 23:51
+> 源码 hash: `168fcb25da5c`  |  生成时间: 2026-07-21 09:32
 > AI 助手优先读此文件，而非读 `src/` 源码。若 AI 返回的代码与当前签名不匹配，请重新运行 `bash doc-api.sh`。
 
 ---
@@ -32,14 +32,34 @@ DSP 管线：参数均衡器 / 串音补偿 / 立体声展宽 / 限幅 / 抖动
 pub mod dsp;
 ```
 
+C 语言 FFI 绑定（引擎控制 / 元数据 / 音频分析）  
+```rust
+pub mod ffi;
+```
+
+音频引擎（桌面端 cpal / 移动端 HeadlessOutput）  
+```rust
+pub mod engine;
+```
+
 音频输出抽象（cpal / HeadlessOutput）  
 ```rust
 pub mod output;
 ```
 
+目标输出采样率（默认 44100 Hz），可通过 EngineConfig 覆盖  
+```rust
+pub const TARGET_SAMPLE_RATE: u32 = 44100;
+```
+
 目标输出声道数（默认 2 = 立体声）  
 ```rust
 pub const TARGET_CHANNELS: u32 = 2;
+```
+
+引擎配置  
+```rust
+pub struct EngineConfig { ...
 ```
 
 输出采样率，默认 44100  
@@ -67,6 +87,11 @@ pub crossfade_ms: u32,
 pub output_device: Option<String>,
 ```
 
+引擎事件 / 引擎句柄 / 播放模式  
+```rust
+pub use engine:: { ...
+```
+
 音频文件元数据（标题/艺术家/专辑/时长/封面标志）  
 ```rust
 pub use decoder:: { ...
@@ -89,9 +114,8 @@ pub use dsp:: { ...
 
 ---
 
-### `analysis/bpm.rs`
+### `analysis/bpm.rs` — BPM 检测：自相关法，60-200 BPM 范围找峰。
 
-用自相关法检测 BPM  
 流程：  
 1. 帧能量 onset 包络（半波整流差分）  
 2. 自相关，在 60-200 BPM 范围找峰  
@@ -101,8 +125,9 @@ pub fn detect_bpm(samples: &[f32], sample_rate: u32) -> Option<f32> { ...
 
 ---
 
-### `analysis/key.rs`
+### `analysis/key.rs` — 调性检测：Chromagram + Krumhansl-Schmuckler 识别大小调。
 
+检测调性（major/minor + 根音）  
 返回 (key_name, energy)  
 ```rust
 pub fn detect_key(mono: &[f32], sample_rate: u32) -> (Option<String>, Option<f32>) { ...
@@ -111,6 +136,11 @@ pub fn detect_key(mono: &[f32], sample_rate: u32) -> (Option<String>, Option<f32
 ---
 
 ### `analysis/mod.rs` — 音频分析：BPM 检测、调性识别、能量值
+
+音频分析结果（BPM / 调性 / 能量）  
+```rust
+pub struct AnalysisResult { ...
+```
 
 每分钟拍数，None 表示未检测到稳定节拍  
 ```rust
@@ -127,6 +157,17 @@ pub key: Option<String>,
 pub energy: Option<f32>,
 ```
 
+将交织立体声样本下混为单声道  
+```rust
+pub fn mix_to_mono(samples: &[f32], channels: u32) -> Vec<f32> { ...
+```
+
+分析音频文件：解码 → BPM + 调性 + 能量  
+```rust
+pub fn analyze_file(path: &Path) -> Result<AnalysisResult, String> { ...
+```
+
+从 PCM 样本分析 BPM + 调性 + 能量  
 从 PCM 样本数据中分析 BPM / 调性 / 能量  
 ```rust
 pub fn analyze_from_samples(
@@ -135,6 +176,16 @@ pub fn analyze_from_samples(
 ---
 
 ### `consumer.rs` — 平台无关的解码→DSP→ringbuf 循环。
+
+频谱频段数  
+```rust
+pub const SPECTRUM_BANDS: usize = 16;
+```
+
+循环配置  
+```rust
+pub struct ConsumerConfig { ...
+```
 
 输出采样率  
 ```rust
@@ -161,6 +212,7 @@ pub crossfade_ms: u32,
 pub recv_timeout_ms: u64,
 ```
 
+平台无关的解码消费循环。  
 从 `rx` 接收解码帧，依次过 `process_dsp`、可选 crossfade、坏帧检测、`push_samples`。  
 每 `fft_interval` 帧计算一次频谱，通过 `on_spectrum` 回调。  
 当 `rx` 断开（曲目播完）时调 `on_end_of_track`：返回新的 rx 继续循环，返回 None 退出。  
@@ -182,6 +234,11 @@ pub fn run_consumer_loop(
 ---
 
 ### `cue/mod.rs` — CUE 分轨解析。将 `.cue` 文件解析为音轨列表（含曲名、艺术家、起始时间）。
+
+CUE 音轨  
+```rust
+pub struct CueTrack { ...
+```
 
 轨号（如 "01", "02"）  
 ```rust
@@ -208,6 +265,11 @@ PREGAP 时长（秒），虚拟静音，不存在于音频文件中
 pub pregap_secs: f64,
 ```
 
+CUE 文件条目（对应一个物理音频文件）  
+```rust
+pub struct CueFile { ...
+```
+
 音频文件路径（CUE 中声明的相对/绝对路径）  
 ```rust
 pub path: String,
@@ -216,6 +278,11 @@ pub path: String,
 该文件包含的音轨  
 ```rust
 pub tracks: Vec<CueTrack>,
+```
+
+CUE 分轨表顶层结构  
+```rust
+pub struct CueSheet { ...
 ```
 
 整碟标题  
@@ -238,9 +305,24 @@ pub files: Vec<CueFile>,
 pub fn all_tracks(&self) -> Vec<(&str, &CueTrack)> { ...
 ```
 
+解析 CUE 文件  
+```rust
+pub fn parse_cue(path: &Path) -> Result<CueSheet, String> { ...
+```
+
+从字符串解析 CUE  
+```rust
+pub fn parse_cue_str(data: &str) -> Result<CueSheet, String> { ...
+```
+
 ---
 
 ### `decoder.rs` — 解码器（Symphonia 流式解码 + DSD 文件直解）
+
+解码输出的一帧 PCM 数据。  
+```rust
+pub struct DecodedFrame { ...
+```
 
 交错 PCM f32 样本（L/R/L/R/...）  
 ```rust
@@ -262,6 +344,7 @@ pub sample_rate: u32,
 pub channels: u32,
 ```
 
+流式解码器。后台线程持续解码，通过 crossbeam channel 逐帧输出。  
 用法：`Decoder::start(path, sr, ch, pos, seek, end) → (rx, handle)`    
 ```rust
 pub struct Decoder { ...
@@ -287,9 +370,15 @@ pub fn start(
 pub fn stop(&self) { ...
 ```
 
+将整个音频文件解码到内存，返回交错 PCM f32 样本。  
 适用于小文件（如音效、短片段）或离线分析。  
 ```rust
 pub fn decode_to_memory(path: &Path, tr: u32, tc: u32) -> Result<Vec<f32>, String> { ...
+```
+
+音频文件元数据  
+```rust
+pub struct Metadata { ...
 ```
 
 曲名  
@@ -337,10 +426,21 @@ pub duration_secs: f64,
 pub has_cover: bool,
 ```
 
+读取音频文件元数据（标题/艺术家/专辑/流派/年份/音轨号/光盘号/封面/时长）  
+```rust
+pub fn read_metadata(path: &Path) -> Result<Metadata, String> { ...
+```
+
+读取音频文件内嵌封面图（JPEG/PNG 原始字节）  
 读取封面图片（JPEG/PNG/WEBP 原始字节）。  
 支持音频格式（lofty）以及 MKV/WebM 附件封面。  
 ```rust
 pub fn read_cover(path: &Path) -> Result<Vec<u8>, String> { ...
+```
+
+ReplayGain 响度归一化增益值  
+```rust
+pub struct ReplayGain { ...
 ```
 
 音轨增益 (dB)，如 -5.23  
@@ -363,34 +463,92 @@ pub track_peak: Option<f32>,
 pub album_peak: Option<f32>,
 ```
 
+从音频文件读取 ReplayGain 标签（REPLAYGAIN_TRACK/ALBUM_GAIN/PEAK）  
+```rust
+pub fn read_replaygain(path: &Path) -> Result<ReplayGain, String> { ...
+```
+
+快速探测音频文件的采样率（不完整解码，只读文件头）  
+```rust
+pub fn probe_sample_rate(path: &Path) -> Option<u32> { ...
+```
+
 ---
 
 ### `dsd/convert.rs`
 
+将单声道 DSD 字节转换为 PCM f32  
 `dsd_rate` — DSD 速率 (DSD64=1, DSD128=2, ...)  
 ```rust
 pub fn convert_channel(dsd_bytes: &[u8], _dsd_rate: DsdRate) -> Vec<f32> { ...
 ```
 
+公开的 stage1 boxcar（供流式解码器调用）  
+```rust
+pub fn stage1_boxcar_pub(dsd_bytes: &[u8]) -> Vec<f32> { ...
+```
+
+流式 FIR 降采样：从 pending 缓冲中取出可计算的输出，保留尾部重叠供下次使用。  
 `pending` 包含上次的 FIR 重叠尾部 + 新的 stage1 样本。  
 返回本次可输出的 PCM 样本，并将 pending 截断为保留的尾部。  
 ```rust
 pub fn stage2_fir_streaming(pending: &mut Vec<f32>) -> Vec<f32> { ...
 ```
 
+将多声道 DSD 数据转换为交错 PCM f32  
 `chan_bytes` — 每个声道的 DSD 字节数据  
 `dsd_rate` — DSD 速率  
 ```rust
 pub fn convert_channels(chan_bytes: &[&[u8]], dsd_rate: DsdRate) -> Vec<f32> { ...
 ```
 
+获取 DSD 对应的输出采样率  
+```rust
+pub fn output_sample_rate(dsd_rate: DsdRate) -> u32 { ...
+```
+
 ---
 
 ### `dsd/mod.rs` — DSD 文件解码（DSF / DFF）
 
+DSD 解码结果（交错的 PCM f32 样本）  
+```rust
+pub struct DecodedDsd { ...
+```
+
+交错 PCM f32 样本 [L, R, L, R, ...]  
+```rust
+pub samples: Vec<f32>,
+```
+
+声道数  
+```rust
+pub channels: u32,
+```
+
+输出采样率（取决于 DSD 速率）  
+```rust
+pub sample_rate: u32,
+```
+
+从 DSF/DFF 文件解码为 PCM f32（交错）—— 全量解码，仅用于小文件  
+```rust
+pub fn decode_file(path: &Path) -> Result<DecodedDsd, String> { ...
+```
+
+流式 DSD→PCM 解码器。内存占用恒定（约 2×FLUSH_THRESHOLD×channels 字节）。  
+```rust
+pub struct StreamingDsdDecoder { ...
+```
+
 创建流式解码器  
 ```rust
 pub fn new(path: &Path) -> Result<Self, String> { ...
+```
+
+获取输出采样率  
+```rust
+pub fn sample_rate(&self) -> u32 { ...
 ```
 
 获取声道数  
@@ -403,6 +561,21 @@ pub fn channels(&self) -> usize { ...
 pub fn dsd_rate(&self) -> DsdRate { ...
 ```
 
+喂入一个 DSD 块（来自 dsd_iter 的一帧），返回是否达到 flush 阈值  
+```rust
+pub fn feed(&mut self, chan_frames: &[Box<[u8]>]) -> bool { ...
+```
+
+将累积的 DSD 字节转换为交错 PCM f32。可多次调用，内部维护 FIR 重叠状态。  
+```rust
+pub fn flush(&mut self) -> Vec<f32> { ...
+```
+
+最终 flush：处理剩余数据（文件结束时调用）  
+```rust
+pub fn finalize(&mut self) -> Vec<f32> { ...
+```
+
 ---
 
 ### `dsp/biquad.rs` — IIR 双二阶滤波器（Biquad）
@@ -412,15 +585,37 @@ pub fn dsd_rate(&self) -> DsdRate { ...
 pub fn new(b0: f32, b1: f32, b2: f32, a1: f32, a2: f32) -> Self { ...
 ```
 
+Peaking EQ（参数均衡，RBJ audio EQ cookbook）。  
 freq 中心频率，sample_rate 采样率，gain_db 增益(dB)，q 品质因数。  
 ```rust
 pub fn peaking(freq: f32, sample_rate: f32, gain_db: f32, q: f32) -> Self { ...
+```
+
+低通（用于 Crossfeed 的高频截断）  
+```rust
+pub fn lowpass(freq: f32, sample_rate: f32, q: f32) -> Self { ...
+```
+
+高通（DC offset 滤除，~2Hz）  
+```rust
+pub fn highpass(freq: f32, sample_rate: f32, q: f32) -> Self { ...
+```
+
+处理一个样本（单声道）  
+```rust
+pub fn process(&mut self, x0: f32) -> f32 { ...
+```
+
+原地处理一段样本（单声道）  
+```rust
+pub fn process_slice(&mut self, buf: &mut [f32]) { ...
 ```
 
 ---
 
 ### `dsp/convolver.rs` — FIR 卷积均衡器
 
+FIR 卷积均衡器  
 每声道一个独立的 FFTConvolver 实例。  
 ```rust
 pub struct ConvolutionEq { ...
@@ -431,6 +626,7 @@ pub struct ConvolutionEq { ...
 pub fn new(channels: usize) -> Self { ...
 ```
 
+从 WAV 文件加载脉冲响应  
 - `path`: .wav 文件路径  
 - `block_size`: FFT 分块大小（推荐 256-1024）  
 自动处理 Mono/Stereo IR：Mono IR 应用于所有声道，Stereo IR 逐声道匹配。  
@@ -438,9 +634,24 @@ pub fn new(channels: usize) -> Self { ...
 pub fn load_wav(&mut self, path: &str, block_size: usize) -> Result<(), String> { ...
 ```
 
+处理交错 PCM 缓冲  
+```rust
+pub fn process(&mut self, buf: &mut [f32]) { ...
+```
+
+是否已加载 IR（非 bypass 状态）  
+```rust
+pub fn is_active(&self) -> bool { ...
+```
+
 ---
 
 ### `dsp/crossfeed.rs` — Crossfeed（Bauer 算法）
+
+Bauer 算法跨馈处理器  
+```rust
+pub struct Crossfeed { ...
+```
 
 创建 Crossfeed，使用 CMOY 预设  
 - `sample_rate`: 采样率（Hz）  
@@ -448,9 +659,19 @@ pub fn load_wav(&mut self, path: &str, block_size: usize) -> Result<(), String> 
 pub fn new(sample_rate: f32) -> Self { ...
 ```
 
+处理交错立体声缓冲 [L, R, L, R, ...]  
+```rust
+pub fn process(&mut self, buf: &mut [f32]) { ...
+```
+
 ---
 
 ### `dsp/dither.rs` — 高级抖动器：TPDF + ATH 噪声整形
+
+抖动器  
+```rust
+pub struct Dither { ...
+```
 
 amp: 抖动幅度（单位：LSB 占比，通常 1.0 LSB）  
 bits: 目标位深 (16/24)  
@@ -458,6 +679,12 @@ bits: 目标位深 (16/24)
 pub fn new(channels: usize, bits: u32, amp_lsb: f32) -> Self { ...
 ```
 
+启用/禁用 ATH 噪声整形  
+```rust
+pub fn set_noise_shaping(&mut self, enabled: bool) { ...
+```
+
+对单声道缓冲注入抖动（就地）  
 ch: 声道索引  
 ```rust
 pub fn process(&mut self, buf: &mut [f32], ch: usize) { ...
@@ -467,11 +694,21 @@ pub fn process(&mut self, buf: &mut [f32], ch: usize) { ...
 
 ### `dsp/limiter.rs` — 真峰值限幅器（True-Peak Limiter）
 
+真峰值限幅器。使用 4x 过采样检测采样间峰值（ISP），防止 DAC 重建削波。  
+```rust
+pub struct TruePeakLimiter { ...
+```
+
 创建限幅器。  
 - `channels`: 声道数  
 - `threshold_db`: 阈值（dBFS, 0 = 0dBFS, 负值更激进）  
 ```rust
 pub fn new(channels: usize, threshold_db: f32) -> Self { ...
+```
+
+处理单声道缓冲  
+```rust
+pub fn process(&mut self, buf: &mut [f32], channel: usize) { ...
 ```
 
 ---
@@ -481,6 +718,16 @@ pub fn new(channels: usize, threshold_db: f32) -> Self { ...
 ---
 
 ### `dsp/pipeline.rs` — DSP 管线：串联各滤波器
+
+DSP 管线，按顺序串联：DC HPF → ReplayGain → 卷积 EQ → PEQ → Crossfeed → 展宽 → 限幅 → 音量 → 抖动  
+```rust
+pub struct DspPipeline { ...
+```
+
+单段 PEQ 参数（ISO 频段）。10 段典型配置见 `default_peq_bands()`。  
+```rust
+pub struct PeqBand { ...
+```
 
 中心频率（Hz）  
 ```rust
@@ -503,6 +750,66 @@ volume: 0~1；bits: 目标输出位深（抖动用）
 pub fn new(
 ```
 
+运行时启用/关闭 Crossfeed（串音补偿）  
+```rust
+pub fn set_crossfeed(&mut self, enabled: bool) { ...
+```
+
+处理一帧交错 PCM（长度需为 channels 的整数倍）  
+```rust
+pub fn process(&mut self, buf: &mut [f32]) { ...
+```
+
+加载卷积 EQ 的脉冲响应文件  
+```rust
+pub fn load_conv_ir(&mut self, path: &str) -> Result<(), String> { ...
+```
+
+清除卷积 EQ（bypass）  
+```rust
+pub fn clear_conv_ir(&mut self) { ...
+```
+
+运行时更新某段 PEQ 参数（所有声道同步更新）  
+```rust
+pub fn set_peq_band(&mut self, index: usize, band: &PeqBand, sample_rate: f32) { ...
+```
+
+设置 ReplayGain 增益（dB），作为 Pre-amp 在 HPF 后、EQ 前应用  
+```rust
+pub fn set_replaygain_db(&mut self, gain_db: f32) { ...
+```
+
+运行时调整音量 (0.0 ~ 1.5)，限幅器之后应用  
+```rust
+pub fn set_volume(&mut self, volume: f32) { ...
+```
+
+启用/禁用 ATH 噪声整形（替代 TPDF）  
+```rust
+pub fn set_noise_shaping(&mut self, enabled: bool) { ...
+```
+
+设置立体声展宽  
+```rust
+pub fn set_stereo_widener(&mut self, enabled: bool, width: f32) { ...
+```
+
+返回默认 31 段 ISO PEQ 频段（所有增益 0 dB，flat 响应）  
+```rust
+pub fn default_peq_bands() -> Vec<PeqBand> { ...
+```
+
+音效预设名称（10 种 EQ 预设）  
+```rust
+pub enum PresetName { ...
+```
+
+按预设名称返回对应的 PEQ 频段参数  
+```rust
+pub fn preset_bands(name: PresetName) -> Vec<PeqBand> { ...
+```
+
 ---
 
 ### `dsp/widener.rs` — 立体声展宽 (Mid/Side 处理)
@@ -517,18 +824,79 @@ pub struct StereoWidener { ...
 pub fn new() -> Self { ...
 ```
 
+设置展宽系数（0.0 = 单声道, 1.0 = 原始, >1.0 = 展宽）  
+```rust
+pub fn set_width(&mut self, width: f32) { ...
+```
+
+启用/禁用展宽  
+```rust
+pub fn set_enabled(&mut self, enabled: bool) { ...
+```
+
+是否已启用  
+```rust
+pub fn enabled(&self) -> bool { ...
+```
+
 当前展宽系数  
 ```rust
 pub fn width(&self) -> f32 { ...
+```
+
+处理交错立体声缓冲 [L, R, L, R, ...]  
+```rust
+pub fn process(&mut self, buf: &mut [f32]) { ...
 ```
 
 ---
 
 ### `engine.rs`
 
+播放模式  
+```rust
+pub enum PlayMode { ...
+```
+
+频谱分析数据（16 个频段幅值，0.0~1.0 归一化）  
+```rust
+pub const SPECTRUM_BANDS: usize = 16;
+```
+
+发给引擎线程的命令  
+发给引擎线程的命令  
+```rust
+pub enum EngineCommand { ...
+```
+
+引擎发出的事件（主线程通过 Receiver 收取）  
+```rust
+pub enum EngineEvent { ...
+```
+
+对外的句柄（Send + Sync）  
+```rust
+pub struct EngineHandle { ...
+```
+
+当前播放位置（样本数），外部可读  
+```rust
+pub position: Arc<AtomicU64>,
+```
+
 使用默认配置启动引擎线程，返回句柄和事件接收器  
 ```rust
 pub fn start() -> (EngineHandle, Receiver<EngineEvent>) { ...
+```
+
+使用自定义配置启动引擎线程  
+```rust
+pub fn start_with_config(config: EngineConfig) -> (EngineHandle, Receiver<EngineEvent>) { ...
+```
+
+开始播放指定路径的音频文件  
+```rust
+pub fn play(&self, path: String) { ...
 ```
 
 设置播放队列并从第一首开始播放  
@@ -631,14 +999,24 @@ pub fn is_playing(&self) -> bool { ...
 pub fn underrun_count(&self) -> u64 { ...
 ```
 
+引擎内部运行状态（只存在于引擎线程）  
+```rust
+pub struct EngineState { ...
+```
+
 ---
 
 ### `ffi.rs` — C 语言 FFI 绑定。通过 `extern "C"` 导出函数供移动端（Kotlin/Swift）调用。
 
-event_type: 0=TrackChanged, 1=PlaybackStopped, 2=Position,  
-            3=DurationSecs, 4=Error, 5=QueueChanged, 6=Spectrum  
+引擎事件  
 ```rust
 pub struct AcEvent { ...
+```
+
+事件类型：0=TrackChanged, 1=PlaybackStopped, 2=Position,  
+3=DurationSecs, 4=Error, 5=QueueChanged, 6=Spectrum  
+```rust
+pub event_type: c_int,
 ```
 
 曲目路径 / 错误消息  
@@ -654,6 +1032,11 @@ pub value: c_double,
 频谱 16 频段（Spectrum）  
 ```rust
 pub spectrum: [c_float; 16],
+```
+
+音频元数据  
+```rust
+pub struct AcMetadata { ...
 ```
 
 曲名  
@@ -701,11 +1084,123 @@ pub duration_secs: c_double,
 pub has_cover: c_int,
 ```
 
+音频分析结果（BPM / 调性 / 能量）（BPM / 调性 / 能量）  
+```rust
+pub struct AcAnalysis { ...
+```
+
+BPM 值（0 = 未检测到）  
+```rust
+pub bpm: c_float,
+```
+
+调性字符串，如 "C"/"Gm"，空串 = 无法识别  
+```rust
+pub key: [c_char; 16],
+```
+
+能量值（0~1）  
+```rust
+pub energy: c_float,
+```
+
+引擎不透明句柄（FFI 层内部使用）  
+```rust
+pub struct AcEngine { ...
+```
+
+创建引擎实例。返回不透明指针，失败返回 null。  
 output_device 传空串或 null 使用系统默认设备。  
 ```rust
 pub unsafe extern "C" fn ac_engine_create(
 ```
 
+销毁引擎实例  
+```rust
+pub unsafe extern "C" fn ac_engine_destroy(engine: *mut c_void) { ...
+```
+
+播放指定文件  
+```rust
+pub unsafe extern "C" fn ac_engine_play(engine: *mut c_void, path: *const c_char) { ...
+```
+
+播放一组文件（替换当前队列）  
+```rust
+pub unsafe extern "C" fn ac_engine_play_queue(
+```
+
+暂停播放  
+```rust
+pub unsafe extern "C" fn ac_engine_pause(engine: *mut c_void) { ...
+```
+
+恢复播放  
+```rust
+pub unsafe extern "C" fn ac_engine_resume(engine: *mut c_void) { ...
+```
+
+停止播放  
+```rust
+pub unsafe extern "C" fn ac_engine_stop(engine: *mut c_void) { ...
+```
+
+跳转到指定位置（秒）  
+```rust
+pub unsafe extern "C" fn ac_engine_seek(engine: *mut c_void, seconds: c_double) { ...
+```
+
+下一首  
+```rust
+pub unsafe extern "C" fn ac_engine_next_track(engine: *mut c_void) { ...
+```
+
+设置播放模式：0=Normal, 1=RepeatOne, 2=RepeatAll, 3=Shuffle  
+```rust
+pub unsafe extern "C" fn ac_engine_set_play_mode(engine: *mut c_void, mode: c_int) { ...
+```
+
+从队列中移除指定位置（0-indexed）的曲目  
+```rust
+pub unsafe extern "C" fn ac_engine_remove_from_queue(engine: *mut c_void, index: c_int) { ...
+```
+
+设置音量（0.0 ~ 1.0）  
+```rust
+pub unsafe extern "C" fn ac_engine_set_volume(engine: *mut c_void, volume: c_float) { ...
+```
+
+设置 ReplayGain 增益（dB），0 = 关闭 ReplayGain  
+```rust
+pub unsafe extern "C" fn ac_engine_set_replaygain_gain(engine: *mut c_void, gain_db: c_float) { ...
+```
+
+设置 PEQ 单段参数（31 段 ISO 频段）  
+```rust
+pub unsafe extern "C" fn ac_engine_set_peq_band(
+```
+
+设置立体声展宽（enabled=0 关闭, width=1.0 原始, >1.0 展宽）  
+```rust
+pub unsafe extern "C" fn ac_engine_set_stereo_widener(
+```
+
+加载 IR 文件（FIR 卷积 EQ）  
+```rust
+pub unsafe extern "C" fn ac_engine_load_ir(engine: *mut c_void, path: *const c_char) { ...
+```
+
+清除已加载的 IR  
+```rust
+pub unsafe extern "C" fn ac_engine_clear_ir(engine: *mut c_void) { ...
+```
+
+切换输出设备（移动端 Headless 模式无效）  
+```rust
+pub unsafe extern "C" fn ac_engine_set_output_device(engine: *mut c_void, name: *const c_char) { ...
+```
+
+从引擎的 ringbuf 读取 PCM 样本。  
 buffer: 调用方分配的 float 缓冲区  
 samples: 期望读取的样本数（stereo 每帧=2 样本）  
 返回: 实际读取的样本数（0 = 无数据）  
@@ -713,20 +1208,77 @@ samples: 期望读取的样本数（stereo 每帧=2 样本）
 pub unsafe extern "C" fn ac_audio_read(
 ```
 
+获取当前播放位置（秒）  
+```rust
+pub unsafe extern "C" fn ac_engine_position(engine: *const c_void) -> c_double { ...
+```
+
+获取当前曲目时长（秒）  
+```rust
+pub unsafe extern "C" fn ac_engine_duration(engine: *const c_void) -> c_double { ...
+```
+
+获取播放状态（1=正在播放, 0=未播放）  
+```rust
+pub unsafe extern "C" fn ac_engine_is_playing(engine: *const c_void) -> c_int { ...
+```
+
+获取 underrun 计数  
+```rust
+pub unsafe extern "C" fn ac_engine_underrun_count(engine: *const c_void) -> c_uint { ...
+```
+
+轮询一个引擎事件。返回 1 表示有事件写入 out，0 表示无事件。  
+```rust
+pub unsafe extern "C" fn ac_engine_poll_event(
+```
+
+读取音频文件元数据。返回 0 成功，-1 失败。  
+```rust
+pub unsafe extern "C" fn ac_metadata_read(path: *const c_char, meta: *mut AcMetadata) -> c_int { ...
+```
+
+读取内嵌封面图像。返回原始字节（JPEG/PNG），调用方需用 ac_cover_free 释放。  
 成功时写入 out_data 和 out_len，返回 0。失败返回非 0。  
 ```rust
 pub unsafe extern "C" fn ac_cover_read(
 ```
 
+释放 ac_cover_read 返回的封面数据  
+```rust
+pub unsafe extern "C" fn ac_cover_free(data: *mut u8, len: c_int) { ...
+```
+
+读取 ReplayGain 标签。返回 0 成功，-1 失败。  
 track_gain_db / album_gain_db 为 dB 值（如 -5.23），无标签时为 0.0。  
 has_track_gain / has_album_gain 指示对应值是否有效。  
 ```rust
 pub unsafe extern "C" fn ac_replaygain_read(
 ```
 
+分析音频文件（BPM / 调性 / 能量）。返回 0 成功，-1 失败。  
+```rust
+pub unsafe extern "C" fn ac_analyze_file(
+```
+
+快速探测音频文件采样率。返回采样率 Hz，失败返回 0。  
+```rust
+pub unsafe extern "C" fn ac_probe_sample_rate(path: *const c_char) -> c_int { ...
+```
+
 ---
 
 ### `output.rs` — 音频输出抽象层
+
+解码端向 ring buffer 推入样本的生产端  
+```rust
+pub type PcmProducer = HeapProd<f32>;
+```
+
+被音频回调和引擎线程共享的内部状态  
+```rust
+pub struct AudioOutputInner { ...
+```
 
 ringbuf 消费者端，回调通过它读取样本  
 ```rust
@@ -738,19 +1290,50 @@ underrun 计数（回调读不到数据时递增）
 pub underrun_count: AtomicU64,
 ```
 
+音频输出 trait，各平台后端分别实现  
+```rust
+pub trait AudioOutput { ...
+```
+
+打开输出设备。  
 桌面端（cpal-backend feature）优先使用 cpal 后端连接物理设备；  
 若 cpal 不可用或未启用 feature，回退到 HeadlessOutput（ringbuf 无输出设备）。  
 ```rust
 pub fn open(
 ```
 
+列出所有可用输出设备名称（仅 cpal 后端）  
+```rust
+pub fn list_device_names() -> Vec<String> { ...
+```
+
 ---
 
 ### `output/output_cpal.rs` — cpal 音频输出后端
 
+cpal 音频输出句柄  
+```rust
+pub struct AudioOutputCpal { ...
+```
+
+cpal 音频流句柄  
+```rust
+pub stream: cpal::Stream,
+```
+
+共享内部状态（consumer ringbuf + underrun 计数）  
+```rust
+pub inner: Arc<AudioOutputInner>,
+```
+
 ---
 
 ### `playlist/mod.rs` — 播放列表解析：M3U / M3U8 / PLS。
+
+播放列表条目  
+```rust
+pub struct PlaylistEntry { ...
+```
 
 音频文件路径（已解析为绝对路径或原样保留）  
 ```rust
@@ -767,6 +1350,11 @@ pub title: Option<String>,
 pub duration_secs: f64,
 ```
 
+解析播放列表文件，自动识别 M3U / M3U8 / PLS 格式  
+```rust
+pub fn parse_playlist(path: &Path) -> Result<Vec<PlaylistEntry>, String> { ...
+```
+
 ---
 
-> 128 个 pub 项。运行 `bash doc-api.sh` 刷新。
+> 242 个 pub 项。运行 `bash doc-api.sh` 刷新。

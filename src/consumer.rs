@@ -7,6 +7,7 @@
 //! 使用方式见 `run_consumer_loop()` 的文档。
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender, RecvTimeoutError};
@@ -14,6 +15,7 @@ use realfft::num_complex::Complex;
 use realfft::RealFftPlanner;
 
 use crate::decoder::DecodedFrame;
+use crate::dsp::speed::SpeedChanger;
 
 /// 频谱频段数
 pub const SPECTRUM_BANDS: usize = 16;
@@ -61,6 +63,7 @@ impl Default for ConsumerConfig {
 /// - `on_end_of_track` — 当前解码器结束时回调，返回新解码器可无缝切歌
 /// - `stop` — 停止信号，设 true 后循环尽快退出
 /// - `ready_tx` — 首帧就绪时发送 true，通知播放器可以起播
+/// - `speed` — 共享播放速度（0.25 ~ 4.0），设 1.0 不变速
 pub fn run_consumer_loop(
     rx: Receiver<DecodedFrame>,
     config: &ConsumerConfig,
@@ -72,6 +75,7 @@ pub fn run_consumer_loop(
     on_end_of_track: &dyn Fn() -> Option<Receiver<DecodedFrame>>,
     stop: &AtomicBool,
     ready_tx: Sender<bool>,
+    speed: Arc<Mutex<f32>>,
 ) {
     // 线程优先级由调用方（engine.rs / audio_output.rs）在 spawn 前设置
 
@@ -122,6 +126,9 @@ pub fn run_consumer_loop(
         0
     };
     let mut fade_remaining: usize = 0;
+
+    // 变速重采样器
+    let mut speed_changer = SpeedChanger::new();
 
     let timeout = Duration::from_millis(config.recv_timeout_ms);
     let mut current_rx = rx;
@@ -198,13 +205,25 @@ pub fn run_consumer_loop(
                 }
 
                 // 4) 坏帧检测
-                if buf.iter().all(|&s| s == 0.0) || buf.iter().any(|&s| s.is_nan()) {
+                if buf.iter().all(|&s| s == 0.0) || buf.iter().any(|&s| !s.is_finite()) {
                     on_bad_frame();
                     continue;
                 }
 
-                // 5) 推入 ringbuf（ringbuf 无阻塞 API，满时短暂让出 CPU）
-                let mut remaining: &[f32] = &buf;
+                // 5) 变速重采样
+                let output_buf = {
+                    let sp = *speed.lock().unwrap_or_else(|e| e.into_inner());
+                    if (sp - 1.0).abs() > 0.001 {
+                        speed_changer.set_speed(sp);
+                        let out = speed_changer.process(&buf, ch);
+                        if out.is_empty() { &buf } else { out }
+                    } else {
+                        &buf
+                    }
+                };
+
+                // 6) 推入 ringbuf（ringbuf 无阻塞 API，满时短暂让出 CPU）
+                let mut remaining: &[f32] = output_buf;
                 while !remaining.is_empty() && !stop.load(Ordering::SeqCst) {
                     let n = push_samples(remaining);
                     if n == 0 {
@@ -213,7 +232,7 @@ pub fn run_consumer_loop(
                     remaining = &remaining[n..];
                 }
 
-                // 6) 进度追踪
+                // 7) 进度追踪（使用原始解码样本数，追踪源音频位置）
                 on_samples_output(count);
             }
             Err(RecvTimeoutError::Timeout) => {
@@ -271,6 +290,7 @@ mod tests {
     {
         let stop = Arc::new(AtomicBool::new(false));
         let s = stop.clone();
+        let speed = Arc::new(Mutex::new(1.0f32));
         let (ready_tx, ready_rx) = bounded(1);
         let handle = thread::spawn(move || {
             let push = &push_fn;
@@ -282,7 +302,7 @@ mod tests {
             run_consumer_loop(
                 rx, &config,
                 push, passthrough, nospec, nobad, nooutput, noeot,
-                &s, ready_tx,
+                &s, ready_tx, speed,
             );
         });
         (handle, stop, ready_rx)
@@ -320,7 +340,7 @@ mod tests {
             run_consumer_loop(
                 rx, &default_config(),
                 push, passthrough, nospec, on_bad, nooutput, noeot,
-                &s, ready_tx,
+                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
             );
         });
 
@@ -355,7 +375,7 @@ mod tests {
             run_consumer_loop(
                 rx, &default_config(),
                 push, passthrough, nospec, on_bad, nooutput, noeot,
-                &s, ready_tx,
+                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
             );
         });
 
@@ -388,7 +408,7 @@ mod tests {
             run_consumer_loop(
                 rx, &cfg,
                 push, passthrough, nospec, nobad, nooutput, noeot,
-                &s, ready_tx,
+                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
             );
         });
 
@@ -420,7 +440,7 @@ mod tests {
             run_consumer_loop(
                 rx, &cfg,
                 push, passthrough, nospec, nobad, nooutput, noeot,
-                &s, ready_tx,
+                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
             );
         });
 
@@ -474,7 +494,7 @@ mod tests {
             run_consumer_loop(
                 rx, &default_config(),
                 push, passthrough, nospec, nobad, on_output, on_eot,
-                &s, ready_tx,
+                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
             );
         });
 
@@ -528,7 +548,7 @@ mod tests {
             run_consumer_loop(
                 rx, &cfg,
                 push, passthrough, on_spec, nobad, nooutput, noeot,
-                &s, ready_tx,
+                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
             );
         });
 
@@ -567,7 +587,7 @@ mod tests {
             run_consumer_loop(
                 rx, &default_config(),
                 push, passthrough, nospec, nobad, on_output, noeot,
-                &s, ready_tx,
+                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
             );
         });
 
@@ -606,7 +626,7 @@ mod tests {
             run_consumer_loop(
                 rx, &default_config(),
                 push, dsp, nospec, nobad, nooutput, noeot,
-                &s, ready_tx,
+                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
             );
         });
 

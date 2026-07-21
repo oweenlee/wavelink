@@ -13,6 +13,7 @@ pub mod crossfeed;
 pub mod dither;
 pub mod limiter;
 pub mod pipeline;
+pub mod speed;
 pub mod widener;
 
 pub use pipeline::{default_peq_bands, preset_bands, DspPipeline, PeqBand, PresetName};

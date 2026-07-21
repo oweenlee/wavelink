@@ -11,10 +11,9 @@ use crate::decoder;
 use crate::TARGET_CHANNELS;
 use crate::TARGET_SAMPLE_RATE;
 
-/// 分析结果
+/// 音频分析结果（BPM / 调性 / 能量）
 #[derive(Debug, Clone)]
 #[derive(serde::Serialize, serde::Deserialize)]
-/// 音频分析结果
 pub struct AnalysisResult {
     /// 每分钟拍数，None 表示未检测到稳定节拍
     pub bpm: Option<f32>,

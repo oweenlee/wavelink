@@ -64,6 +64,7 @@ fn main() {
                 println!("\n[{:.2}s] queue: {} tracks, current: {}", start.elapsed().as_secs_f64(), queue.len(), current);
             }
             Ok(EngineEvent::Spectrum(_)) => {}
+            Ok(EngineEvent::Levels(_)) => {}
             Err(crossbeam_channel::TryRecvError::Empty) => {}
             Err(crossbeam_channel::TryRecvError::Disconnected) => break,
         }

@@ -20,9 +20,13 @@ use crate::output::{AudioOutput, AudioOutputInner, PcmProducer};
 
 /// cpal 音频输出句柄
 pub struct AudioOutputCpal {
+    /// cpal 音频流句柄
     pub stream: cpal::Stream,
+    /// 共享内部状态（consumer ringbuf + underrun 计数）
     pub inner: Arc<AudioOutputInner>,
     playing: Arc<AtomicBool>,
+    sample_rate: u32,
+    channels: u32,
 }
 
 impl AudioOutput for AudioOutputCpal {
@@ -50,6 +54,8 @@ impl AudioOutput for AudioOutputCpal {
 
         prod
     }
+    fn sample_rate(&self) -> u32 { self.sample_rate }
+    fn channels(&self) -> u32 { self.channels }
 }
 
 impl Drop for AudioOutputCpal {
@@ -106,11 +112,13 @@ pub(crate) fn open_inner(
     let inner = Arc::new(AudioOutputInner {
         consumer: std::sync::Mutex::new(consumer),
         underrun_count: std::sync::atomic::AtomicU64::new(0),
+        stream_failed: std::sync::atomic::AtomicBool::new(false),
     });
 
     let playing = Arc::new(AtomicBool::new(false));
     let playing_clone = playing.clone();
     let inner_clone = inner.clone();
+    let err_inner = inner.clone();
 
     let build_result = device.build_output_stream(
         &config,
@@ -132,7 +140,10 @@ pub(crate) fn open_inner(
                 data.fill(0.0);
             }
         },
-        |err| error!("音频流错误: {err}"),
+        move |err| {
+            error!("音频流错误: {err}");
+            err_inner.stream_failed.store(true, Ordering::Release);
+        },
         None,
     );
 
@@ -145,6 +156,8 @@ pub(crate) fn open_inner(
                 stream: s,
                 inner: inner.clone(),
                 playing,
+                sample_rate,
+                channels,
             }
         }
         Err(e) => {
@@ -171,10 +184,12 @@ pub(crate) fn open_inner(
             let fb_inner = Arc::new(AudioOutputInner {
                 consumer: std::sync::Mutex::new(fb_cons),
                 underrun_count: std::sync::atomic::AtomicU64::new(0),
+                stream_failed: std::sync::atomic::AtomicBool::new(false),
             });
             let fb_playing = Arc::new(AtomicBool::new(false));
             let fb_inner_clone = Arc::clone(&fb_inner);
             let fb_playing_clone = fb_playing.clone();
+            let fb_err_inner = Arc::clone(&fb_inner);
 
             let fb_stream = device
                 .build_output_stream(
@@ -197,7 +212,10 @@ pub(crate) fn open_inner(
                             data.fill(0.0);
                         }
                     },
-                    |err| error!("音频流错误: {err}"),
+                    move |err| {
+                        error!("音频流错误 (fallback): {err}");
+                        fb_err_inner.stream_failed.store(true, Ordering::Release);
+                    },
                     None,
                 )
                 .map_err(|e| format!("回退采样率后仍失败: {e}"))?;
@@ -211,6 +229,8 @@ pub(crate) fn open_inner(
                     stream: fb_stream,
                     inner: Arc::clone(&fb_inner),
                     playing: fb_playing,
+                    sample_rate: fallback_rate,
+                    channels,
                 },
                 fb_prod,
                 fb_inner,

@@ -59,6 +59,7 @@ fn test_real_wav_through_consumer() {
             &|| None,
             &s,
             ready_tx,
+            Arc::new(Mutex::new(1.0f32)),
         );
     });
 
@@ -118,6 +119,7 @@ fn test_consumer_output_count_matches() {
             &|| None,
             &s,
             ready_tx,
+            Arc::new(Mutex::new(1.0f32)),
         );
     });
 
@@ -174,6 +176,7 @@ fn test_48k_wav_through_consumer() {
             &|| None,
             &s,
             ready_tx,
+            Arc::new(Mutex::new(1.0f32)),
         );
     });
 
@@ -227,6 +230,7 @@ fn test_consumer_stop_during_decoding() {
             &|| None,
             &s,
             ready_tx,
+            Arc::new(Mutex::new(1.0f32)),
         );
     });
 

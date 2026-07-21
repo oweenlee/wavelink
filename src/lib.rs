@@ -5,6 +5,8 @@
 
 /// 音频分析（BPM 检测 / 调性识别 / 能量计算）
 pub mod analysis;
+/// 音频输入捕获抽象层
+pub mod capture;
 /// 平台无关的解码→DSP→ringbuf 循环（PC 和 Mobile 共享）
 pub mod consumer;
 /// 音频文件解码（Symphonia 流式解码 + WavPack + DSD）
@@ -57,9 +59,9 @@ impl Default for EngineConfig {
     }
 }
 
-/// 引擎事件 / 引擎句柄 / 播放模式
+/// 引擎事件 / 引擎句柄 / 播放模式 / 电平数据
 #[doc(inline)]
-pub use engine::{EngineEvent, EngineHandle, PlayMode};
+pub use engine::{EngineEvent, EngineHandle, Levels, PlayMode};
 /// 音频文件元数据（标题/艺术家/专辑/时长/封面标志）
 #[doc(inline)]
 pub use decoder::{probe_sample_rate, read_cover, read_replaygain, Metadata, ReplayGain};

@@ -2,7 +2,7 @@
 //!
 //! 管线顺序：
 //!   DC offset HPF → ReplayGain Pre-amp → 卷积 EQ → IIR PEQ →
-//!   Crossfeed → 立体声展宽 → 真峰值限幅 → 音量 → TPDF 抖动
+//!   Crossfeed → 立体声展宽 → 真峰值限幅 → 音量 → 淡入淡出 → TPDF 抖动
 //!
 //! ReplayGain（响度归一化增益）在 HPF 后、EQ 前作为 Pre-amp 应用，
 //! 确保限幅器看到的是归一化后的信号，不会因 ReplayGain 增益过载。
@@ -15,7 +15,21 @@ use crate::dsp::dither::Dither;
 use crate::dsp::limiter::TruePeakLimiter;
 use crate::dsp::widener::StereoWidener;
 
-/// DSP 管线，按顺序串联：DC HPF → ReplayGain → 卷积 EQ → PEQ → Crossfeed → 展宽 → 限幅 → 音量 → 抖动
+/// 淡入淡出状态
+enum FadeState {
+    /// 无淡入淡出
+    Idle,
+    /// 淡入中
+    FadeIn { remaining: u32, total: u32 },
+    /// 淡出中
+    FadeOut { remaining: u32, total: u32 },
+}
+
+impl Default for FadeState {
+    fn default() -> Self { FadeState::Idle }
+}
+
+/// DSP 管线，按顺序串联：DC HPF → ReplayGain → 卷积 EQ → PEQ → Crossfeed → 展宽 → 限幅 → 音量 → 淡入淡出 → 抖动
 pub struct DspPipeline {
     channels: usize,
     /// 每声道一个 DC HPF（独立状态）
@@ -32,6 +46,8 @@ pub struct DspPipeline {
     sample_rate: f32,
     /// 预分配的工作缓冲区（避免热路径分配）
     ch_buf: Vec<f32>,
+    /// 淡入淡出状态（防 pause/stop 爆音）
+    fade: FadeState,
 }
 
 /// 单段 PEQ 参数（ISO 频段）。10 段典型配置见 `default_peq_bands()`。
@@ -87,6 +103,7 @@ impl DspPipeline {
             volume: volume.clamp(0.0, 1.5),
             sample_rate: sr,
             ch_buf: Vec::new(),
+            fade: FadeState::Idle,
         }
     }
 
@@ -151,6 +168,37 @@ impl DspPipeline {
             }
         }
 
+        // 7.5 淡入淡出（防 pause/stop 爆音）
+        match &mut self.fade {
+            FadeState::FadeIn { ref mut remaining, total } => {
+                let total_f = *total as f32;
+                for s in buf.iter_mut() {
+                    if *remaining > 0 {
+                        *s *= 1.0 - *remaining as f32 / total_f;
+                        *remaining -= 1;
+                    }
+                }
+                if *remaining == 0 {
+                    self.fade = FadeState::Idle;
+                }
+            }
+            FadeState::FadeOut { ref mut remaining, total } => {
+                let total_f = *total as f32;
+                for s in buf.iter_mut() {
+                    if *remaining > 0 {
+                        *s *= *remaining as f32 / total_f;
+                        *remaining -= 1;
+                    } else {
+                        *s = 0.0;
+                    }
+                }
+                if *remaining == 0 {
+                    self.fade = FadeState::Idle;
+                }
+            }
+            FadeState::Idle => {}
+        }
+
         // 8. TPDF 抖动 / ATH 噪声整形（复用预分配缓冲区）
         for c in 0..ch {
             self.ch_buf.clear();
@@ -195,6 +243,22 @@ impl DspPipeline {
         self.volume = volume.clamp(0.0, 1.5);
     }
 
+    /// 开始淡入（暂停→恢复时消 pop）
+    pub fn start_fade_in(&mut self, duration_ms: u32) {
+        let samples = (self.sample_rate * duration_ms as f32 / 1000.0) as u32;
+        if samples > 0 {
+            self.fade = FadeState::FadeIn { remaining: samples, total: samples };
+        }
+    }
+
+    /// 开始淡出（暂停/停止时消 pop）
+    pub fn start_fade_out(&mut self, duration_ms: u32) {
+        let samples = (self.sample_rate * duration_ms as f32 / 1000.0) as u32;
+        if samples > 0 {
+            self.fade = FadeState::FadeOut { remaining: samples, total: samples };
+        }
+    }
+
     /// 启用/禁用 ATH 噪声整形（替代 TPDF）
     pub fn set_noise_shaping(&mut self, enabled: bool) {
         self.dither.set_noise_shaping(enabled);
@@ -218,19 +282,29 @@ pub fn default_peq_bands() -> Vec<PeqBand> {
     freqs.iter().map(|&f| PeqBand { freq: f, gain_db: 0.0, q: 1.41 }).collect()
 }
 
-/// 音效预设名称
+/// 音效预设名称（10 种 EQ 预设）
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PresetName {
+    /// 平坦 / 无增益
     Flat,
+    /// 摇滚
     Rock,
+    /// 流行
     Pop,
+    /// 舞曲
     Dance,
+    /// 古典
     Classical,
+    /// 柔和
     Soft,
+    /// 低频增强
     FullBass,
+    /// 高频增强
     FullTreble,
+    /// 电子
     Techno,
+    /// 人声增强
     Vocals,
 }
 
@@ -442,6 +516,46 @@ mod tests {
         );
         eprintln!("DSP benchmark: {total_frames}帧, avg {avg_process_us:.0}µs/帧 ({frame_audio_ms:.1}ms 音频/帧), 实时比 {:.1}x",
             frame_audio_ms * 1000.0 / avg_process_us);
+    }
+
+    // ── 淡入淡出测试 ──
+
+    #[test]
+    fn test_fade_in_ramp() {
+        let mut p = DspPipeline::new(44100, 2, &[], false, 1.0, 24);
+        p.start_fade_in(5); // 5ms ≈ 220 samples @44100
+        let mut buf = vec![1.0f32; 256]; // 128 stereo frames
+        p.process(&mut buf);
+        // 前几个样本应接近 0，最后一个应接近 1.0
+        assert!(buf[0] < 0.3, "fade in 首样本应小: {}", buf[0]);
+        assert!(buf[buf.len() - 1] > 0.5, "fade in 末样本应大: {}", buf[buf.len() - 1]);
+        // 处理完后 fade 应回到 Idle
+        assert!(matches!(p.fade, FadeState::Idle), "fade 完成后应 Idle");
+    }
+
+    #[test]
+    fn test_fade_out_ramp() {
+        let mut p = DspPipeline::new(44100, 2, &[], false, 1.0, 24);
+        p.start_fade_out(5);
+        let mut buf = vec![1.0f32; 256];
+        p.process(&mut buf);
+        // 前几个样本应接近 1.0，最后一个应接近 0
+        assert!(buf[0] > 0.5, "fade out 首样本应大: {}", buf[0]);
+        assert!(buf[buf.len() - 1].abs() < 0.3, "fade out 末样本应小: {}", buf[buf.len() - 1]);
+        assert!(matches!(p.fade, FadeState::Idle), "fade 完成后应 Idle");
+    }
+
+    #[test]
+    fn test_fade_noop_when_idle() {
+        let mut p = DspPipeline::new(44100, 2, &[], false, 1.0, 24);
+        let mut buf = vec![0.5f32; 100];
+        let expected = buf.clone();
+        p.process(&mut buf);
+        // idle 时不应改变信号（信号经 PEQ/limiter 可能有微小变化，但数量级不变）
+        for (a, b) in buf.iter().zip(expected.iter()) {
+            let diff = (a - b).abs();
+            assert!(diff < 0.1, "idle fade 应接近无变化: {a} vs {b}");
+        }
     }
 
     // ── 信号连续性测试 ──

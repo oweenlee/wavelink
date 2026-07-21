@@ -69,8 +69,7 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → cpal �
 | `dsd` | DSD→PCM 转换 (3 级 sinc 降采样) |
 | `cue` | CUE 分轨解析 (parse_cue / CueSheet / CueTrack) |
 | `playlist` | M3U/M3U8/PLS 播放列表解析 |
-| `ffi` | C 导出: 引擎控制 / 曲库查询 / 音频分析 |
-| `ffi` (ffi) | C 导出: 引擎控制 / 元数据 / 封面 / 音频分析 / 事件轮询 |
+| `ffi` | C 导出: 引擎控制 / 元数据 / 封面 / 音频分析 / BPM 调性 / 事件轮询 |
 
 ## 配置
 
@@ -167,3 +166,28 @@ cargo test -p audio-core -- --ignored  # 含 FFmpeg 依赖的格式验证
 ### 为什么没有 FFmpeg
 
 Symphonia 纯 Rust → 零 C 依赖 → 一路编译到所有平台 → 无 FFmpeg GPL 许可问题。
+
+## Quick Start
+
+```rust
+use audio_core::{EngineHandle, EngineConfig};
+
+// 默认配置启动
+let (engine, events) = EngineHandle::start();
+
+// 播放文件（异步）
+engine.play("/path/to/audio.flac");
+
+// 事件循环
+for event in events {
+    match event {
+        EngineEvent::Position(secs) => println!("播放位置: {secs}s"),
+        EngineEvent::TrackChanged(p) => println!("切歌: {p}"),
+        _ => {}
+    }
+}
+```
+
+## API 文档
+
+详细 API 参考见 [`API_REFERENCE.md`](./API_REFERENCE.md)（由 `bash doc-api.sh` 自动生成）。

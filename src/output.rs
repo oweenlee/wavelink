@@ -19,14 +19,22 @@ pub struct AudioOutputInner {
     pub consumer: Mutex<HeapCons<f32>>,
     /// underrun 计数（回调读不到数据时递增）
     pub underrun_count: AtomicU64,
+    /// 音频流是否发生错误（设备断开等），引擎可据此尝试恢复
+    pub stream_failed: AtomicBool,
 }
 
 /// 音频输出 trait，各平台后端分别实现
 pub trait AudioOutput {
+    /// 暂停输出（回调填入静音）
     fn pause(&self);
+    /// 恢复输出
     fn resume(&self);
     /// 创建新 ringbuf，原子替换消费者端（seek/切歌时用）
     fn swap_consumer(&self, buffer_ms: u32, sample_rate: u32, channels: u32) -> PcmProducer;
+    /// 当前输出采样率（Hz）
+    fn sample_rate(&self) -> u32;
+    /// 当前输出声道数
+    fn channels(&self) -> u32;
 }
 
 // ─── HeadlessOutput ──────────────────────────────────────────
@@ -41,6 +49,8 @@ pub(crate) fn headless_inner() -> Option<Arc<AudioOutputInner>> {
 struct HeadlessOutput {
     inner: Arc<AudioOutputInner>,
     playing: AtomicBool,
+    sample_rate: u32,
+    channels: u32,
 }
 
 impl AudioOutput for HeadlessOutput {
@@ -60,6 +70,8 @@ impl AudioOutput for HeadlessOutput {
         }
         prod
     }
+    fn sample_rate(&self) -> u32 { self.sample_rate }
+    fn channels(&self) -> u32 { self.channels }
 }
 
 // ─── cpal 后端 ───────────────────────────────────────────────
@@ -97,11 +109,14 @@ pub fn open(
     let inner = Arc::new(AudioOutputInner {
         consumer: Mutex::new(cons),
         underrun_count: AtomicU64::new(0),
+        stream_failed: AtomicBool::new(false),
     });
     let _ = HEADLESS_INNER.lock().map(|mut g| { *g = Some(inner.clone()); });
     let out = HeadlessOutput {
         inner: inner.clone(),
         playing: AtomicBool::new(true),
+        sample_rate,
+        channels,
     };
     Ok((Box::new(out) as Box<dyn AudioOutput>, prod, inner, sample_rate))
 }

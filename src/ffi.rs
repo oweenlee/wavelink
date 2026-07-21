@@ -25,10 +25,10 @@ use ringbuf::traits::{Consumer, Observer};
 // ============================================================
 
 /// 引擎事件
-/// event_type: 0=TrackChanged, 1=PlaybackStopped, 2=Position,
-///             3=DurationSecs, 4=Error, 5=QueueChanged, 6=Spectrum
 #[repr(C)]
 pub struct AcEvent {
+    /// 事件类型：0=TrackChanged, 1=PlaybackStopped, 2=Position,
+    /// 3=DurationSecs, 4=Error, 5=QueueChanged, 6=Spectrum
     pub event_type: c_int,
     /// 曲目路径 / 错误消息
     pub path: [c_char; 1024],
@@ -61,12 +61,26 @@ pub struct AcMetadata {
     pub has_cover: c_int,
 }
 
-/// 音频分析结果
+/// 音频分析结果（BPM / 调性 / 能量）（BPM / 调性 / 能量）
 #[repr(C)]
 pub struct AcAnalysis {
+    /// BPM 值（0 = 未检测到）
     pub bpm: c_float,
+    /// 调性字符串，如 "C"/"Gm"，空串 = 无法识别
     pub key: [c_char; 16],
+    /// 能量值（0~1）
     pub energy: c_float,
+}
+
+/// 实时音频电平
+#[repr(C)]
+pub struct AcLevels {
+    /// RMS 音量（归一化 0.0~1.0）
+    pub rms: c_float,
+    /// 峰值（归一化 0.0~1.0）
+    pub peak: c_float,
+    /// 是否削波（1 = 削波，0 = 正常）
+    pub clip: c_int,
 }
 
 // ============================================================
@@ -100,6 +114,7 @@ fn write_cstr_opt(dst: &mut [c_char], src: &Option<String>) {
 // 引擎
 // ============================================================
 
+/// 引擎不透明句柄（FFI 层内部使用）
 pub struct AcEngine {
     handle: EngineHandle,
     events: std::sync::Mutex<EventState>,
@@ -140,6 +155,13 @@ fn fill_ac_event(ev: &EngineEvent, out: &mut AcEvent) {
             for (i, &b) in bands.iter().enumerate().take(16) {
                 out.spectrum[i] = b;
             }
+        }
+        EngineEvent::Levels(lv) => {
+            out.event_type = 7;
+            out.value = lv.rms as c_double;
+            // 复用 spectrum[0] 传 peak，spectrum[1] 传 clip
+            out.spectrum[0] = lv.peak;
+            out.spectrum[1] = lv.clip as c_float;
         }
     }
 }
@@ -192,6 +214,7 @@ pub unsafe extern "C" fn ac_engine_destroy(engine: *mut c_void) {
 // 播放控制
 // ============================================================
 
+/// 播放指定文件
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_play(engine: *mut c_void, path: *const c_char) {
     if engine.is_null() || path.is_null() {
@@ -201,6 +224,7 @@ pub unsafe extern "C" fn ac_engine_play(engine: *mut c_void, path: *const c_char
     e.handle.play(cstr_to_str(path).to_string());
 }
 
+/// 播放一组文件（替换当前队列）
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_play_queue(
     engine: *mut c_void,
@@ -221,6 +245,7 @@ pub unsafe extern "C" fn ac_engine_play_queue(
     e.handle.play_queue(vec);
 }
 
+/// 暂停播放
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_pause(engine: *mut c_void) {
     if engine.is_null() {
@@ -230,6 +255,7 @@ pub unsafe extern "C" fn ac_engine_pause(engine: *mut c_void) {
     e.handle.pause();
 }
 
+/// 恢复播放
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_resume(engine: *mut c_void) {
     if engine.is_null() {
@@ -239,6 +265,7 @@ pub unsafe extern "C" fn ac_engine_resume(engine: *mut c_void) {
     e.handle.resume();
 }
 
+/// 停止播放
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_stop(engine: *mut c_void) {
     if engine.is_null() {
@@ -248,6 +275,7 @@ pub unsafe extern "C" fn ac_engine_stop(engine: *mut c_void) {
     e.handle.stop();
 }
 
+/// 跳转到指定位置（秒）
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_seek(engine: *mut c_void, seconds: c_double) {
     if engine.is_null() {
@@ -257,6 +285,7 @@ pub unsafe extern "C" fn ac_engine_seek(engine: *mut c_void, seconds: c_double) 
     e.handle.seek(seconds);
 }
 
+/// 下一首
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_next_track(engine: *mut c_void) {
     if engine.is_null() {
@@ -270,6 +299,7 @@ pub unsafe extern "C" fn ac_engine_next_track(engine: *mut c_void) {
 // 队列 & 模式
 // ============================================================
 
+/// 设置播放模式：0=Normal, 1=RepeatOne, 2=RepeatAll, 3=Shuffle
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_set_play_mode(engine: *mut c_void, mode: c_int) {
     if engine.is_null() {
@@ -285,6 +315,7 @@ pub unsafe extern "C" fn ac_engine_set_play_mode(engine: *mut c_void, mode: c_in
     e.handle.set_play_mode(play_mode);
 }
 
+/// 从队列中移除指定位置（0-indexed）的曲目
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_remove_from_queue(engine: *mut c_void, index: c_int) {
     if engine.is_null() || index < 0 {
@@ -298,6 +329,7 @@ pub unsafe extern "C" fn ac_engine_remove_from_queue(engine: *mut c_void, index:
 // DSP 控制
 // ============================================================
 
+/// 设置音量（0.0 ~ 1.0）
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_set_volume(engine: *mut c_void, volume: c_float) {
     if engine.is_null() {
@@ -307,6 +339,7 @@ pub unsafe extern "C" fn ac_engine_set_volume(engine: *mut c_void, volume: c_flo
     e.handle.set_volume(volume);
 }
 
+/// 设置 ReplayGain 增益（dB），0 = 关闭 ReplayGain
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_set_replaygain_gain(engine: *mut c_void, gain_db: c_float) {
     if engine.is_null() {
@@ -316,6 +349,7 @@ pub unsafe extern "C" fn ac_engine_set_replaygain_gain(engine: *mut c_void, gain
     e.handle.set_replaygain_gain_db(gain_db);
 }
 
+/// 设置 PEQ 单段参数（31 段 ISO 频段）
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_set_peq_band(
     engine: *mut c_void,
@@ -332,6 +366,7 @@ pub unsafe extern "C" fn ac_engine_set_peq_band(
         .set_peq_band(index as usize, PeqBand { freq, gain_db, q });
 }
 
+/// 设置立体声展宽（enabled=0 关闭, width=1.0 原始, >1.0 展宽）
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_set_stereo_widener(
     engine: *mut c_void,
@@ -345,6 +380,7 @@ pub unsafe extern "C" fn ac_engine_set_stereo_widener(
     e.handle.set_stereo_widener(enabled != 0, width);
 }
 
+/// 加载 IR 文件（FIR 卷积 EQ）
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_load_ir(engine: *mut c_void, path: *const c_char) {
     if engine.is_null() || path.is_null() {
@@ -354,6 +390,7 @@ pub unsafe extern "C" fn ac_engine_load_ir(engine: *mut c_void, path: *const c_c
     e.handle.load_ir(cstr_to_str(path).to_string());
 }
 
+/// 清除已加载的 IR
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_clear_ir(engine: *mut c_void) {
     if engine.is_null() {
@@ -363,6 +400,7 @@ pub unsafe extern "C" fn ac_engine_clear_ir(engine: *mut c_void) {
     e.handle.clear_ir();
 }
 
+/// 切换输出设备（移动端 Headless 模式无效）
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_set_output_device(engine: *mut c_void, name: *const c_char) {
     if engine.is_null() {
@@ -370,6 +408,84 @@ pub unsafe extern "C" fn ac_engine_set_output_device(engine: *mut c_void, name: 
     }
     let e = &*(engine as *const AcEngine);
     e.handle.set_output_device(cstr_to_str(name).to_string());
+}
+
+// ============================================================
+// 音频捕获
+// ============================================================
+
+/// 开始音频输入捕获。sample_rate / channels 为目标格式。
+/// 返回 0 成功，-1 失败。
+#[no_mangle]
+pub unsafe extern "C" fn ac_engine_start_capture(
+    engine: *mut c_void,
+    sample_rate: c_int,
+    channels: c_int,
+) -> c_int {
+    if engine.is_null() {
+        return -1;
+    }
+    let e = &*(engine as *const AcEngine);
+    e.handle.start_capture(sample_rate.max(0) as u32, channels.max(0) as u32);
+    0
+}
+
+/// 停止音频输入捕获
+#[no_mangle]
+pub unsafe extern "C" fn ac_engine_stop_capture(engine: *mut c_void) {
+    if engine.is_null() {
+        return;
+    }
+    let e = &*(engine as *const AcEngine);
+    e.handle.stop_capture();
+}
+
+/// 从捕获缓冲读取 PCM 样本（与 ac_audio_read 对称）。
+/// 返回实际读取的样本数，0 表示无数据或失败。
+#[no_mangle]
+pub unsafe extern "C" fn ac_audio_read_capture(buffer: *mut c_float, samples: c_int) -> c_int {
+    if buffer.is_null() || samples <= 0 {
+        return 0;
+    }
+    let inner = match crate::capture::capture_inner() {
+        Some(i) => i,
+        None => return 0,
+    };
+    let mut guard = match inner.consumer.lock() {
+        Ok(g) => g,
+        Err(_) => return 0,
+    };
+    let available = guard.occupied_len();
+    let to_read = (samples as usize).min(available);
+    if to_read == 0 {
+        return 0;
+    }
+    let dst = std::slice::from_raw_parts_mut(buffer, to_read);
+    guard.pop_slice(dst) as c_int
+}
+
+// ============================================================
+// 音频会话管理
+// ============================================================
+
+/// 音频会话中断开始（如电话呼入、其他 App 占用了音频），引擎自动暂停播放。
+#[no_mangle]
+pub unsafe extern "C" fn ac_engine_session_interruption_began(engine: *mut c_void) {
+    if engine.is_null() {
+        return;
+    }
+    let e = &*(engine as *const AcEngine);
+    e.handle.session_interruption_began();
+}
+
+/// 音频会话中断结束，引擎自动恢复播放。
+#[no_mangle]
+pub unsafe extern "C" fn ac_engine_session_interruption_ended(engine: *mut c_void) {
+    if engine.is_null() {
+        return;
+    }
+    let e = &*(engine as *const AcEngine);
+    e.handle.session_interruption_ended();
 }
 
 // ============================================================
@@ -410,6 +526,7 @@ pub unsafe extern "C" fn ac_audio_read(
 // 查询
 // ============================================================
 
+/// 获取当前播放位置（秒）
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_position(engine: *const c_void) -> c_double {
     if engine.is_null() {
@@ -419,6 +536,7 @@ pub unsafe extern "C" fn ac_engine_position(engine: *const c_void) -> c_double {
     e.handle.position_secs()
 }
 
+/// 获取当前曲目时长（秒）
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_duration(engine: *const c_void) -> c_double {
     if engine.is_null() {
@@ -428,6 +546,17 @@ pub unsafe extern "C" fn ac_engine_duration(engine: *const c_void) -> c_double {
     e.handle.duration_secs()
 }
 
+/// 设置播放速度（0.25 ~ 4.0），1.0 = 正常
+#[no_mangle]
+pub unsafe extern "C" fn ac_engine_set_speed(engine: *mut c_void, speed: c_float) {
+    if engine.is_null() {
+        return;
+    }
+    let e = &*(engine as *const AcEngine);
+    e.handle.set_speed(speed);
+}
+
+/// 获取播放状态（1=正在播放, 0=未播放）
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_is_playing(engine: *const c_void) -> c_int {
     if engine.is_null() {
@@ -437,6 +566,7 @@ pub unsafe extern "C" fn ac_engine_is_playing(engine: *const c_void) -> c_int {
     e.handle.is_playing() as c_int
 }
 
+/// 获取 underrun 计数
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_underrun_count(engine: *const c_void) -> c_uint {
     if engine.is_null() {
@@ -444,6 +574,24 @@ pub unsafe extern "C" fn ac_engine_underrun_count(engine: *const c_void) -> c_ui
     }
     let e = &*(engine as *const AcEngine);
     e.handle.underrun_count() as c_uint
+}
+
+/// 获取实时音频电平（RMS / 峰值 / 削波标志）
+#[no_mangle]
+pub unsafe extern "C" fn ac_engine_levels(
+    engine: *const c_void,
+    out: *mut AcLevels,
+) -> c_int {
+    if engine.is_null() || out.is_null() {
+        return -1;
+    }
+    let e = &*(engine as *const AcEngine);
+    let lv = e.handle.levels();
+    let out = &mut *out;
+    out.rms = lv.rms;
+    out.peak = lv.peak;
+    out.clip = lv.clip as c_int;
+    0
 }
 
 // ============================================================

@@ -25,8 +25,9 @@ impl Biquad {
     }
 
     /// Peaking EQ（参数均衡，RBJ audio EQ cookbook）。
-    /// freq 中心频率，sample_rate 采样率，gain_db 增益(dB)，q 品质因数。
+    /// freq 中心频率，sample_rate 采样率，gain_db 增益(dB)，q 品质因数（自动防零）。
     pub fn peaking(freq: f32, sample_rate: f32, gain_db: f32, q: f32) -> Self {
+        let q = q.max(0.001);
         let a = 10f32.powf(gain_db / 40.0);
         let w0 = 2.0 * std::f32::consts::PI * freq / sample_rate;
         let cos_w0 = w0.cos();
@@ -43,6 +44,7 @@ impl Biquad {
 
     /// 低通（用于 Crossfeed 的高频截断）
     pub fn lowpass(freq: f32, sample_rate: f32, q: f32) -> Self {
+        let q = q.max(0.001);
         let w0 = 2.0 * std::f32::consts::PI * freq / sample_rate;
         let cos_w0 = w0.cos();
         let sin_w0 = w0.sin();
@@ -58,6 +60,7 @@ impl Biquad {
 
     /// 高通（DC offset 滤除，~2Hz）
     pub fn highpass(freq: f32, sample_rate: f32, q: f32) -> Self {
+        let q = q.max(0.001);
         let w0 = 2.0 * std::f32::consts::PI * freq / sample_rate;
         let cos_w0 = w0.cos();
         let sin_w0 = w0.sin();

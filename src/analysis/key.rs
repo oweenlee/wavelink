@@ -1,3 +1,5 @@
+//! 调性检测：Chromagram + Krumhansl-Schmuckler 识别大小调。
+
 use realfft::RealFftPlanner;
 
 /// Krumhansl-Schmuckler 调性 profiles（对于 C 大调 / A 小调）

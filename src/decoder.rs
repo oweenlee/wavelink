@@ -15,7 +15,7 @@ use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedOut, WindowFunction};
 
@@ -67,7 +67,18 @@ impl Decoder {
         let (stx, srx) = unbounded();
         let p = path.to_path_buf();
         let pos_clone = position.clone();
-        let handle = thread::spawn(move || run(&p, target_rate, target_channels, tx, srx, position, seek_pos, end_secs));
+        let handle = thread::spawn(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run(&p, target_rate, target_channels, tx, srx, position, seek_pos, end_secs)
+            }));
+            if let Err(panic_info) = result {
+                let msg = if let Some(s) = panic_info.downcast_ref::<&str>() { s.to_string() }
+                          else if let Some(s) = panic_info.downcast_ref::<String>() { s.clone() }
+                          else { "解码线程未知 panic".to_string() };
+                error!("解码线程 crash: {msg}");
+                // tx 被 drop → consumer 收到 Disconnected，自然切歌
+            }
+        });
         Ok((rx, Decoder { tx: Some(stx), handle: Some(handle), position: pos_clone }))
     }
     /// 停止后台解码线程

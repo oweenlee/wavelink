@@ -12,8 +12,11 @@ use std::path::Path;
 
 /// DSD 解码结果（交错的 PCM f32 样本）
 pub struct DecodedDsd {
+    /// 交错 PCM f32 样本 [L, R, L, R, ...]
     pub samples: Vec<f32>,
+    /// 声道数
     pub channels: u32,
+    /// 输出采样率（取决于 DSD 速率）
     pub sample_rate: u32,
 }
 

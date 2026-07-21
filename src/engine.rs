@@ -32,52 +32,126 @@ pub enum PlayMode {
 pub const SPECTRUM_BANDS: usize = 16;
 
 /// 发给引擎线程的命令
+/// 发给引擎线程的命令
 pub enum EngineCommand {
+    /// 播放单个文件
     Play(String),
+    /// 设置播放队列并从第一首开始播放
     PlayQueue(Vec<String>),
+    /// 下一首
     NextTrack,
+    /// 暂停播放
     Pause,
+    /// 恢复播放
     Resume,
+    /// 停止播放并清空队列
     Stop,
+    /// 跳转到指定位置（秒）
     Seek(f64),
+    /// 加载脉冲响应文件
     LoadIr(String),
+    /// 清除脉冲响应
     ClearIr,
-    SetPeqBand { index: usize, band: PeqBand },
-    SetStereoWidener { enabled: bool, width: f32 },
+    /// 设置参数均衡器某频段的参数
+    SetPeqBand {
+        /// 频段索引（0-30）
+        index: usize,
+        /// 频段参数（频率 / 增益 / Q 值）
+        band: PeqBand,
+    },
+    /// 设置立体声展宽
+    SetStereoWidener {
+        /// 是否启用展宽
+        enabled: bool,
+        /// 展宽系数（0=单声道, 1=原始, >1=展宽）
+        width: f32,
+    },
+    /// 设置音量
     SetVolume(f32),
+    /// 设置 ReplayGain 增益（dB）
     SetReplaygainGain(f32),
+    /// 更新引擎配置，下次播放时生效
     SetConfig(EngineConfig),
+    /// 设置播放模式
     SetPlayMode(PlayMode),
+    /// 从队列中移除指定索引的曲目
     RemoveFromQueue(usize),
     /// 设置输出设备（下次播放生效）
     SetOutputDevice(String),
+    /// 设置播放速度（0.25 ~ 4.0），1.0 = 正常
+    SetSpeed(f32),
     /// 查询 underrun 计数（通过 oneshot channel 返回）
     QueryUnderrunCount(Sender<u64>),
+    /// 开始音频输入捕获
+    StartCapture {
+        /// 捕获采样率
+        sample_rate: u32,
+        /// 捕获声道数
+        channels: u32,
+    },
+    /// 停止音频输入捕获
+    StopCapture,
+    /// 音频会话中断开始（如电话呼入），引擎自动暂停播放
+    SessionInterruptionBegan,
+    /// 音频会话中断结束，引擎自动恢复播放
+    SessionInterruptionEnded,
+    /// 退出引擎线程
     Quit,
 }
 
 /// 引擎发出的事件（主线程通过 Receiver 收取）
 #[derive(Debug, Clone)]
 pub enum EngineEvent {
+    /// 曲目变更（携带新曲目路径/显示名）
     TrackChanged(String),
+    /// 播放停止
     PlaybackStopped,
+    /// 播放位置更新（秒）
     Position(f64),
+    /// 当前曲目时长（秒）
     DurationSecs(f64),
+    /// 错误消息
     Error(String),
     /// 队列变更（当前队列 + 当前曲目路径）
     QueueChanged(Vec<String>, String),
     /// 实时频谱数据（16 个频段，0.0~1.0 归一化）
     Spectrum(Vec<f32>),
+    /// 电平数据（RMS / 峰值 / 削波标志）
+    Levels(Levels),
+}
+
+/// 实时音频电平：每帧计算 RMS 和峰值（各声道最大值）
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Levels {
+    /// RMS 音量（归一化 0.0~1.0，各声道 RMS 的最大值）
+    pub rms: f32,
+    /// 峰值（归一化 0.0~1.0，各声道绝对值的最大值）
+    pub peak: f32,
+    /// 是否削波（任意样本绝对值 ≥ 1.0）
+    pub clip: bool,
+}
+
+impl Default for Levels {
+    fn default() -> Self {
+        Levels { rms: 0.0, peak: 0.0, clip: false }
+    }
 }
 
 /// 对外的句柄（Send + Sync）
 #[derive(Clone)]
 pub struct EngineHandle {
+    /// 命令发送端
     tx: Sender<EngineCommand>,
+    /// 当前播放位置（样本数），外部可读
     pub position: Arc<AtomicU64>,
+    /// 曲目时长（微秒）
     duration_us: Arc<AtomicU64>,
+    /// 播放状态（是否正在播放）
     playing: Arc<AtomicBool>,
+    /// 引擎配置
     config: EngineConfig,
+    /// 实时电平
+    levels: Arc<Mutex<Levels>>,
 }
 
 impl EngineHandle {
@@ -93,12 +167,19 @@ impl EngineHandle {
         let position = Arc::new(AtomicU64::new(0));
         let duration_us = Arc::new(AtomicU64::new(0));
         let playing = Arc::new(AtomicBool::new(false));
+        let levels = Arc::new(Mutex::new(Levels::default()));
         let pos_clone = Arc::clone(&position);
         let dur_clone = Arc::clone(&duration_us);
         let playing_clone = Arc::clone(&playing);
+        let levels_clone = Arc::clone(&levels);
         let config_clone = config.clone();
-        thread::spawn(move || run_engine(cmd_rx, event_tx, pos_clone, dur_clone, playing_clone, config_clone));
-        (EngineHandle { tx, position, duration_us, playing, config }, event_rx)
+        thread::spawn(move || run_engine(cmd_rx, event_tx, pos_clone, dur_clone, playing_clone, config_clone, levels_clone));
+        (EngineHandle { tx, position, duration_us, playing, config, levels }, event_rx)
+    }
+
+    /// 获取当前音频电平（RMS / 峰值 / 削波标志）
+    pub fn levels(&self) -> Levels {
+        self.levels.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// 开始播放指定路径的音频文件
@@ -160,11 +241,35 @@ impl EngineHandle {
     pub fn is_playing(&self) -> bool {
         self.playing.load(Ordering::Acquire)
     }
+    /// 设置播放速度（0.25 ~ 4.0），1.0 = 正常
+    pub fn set_speed(&self, speed: f32) {
+        let _ = self.tx.send(EngineCommand::SetSpeed(speed));
+    }
     /// 查询 underrun 计数
     pub fn underrun_count(&self) -> u64 {
         let (tx, rx) = bounded(1);
         let _ = self.tx.send(EngineCommand::QueryUnderrunCount(tx));
         rx.recv().unwrap_or(0)
+    }
+
+    /// 开始音频输入捕获
+    pub fn start_capture(&self, sample_rate: u32, channels: u32) {
+        let _ = self.tx.send(EngineCommand::StartCapture { sample_rate, channels });
+    }
+
+    /// 停止音频输入捕获
+    pub fn stop_capture(&self) {
+        let _ = self.tx.send(EngineCommand::StopCapture);
+    }
+
+    /// 音频会话中断开始（如电话呼入），引擎自动暂停播放
+    pub fn session_interruption_began(&self) {
+        let _ = self.tx.send(EngineCommand::SessionInterruptionBegan);
+    }
+
+    /// 音频会话中断结束，引擎自动恢复播放
+    pub fn session_interruption_ended(&self) {
+        let _ = self.tx.send(EngineCommand::SessionInterruptionEnded);
     }
 }
 
@@ -262,10 +367,14 @@ pub struct EngineState {
     play_mode: PlayMode,
     /// 原始播放队列（RepeatAll 时用于重新填充）
     original_queue: Vec<QueueEntry>,
+    /// 变速共享状态
+    speed: Arc<Mutex<f32>>,
+    /// 实时电平
+    levels: Arc<Mutex<Levels>>,
 }
 
 impl EngineState {
-    fn new(config: EngineConfig, position: Arc<AtomicU64>, duration_us: Arc<AtomicU64>, playing: Arc<AtomicBool>, external_tx: Sender<EngineEvent>) -> Self {
+    fn new(config: EngineConfig, position: Arc<AtomicU64>, duration_us: Arc<AtomicU64>, playing: Arc<AtomicBool>, external_tx: Sender<EngineEvent>, levels: Arc<Mutex<Levels>>) -> Self {
         let (internal_event_tx, _) = unbounded();
         EngineState {
             output_sample_rate: config.sample_rate,
@@ -292,6 +401,8 @@ impl EngineState {
             next_rx: Arc::new(Mutex::new(None)),
             play_mode: PlayMode::Normal,
             original_queue: Vec::new(),
+            speed: Arc::new(Mutex::new(1.0)),
+            levels,
         }
     }
 
@@ -364,7 +475,7 @@ impl EngineState {
         let position_clone = self.position.clone();
         let consumer_event_tx = self.internal_event_tx.clone();
         let (ready_tx, ready_rx) = unbounded::<bool>();
-        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms);
+        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone());
         let output = self.output.as_ref().expect("output 必须在之前创建");
         match ready_rx.recv_timeout(Duration::from_secs(3)) {
             Ok(true) => {
@@ -595,7 +706,7 @@ impl EngineState {
         let position_clone = self.position.clone();
         let consumer_event_tx = self.internal_event_tx.clone();
         let (ready_tx, ready_rx) = unbounded::<bool>();
-        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), sr, ch, self.config.crossfade_ms);
+        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), sr, ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone());
         let output = self.output.as_ref().expect("output 应存在");
         match ready_rx.recv_timeout(Duration::from_secs(3)) {
             Ok(true) => {
@@ -681,6 +792,14 @@ impl EngineState {
         }
     }
 
+    fn set_speed(&mut self, speed: f32) {
+        let s = speed.clamp(0.25, 4.0);
+        if let Ok(mut sp) = self.speed.lock() {
+            *sp = s;
+        }
+        info!("播放速度: {s:.2}x");
+    }
+
     fn set_play_mode(&mut self, mode: PlayMode) {
         self.play_mode = mode;
         info!("播放模式切换为: {mode:?}");
@@ -698,16 +817,37 @@ impl EngineState {
         }
     }
 
-    fn pause(&self) {
+    fn pause(&mut self) {
         self.playing.store(false, Ordering::Release);
+        // 淡出防 pop（~5ms）
+        if let Some(dsp) = &self.dsp {
+            if let Ok(mut p) = dsp.lock() {
+                p.start_fade_out(5);
+            }
+        }
+        // 等淡出完成后再暂停物理输出
+        thread::sleep(Duration::from_millis(6));
         if let Some(o) = &self.output { o.pause(); }
     }
     fn resume(&self) {
-        self.playing.store(true, Ordering::Release);
+        // 先恢复物理输出，再淡入（避免声音断流）
         if let Some(o) = &self.output { o.resume(); }
+        if let Some(dsp) = &self.dsp {
+            if let Ok(mut p) = dsp.lock() {
+                p.start_fade_in(5);
+            }
+        }
+        self.playing.store(true, Ordering::Release);
     }
 
     fn stop_full(&mut self) {
+        // 用户主动停止：淡出防 pop
+        if let Some(dsp) = &self.dsp {
+            if let Ok(mut p) = dsp.lock() {
+                p.start_fade_out(3);
+            }
+        }
+        thread::sleep(Duration::from_millis(5));
         self.stop_playback();
         self.output = None;
         self.output_inner = None;
@@ -787,78 +927,110 @@ fn run_engine(
     duration_us: Arc<AtomicU64>,
     playing: Arc<AtomicBool>,
     config: EngineConfig,
+    levels: Arc<Mutex<Levels>>,
 ) {
-    let mut state = EngineState::new(config, position, duration_us, playing, external_tx.clone());
+    let mut state = EngineState::new(config, position, duration_us, playing, external_tx.clone(), levels);
     info!("引擎线程启动");
 
     // 创建内部事件 channel：消费者发 "曲目结束" 走这
     let (internal_event_tx, internal_event_rx) = unbounded::<EngineEvent>();
     state.internal_event_tx = internal_event_tx;
 
-    let mut tick = crossbeam_channel::after(Duration::from_millis(200));
+    // 备份一份 tx 用于 catch_unwind 后的 panic 通知
+    let panic_tx = external_tx.clone();
 
-    loop {
-        select! {
-            recv(cmd_rx) -> msg => {
-                match msg {
-                    Ok(EngineCommand::Play(p)) => state.play_file(&p),
-                    Ok(EngineCommand::PlayQueue(paths)) => state.set_queue(paths),
-                    Ok(EngineCommand::NextTrack) => state.next_track(),
-                    Ok(EngineCommand::Pause) => state.pause(),
-                    Ok(EngineCommand::Resume) => state.resume(),
-                    Ok(EngineCommand::Stop) => state.stop_full(),
-                    Ok(EngineCommand::Seek(pos)) => state.seek(pos),
-                    Ok(EngineCommand::LoadIr(p)) => state.load_ir(&p),
-                    Ok(EngineCommand::ClearIr) => state.clear_ir(),
-                    Ok(EngineCommand::SetPeqBand { index, band }) => state.set_peq_band(index, band),
-                    Ok(EngineCommand::SetStereoWidener { enabled, width }) => state.set_stereo_widener(enabled, width),
-                    Ok(EngineCommand::SetVolume(vol)) => state.set_volume(vol),
-                    Ok(EngineCommand::SetReplaygainGain(gain)) => state.set_replaygain_db(gain),
-                    Ok(EngineCommand::SetConfig(cfg)) => {
-                        let device = state.config.output_device.take();
-                        state.config = cfg;
-                        state.config.output_device = device;
-                        info!("引擎配置更新: {}/{}ch/{}ms", state.config.sample_rate, state.config.channels, state.config.buffer_ms);
-                    },
-                    Ok(EngineCommand::SetPlayMode(mode)) => state.set_play_mode(mode),
-                    Ok(EngineCommand::SetOutputDevice(dev)) => {
-                        if state.config.output_device.as_deref() != Some(&dev) {
-                            info!("输出设备切换: {dev}（下次播放生效）");
-                            state.config.output_device = Some(dev);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut tick = crossbeam_channel::after(Duration::from_millis(200));
+
+        loop {
+            select! {
+                recv(cmd_rx) -> msg => {
+                    match msg {
+                        Ok(EngineCommand::Play(p)) => state.play_file(&p),
+                        Ok(EngineCommand::PlayQueue(paths)) => state.set_queue(paths),
+                        Ok(EngineCommand::NextTrack) => state.next_track(),
+                        Ok(EngineCommand::Pause) => state.pause(),
+                        Ok(EngineCommand::Resume) => state.resume(),
+                        Ok(EngineCommand::Stop) => state.stop_full(),
+                        Ok(EngineCommand::Seek(pos)) => state.seek(pos),
+                        Ok(EngineCommand::LoadIr(p)) => state.load_ir(&p),
+                        Ok(EngineCommand::ClearIr) => state.clear_ir(),
+                        Ok(EngineCommand::SetPeqBand { index, band }) => state.set_peq_band(index, band),
+                        Ok(EngineCommand::SetStereoWidener { enabled, width }) => state.set_stereo_widener(enabled, width),
+                        Ok(EngineCommand::SetVolume(vol)) => state.set_volume(vol),
+                        Ok(EngineCommand::SetReplaygainGain(gain)) => state.set_replaygain_db(gain),
+                        Ok(EngineCommand::SetConfig(cfg)) => {
+                            let device = state.config.output_device.take();
+                            state.config = cfg;
+                            state.config.output_device = device;
+                            info!("引擎配置更新: {}/{}ch/{}ms", state.config.sample_rate, state.config.channels, state.config.buffer_ms);
+                        },
+                        Ok(EngineCommand::SetSpeed(speed)) => state.set_speed(speed),
+                        Ok(EngineCommand::SetPlayMode(mode)) => state.set_play_mode(mode),
+                        Ok(EngineCommand::SetOutputDevice(dev)) => {
+                            if state.config.output_device.as_deref() != Some(&dev) {
+                                info!("输出设备切换: {dev}（下次播放生效）");
+                                state.config.output_device = Some(dev);
+                            }
+                        }
+                        Ok(EngineCommand::RemoveFromQueue(idx)) => state.remove_from_queue(idx),
+                        Ok(EngineCommand::StartCapture { sample_rate, channels }) => {
+                            if let Err(e) = crate::capture::start_global_capture(sample_rate, channels) {
+                                state.emit(EngineEvent::Error(format!("捕获启动失败: {e}")));
+                            }
+                        }
+                        Ok(EngineCommand::StopCapture) => {
+                            crate::capture::stop_global_capture();
+                        }
+                        Ok(EngineCommand::SessionInterruptionBegan) => {
+                            state.pause();
+                        }
+                        Ok(EngineCommand::SessionInterruptionEnded) => {
+                            state.resume();
+                        }
+                        Ok(EngineCommand::QueryUnderrunCount(resp_tx)) => {
+                            let count = state.output_inner.as_ref()
+                                .map(|o| o.underrun_count.load(Ordering::Relaxed))
+                                .unwrap_or(0);
+                            let _ = resp_tx.send(count);
+                        }
+                        Ok(EngineCommand::Quit) | Err(_) => {
+                            state.stop_full();
+                            break;
                         }
                     }
-                    Ok(EngineCommand::RemoveFromQueue(idx)) => state.remove_from_queue(idx),
-                    Ok(EngineCommand::QueryUnderrunCount(resp_tx)) => {
-                        let count = state.output_inner.as_ref()
-                            .map(|o| o.underrun_count.load(Ordering::Relaxed))
-                            .unwrap_or(0);
-                        let _ = resp_tx.send(count);
-                    }
-                    Ok(EngineCommand::Quit) | Err(_) => {
-                        state.stop_full();
-                        break;
+                }
+                recv(internal_event_rx) -> event => {
+                    match event {
+                        Ok(EngineEvent::TrackChanged(_)) => state.advance_queue(),
+                        Ok(other) => { let _ = external_tx.send(other); }
+                        Err(_) => break,
                     }
                 }
-            }
-            recv(internal_event_rx) -> event => {
-                match event {
-                    // 消费者报告曲目播放完毕 → 播下一首或停止
-                    Ok(EngineEvent::TrackChanged(_)) => state.advance_queue(),
-                    // 消费者也可能报告错误（目前走外部 channel，保留兜底）
-                    Ok(other) => { let _ = external_tx.send(other); }
-                    Err(_) => break,
+                recv(tick) -> _ => {
+                    let pos_samples = state.position.load(Ordering::Acquire) as f64;
+                    let sr = state.config.sample_rate as f64;
+                    let ch = state.config.channels as f64;
+                    let pos_secs = pos_samples / (sr * ch);
+                    let _ = external_tx.send(EngineEvent::Position(pos_secs));
+                    tick = crossbeam_channel::after(Duration::from_millis(200));
                 }
-            }
-            recv(tick) -> _ => {
-                let pos_samples = state.position.load(Ordering::Acquire) as f64;
-                let sr = state.config.sample_rate as f64;
-                let ch = state.config.channels as f64;
-                let pos_secs = pos_samples / (sr * ch);
-                let _ = external_tx.send(EngineEvent::Position(pos_secs));
-                tick = crossbeam_channel::after(Duration::from_millis(200));
             }
         }
+    }));
+
+    if let Err(panic_info) = result {
+        let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = panic_info.downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "引擎线程 panic（未知原因）".into()
+        };
+        error!("引擎线程 crash: {msg}");
+        let _ = panic_tx.send(EngineEvent::Error(format!("引擎内部错误: {msg}")));
     }
+
     info!("引擎线程退出");
 }
 
@@ -883,18 +1055,21 @@ fn spawn_consumer(
     sample_rate: u32,
     channels: u32,
     crossfade_ms: u32,
+    speed: Arc<Mutex<f32>>,
+    levels: Arc<Mutex<Levels>>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
-        // [macOS] 提升线程 QoS
-        #[cfg(target_os = "macos")]
-        {
-            extern "C" {
-                fn pthread_set_qos_class_self_np(class: u32, offset: i32) -> i32;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // [macOS] 提升线程 QoS
+            #[cfg(target_os = "macos")]
+            {
+                extern "C" {
+                    fn pthread_set_qos_class_self_np(class: u32, offset: i32) -> i32;
+                }
+                unsafe { pthread_set_qos_class_self_np(0x21, 0); }
             }
-            unsafe { pthread_set_qos_class_self_np(0x21, 0); }
-        }
 
-        let config = crate::consumer::ConsumerConfig {
+            let config = crate::consumer::ConsumerConfig {
             sample_rate,
             channels,
             fft_interval: 3,
@@ -907,7 +1082,24 @@ fn spawn_consumer(
             rx,
             &config,
             &|s| pcm_mutex.lock().unwrap_or_else(|e| e.into_inner()).push_slice(s),
-            &|buf| { if let Ok(mut pipeline) = dsp.lock() { pipeline.process(buf); } },
+            &|buf| {
+                if let Ok(mut pipeline) = dsp.lock() { pipeline.process(buf); }
+                // 计算 RMS 和峰值
+                let mut sum_sq = 0.0f32;
+                let mut peak_val = 0.0f32;
+                for &s in buf.iter() {
+                    let abs = s.abs();
+                    sum_sq += s * s;
+                    if abs > peak_val { peak_val = abs; }
+                }
+                let n = buf.len() as f32;
+                let rms = (sum_sq / n).sqrt();
+                if let Ok(mut lv) = levels.lock() {
+                    lv.rms = rms;
+                    lv.peak = peak_val;
+                    lv.clip = peak_val >= 1.0;
+                }
+            },
             &|bands| { let _ = event_tx.send(EngineEvent::Spectrum(bands.to_vec())); },
             &|| { let _ = event_tx.send(EngineEvent::Error("解码器输出坏帧（全零/NaN），已跳过".into())); },
             &|n| { position.fetch_add(n, Ordering::Release); },
@@ -923,8 +1115,17 @@ fn spawn_consumer(
             },
             &stop_flag,
             ready_tx,
+            speed,
         );
 
+        }));
+        if let Err(panic_info) = result {
+            let msg = if let Some(s) = panic_info.downcast_ref::<&str>() { s.to_string() }
+                      else if let Some(s) = panic_info.downcast_ref::<String>() { s.clone() }
+                      else { "消费者线程未知 panic".to_string() };
+            error!("消费者线程 crash: {msg}");
+            let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
+        }
         debug!("消费者线程结束");
     })
 }
@@ -971,6 +1172,8 @@ mod tests {
                 QueueEntry::for_file("/tmp/a.wav".into()),
                 QueueEntry::for_file("/tmp/b.wav".into()),
             ],
+            speed: Arc::new(Mutex::new(1.0)),
+            levels: Arc::new(Mutex::new(Levels::default())),
         };
         (s, rx)
     }
@@ -1119,7 +1322,7 @@ mod tests {
 
     #[test]
     fn test_pause_resume_toggles_playing() {
-        let (state, _rx) = make_state(vec![], PlayMode::Normal);
+        let (mut state, _rx) = make_state(vec![], PlayMode::Normal);
         assert!(!state.playing.load(Ordering::Acquire), "初始应为未播放");
         state.resume();
         assert!(state.playing.load(Ordering::Acquire), "resume 后应为 true");
@@ -1335,7 +1538,7 @@ mod tests {
         let rb = ringbuf::HeapRb::<f32>::new(65536);
         let (prod, _cons) = rb.split();
 
-        let consumer = spawn_consumer(rx1, prod, dsp, stop.clone(), pos, ev_tx, ready_tx, next_rx.clone(), 44100, 2, 0);
+        let consumer = spawn_consumer(rx1, prod, dsp, stop.clone(), pos, ev_tx, ready_tx, next_rx.clone(), 44100, 2, 0, Arc::new(Mutex::new(1.0)), Arc::new(Mutex::new(Levels::default())));
 
         // 发送第一首曲的帧，让消费者就绪
         let frame = DecodedFrame {

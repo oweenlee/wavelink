@@ -36,26 +36,33 @@ def gather():
             items = []
             i = 0
             while i < len(lines):
-                # Collect doc comment block
+                # 跳过 doc 前的空行/属性行（不跳过 /// 行）
+                while i < len(lines):
+                    s = lines[i].strip()
+                    if s == "" or s.startswith("#["):
+                        i += 1
+                    else:
+                        break
+                # 收集文档注释块
                 docs = []
                 while i < len(lines) and lines[i].lstrip().startswith("///"):
                     docs.append(re.sub(r'^\s*///\s?', '', lines[i]))
                     i += 1
-                # Skip blank/attribute lines (but not doc lines)
+                # 跳过 doc 和 pub 之间的空行/属性行
                 while i < len(lines):
                     s = lines[i].strip()
                     if s == "" or s.startswith("#[") or s.startswith("//!"):
                         i += 1
                     else:
                         break
-                # If we have docs and the next line has 'pub ', record it
+                # 如果找到了 doc 且下一行有 pub，记录
                 if docs and i < len(lines):
                     sig = lines[i].strip()
                     if "pub " in sig:
-                        # Drop implementation body (anything after {)
+                        # 去掉函数体/结构体体
                         if "{" in sig:
                             sig = sig[:sig.index("{")].rstrip() + " { ..."
-                        # Collapse whitespace
+                        # 压缩空白
                         sig = re.sub(r'\s+', ' ', sig)
                         if len(sig) > 120:
                             sig = sig[:117] + "..."
