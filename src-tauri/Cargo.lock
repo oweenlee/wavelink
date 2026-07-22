@@ -110,6 +110,7 @@ dependencies = [
  "hound",
  "lofty",
  "matroska",
+ "parking_lot",
  "realfft 3.5.0",
  "ringbuf",
  "rubato",
