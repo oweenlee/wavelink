@@ -5,8 +5,9 @@
 //! - 移动端/无设备: HeadlessOutput (ringbuf → FFI)
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+use parking_lot::Mutex;
 use ringbuf::traits::Split;
 use ringbuf::{HeapCons, HeapProd, HeapRb};
 
@@ -16,6 +17,7 @@ pub type PcmProducer = HeapProd<f32>;
 /// 被音频回调和引擎线程共享的内部状态
 pub struct AudioOutputInner {
     /// ringbuf 消费者端，回调通过它读取样本
+    /// 使用 parking_lot::Mutex：无内核调用，适配实时音频回调线程
     pub consumer: Mutex<HeapCons<f32>>,
     /// underrun 计数（回调读不到数据时递增）
     pub underrun_count: AtomicU64,
@@ -65,9 +67,8 @@ impl AudioOutput for HeadlessOutput {
             (sample_rate as f32 * buffer_ms as f32 / 1000.0) as usize * channels as usize;
         let rb = HeapRb::<f32>::new(buf_samples.max(64));
         let (prod, new_cons) = rb.split();
-        if let Ok(mut guard) = self.inner.consumer.lock() {
-            let _ = std::mem::replace(&mut *guard, new_cons);
-        }
+        let mut guard = self.inner.consumer.lock();
+        let _ = std::mem::replace(&mut *guard, new_cons);
         prod
     }
     fn sample_rate(&self) -> u32 { self.sample_rate }

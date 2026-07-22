@@ -58,6 +58,7 @@ void ac_engine_resume(void* engine);
 void ac_engine_stop(void* engine);
 void ac_engine_seek(void* engine, double seconds);
 void ac_engine_next_track(void* engine);
+void ac_engine_prev_track(void* engine);
 
 // ==================== 队列 & 模式 ====================
 
@@ -68,6 +69,7 @@ void ac_engine_remove_from_queue(void* engine, int index);
 // ==================== DSP 控制 ====================
 
 void ac_engine_set_volume(void* engine, float volume);
+void ac_engine_set_speed(void* engine, float speed);
 void ac_engine_set_replaygain_gain(void* engine, float gain_db);
 void ac_engine_set_peq_band(void* engine, int index, float freq,
                             float gain_db, float q);

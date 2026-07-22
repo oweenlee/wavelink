@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crossbeam_channel::{bounded, select, unbounded, Receiver, Sender};
 use ringbuf::traits::Producer;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::decoder::{Decoder, DecodedFrame};
 use crate::dsp::{DspPipeline, PeqBand};
@@ -918,6 +918,102 @@ impl EngineState {
         self.position.store(0, Ordering::SeqCst);
     }
 
+    /// 设备断开后自动恢复：保存当前位置 → 重建输出 → 从断点继续播放
+    fn recover_output(&mut self) {
+        // 保存当前播放状态
+        let entry = match self.current_entry.clone() {
+            Some(e) => e,
+            None => {
+                // 没有正在播放的曲目，仅清理输出
+                self.output = None;
+                self.output_inner = None;
+                return;
+            }
+        };
+        let pos_samples = self.position.load(Ordering::Acquire);
+        let pos_secs = pos_samples as f64 / (self.output_sample_rate as f64 * self.config.channels as f64);
+
+        // 停止当前播放（不重置 position，不清 current_entry）
+        self.playing.store(false, Ordering::Release);
+        if let Some(flag) = &self.consumer_stop { flag.store(true, Ordering::SeqCst); }
+        if let Some(d) = &self.decoder { d.stop(); }
+        if let Some(d) = &self.next_decoder { d.stop(); }
+        if let Some(t) = self.consumer_thread.take() { let _ = t.join(); }
+        self.decoder = None;
+        self.next_decoder = None;
+        self.next_entry = None;
+        self.consumer_stop = None;
+        self.dsp = None;
+
+        // 丢弃旧输出
+        self.output = None;
+        self.output_inner = None;
+
+        // 等待设备可能恢复（USB DAC 拔出后重新插入需要时间）
+        std::thread::sleep(Duration::from_millis(500));
+
+        // 重新打开输出设备
+        let sr = self.config.sample_rate;
+        let ch = self.config.channels;
+        let (pcm, actual_sr, actual_ch) = match crate::output::open(ch, sr, self.config.buffer_ms, self.config.output_device.as_deref()) {
+            Ok((output, prod, inner, actual_rate)) => {
+                self.output_inner = Some(inner);
+                self.output = Some(output);
+                self.output_sample_rate = actual_rate;
+                (prod, actual_rate, ch)
+            }
+            Err(e) => {
+                error!("设备恢复失败，无法重新打开输出: {e}");
+                self.emit(EngineEvent::Error(format!("音频设备恢复失败: {e}")));
+                return;
+            }
+        };
+
+        // 从断点位置重新启动解码器
+        let seek_secs = entry.start_secs + pos_secs;
+        let path_buf = Path::new(&entry.audio_file).to_path_buf();
+        let (rx, decoder) = match Decoder::start(
+            &path_buf, actual_sr, actual_ch, self.position.clone(),
+            Some(seek_secs), entry.end_secs_opt(),
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("设备恢复后解码失败: {e}");
+                self.emit(EngineEvent::Error(format!("设备恢复后解码失败: {e}")));
+                return;
+            }
+        };
+        self.decoder = Some(decoder);
+
+        // 重建 DSP 管线
+        let dsp = Arc::new(Mutex::new(DspPipeline::new(
+            actual_sr, actual_ch as usize, &self.peq_bands,
+            true, self.current_volume, 24,
+        )));
+        self.dsp = Some(dsp.clone());
+
+        // 启动消费者线程
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        self.consumer_stop = Some(stop_flag.clone());
+        let consumer_event_tx = self.internal_event_tx.clone();
+        let (ready_tx, ready_rx) = unbounded::<bool>();
+        let consumer = spawn_consumer(rx, pcm, dsp, stop_flag, self.position.clone(), consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone());
+        self.consumer_thread = Some(consumer);
+
+        let output = self.output.as_ref().expect("output 必须在之前创建");
+        match ready_rx.recv_timeout(Duration::from_secs(3)) {
+            Ok(true) => {
+                output.resume();
+                self.playing.store(true, Ordering::Release);
+                info!("设备恢复成功，从 {:.1}s 继续播放", pos_secs);
+                self.preload_next();
+            }
+            _ => {
+                error!("设备恢复后消费者启动超时");
+            }
+        }
+    }
+
     fn emit(&self, event: EngineEvent) {
         if self.external_tx.send(event).is_err() {
             tracing::warn!("事件发送失败：事件接收器已断开");
@@ -1064,6 +1160,13 @@ fn run_engine(
                     }
                 }
                 recv(tick) -> _ => {
+                    // 设备断开检测：stream_failed 由 cpal 错误回调置位
+                    if let Some(ref inner) = state.output_inner {
+                        if inner.stream_failed.load(Ordering::Acquire) {
+                            warn!("检测到音频设备断开，尝试恢复...");
+                            state.recover_output();
+                        }
+                    }
                     let pos_samples = state.position.load(Ordering::Acquire) as f64;
                     let sr = state.config.sample_rate as f64;
                     let ch = state.config.channels as f64;

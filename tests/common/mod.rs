@@ -54,11 +54,9 @@ pub fn ensure_fixtures() -> TestAudio {
     }
 }
 
-/// 用 hound 生成标准正弦波 WAV
+/// 用 hound 生成标准正弦波 WAV（始终重新生成，避免旧文件参数不匹配）
 fn generate_wav(path: &str, sample_rate: u32, channels: u16, duration_secs: f64) {
-    if Path::new(path).exists() {
-        return;
-    }
+    let _ = std::fs::remove_file(path); // 确保重新生成
     let spec = hound::WavSpec {
         channels,
         sample_rate,

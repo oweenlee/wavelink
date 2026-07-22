@@ -47,10 +47,9 @@ impl AudioOutput for AudioOutputCpal {
         let rb = HeapRb::<f32>::new(buf_samples.max(64));
         let (prod, new_cons) = rb.split();
 
-        if let Ok(mut guard) = self.inner.consumer.lock() {
-            guard.clear();
-            *guard = new_cons;
-        }
+        let mut guard = self.inner.consumer.lock();
+        guard.clear();
+        *guard = new_cons;
 
         prod
     }
@@ -110,7 +109,7 @@ pub(crate) fn open_inner(
     let (producer, consumer) = rb.split();
 
     let inner = Arc::new(AudioOutputInner {
-        consumer: std::sync::Mutex::new(consumer),
+        consumer: parking_lot::Mutex::new(consumer),
         underrun_count: std::sync::atomic::AtomicU64::new(0),
         stream_failed: std::sync::atomic::AtomicBool::new(false),
     });
@@ -127,17 +126,14 @@ pub(crate) fn open_inner(
                 data.fill(0.0);
                 return;
             }
-            if let Ok(mut guard) = inner_clone.consumer.lock() {
-                let n = guard.pop_slice(data);
-                if n < data.len() {
-                    let cnt = inner_clone.underrun_count.fetch_add(1, Ordering::Relaxed) + 1;
-                    if cnt <= 10 || cnt % 100 == 0 {
-                        warn!("音频 underrun #{cnt}: 回调需要 {} 样本但仅读到 {}", data.len(), n);
-                    }
-                    data[n..].fill(0.0);
+            let mut guard = inner_clone.consumer.lock();
+            let n = guard.pop_slice(data);
+            if n < data.len() {
+                let cnt = inner_clone.underrun_count.fetch_add(1, Ordering::Relaxed) + 1;
+                if cnt <= 10 || cnt % 100 == 0 {
+                    warn!("音频 underrun #{cnt}: 回调需要 {} 样本但仅读到 {}", data.len(), n);
                 }
-            } else {
-                data.fill(0.0);
+                data[n..].fill(0.0);
             }
         },
         move |err| {
@@ -182,7 +178,7 @@ pub(crate) fn open_inner(
             let rb = HeapRb::<f32>::new(fallback_buf.max(64));
             let (fb_prod, fb_cons) = rb.split();
             let fb_inner = Arc::new(AudioOutputInner {
-                consumer: std::sync::Mutex::new(fb_cons),
+                consumer: parking_lot::Mutex::new(fb_cons),
                 underrun_count: std::sync::atomic::AtomicU64::new(0),
                 stream_failed: std::sync::atomic::AtomicBool::new(false),
             });
@@ -199,17 +195,14 @@ pub(crate) fn open_inner(
                             data.fill(0.0);
                             return;
                         }
-                        if let Ok(mut guard) = fb_inner_clone.consumer.lock() {
-                            let n = guard.pop_slice(data);
-                            if n < data.len() {
-                                let cnt = fb_inner_clone.underrun_count.fetch_add(1, Ordering::Relaxed) + 1;
-                                if cnt <= 10 || cnt % 100 == 0 {
-                                    warn!("音频 underrun #{} (fallback): 回调需要 {} 样本但仅读到 {}", cnt, data.len(), n);
-                                }
-                                data[n..].fill(0.0);
+                        let mut guard = fb_inner_clone.consumer.lock();
+                        let n = guard.pop_slice(data);
+                        if n < data.len() {
+                            let cnt = fb_inner_clone.underrun_count.fetch_add(1, Ordering::Relaxed) + 1;
+                            if cnt <= 10 || cnt % 100 == 0 {
+                                warn!("音频 underrun #{} (fallback): 回调需要 {} 样本但仅读到 {}", cnt, data.len(), n);
                             }
-                        } else {
-                            data.fill(0.0);
+                            data[n..].fill(0.0);
                         }
                     },
                     move |err| {

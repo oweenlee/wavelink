@@ -161,7 +161,7 @@ fn fill_ac_event(ev: &EngineEvent, out: &mut AcEvent) {
             out.value = lv.rms as c_double;
             // 复用 spectrum[0] 传 peak，spectrum[1] 传 clip
             out.spectrum[0] = lv.peak;
-            out.spectrum[1] = lv.clip as c_float;
+            out.spectrum[1] = if lv.clip { 1.0 } else { 0.0 };
         }
     }
 }
@@ -293,6 +293,16 @@ pub unsafe extern "C" fn ac_engine_next_track(engine: *mut c_void) {
     }
     let e = &*(engine as *const AcEngine);
     e.handle.next_track();
+}
+
+/// 上一首（播放>3s 回开头，≤3s 切上一曲）
+#[no_mangle]
+pub unsafe extern "C" fn ac_engine_prev_track(engine: *mut c_void) {
+    if engine.is_null() {
+        return;
+    }
+    let e = &*(engine as *const AcEngine);
+    e.handle.prev_track();
 }
 
 // ============================================================
@@ -451,10 +461,7 @@ pub unsafe extern "C" fn ac_audio_read_capture(buffer: *mut c_float, samples: c_
         Some(i) => i,
         None => return 0,
     };
-    let mut guard = match inner.consumer.lock() {
-        Ok(g) => g,
-        Err(_) => return 0,
-    };
+    let mut guard = inner.consumer.lock();
     let available = guard.occupied_len();
     let to_read = (samples as usize).min(available);
     if to_read == 0 {
@@ -509,10 +516,7 @@ pub unsafe extern "C" fn ac_audio_read(
         Some(i) => i,
         None => return 0,
     };
-    let mut guard = match inner.consumer.lock() {
-        Ok(g) => g,
-        Err(_) => return 0,
-    };
+    let mut guard = inner.consumer.lock();
     let available = guard.occupied_len();
     let to_read = (samples as usize).min(available);
     if to_read == 0 {

@@ -17,6 +17,8 @@ fastrand = "2"
 fft-convolver = "0.4"
 hound = "3.5"
 tracing = "0.1"
+# 实时安全互斥锁（无内核调用，适配音频回调线程）
+parking_lot = "0.12"
 
 # 分析模块（BPM / Key）
 realfft = "3"

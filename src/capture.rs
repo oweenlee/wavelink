@@ -5,8 +5,9 @@
 //! - 移动端: 由平台层直接管理
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+use parking_lot::Mutex;
 use ringbuf::traits::{Producer, Split};
 use ringbuf::{HeapCons, HeapRb};
 
@@ -20,7 +21,7 @@ static CAPTURE_INNER: Mutex<Option<Arc<CaptureInner>>> = Mutex::new(None);
 
 /// 获取全局捕获缓冲（供 FFI `ac_audio_read_capture` 使用）
 pub(crate) fn capture_inner() -> Option<Arc<CaptureInner>> {
-    CAPTURE_INNER.lock().ok()?.clone()
+    CAPTURE_INNER.lock().clone()
 }
 
 // ─── 全局捕获管理器 ────────────────────────────────────────────
@@ -51,7 +52,7 @@ pub fn start_global_capture(sample_rate: u32, channels: u32) -> Result<(), Strin
     let inner = Arc::new(CaptureInner {
         consumer: Mutex::new(cons),
     });
-    let _ = CAPTURE_INNER.lock().map(|mut g| { *g = Some(inner); });
+    *CAPTURE_INNER.lock() = Some(inner);
 
     let err_fn = |err| tracing::error!("捕获回调错误: {err}");
 
@@ -91,7 +92,7 @@ pub fn stop_global_capture() {
         let _ = unsafe { Box::from_raw(ptr as *mut cpal::Stream) };
     }
     CAPTURE_ACTIVE.store(false, Ordering::Release);
-    let _ = CAPTURE_INNER.lock().map(|mut g| { *g = None; });
+    *CAPTURE_INNER.lock() = None;
 }
 
 /// 是否正在捕获
@@ -110,5 +111,5 @@ pub fn start_global_capture(_sample_rate: u32, _channels: u32) -> Result<(), Str
 #[cfg(not(feature = "cpal-backend"))]
 pub fn stop_global_capture() {
     CAPTURE_ACTIVE.store(false, Ordering::Release);
-    let _ = CAPTURE_INNER.lock().map(|mut g| { *g = None; });
+    *CAPTURE_INNER.lock() = None;
 }
