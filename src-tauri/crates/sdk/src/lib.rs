@@ -4,10 +4,17 @@
 
 /// 引擎控制
 pub use audio_core::{EngineConfig, EngineEvent, EngineHandle, Levels, PlayMode, TARGET_CHANNELS, TARGET_SAMPLE_RATE};
+/// 统一错误类型
+pub use audio_core::EngineError;
 
 /// 音频输出设备
 pub mod output {
     pub use audio_core::output::list_device_names;
+}
+
+/// 独占模式（macOS Hog Mode / Windows WASAPI Exclusive）
+pub mod exclusive {
+    pub use audio_core::exclusive::{acquire_exclusive_mode, release_exclusive_mode};
 }
 
 /// DSP 管线

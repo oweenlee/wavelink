@@ -120,6 +120,8 @@ pub fn set_engine_config(
     channels: u32,
     buffer_ms: u32,
     crossfade_ms: u32,
+    auto_sample_rate: Option<bool>,
+    exclusive_mode: Option<bool>,
     state: State<AppState>,
 ) {
     let cfg = sdk::EngineConfig {
@@ -128,7 +130,8 @@ pub fn set_engine_config(
         buffer_ms,
         crossfade_ms,
         output_device: None,
-        ..Default::default()
+        auto_sample_rate: auto_sample_rate.unwrap_or(false),
+        exclusive_mode: exclusive_mode.unwrap_or(false),
     };
     state.engine.set_config(cfg);
 }

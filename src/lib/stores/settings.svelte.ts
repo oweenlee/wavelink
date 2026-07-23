@@ -7,6 +7,8 @@ let _bufferMs = $state(280);
 let _crossfadeMs = $state(0);
 let _replaygainEnabled = $state(false);
 let _audioDevice = $state('');
+let _autoSampleRate = $state(false);
+let _exclusiveMode = $state(false);
 let _loaded = $state(false);
 
 export function getSettingsState() {
@@ -33,6 +35,12 @@ export function getSettingsState() {
 		get audioDevice() { return _audioDevice; },
 		set audioDevice(v: string) { _audioDevice = v; },
 
+		get autoSampleRate() { return _autoSampleRate; },
+		set autoSampleRate(v: boolean) { _autoSampleRate = v; },
+
+		get exclusiveMode() { return _exclusiveMode; },
+		set exclusiveMode(v: boolean) { _exclusiveMode = v; },
+
 		get loaded() { return _loaded; },
 
 		// ── Persistence ──
@@ -48,6 +56,8 @@ export function getSettingsState() {
 				if (typeof saved.crossfadeMs === 'number') _crossfadeMs = saved.crossfadeMs;
 				if (typeof saved.replaygainEnabled === 'boolean') _replaygainEnabled = saved.replaygainEnabled;
 				if (typeof saved.audioDevice === 'string') _audioDevice = saved.audioDevice;
+				if (typeof saved.autoSampleRate === 'boolean') _autoSampleRate = saved.autoSampleRate;
+				if (typeof saved.exclusiveMode === 'boolean') _exclusiveMode = saved.exclusiveMode;
 				_loaded = true;
 				return saved;
 			} catch (err) {
@@ -70,6 +80,8 @@ export function getSettingsState() {
 						crossfadeMs: _crossfadeMs,
 						replaygainEnabled: _replaygainEnabled,
 						audioDevice: _audioDevice,
+						autoSampleRate: _autoSampleRate,
+						exclusiveMode: _exclusiveMode,
 						...extra,
 					},
 				});
@@ -87,6 +99,8 @@ export function getSettingsState() {
 					channels: 2,
 					bufferMs: _bufferMs,
 					crossfadeMs: _crossfadeMs,
+					autoSampleRate: _autoSampleRate,
+					exclusiveMode: _exclusiveMode,
 				});
 				await this.save();
 			} catch (err) {

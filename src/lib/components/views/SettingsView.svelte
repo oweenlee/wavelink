@@ -148,6 +148,24 @@
 							<span class="slider-val">{settings.crossfadeMs} ms</span>
 						</div>
 					</div>
+					<div class="setting-row">
+						<div class="setting-label">
+							<span class="label-text">{t('settings.auto_sample_rate')}</span>
+							<span class="label-desc">{t('settings.auto_sample_rate_desc')}</span>
+						</div>
+						<button class="toggle" class:active={settings.autoSampleRate} onclick={() => { settings.autoSampleRate = !settings.autoSampleRate; applyEngineConfig(); }} aria-label="{t('settings.auto_sample_rate')}">
+							<span class="toggle-knob"></span>
+						</button>
+					</div>
+					<div class="setting-row">
+						<div class="setting-label">
+							<span class="label-text">{t('settings.exclusive_mode')}</span>
+							<span class="label-desc">{t('settings.exclusive_mode_desc')}</span>
+						</div>
+						<button class="toggle" class:active={settings.exclusiveMode} onclick={() => { settings.exclusiveMode = !settings.exclusiveMode; applyEngineConfig(); }} aria-label="{t('settings.exclusive_mode')}">
+							<span class="toggle-knob"></span>
+						</button>
+					</div>
 				</div>
 			{/if}
 		</div>
