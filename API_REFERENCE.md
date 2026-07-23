@@ -1,6 +1,6 @@
 # wavelink-audio-core API Reference
 
-> 源码 hash: `48f3bb43148e`  |  生成时间: 2026-07-22 09:52
+> 源码 hash: `6895b87716e8`  |  生成时间: 2026-07-23 23:45
 > AI 助手优先读此文件，而非读 `src/` 源码。若 AI 返回的代码与当前签名不匹配，请重新运行 `bash doc-api.sh`。
 
 ---
@@ -37,6 +37,16 @@ DSP 管线：参数均衡器 / 串音补偿 / 立体声展宽 / 限幅 / 抖动
 pub mod dsp;
 ```
 
+统一错误类型  
+```rust
+pub mod error;
+```
+
+独占模式（macOS Hog Mode / Windows WASAPI Exclusive）  
+```rust
+pub mod exclusive;
+```
+
 C 语言 FFI 绑定（引擎控制 / 元数据 / 音频分析）  
 ```rust
 pub mod ffi;
@@ -50,6 +60,11 @@ pub mod engine;
 音频输出抽象（cpal / HeadlessOutput）  
 ```rust
 pub mod output;
+```
+
+流式音频数据源（网络流媒体解码用，平台层写入字节流）  
+```rust
+pub mod stream;
 ```
 
 目标输出采样率（默认 44100 Hz），可通过 EngineConfig 覆盖  
@@ -92,9 +107,24 @@ pub crossfade_ms: u32,
 pub output_device: Option<String>,
 ```
 
+是否自动匹配文件采样率到输出设备（HiFi 场景建议开启）  
+```rust
+pub auto_sample_rate: bool,
+```
+
+是否请求独占模式（WASAPI Exclusive / macOS Hog Mode）  
+```rust
+pub exclusive_mode: bool,
+```
+
 引擎事件 / 引擎句柄 / 播放模式 / 电平数据  
 ```rust
 pub use engine:: { ...
+```
+
+统一错误类型  
+```rust
+pub use error::EngineError;
 ```
 
 音频文件元数据（标题/艺术家/专辑/时长/封面标志）  
@@ -403,6 +433,15 @@ pub fn start(
 停止后台解码线程  
 ```rust
 pub fn stop(&self) { ...
+```
+
+从流式数据源启动解码（网络流媒体用）。  
+- `source` — 平台层写入字节流的 `StreamMediaSource`  
+- `target_rate` / `target_channels` — 输出重采样目标  
+- `position` — 外部可读的解码进度  
+- `format_hint` — 可选格式提示（如 "mp3", "flac", "aac"），帮助 Symphonia 探测  
+```rust
+pub fn start_from_stream(
 ```
 
 将整个音频文件解码到内存，返回交错 PCM f32 样本。  
@@ -930,16 +969,21 @@ pub fn process(&mut self, buf: &mut [f32]) { ...
 
 ---
 
-### `engine.rs`
+### `engine/command.rs` — 引擎命令与事件类型定义
 
-播放模式  
+命令应答通道类型  
 ```rust
-pub enum PlayMode { ...
+pub type CmdAck = Option<Sender<Result<(), EngineError>>>;
 ```
 
 频谱分析数据（16 个频段幅值，0.0~1.0 归一化）  
 ```rust
 pub const SPECTRUM_BANDS: usize = 16;
+```
+
+播放模式  
+```rust
+pub enum PlayMode { ...
 ```
 
 发给引擎线程的命令  
@@ -972,6 +1016,10 @@ pub peak: f32,
 pub clip: bool,
 ```
 
+---
+
+### `engine/handle.rs` — EngineHandle — 对外的线程安全句柄
+
 对外的句柄（Send + Sync）  
 ```rust
 pub struct EngineHandle { ...
@@ -980,6 +1028,11 @@ pub struct EngineHandle { ...
 当前播放位置（样本数），外部可读  
 ```rust
 pub position: Arc<AtomicU64>,
+```
+
+共享输出内部状态（替代全局 static，供 FFI 层读取音频数据）  
+```rust
+pub output_inner: Arc<RwLock<Option<Arc<AudioOutputInner>>>>,
 ```
 
 使用默认配置启动引擎线程，返回句柄和事件接收器  
@@ -997,9 +1050,24 @@ pub fn start_with_config(config: EngineConfig) -> (EngineHandle, Receiver<Engine
 pub fn levels(&self) -> Levels { ...
 ```
 
-开始播放指定路径的音频文件  
+开始播放指定路径的音频文件（异步，fire-and-forget）  
 ```rust
 pub fn play(&self, path: String) { ...
+```
+
+同步播放（等待引擎确认启动成功）  
+```rust
+pub fn play_sync(&self, path: String) -> Result<(), EngineError> { ...
+```
+
+开始流式播放（网络流媒体用，异步）  
+```rust
+pub fn play_stream(&self, format_hint: Option<String>, content_length: Option<u64>) { ...
+```
+
+同步流式播放（等待引擎确认启动成功）  
+```rust
+pub fn play_stream_sync(&self, format_hint: Option<String>, content_length: Option<u64>) -> Result<(), EngineError> {...
 ```
 
 设置播放队列并从第一首开始播放  
@@ -1032,9 +1100,14 @@ pub fn resume(&self) { ...
 pub fn stop(&self) { ...
 ```
 
-跳转到指定位置（秒）  
+跳转到指定位置（秒，异步）  
 ```rust
 pub fn seek(&self, pos: f64) { ...
+```
+
+同步跳转（等待引擎确认 seek 完成）  
+```rust
+pub fn seek_sync(&self, pos: f64) -> Result<(), EngineError> { ...
 ```
 
 加载脉冲响应文件（卷积均衡器用）  
@@ -1055,6 +1128,11 @@ pub fn set_peq_band(&self, index: usize, band: PeqBand) { ...
 设置立体声展宽  
 ```rust
 pub fn set_stereo_widener(&self, enabled: bool, width: f32) { ...
+```
+
+设置跨馈  
+```rust
+pub fn set_crossfeed(&self, enabled: bool) { ...
 ```
 
 设置音量（0.0 ~ 2.0）  
@@ -1085,6 +1163,11 @@ pub fn remove_from_queue(&self, index: usize) { ...
 设置输出设备名称（None = 系统默认），下次播放时生效  
 ```rust
 pub fn set_output_device(&self, name: String) { ...
+```
+
+同步设置输出设备（等待引擎确认）  
+```rust
+pub fn set_output_device_sync(&self, name: String) -> Result<(), EngineError> { ...
 ```
 
 获取当前播放位置（秒）  
@@ -1132,6 +1215,53 @@ pub fn session_interruption_began(&self) { ...
 pub fn session_interruption_ended(&self) { ...
 ```
 
+从引擎的 ringbuf 读取交错 PCM 样本（替代全局 read_output_samples）。  
+返回实际读取的样本数；若输出未初始化返回 0。  
+```rust
+pub fn read_samples(&self, buf: &mut [f32]) -> usize { ...
+```
+
+---
+
+### `engine/mod.rs` — 音频引擎模块
+
+---
+
+### `engine/queue.rs` — 播放队列管理
+
+显示名称（TrackChanged/QueueChanged 事件用）  
+```rust
+pub display: String,
+```
+
+实际解码的音频文件路径  
+```rust
+pub audio_file: String,
+```
+
+文件内起始偏移（秒）  
+```rust
+pub start_secs: f64,
+```
+
+文件内结束位置（秒），<= 0 表示播放到文件末尾  
+```rust
+pub end_secs: f64,
+```
+
+唯一标识（audio_file + start_secs），用于队列移除时精确匹配  
+```rust
+pub fn unique_key(&self) -> (&str, u64) { ...
+```
+
+---
+
+### `engine/recovery.rs` — 设备断开自动恢复逻辑
+
+---
+
+### `engine/state.rs` — EngineState — 引擎内部运行状态（只存在于引擎线程）
+
 引擎内部运行状态（只存在于引擎线程）  
 ```rust
 pub struct EngineState { ...
@@ -1139,22 +1269,92 @@ pub struct EngineState { ...
 
 ---
 
+### `engine/thread_priority.rs` — 跨平台音频线程优先级提升
+
+各平台策略：  
+- macOS / iOS: QOS_CLASS_USER_INTERACTIVE  
+- Android: setpriority(PRIO_PROCESS, 0, -16)  
+- Linux: SCHED_FIFO priority 80  
+- Windows: THREAD_PRIORITY_TIME_CRITICAL  
+失败时仅打印日志，不 panic（非关键路径）。  
+```rust
+pub fn elevate_audio_thread() { ...
+```
+
+---
+
+### `engine/worker.rs` — 引擎线程主循环 + 消费者线程
+
+---
+
+### `error.rs` — 统一错误类型
+
+引擎错误类型  
+```rust
+pub enum EngineError { ...
+```
+
+---
+
+### `exclusive.rs` — 独占模式支持
+
+macOS: 获取 Hog Mode（独占音频设备）  
+设置后其他应用无法使用该设备，直到本进程释放或退出。  
+```rust
+pub fn acquire_exclusive_mode() -> bool { ...
+```
+
+macOS: 释放 Hog Mode  
+```rust
+pub fn release_exclusive_mode() { ...
+```
+
+非 macOS 平台：独占模式暂不支持，返回 false  
+```rust
+pub fn acquire_exclusive_mode() -> bool { ...
+```
+
+非 macOS 平台：释放独占模式（无操作）  
+```rust
+pub fn release_exclusive_mode() { ...
+```
+
+---
+
 ### `ffi.rs` — C 语言 FFI 绑定。通过 `extern "C"` 导出函数供移动端（Kotlin/Swift）调用。
 
+FFI 统一错误码（所有 FFI 函数返回值）  
+```rust
+pub enum AcError { ...
+```
+
 引擎事件  
+字符串字段（path）通过调用方提供的缓冲区传出，不再固定长度。  
+调用方在调用 ac_engine_poll_event 前设置 path / path_cap，  
+函数填充后设置 path_len 为实际需要的长度（不含 null 终止符）。  
 ```rust
 pub struct AcEvent { ...
 ```
 
 事件类型：0=TrackChanged, 1=PlaybackStopped, 2=Position,  
-3=DurationSecs, 4=Error, 5=QueueChanged, 6=Spectrum  
+3=DurationSecs, 4=Error, 5=QueueChanged, 6=Spectrum, 7=Levels  
 ```rust
 pub event_type: c_int,
 ```
 
-曲目路径 / 错误消息  
+字符串输出缓冲区（调用方分配）  
 ```rust
-pub path: [c_char; 1024],
+pub path: *mut c_char,
+```
+
+缓冲区容量（含 null 终止符位置）  
+```rust
+pub path_cap: c_int,
+```
+
+实际字符串长度（不含 null 终止符）；若 >= path_cap 表示缓冲区不足  
+```rust
+pub path_len: c_int,
 ```
 
 时间值（Position / DurationSecs）  
@@ -1255,6 +1455,13 @@ pub peak: c_float,
 是否削波（1 = 削波，0 = 正常）  
 ```rust
 pub clip: c_int,
+```
+
+事件回调函数类型  
+- `event`: 指向事件数据的指针（仅在回调执行期间有效）  
+- `user_data`: 调用方自定义上下文指针  
+```rust
+pub type AcEventCallback = extern "C" fn(event: *const AcEvent, user_data: *mut c_void);
 ```
 
 引擎不透明句柄（FFI 层内部使用）  
@@ -1428,6 +1635,15 @@ pub unsafe extern "C" fn ac_engine_levels(
 pub unsafe extern "C" fn ac_engine_poll_event(
 ```
 
+设置事件回调函数。  
+设置后，引擎事件将通过回调函数推送，无需轮询。  
+传 callback = null 则禁用回调，恢复轮询模式。  
+注意：回调在独立监听线程中调用，回调函数必须是线程安全的。  
+回调中的 event 指针仅在回调执行期间有效，不要保存或跨线程传递。  
+```rust
+pub unsafe extern "C" fn ac_engine_set_event_callback(
+```
+
 读取音频文件元数据。返回 0 成功，-1 失败。  
 ```rust
 pub unsafe extern "C" fn ac_metadata_read(path: *const c_char, meta: *mut AcMetadata) -> c_int { ...
@@ -1459,6 +1675,31 @@ pub unsafe extern "C" fn ac_analyze_file(
 快速探测音频文件采样率。返回采样率 Hz，失败返回 0。  
 ```rust
 pub unsafe extern "C" fn ac_probe_sample_rate(path: *const c_char) -> c_int { ...
+```
+
+列出可用输出设备名称。返回设备数量。  
+out_buf: 连续存储缓冲区，每个设备名占 name_size 字节（含 null 终止符）。  
+max_count: 最多写入的设备数。仅 cpal 后端有效，其他平台返回 0。  
+```rust
+pub unsafe extern "C" fn ac_list_output_devices(
+```
+
+开始流式播放。平台层负责网络 I/O，通过 ac_stream_write 写入数据。  
+format_hint 为格式提示（如 "mp3", "flac", "aac"），传 null 则自动探测。  
+返回 0 成功，-1 失败。  
+```rust
+pub unsafe extern "C" fn ac_engine_play_stream(
+```
+
+向流式播放写入音频数据。应在 ac_engine_play_stream 成功后调用。  
+返回实际写入的字节数，0 表示流已关闭或失败。  
+```rust
+pub unsafe extern "C" fn ac_stream_write(
+```
+
+通知流式播放数据已结束（EOF）。  
+```rust
+pub unsafe extern "C" fn ac_stream_eof(engine: *mut c_void) { ...
 ```
 
 ---
@@ -1510,6 +1751,20 @@ pub fn list_device_names() -> Vec<String> { ...
 
 ---
 
+### `output/output_audiounit.rs` — iOS AudioUnit (RemoteIO) 音频输出后端
+
+AudioUnit 音频输出句柄  
+```rust
+pub struct AudioOutputUnit { ...
+```
+
+共享内部状态  
+```rust
+pub inner: Arc<AudioOutputInner>,
+```
+
+---
+
 ### `output/output_cpal.rs` — cpal 音频输出后端
 
 cpal 音频输出句柄  
@@ -1523,6 +1778,20 @@ pub stream: cpal::Stream,
 ```
 
 共享内部状态（consumer ringbuf + underrun 计数）  
+```rust
+pub inner: Arc<AudioOutputInner>,
+```
+
+---
+
+### `output/output_oboe.rs` — Android Oboe/AAudio 音频输出后端
+
+Oboe 音频输出句柄  
+```rust
+pub struct AudioOutputOboe { ...
+```
+
+共享内部状态  
 ```rust
 pub inner: Arc<AudioOutputInner>,
 ```
@@ -1573,4 +1842,50 @@ pub fn export_playlist(path: &Path, entries: &[PlaylistEntry]) -> Result<(), Str
 
 ---
 
-> 283 个 pub 项。运行 `bash doc-api.sh` 刷新。
+### `stream.rs` — 流式音频数据源
+
+流式音频数据源（实现 Symphonia `MediaSource`）  
+内部通过 crossbeam channel 接收平台层写入的字节数据，  
+解码线程以阻塞方式读取。不支持 Seek（网络流不可回溯）。  
+```rust
+pub struct StreamMediaSource { ...
+```
+
+流写入端句柄（平台层持有，通过 FFI 写入数据）  
+线程安全：可从任意线程调用 write / signal_eof。  
+可克隆：克隆后的句柄共享同一个底层 channel。  
+```rust
+pub struct StreamHandle { ...
+```
+
+创建一对 (数据源, 写入句柄)。  
+- `content_length`: 可选的 Content-Length（字节），用于进度估算  
+```rust
+pub fn stream_pair(content_length: Option<u64>) -> (StreamMediaSource, StreamHandle) { ...
+```
+
+写入一段音频数据。返回实际写入的字节数。  
+如果内部缓冲已满（背压），会阻塞直到解码线程消费。  
+如果流已关闭（EOF 或解码器停止），返回 0。  
+```rust
+pub fn write(&self, data: &[u8]) -> usize { ...
+```
+
+通知流结束（EOF）。调用后 write() 将不再生效。  
+```rust
+pub fn signal_eof(&self) { ...
+```
+
+是否已标记 EOF  
+```rust
+pub fn is_eof(&self) -> bool { ...
+```
+
+Content-Length（如果平台层提供了）  
+```rust
+pub fn content_length(&self) -> Option<u64> { ...
+```
+
+---
+
+> 330 个 pub 项。运行 `bash doc-api.sh` 刷新。

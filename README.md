@@ -63,14 +63,15 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → cpal �
 | `dsp::limiter` | 4x 过采样真峰值限幅 |
 | `dsp::dither` | TPDF 抖动 (声道独立噪声序列) |
 | `dsp::pipeline` | `DspPipeline` 串联所有滤波器；10 种 EQ 预设；运行时调参 |
-| `engine` | Actor 模型引擎线程；队列 + 4 种播放模式 + 无缝预加载 + CUE 分轨虚拟队列 + 交叉淡入 + 实时频谱 + 实时电平 + 变速播放 + 会话管理 + 坏帧保护 |
+| `engine` | Actor 模型引擎线程；队列 + 4 种播放模式 + 无缝预加载 + CUE 分轨虚拟队列 + 交叉淡入 + 实时频谱 + 实时电平 + 变速播放 + 会话管理 + 坏帧保护 + 排他模式状态跟踪 |
 | `output` | cpal 输出 + `swap_consumer` + 采样率 fallback + underrun 计数 |
 | `analysis` | BPM (自相关) + 调性 (Chromagram + Krumhansl-Schmuckler) + 能量 |
 | `capture` | 音频输入捕获 (cpal 后端, 全局状态管理) |
 | `dsd` | DSD→PCM 转换 (3 级 sinc 降采样) |
 | `cue` | CUE 分轨解析 (parse_cue / CueSheet / CueTrack) |
 | `playlist` | M3U/M3U8/PLS 播放列表解析 |
-| `ffi` | C 导出: 引擎控制 / 元数据 / 封面 / 音频分析 / BPM 调性 / 事件轮询 |
+| `stream` | 网络流媒体数据源：`StreamMediaSource`（Symphonia MediaSource）+ `StreamHandle`，平台层写入字节流，core 解码 |
+| `ffi` | C 导出: 引擎控制 / 元数据 / 封面 / 音频分析 / BPM 调性 / 事件轮询 / 事件回调 / 流式播放 / 设备枚举 |
 
 ## 配置
 
@@ -106,6 +107,7 @@ let (engine, events) = EngineHandle::start_with_config(config);
 | rubato 异步 SRC (-120dB aliasing) | ✅ |
 | 声道混音 (多声道→立体声/单声道) | ✅ |
 | 流式解码 (1GB+ 文件, 恒定内存) | ✅ |
+| 网络流媒体播放 (StreamMediaSource) | ✅ |
 | 全文件解码到内存 (decode_to_memory) | ✅ |
 | NaN/Inf 帧检测跳过 | ✅ |
 | **DSP 管线** | |
@@ -149,6 +151,9 @@ let (engine, events) = EngineHandle::start_with_config(config);
 | DSP 控制 (音量/PEQ/展宽/Crossfeed/ReplayGain/IR) | ✅ |
 | 队列 & 播放模式 (Normal/RepeatOne/RepeatAll/Shuffle) | ✅ |
 | 事件轮询 (非阻塞, 8 种事件类型) | ✅ |
+| 事件回调注册 (ac_engine_set_event_callback) | ✅ |
+| 流式播放 (ac_engine_play_stream / ac_stream_write / ac_stream_eof) | ✅ |
+| 输出设备枚举 (ac_list_output_devices) | ✅ |
 | 元数据读取 (lofty: title/artist/album/genre/year/track/disc/封面) | ✅ |
 | ReplayGain 标签读取 (track/album gain+peak) | ✅ |
 | 封面读取 (音频 + MP4 + MKV/WebM 附件) / 释放 | ✅ |
@@ -165,7 +170,7 @@ let (engine, events) = EngineHandle::start_with_config(config);
 ## 测试
 
 ```bash
-cargo test -p audio-core    # 109 个测试 (95 单元 + 14 集成)
+cargo test -p audio-core    # 134 个测试 (单元 + 集成)
 cargo test -p audio-core -- --ignored  # 含 FFmpeg 依赖的格式验证
 ```
 
@@ -198,6 +203,98 @@ for event in events {
 }
 ```
 
+## 网络流媒体播放
+
+平台层负责网络 I/O，core 只做解码 + DSP + 输出：
+
+```c
+// 1. 启动流式播放（format_hint 可为 NULL 或 "flac"/"mp3" 等）
+ac_engine_play_stream(engine, "flac");
+
+// 2. 在网络数据回调中写入字节
+ac_stream_write(engine, data, len);
+
+// 3. 数据全部写完
+ac_stream_eof(engine);
+
+// 4. 播放结束或出错时清理
+ac_stream_destroy(engine);
+```
+
+## 事件回调
+
+无需轮询，事件主动推送：
+
+```c
+void on_event(const AcEvent* ev, void* ctx) {
+    switch (ev->event_type) {
+        case 0: printf("切歌: %s\n", ev->path); break;
+        case 2: printf("位置: %.1fs\n", ev->value); break;
+        // ...
+    }
+}
+
+ac_engine_set_event_callback(engine, on_event, NULL);
+// 传 callback=NULL 恢复轮询模式
+```
+
+## 输出设备枚举
+
+```c
+char buf[10][256];  // 最多 10 个设备，每个名称最长 255 字符
+int count = ac_list_output_devices(buf[0], 256, 10);
+```
+
 ## API 文档
 
 详细 API 参考见 [`API_REFERENCE.md`](./API_REFERENCE.md)（由 `bash doc-api.sh` 自动生成）。
+
+## FFI 迁移指南（v2）
+
+### AcEvent 结构体变更
+
+`path` 从固定长度数组改为调用方提供的动态缓冲区：
+
+```c
+// 旧版（v1）
+typedef struct {
+    int event_type;
+    char path[1024];      // 固定 1024 字节
+    double value;
+    float spectrum[16];
+} AcEvent;
+
+// 新版（v2）
+typedef struct {
+    int event_type;
+    char* path;           // 调用方分配缓冲区
+    int   path_cap;       // 缓冲区容量
+    int   path_len;       // 实际长度（>= path_cap 表示缓冲区不足）
+    double value;
+    float spectrum[16];
+} AcEvent;
+```
+
+**迁移步骤：**
+
+```c
+// 轮询模式：分配缓冲区并设置指针
+char buf[2048];
+AcEvent ev = { .path = buf, .path_cap = sizeof(buf) };
+if (ac_engine_poll_event(engine, &ev)) {
+    if (ev.path_len >= ev.path_cap) {
+        // 缓冲区不足，需要更大 buf
+    }
+    printf("event %d: %s\n", ev.event_type, buf);
+}
+```
+
+### ac_list_output_devices 签名变更
+
+```c
+// 旧版
+int ac_list_output_devices(char (*out_names)[256], int max_count);
+
+// 新版
+int ac_list_output_devices(char* out_buf, int name_size, int max_count);
+```

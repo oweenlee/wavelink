@@ -1,0 +1,320 @@
+//! 引擎端到端集成测试
+//!
+//! 测试 EngineHandle → 引擎线程 → 解码器 → consumer → output 完整链路。
+//! 使用 HeadlessOutput（无物理设备依赖），通过合成 WAV 验证行为正确性。
+
+use std::time::Duration;
+
+use audio_core::engine::{EngineEvent, EngineHandle};
+use audio_core::EngineConfig;
+use crossbeam_channel::Receiver;
+
+// ── 测试夹具 ──
+
+/// 生成一个 1s 440Hz 正弦波 WAV 文件
+fn generate_wav(path: &str, sample_rate: u32, channels: u16, duration_secs: f64) {
+    let spec = hound::WavSpec {
+        channels,
+        sample_rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(path, spec).unwrap();
+    let n = (sample_rate as f64 * duration_secs) as u32 * channels as u32;
+    for i in 0..n {
+        let t = i as f64 / sample_rate as f64;
+        let s = (t * 440.0 * 2.0 * std::f64::consts::PI).sin() * 0.5;
+        writer.write_sample((s * i16::MAX as f64) as i16).unwrap();
+    }
+    writer.finalize().unwrap();
+}
+
+fn ensure_test_wav() -> String {
+    let path = "/tmp/_engine_test_tone.wav".to_string();
+    if !std::path::Path::new(&path).exists() {
+        generate_wav(&path, 44100, 2, 1.0);
+    }
+    path
+}
+
+fn ensure_short_wav() -> String {
+    let path = "/tmp/_engine_test_short.wav".to_string();
+    if !std::path::Path::new(&path).exists() {
+        generate_wav(&path, 44100, 2, 0.3);
+    }
+    path
+}
+
+/// 收集一段时间内的引擎事件
+fn collect_events(rx: &Receiver<EngineEvent>, timeout: Duration) -> Vec<EngineEvent> {
+    let deadline = std::time::Instant::now() + timeout;
+    let mut events = Vec::new();
+    while std::time::Instant::now() < deadline {
+        match rx.recv_timeout(Duration::from_millis(20)) {
+            Ok(ev) => events.push(ev),
+            Err(_) => continue, // 超时继续，直到 deadline
+        }
+    }
+    events
+}
+
+/// 清空事件 channel 中残留的事件
+fn drain_events(rx: &Receiver<EngineEvent>) {
+    loop {
+        match rx.try_recv() {
+            Ok(_) => continue,
+            Err(_) => break,
+        }
+    }
+}
+
+// ── 测试 ──
+
+#[test]
+fn test_engine_play_emits_track_changed() {
+    let path = ensure_test_wav();
+    let (handle, rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+
+    handle.play(path.clone());
+
+    let ev = rx.recv_timeout(Duration::from_secs(5))
+        .expect("应收到 TrackChanged 事件");
+    match ev {
+        EngineEvent::TrackChanged(ref p) => assert_eq!(p, &path, "路径应匹配"),
+        other => panic!("期望 TrackChanged, 收到: {other:?}"),
+    }
+
+    handle.stop();
+    // 等待引擎线程退出
+    std::thread::sleep(Duration::from_millis(100));
+}
+
+#[test]
+fn test_engine_pause_resume_toggles_playing() {
+    let path = ensure_test_wav();
+    let (handle, rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+
+    handle.play(path.clone());
+    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+
+    assert!(handle.is_playing(), "播放后应处于播放状态");
+
+    handle.pause();
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(!handle.is_playing(), "暂停后应停止");
+
+    handle.resume();
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(handle.is_playing(), "恢复后应继续");
+
+    handle.stop();
+}
+
+#[test]
+fn test_engine_seek_changes_position() {
+    let path = ensure_test_wav();
+    let (handle, rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+
+    handle.play(path.clone());
+    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+
+    let pos_before = handle.position_secs();
+
+    handle.seek(0.5);
+    // 等待 seek 命令被引擎线程处理 + 解码器在新位置开始输出
+    std::thread::sleep(Duration::from_millis(200));
+
+    let pos_after = handle.position_secs();
+    // seek 后位置应明显不同于 seek 前，且在 0.5s 附近
+    assert!(
+        (pos_after - pos_before).abs() > 0.1,
+        "seek 后位置应显著变化: {pos_before:.3}s -> {pos_after:.3}s"
+    );
+    assert!(
+        pos_after > 0.3,
+        "seek(0.5) 后位置应在 ~0.5s, 实际: {pos_after:.3}s"
+    );
+
+    handle.stop();
+}
+
+#[test]
+fn test_engine_position_increases_monotonically() {
+    let path = ensure_test_wav();
+    let (handle, rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+
+    handle.play(path.clone());
+    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+
+    let mut positions = Vec::new();
+    for _ in 0..5 {
+        std::thread::sleep(Duration::from_millis(150));
+        positions.push(handle.position_secs());
+    }
+
+    // 验证位置单调递增
+    for w in positions.windows(2) {
+        assert!(
+            w[1] >= w[0],
+            "位置应单调递增: {} -> {}", w[0], w[1]
+        );
+    }
+
+    handle.stop();
+}
+
+#[test]
+fn test_engine_stop_resets_position() {
+    let path = ensure_test_wav();
+    let (handle, rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+
+    handle.play(path.clone());
+    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+    std::thread::sleep(Duration::from_millis(200));
+
+    handle.stop();
+    std::thread::sleep(Duration::from_millis(200));
+
+    assert!(!handle.is_playing(), "stop 后应停止播放");
+    let pos = handle.position_secs();
+    assert!(
+        (pos - 0.0).abs() < 0.01,
+        "stop 后位置应归零, 实际: {pos:.3}s"
+    );
+}
+
+#[test]
+fn test_engine_play_after_stop() {
+    let path = ensure_test_wav();
+    let (handle, rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+
+    // 第一次播放
+    handle.play(path.clone());
+    rx.recv_timeout(Duration::from_secs(5)).expect("第一次 TrackChanged");
+    std::thread::sleep(Duration::from_millis(200));
+    handle.stop();
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(!handle.is_playing());
+
+    // 排空残留事件（如 DurationSecs / Position）
+    drain_events(&rx);
+
+    // 第二次播放同文件
+    handle.play(path.clone());
+    let ev = rx.recv_timeout(Duration::from_secs(5))
+        .expect("第二次应收到 TrackChanged");
+    match ev {
+        EngineEvent::TrackChanged(_) => {}, // ok
+        other => panic!("期望 TrackChanged, 收到: {other:?}"),
+    }
+    assert!(handle.is_playing(), "第二次播放后应是播放状态");
+
+    handle.stop();
+}
+
+#[test]
+fn test_engine_duration_is_reported() {
+    let path = ensure_test_wav(); // 1s 文件
+    let (handle, rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+
+    handle.play(path.clone());
+    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+
+    // 收集事件找 DurationSecs
+    let events = collect_events(&rx, Duration::from_secs(2));
+    let has_duration = events.iter().any(|e| matches!(e, EngineEvent::DurationSecs(_)));
+
+    assert!(has_duration, "应收到 DurationSecs 事件");
+
+    let dur = handle.duration_secs();
+    assert!(
+        (dur - 1.0).abs() < 0.1,
+        "时长应在 1.0s 附近, 实际: {dur:.3}s"
+    );
+
+    handle.stop();
+}
+
+#[test]
+fn test_engine_queue_advances_to_next() {
+    let short = ensure_short_wav(); // 0.3s
+    let (handle, rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 30,
+        ..Default::default()
+    });
+
+    handle.play_queue(vec![short.clone(), short.clone()]);
+
+    // 等第一首播完 + 第二首开始
+    let mut track_changes = Vec::new();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        match rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(EngineEvent::TrackChanged(p)) => track_changes.push(p),
+            Ok(_) => continue,
+            Err(_) => continue, // 超时继续等
+        }
+    }
+
+    assert!(
+        track_changes.len() >= 2,
+        "应至少收到 2 次 TrackChanged (自动切歌), 实际 {} 次",
+        track_changes.len()
+    );
+
+    handle.stop();
+}
+
+#[test]
+fn test_engine_multiple_commands_stress() {
+    let path = ensure_test_wav();
+    let (handle, _rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+
+    // 连续发命令不 panic
+    for _ in 0..20 {
+        handle.play(path.clone());
+        handle.pause();
+        handle.resume();
+        handle.seek(0.1);
+    }
+    handle.stop();
+}
+
+#[test]
+fn test_engine_handle_clone_works() {
+    let path = ensure_test_wav();
+    let (handle, rx) = EngineHandle::start();
+
+    let h2 = handle.clone();
+    h2.play(path.clone());
+
+    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+    assert!(handle.is_playing());
+
+    handle.stop();
+    drop(h2);
+}
