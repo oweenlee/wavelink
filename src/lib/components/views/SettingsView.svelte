@@ -12,6 +12,7 @@
 	let _invoke: ((cmd: string, args?: any) => Promise<any>) | null = null;
 	let folders = $state<string[]>([]);
 	let devices = $state<string[]>([]);
+	let showAdvanced = $state(false);
 
 	$effect(() => {
 		if (!browser) return;
@@ -71,44 +72,12 @@
 </script>
 
 <div class="settings-page">
-	<!-- ── 引擎配置 ── -->
+	<!-- ── 音频 ── -->
 	<div class="card">
 		<div class="card-header">
-			<h3 class="card-title">{t('settings.audio_engine')}</h3>
+			<h3 class="card-title">{t('settings.audio')}</h3>
 		</div>
 		<div class="card-body">
-			<div class="setting-row">
-				<div class="setting-label">
-					<span class="label-text">{t('settings.sample_rate')}</span>
-					<span class="label-desc">{t('settings.sample_rate_desc')}</span>
-				</div>
-				<select class="select" bind:value={settings.sampleRate} onchange={applyEngineConfig}>
-					<option value={44100}>{t('settings.cd')}</option>
-					<option value={48000}>{t('settings.dvd')}</option>
-					<option value={96000}>{t('settings.hi_res_96')}</option>
-					<option value={192000}>{t('settings.hi_res_192')}</option>
-				</select>
-			</div>
-			<div class="setting-row">
-				<div class="setting-label">
-					<span class="label-text">{t('settings.buffer_size')}</span>
-					<span class="label-desc">{t('settings.buffer_desc')}</span>
-				</div>
-				<div class="slider-row">
-					<input type="range" min="20" max="300" step="10" bind:value={settings.bufferMs} onchange={applyEngineConfig} class="slider" style="--accent: {settings.accentColor};" />
-					<span class="slider-val">{settings.bufferMs} ms</span>
-				</div>
-			</div>
-			<div class="setting-row">
-				<div class="setting-label">
-					<span class="label-text">{t('settings.crossfade')}</span>
-					<span class="label-desc">{t('settings.crossfade_desc')}</span>
-				</div>
-				<div class="slider-row">
-					<input type="range" min="0" max="5000" step="100" bind:value={settings.crossfadeMs} onchange={applyEngineConfig} class="slider" style="--accent: {settings.accentColor};" />
-					<span class="slider-val">{settings.crossfadeMs} ms</span>
-				</div>
-			</div>
 			<div class="setting-row">
 				<div class="setting-label">
 					<span class="label-text">{t('settings.output_device')}</span>
@@ -121,35 +90,6 @@
 					{/each}
 				</select>
 			</div>
-		</div>
-	</div>
-
-	<!-- ── 外观 ── -->
-	<div class="card">
-		<div class="card-header">
-			<h3 class="card-title">{t('settings.appearance')}</h3>
-		</div>
-		<div class="card-body">
-			<div class="setting-row">
-				<div class="setting-label">
-					<span class="label-text">{t('settings.accent_color')}</span>
-					<span class="label-desc">{t('settings.accent_desc')}</span>
-				</div>
-				<div class="color-row">
-					{#each accentColors as c (c.color)}
-						<button class="color-dot" class:active={settings.accentColor === c.color} style="background: {c.color};" onclick={() => setAccentColor(c.color)} title={c.name}></button>
-					{/each}
-				</div>
-			</div>
-		</div>
-	</div>
-
-	<!-- ── 播放 ── -->
-	<div class="card">
-		<div class="card-header">
-			<h3 class="card-title">{t('settings.playback')}</h3>
-		</div>
-		<div class="card-body">
 			<div class="setting-row">
 				<div class="setting-label">
 					<span class="label-text">{t('settings.replaygain')}</span>
@@ -159,6 +99,57 @@
 					<span class="toggle-knob"></span>
 				</button>
 			</div>
+			<div class="setting-row">
+				<div class="setting-label">
+					<span class="label-text">{t('settings.capture')}</span>
+					<span class="label-desc">{t('settings.capture_desc')}</span>
+				</div>
+				<button class="toggle" class:active={playback.capturing} onclick={() => playback.capturing ? playback.stopCapture() : playback.startCapture()} aria-label={t('settings.toggle_capture')}>
+					<span class="toggle-knob"></span>
+				</button>
+			</div>
+
+			<!-- 高级引擎配置 -->
+			<button class="advanced-toggle" onclick={() => showAdvanced = !showAdvanced}>
+				<span class="advanced-icon" class:open={showAdvanced}>▶</span>
+				{t('settings.advanced')}
+			</button>
+			{#if showAdvanced}
+				<div class="advanced-section">
+					<div class="setting-row">
+						<div class="setting-label">
+							<span class="label-text">{t('settings.sample_rate')}</span>
+							<span class="label-desc">{t('settings.sample_rate_desc')}</span>
+						</div>
+						<select class="select" bind:value={settings.sampleRate} onchange={applyEngineConfig}>
+							<option value={44100}>{t('settings.cd')}</option>
+							<option value={48000}>{t('settings.dvd')}</option>
+							<option value={96000}>{t('settings.hi_res_96')}</option>
+							<option value={192000}>{t('settings.hi_res_192')}</option>
+						</select>
+					</div>
+					<div class="setting-row">
+						<div class="setting-label">
+							<span class="label-text">{t('settings.buffer_size')}</span>
+							<span class="label-desc">{t('settings.buffer_desc')}</span>
+						</div>
+						<div class="slider-row">
+							<input type="range" min="20" max="300" step="10" bind:value={settings.bufferMs} onchange={applyEngineConfig} class="slider" style="--accent: {settings.accentColor};" />
+							<span class="slider-val">{settings.bufferMs} ms</span>
+						</div>
+					</div>
+					<div class="setting-row">
+						<div class="setting-label">
+							<span class="label-text">{t('settings.crossfade')}</span>
+							<span class="label-desc">{t('settings.crossfade_desc')}</span>
+						</div>
+						<div class="slider-row">
+							<input type="range" min="0" max="5000" step="100" bind:value={settings.crossfadeMs} onchange={applyEngineConfig} class="slider" style="--accent: {settings.accentColor};" />
+							<span class="slider-val">{settings.crossfadeMs} ms</span>
+						</div>
+					</div>
+				</div>
+			{/if}
 		</div>
 	</div>
 
@@ -244,4 +235,17 @@
 	.btn-remove { width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: var(--fg-tertiary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; }
 	.btn-remove:hover { background: rgba(239,68,68,0.15); color: #ef4444; }
 	.empty-hint { font-size: 12px; color: var(--fg-tertiary); text-align: center; padding: 8px 0; }
+
+	.advanced-toggle {
+		display: flex; align-items: center; gap: 6px; padding: 6px 0; border: none;
+		background: transparent; color: var(--fg-tertiary); font-size: 11px; font-weight: 500;
+		cursor: pointer; transition: color 0.15s; width: 100%; text-align: left;
+	}
+	.advanced-toggle:hover { color: var(--fg-secondary); }
+	.advanced-icon { font-size: 8px; transition: transform 0.15s; }
+	.advanced-icon.open { transform: rotate(90deg); }
+	.advanced-section {
+		padding: 12px 0 0; border-top: 1px solid var(--separator);
+		display: flex; flex-direction: column; gap: 16px;
+	}
 </style>

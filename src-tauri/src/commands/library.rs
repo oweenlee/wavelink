@@ -6,7 +6,7 @@ use crate::state::AppState;
 #[tauri::command]
 pub fn scan_dir(path: String, state: State<AppState>) -> Result<serde_json::Value, String> {
     let dir = PathBuf::from(&path);
-    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
     let result = Scanner::scan_directory(&db, &dir)?;
     db.add_folder(&path).ok();
     Ok(serde_json::json!({
@@ -18,13 +18,13 @@ pub fn scan_dir(path: String, state: State<AppState>) -> Result<serde_json::Valu
 
 #[tauri::command]
 pub fn get_scan_folders(state: State<AppState>) -> Result<Vec<String>, String> {
-    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
     db.list_folders().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn remove_scan_folder(path: String, state: State<AppState>) -> Result<usize, String> {
-    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
     let removed = db.remove_folder(&path).map_err(|e| e.to_string())?;
     Ok(removed.len())
 }
@@ -36,25 +36,25 @@ pub fn search_tracks(
     offset: i64,
     state: State<AppState>,
 ) -> Result<Vec<Track>, String> {
-    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
     db.search(&keyword, limit, offset).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_tracks(limit: i64, offset: i64, state: State<AppState>) -> Result<Vec<Track>, String> {
-    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
     db.all_tracks(limit, offset).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_artists(state: State<AppState>) -> Result<Vec<String>, String> {
-    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
     db.artists().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_albums_by_artist(artist: String, state: State<AppState>) -> Result<Vec<String>, String> {
-    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
     db.albums_by_artist(&artist).map_err(|e| e.to_string())
 }
 
@@ -64,25 +64,25 @@ pub fn get_tracks_by_album(
     album: String,
     state: State<AppState>,
 ) -> Result<Vec<Track>, String> {
-    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
     db.tracks_by_album(&artist, &album).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_all_albums(state: State<AppState>) -> Result<Vec<AlbumBrief>, String> {
-    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
     db.all_albums().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_track_count(state: State<AppState>) -> Result<i64, String> {
-    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
     db.track_count().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_cover(track_id: i64, state: State<AppState>) -> Result<Option<String>, String> {
-    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
     db.get_cover(track_id).map_err(|e| e.to_string())
 }
 
@@ -95,6 +95,6 @@ pub fn get_file_cover_cmd(path: String) -> Result<Option<String>, String> {
 /// 清空数据库所有数据并重建
 #[tauri::command]
 pub fn reset_database(state: State<AppState>) -> Result<(), String> {
-    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
-    db.reset_database().map_err(|e| format!("重置数据库失败: {e}"))
+    let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
+    db.reset_database().map_err(|e| format!("reset database failed: {e}"))
 }

@@ -400,9 +400,17 @@
 	.th-artist { flex: 1 1 25%; min-width: 0; }
 	.th-album { flex: 1 1 25%; min-width: 0; }
 	.th-duration { width: 48px; text-align: right; flex-shrink: 0; }
-	.track-row { display: flex; align-items: center; padding: var(--space-2) var(--space-3); border: none; background: transparent; cursor: pointer; transition: all 0.12s var(--ease-out); width: 100%; text-align: left; font-family: inherit; color: var(--fg-secondary); font-size: 13px; border-radius: var(--radius-sm); margin: 1px 0; }
+	.track-row { display: flex; align-items: center; padding: var(--space-2) var(--space-3); border: none; background: transparent; cursor: pointer; transition: all 0.12s var(--ease-out); width: 100%; text-align: left; font-family: inherit; color: var(--fg-secondary); font-size: 13px; border-radius: var(--radius-sm); margin: 1px 0; position: relative; overflow: hidden; }
+	.track-row::before {
+		content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 2px;
+		background: var(--accent); border-radius: 0 2px 2px 0;
+		transform: scaleY(0); transition: transform 0.15s var(--ease-out);
+		transform-origin: top;
+	}
+	.track-row:hover::before { transform: scaleY(1); }
 	.track-row:hover { background: var(--bg-hover); transform: translateX(2px); }
 	.track-row.active { background: var(--accent-dim); box-shadow: inset 2px 0 0 var(--accent); }
+	.track-row.active::before { display: none; }
 	.track-row:active { transform: scale(0.995); }
 	.td-num { width: 28px; text-align: center; color: var(--fg-tertiary); font-variant-numeric: tabular-nums; flex-shrink: 0; font-size: 11px; }
 	.td-title { flex: 1 1 35%; min-width: 0; display: flex; align-items: center; gap: var(--space-2); }

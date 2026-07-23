@@ -1,22 +1,11 @@
-import { browser } from '$app/environment';
+import { browser, lazyInvoke } from '$lib/tauri';
 import type { Track, AlbumBrief } from '$lib/audio/types';
-
-/**
- * Library store — manages the track library, search, and browse modes.
- * Calls engine.svelte.ts loader functions, never invoke() directly.
- */
 
 let _tracks = $state<Track[]>([]);
 let _searchQuery = $state('');
 let _viewMode = $state<'list' | 'grid'>('list');
 let _sortBy = $state<'title' | 'artist' | 'album' | 'duration'>('title');
 let _loading = $state(false);
-
-/** Lazy-load Tauri invoke (SSR safe) */
-async function lazyInvoke() {
-	const { invoke } = await import('@tauri-apps/api/core');
-	return invoke;
-}
 
 /** Sorted tracks — recomputed only when _tracks or _sortBy change */
 const _sortedTracks = $derived.by(() => {

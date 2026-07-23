@@ -50,11 +50,11 @@ fn open_log_file() -> Option<File> {
         .open(&dir)
     {
         Ok(f) => {
-            eprintln!("日志文件: {}", dir.display());
+            eprintln!("log file: {}", dir.display());
             Some(f)
         }
         Err(e) => {
-            eprintln!("无法打开日志文件 {dir:?}: {e}");
+            eprintln!("cannot open log file {dir:?}: {e}");
             None
         }
     }

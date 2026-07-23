@@ -4,7 +4,7 @@ use crate::state::AppState;
 
 #[tauri::command]
 pub fn get_eq_bands(state: State<AppState>) -> Result<Vec<PeqBand>, String> {
-    let bands = state.peq_bands.lock().map_err(|e| format!("锁失败: {e}"))?;
+    let bands = state.peq_bands.lock().map_err(|e| format!("lock failed: {e}"))?;
     Ok(bands.clone())
 }
 
@@ -16,7 +16,7 @@ pub fn set_peq_band(
     q: f32,
     state: State<AppState>,
 ) -> Result<(), String> {
-    let mut bands = state.peq_bands.lock().map_err(|e| format!("锁失败: {e}"))?;
+    let mut bands = state.peq_bands.lock().map_err(|e| format!("lock failed: {e}"))?;
     if index < bands.len() {
         bands[index] = PeqBand { freq, gain_db, q };
         state.engine.set_peq_band(index, PeqBand { freq, gain_db, q });
@@ -27,7 +27,7 @@ pub fn set_peq_band(
 #[tauri::command]
 pub fn reset_eq(state: State<AppState>) -> Result<(), String> {
     let defaults = default_peq_bands();
-    *state.peq_bands.lock().map_err(|e| format!("锁失败: {e}"))? = defaults.clone();
+    *state.peq_bands.lock().map_err(|e| format!("lock failed: {e}"))? = defaults.clone();
     for (i, band) in defaults.iter().enumerate() {
         state.engine.set_peq_band(i, band.clone());
     }
@@ -37,7 +37,7 @@ pub fn reset_eq(state: State<AppState>) -> Result<(), String> {
 #[tauri::command]
 pub fn set_eq_preset(preset: PresetName, state: State<AppState>) -> Result<(), String> {
     let new_bands = preset_bands(preset);
-    *state.peq_bands.lock().map_err(|e| format!("锁失败: {e}"))? = new_bands.clone();
+    *state.peq_bands.lock().map_err(|e| format!("lock failed: {e}"))? = new_bands.clone();
     for (i, band) in new_bands.iter().enumerate() {
         state.engine.set_peq_band(i, band.clone());
     }

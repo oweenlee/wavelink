@@ -28,30 +28,28 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
-            let data_dir = app.path().app_data_dir().expect("获取数据目录失败");
+            let data_dir = app.path().app_data_dir().expect("get app data dir failed");
             std::fs::create_dir_all(&data_dir).ok();
             let db_path = data_dir.join("library.db");
-            let db = LibraryDb::open(&db_path).expect("打开数据库失败");
-            tracing::info!("数据库路径: {}", db_path.display());
+            tracing::info!("db path: {}", db_path.display());
 
-            // 后台清理数据库中已丢失的文件记录
-            {
-                let db_for_clean = LibraryDb::open(&db_path).expect("打开数据库失败");
-                std::thread::spawn(move || {
-                    let tracks = db_for_clean.all_tracks(i64::MAX, 0).unwrap_or_default();
-                    let mut removed = 0u32;
-                    for t in &tracks {
-                        if !std::path::Path::new(&t.path).exists() {
-                            if db_for_clean.remove_track(t.id).is_ok() {
-                                removed += 1;
-                            }
-                        }
+            // Background cleanup thread (separate connection)
+            let clean_path = db_path.clone();
+            std::thread::spawn(move || {
+                let Ok(db) = LibraryDb::open(&clean_path) else { return };
+                let tracks = db.all_tracks(i64::MAX, 0).unwrap_or_default();
+                let mut removed = 0u32;
+                for t in &tracks {
+                    if !std::path::Path::new(&t.path).exists() && db.remove_track(t.id).is_ok() {
+                        removed += 1;
                     }
-                    if removed > 0 {
-                        tracing::info!("清理 {removed} 条丢失文件记录");
-                    }
-                });
-            }
+                }
+                if removed > 0 {
+                    tracing::info!("cleaned {removed} missing file records");
+                }
+            });
+
+            let db = LibraryDb::open(&db_path).expect("open db failed");
 
             let (engine, event_rx) = EngineHandle::start();
             events::forward_engine_events(app.handle().clone(), event_rx);
@@ -86,10 +84,10 @@ fn main() {
             }
 
             if let Err(e) = tray::create_tray(app.handle()) {
-                tracing::warn!("创建系统托盘失败: {e}");
+                tracing::warn!("create tray failed: {e}");
             }
 
-            // 全局快捷键（macOS 媒体键由 MPRemoteCommandCenter 处理）
+            // Global shortcuts (macOS media keys handled by MPRemoteCommandCenter)
             #[cfg(not(target_os = "macos"))]
             register_global_shortcuts(app);
 
@@ -121,6 +119,11 @@ fn main() {
             commands::playback::set_replaygain,
             commands::playback::get_replaygain,
             commands::playback::set_engine_config,
+            commands::playback::set_speed,
+            commands::playback::get_levels,
+            commands::playback::start_capture,
+            commands::playback::stop_capture,
+            commands::playback::is_capturing,
             commands::library::scan_dir,
             commands::library::get_scan_folders,
             commands::library::remove_scan_folder,
@@ -193,7 +196,7 @@ fn register_global_shortcuts(app: &mut tauri::App) {
             }
         }
     }) {
-        tracing::warn!("注册 MediaPlayPause 快捷键失败: {e}");
+        tracing::warn!("register MediaPlayPause shortcut failed: {e}");
     }
     if let Err(e) = gs.on_shortcut("MediaNextTrack", |app: &tauri::AppHandle, _shortcut, event| {
         if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
@@ -201,7 +204,7 @@ fn register_global_shortcuts(app: &mut tauri::App) {
             state.engine.next_track();
         }
     }) {
-        tracing::warn!("注册 MediaNextTrack 快捷键失败: {e}");
+        tracing::warn!("register MediaNextTrack shortcut failed: {e}");
     }
     if let Err(e) = gs.on_shortcut("MediaPreviousTrack", |app: &tauri::AppHandle, _shortcut, event| {
         if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
@@ -209,6 +212,6 @@ fn register_global_shortcuts(app: &mut tauri::App) {
             state.engine.prev_track();
         }
     }) {
-        tracing::warn!("注册 MediaPreviousTrack 快捷键失败: {e}");
+        tracing::warn!("register MediaPreviousTrack shortcut failed: {e}");
     }
 }

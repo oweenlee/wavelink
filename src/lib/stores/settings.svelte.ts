@@ -1,9 +1,4 @@
-import { browser } from '$app/environment';
-
-/**
- * Settings store — manages app preferences and engine configuration.
- * Persists via save_settings / load_settings backend commands.
- */
+import { browser, lazyInvoke } from '$lib/tauri';
 
 let _theme = $state<'dark' | 'light'>('dark');
 let _accentColor = $state('#8888cc');
@@ -13,12 +8,6 @@ let _crossfadeMs = $state(0);
 let _replaygainEnabled = $state(false);
 let _audioDevice = $state('');
 let _loaded = $state(false);
-
-/** Lazy-load Tauri invoke (SSR safe) */
-async function lazyInvoke() {
-	const { invoke } = await import('@tauri-apps/api/core');
-	return invoke;
-}
 
 export function getSettingsState() {
 	return {

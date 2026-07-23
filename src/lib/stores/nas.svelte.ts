@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { browser, lazyInvoke } from '$lib/tauri';
 
 export interface NasConnection {
 	id: string;
@@ -17,13 +17,15 @@ function createNasStore() {
 	let error = $state<string | null>(null);
 
 	async function loadConnections() {
+		if (!browser) return;
 		loading = true;
 		error = null;
 		try {
+			const invoke = await lazyInvoke();
 			const list: NasConnection[] = await invoke('nas_list');
 			for (const conn of list) {
 				try {
-					conn.mounted = await invoke<boolean>('nas_is_mounted', { id: conn.id });
+					conn.mounted = await invoke('nas_is_mounted', { id: conn.id });
 				} catch {
 					conn.mounted = false;
 				}
@@ -44,22 +46,30 @@ function createNasStore() {
 		password: string,
 		autoMount: boolean
 	) {
+		if (!browser) return;
+		const invoke = await lazyInvoke();
 		await invoke('nas_add', { name, server, share, username, password, autoMount });
 		await loadConnections();
 	}
 
 	async function removeConnection(id: string) {
+		if (!browser) return;
+		const invoke = await lazyInvoke();
 		await invoke('nas_remove', { id });
 		await loadConnections();
 	}
 
 	async function mountConnection(id: string): Promise<string> {
+		if (!browser) return '';
+		const invoke = await lazyInvoke();
 		const path: string = await invoke('nas_mount', { id });
 		await loadConnections();
 		return path;
 	}
 
 	async function unmountConnection(id: string) {
+		if (!browser) return;
+		const invoke = await lazyInvoke();
 		await invoke('nas_unmount', { id });
 		await loadConnections();
 	}

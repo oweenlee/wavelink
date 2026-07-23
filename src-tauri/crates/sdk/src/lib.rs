@@ -18,5 +18,8 @@ pub mod dsp {
 /// 音频分析
 pub use audio_core::analysis::{analyze_file, analyze_from_samples, AnalysisResult};
 
+/// 音频输入捕获
+pub use audio_core::capture::{is_capturing, start_global_capture, stop_global_capture};
+
 /// 曲库管理
 pub mod library;

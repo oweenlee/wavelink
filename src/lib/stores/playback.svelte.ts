@@ -9,6 +9,9 @@ import {
 	togglePlay as engineToggle,
 	seek,
 	setVolume,
+	setSpeed as engineSetSpeed,
+	startCapture as engineStartCapture,
+	stopCapture as engineStopCapture,
 	stop as engineStop,
 } from '$lib/audio/engine.svelte';
 import type { Track } from '$lib/audio/types';
@@ -85,6 +88,10 @@ export function getPlaybackState() {
 
 		get hasTrack() { return getPlaylistState().currentTrack !== null; },
 
+		get speed() { return _engine.speed; },
+		get levels() { return _engine.levels; },
+		get capturing() { return _engine.capturing; },
+
 		// ── Playback controls ──
 		togglePlay() {
 			const pl = getPlaylistState();
@@ -143,6 +150,9 @@ export function getPlaybackState() {
 			if (pl.currentIndex > 0) {
 				pl.setIndex(pl.currentIndex - 1);
 				await enginePlay(pl.queue[pl.currentIndex]);
+			} else {
+				const { prevTrack } = await import('$lib/audio/engine.svelte');
+				await prevTrack();
 			}
 		},
 
@@ -168,6 +178,18 @@ export function getPlaybackState() {
 			const next = cycle[(idx + 1) % cycle.length];
 			this.setPlayMode(next);
 			return next;
+		},
+
+		async setSpeed(speed: number) {
+			await engineSetSpeed(speed);
+		},
+
+		async startCapture(sampleRate = 44100, channels = 2) {
+			await engineStartCapture(sampleRate, channels);
+		},
+
+		async stopCapture() {
+			await engineStopCapture();
 		},
 	};
 }

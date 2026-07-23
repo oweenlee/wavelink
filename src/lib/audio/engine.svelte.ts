@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser, lazyInvoke, lazyListen } from '$lib/tauri';
 import type { Track } from './types';
 
 /**
@@ -13,7 +13,11 @@ let _isPlaying = $state(false);
 let _currentTime = $state(0);
 let _duration = $state(0);
 let _volume = $state(1.0);
+let _speed = $state(1.0);
 let _loading = $state(false);
+
+let _levels: { rms: number; peak: number; clip: boolean } | null = $state(null);
+let _capturing = $state(false);
 
 // 事件回调
 let _onEnded: (() => void) | null = null;
@@ -30,7 +34,7 @@ let _lastSeekTarget = 0;
 async function ensureListeners() {
 	if (_initialized || !browser) return;
 
-	const { listen } = await import('@tauri-apps/api/event');
+	const listen = await lazyListen();
 
 	await Promise.all([
 		listen<number>('player:position', (event) => {
@@ -56,6 +60,9 @@ async function ensureListeners() {
 			_isPlaying = false;
 			_loading = false;
 		}),
+		listen<{ rms: number; peak: number; clip: boolean }>('player:levels', (event) => {
+			_levels = event.payload;
+		}),
 	]);
 
 _initialized = true;
@@ -75,6 +82,9 @@ export function getEngineRef() {
 		get duration() { return _duration; },
 		get volume() { return _volume; },
 		get loading() { return _loading; },
+		get speed() { return _speed; },
+		get levels() { return _levels; },
+		get capturing() { return _capturing; },
 	};
 }
 
@@ -93,7 +103,7 @@ export async function playTrack(track: Track) {
 	_duration = 0;
 	_loading = true;
 	try {
-		const { invoke } = await import('@tauri-apps/api/core');
+		const invoke = await lazyInvoke();
 		await invoke('play', { path: track.path });
 		_isPlaying = true;
 	} catch (err) {
@@ -110,7 +120,7 @@ export async function playQueue(tracks: Track[]) {
 	_duration = 0;
 	_loading = true;
 	try {
-		const { invoke } = await import('@tauri-apps/api/core');
+		const invoke = await lazyInvoke();
 		const paths = tracks.map(t => t.path);
 		await invoke('play_queue', { paths });
 		_isPlaying = true;
@@ -122,7 +132,7 @@ export async function playQueue(tracks: Track[]) {
 
 export async function pause() {
 	try {
-		const { invoke } = await import('@tauri-apps/api/core');
+		const invoke = await lazyInvoke();
 		await invoke('pause');
 		_isPlaying = false;
 	} catch (err) {
@@ -132,7 +142,7 @@ export async function pause() {
 
 export async function resume() {
 	try {
-		const { invoke } = await import('@tauri-apps/api/core');
+		const invoke = await lazyInvoke();
 		await invoke('resume');
 		_isPlaying = true;
 	} catch (err) {
@@ -151,7 +161,7 @@ export async function seek(time: number) {
 	_lastSeekTime = Date.now();
 	_lastSeekTarget = time;
 	try {
-		const { invoke } = await import('@tauri-apps/api/core');
+		const invoke = await lazyInvoke();
 		await invoke('seek', { pos: time });
 	} catch (err) {
 		console.error('Seek failed:', err);
@@ -161,7 +171,7 @@ export async function seek(time: number) {
 export async function setVolume(v: number) {
 	_volume = v;
 	try {
-		const { invoke } = await import('@tauri-apps/api/core');
+		const invoke = await lazyInvoke();
 		await invoke('set_volume', { vol: v });
 	} catch (err) {
 		console.error('Set volume failed:', err);
@@ -170,7 +180,7 @@ export async function setVolume(v: number) {
 
 export async function stop() {
 	try {
-		const { invoke } = await import('@tauri-apps/api/core');
+		const invoke = await lazyInvoke();
 		await invoke('stop');
 	} catch (err) {
 		console.error('Stop failed:', err);
@@ -182,11 +192,50 @@ export async function stop() {
 
 export async function nextTrack() {
 	try {
-		const { invoke } = await import('@tauri-apps/api/core');
+		const invoke = await lazyInvoke();
 		await invoke('next_track');
 	} catch (err) {
 		console.error('Next track failed:', err);
 	}
+}
+
+export async function prevTrack() {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('prev_track');
+	} catch (err) {
+		console.error('Prev track failed:', err);
+	}
+}
+
+export async function setSpeed(speed: number) {
+	_speed = speed;
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('set_speed', { speed });
+	} catch (err) {
+		console.error('Set speed failed:', err);
+	}
+}
+
+export async function startCapture(sampleRate = 44100, channels = 2) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('start_capture', { sampleRate, channels });
+		_capturing = true;
+	} catch (err) {
+		console.error('Start capture failed:', err);
+	}
+}
+
+export async function stopCapture() {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('stop_capture');
+	} catch (err) {
+		console.error('Stop capture failed:', err);
+	}
+	_capturing = false;
 }
 
 export function destroy() {

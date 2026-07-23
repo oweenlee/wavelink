@@ -31,22 +31,22 @@ fn settings_path() -> Option<PathBuf> {
 /// 保存设置
 #[tauri::command]
 pub fn save_settings(settings: HashMap<String, serde_json::Value>) -> Result<(), String> {
-    let path = settings_path().ok_or("无法获取设置路径")?;
+    let path = settings_path().ok_or("cannot get settings path")?;
     let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| format!("写入设置失败: {e}"))?;
-    tracing::info!("设置已保存到: {}", path.display());
+    std::fs::write(&path, json).map_err(|e| format!("write settings failed: {e}"))?;
+    tracing::info!("settings saved to: {}", path.display());
     Ok(())
 }
 
 /// 加载设置
 #[tauri::command]
 pub fn load_settings() -> Result<HashMap<String, serde_json::Value>, String> {
-    let path = settings_path().ok_or("无法获取设置路径")?;
+    let path = settings_path().ok_or("cannot get settings path")?;
     if !path.exists() {
         return Ok(HashMap::new());
     }
-    let json = std::fs::read_to_string(&path).map_err(|e| format!("读取设置失败: {e}"))?;
+    let json = std::fs::read_to_string(&path).map_err(|e| format!("read settings failed: {e}"))?;
     let settings: HashMap<String, serde_json::Value> =
-        serde_json::from_str(&json).map_err(|e| format!("解析设置失败: {e}"))?;
+        serde_json::from_str(&json).map_err(|e| format!("parse settings failed: {e}"))?;
     Ok(settings)
 }

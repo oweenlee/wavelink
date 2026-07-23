@@ -134,6 +134,9 @@
   "settings.replaygain": "ReplayGain",
   "settings.replaygain_desc": "统一不同曲目的响度，避免切歌时音量突变",
   "settings.toggle_replaygain": "切换 ReplayGain",
+  "settings.capture": "音频捕获",
+  "settings.capture_desc": "捕获麦克风/线路输入音频",
+  "settings.toggle_capture": "切换音频捕获",
   "settings.scan_folders": "扫描文件夹",
   "settings.add_folder": "添加文件夹",
   "settings.add_folder_short": "+ 添加",
@@ -148,6 +151,8 @@
   "settings.amber": "琥珀橙",
   "settings.rose": "玫瑰红",
   "settings.silver": "月光银",
+  "settings.audio": "音频",
+  "settings.advanced": "高级引擎配置",
 
   "nas.title": "NAS 网络共享",
   "nas.add": "添加 NAS",
@@ -188,6 +193,7 @@
   "nowplaying_bar.play_mode": "播放模式",
   "nowplaying_bar.fullscreen": "全屏播放",
   "nowplaying_bar.lyrics": "歌词",
+  "nowplaying_bar.speed": "播放速度",
 
   "volume_scroll_hint": "滚轮调节音量",
   "ir_filter_name": "IR WAV",

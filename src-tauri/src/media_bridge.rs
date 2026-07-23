@@ -1,21 +1,21 @@
-//! 平台媒体控制集成
+//! Platform media control integration
 //! Windows: SMTC (SystemMediaTransportControls)
 //! macOS: MPNowPlayingInfoCenter (via objc2)
 
 #[cfg_attr(not(target_os = "windows"), allow(unused_imports))]
 use tracing::{debug, warn};
 
-/// 媒体桥接句柄
+/// Media bridge handle
 pub struct MediaBridge;
 
 impl MediaBridge {
     pub fn new() -> Self {
         #[cfg(target_os = "windows")]
-        tracing::info!("Windows SMTC 媒体桥接已就绪");
+        tracing::info!("Windows SMTC media bridge ready");
         #[cfg(target_os = "macos")]
-        tracing::info!("macOS NowPlaying 媒体桥接已就绪");
+        tracing::info!("macOS NowPlaying media bridge ready");
         #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-        tracing::info!("媒体桥接：当前平台不支持系统媒体控制");
+        tracing::info!("Media bridge: system media control not supported on this platform");
         Self
     }
 
@@ -24,15 +24,15 @@ impl MediaBridge {
         {
             if let Ok(mgr) = smtc_tokio::WindowsMediaManager::new() {
                 mgr.set_metadata(title, &[artist.to_string()], album, duration_ms, None);
-                debug!("SMTC 元数据已更新: {title}");
+                debug!("SMTC metadata updated: {title}");
             } else {
-                warn!("SMTC 初始化失败");
+                warn!("SMTC init failed");
             }
         }
         #[cfg(target_os = "macos")]
         {
             unsafe { mac_set_now_playing(title, artist, album, duration_ms as f64 / 1000.0); }
-            debug!("NowPlaying 元数据已更新: {title}");
+            debug!("NowPlaying metadata updated: {title}");
         }
         #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         { let _ = (title, artist, album, duration_ms); }
@@ -58,7 +58,7 @@ impl MediaBridge {
                 mgr.set_position(position_ms);
             }
         }
-        // macOS: 进度在 update_metadata 时设置，避免频繁调用
+        // macOS: position is set in update_metadata to avoid frequent calls
         #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         { let _ = position_ms; }
     }
@@ -75,7 +75,7 @@ impl MediaBridge {
     }
 }
 
-// ── macOS: 纯 objc2 调用 MediaPlayer.framework ──
+// ── macOS: raw objc2 calls to MediaPlayer.framework ──
 
 #[cfg(target_os = "macos")]
 unsafe fn mac_ns_string(s: &str) -> *mut objc2::runtime::AnyObject {
@@ -102,7 +102,7 @@ unsafe fn mac_set_now_playing(title: &str, artist: &str, album: &str, duration_s
     let center = mac_now_playing_center();
     if center.is_null() { return; }
 
-    // 构建键值数组
+    // Build key-value array for nowPlayingInfo
     let keys: [*mut objc2::runtime::AnyObject; 6] = [
         mac_ns_string("MPMediaItemPropertyTitle"),
         mac_ns_string("MPMediaItemPropertyArtist"),
@@ -143,7 +143,7 @@ unsafe fn mac_set_now_playing(title: &str, artist: &str, album: &str, duration_s
 unsafe fn mac_set_playback_state(is_playing: bool) {
     let center = mac_now_playing_center();
     if center.is_null() { return; }
-    // 1=playing, 2=paused
+    // 1=playing, 2=paused, 3=stopped
     let state: i64 = if is_playing { 1 } else { 2 };
     let _: () = objc2::msg_send![center, setPlaybackState: state];
 }

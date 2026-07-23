@@ -4,16 +4,16 @@ use crate::state::AppState;
 
 #[tauri::command]
 pub fn edit_tags(path: String, update: TagUpdate, state: State<AppState>) -> Result<Track, String> {
-    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
+    let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
     let track = edit_audio_tags(&path, &update)?;
-    db.upsert_track(&track).map_err(|e| format!("写入数据库失败: {e}"))?;
+    db.upsert_track(&track).map_err(|e| format!("db write failed: {e}"))?;
     Ok(track)
 }
 
 #[tauri::command]
 pub fn delete_track(track_id: i64, state: State<AppState>) -> Result<(), String> {
-    let db = state.library.lock().map_err(|e| format!("锁失败: {e}"))?;
-    db.remove_track(track_id).map_err(|e| format!("删除失败: {e}"))?;
+    let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
+    db.remove_track(track_id).map_err(|e| format!("delete failed: {e}"))?;
     Ok(())
 }
 
@@ -32,7 +32,7 @@ pub fn batch_edit_tags(
                 }
                 count += 1;
             }
-            Err(e) => tracing::warn!("批量编辑失败 {path}: {e}"),
+            Err(e) => tracing::warn!("batch edit failed {path}: {e}"),
         }
     }
     Ok(count)

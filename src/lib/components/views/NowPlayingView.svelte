@@ -24,16 +24,6 @@
 	let lyricsScrollEl: HTMLDivElement | undefined = $state();
 
 	// ── Derived ──
-	let trackFormat = $derived.by(() => {
-		const t = playback.currentTrack;
-		if (!t) return '';
-		const parts: string[] = [];
-		if (t.format) parts.push(t.format.toUpperCase());
-		if (t.sample_rate) parts.push((t.sample_rate / 1000).toFixed(1) + 'kHz');
-		if (t.channels) parts.push(t.channels === 1 ? 'Mono' : 'Stereo');
-		return parts.join(' · ');
-	});
-
 	let fileSize = $derived.by(() => {
 		const s = playback.currentTrack?.file_size;
 		if (!s) return '';
@@ -143,7 +133,6 @@
 				<div class="np-meta">
 					<h1 class="np-title">{playback.currentTrack?.title || t('nowplaying.no_track')}</h1>
 					<p class="np-artist">{playback.currentTrack?.artist || t('nowplaying.unknown_artist')}</p>
-					{#if trackFormat}<p class="np-format">{trackFormat}</p>{/if}
 				</div>
 			{/key}
 
@@ -379,7 +368,6 @@
 	@keyframes npMetaIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 	.np-title { font-size: 22px; font-weight: 600; color: var(--fg-primary); margin: 0; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.np-artist { font-size: 14px; color: var(--fg-secondary); margin: 4px 0 0; }
-	.np-format { font-size: 11px; color: var(--fg-tertiary); margin: 2px 0 0; font-variant-numeric: tabular-nums; }
 
 	/* ── Lyrics ── */
 	.np-lyrics { flex: 1; overflow-y: auto; min-height: 0; }

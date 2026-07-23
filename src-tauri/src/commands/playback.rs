@@ -1,11 +1,11 @@
 use tauri::State;
-use sdk::{PlayMode};
+use sdk::{Levels, PlayMode};
 use crate::state::AppState;
-use super::apply_track_settings;
+use super::{apply_track_settings, lock_or_die};
 
 #[tauri::command]
 pub fn play(path: String, state: State<AppState>) {
-    *state.current_track.lock().expect("current_track mutex 被毒化") = Some(path.clone());
+    *lock_or_die(&state.current_track) = Some(path.clone());
     apply_track_settings(&state);
     state.engine.play(path);
 }
@@ -13,7 +13,7 @@ pub fn play(path: String, state: State<AppState>) {
 #[tauri::command]
 pub fn play_queue(paths: Vec<String>, state: State<AppState>) {
     if let Some(first) = paths.first() {
-        *state.current_track.lock().expect("current_track mutex 被毒化") = Some(first.clone());
+        *lock_or_die(&state.current_track) = Some(first.clone());
     }
     apply_track_settings(&state);
     state.engine.play_queue(paths);
@@ -45,19 +45,19 @@ pub fn get_duration(state: State<AppState>) -> f64 { state.engine.duration_secs(
 
 #[tauri::command]
 pub fn set_volume(vol: f64, state: State<AppState>) {
-    *state.base_volume.lock().expect("base_volume mutex 被毒化") = vol;
+    *lock_or_die(&state.base_volume) = vol;
     state.engine.set_volume(vol as f32);
 }
 
 #[tauri::command]
 pub fn set_play_mode(mode: PlayMode, state: State<AppState>) {
-    *state.play_mode.lock().expect("play_mode mutex 被毒化") = mode;
+    *lock_or_die(&state.play_mode) = mode;
     state.engine.set_play_mode(mode);
 }
 
 #[tauri::command]
 pub fn get_play_mode(state: State<AppState>) -> PlayMode {
-    *state.play_mode.lock().expect("play_mode mutex 被毒化")
+    *lock_or_die(&state.play_mode)
 }
 
 #[tauri::command]
@@ -72,13 +72,13 @@ pub fn set_stereo_widener(enabled: bool, width: f32, state: State<AppState>) {
 
 #[tauri::command]
 pub fn set_replaygain(enabled: bool, state: State<AppState>) {
-    *state.replaygain_enabled.lock().expect("replaygain_enabled mutex 被毒化") = enabled;
+    *lock_or_die(&state.replaygain_enabled) = enabled;
     apply_track_settings(&state);
 }
 
 #[tauri::command]
 pub fn get_replaygain(state: State<AppState>) -> bool {
-    *state.replaygain_enabled.lock().expect("replaygain_enabled mutex 被毒化")
+    *lock_or_die(&state.replaygain_enabled)
 }
 
 #[tauri::command]
@@ -128,6 +128,32 @@ pub fn set_engine_config(
         buffer_ms,
         crossfade_ms,
         output_device: None,
+        ..Default::default()
     };
     state.engine.set_config(cfg);
+}
+
+#[tauri::command]
+pub fn set_speed(speed: f32, state: State<AppState>) {
+    state.engine.set_speed(speed);
+}
+
+#[tauri::command]
+pub fn get_levels(state: State<AppState>) -> Levels {
+    state.engine.levels()
+}
+
+#[tauri::command]
+pub fn start_capture(sample_rate: u32, channels: u32) -> Result<(), String> {
+    sdk::start_global_capture(sample_rate, channels)
+}
+
+#[tauri::command]
+pub fn stop_capture() {
+    sdk::stop_global_capture();
+}
+
+#[tauri::command]
+pub fn is_capturing() -> bool {
+    sdk::is_capturing()
 }

@@ -5,6 +5,7 @@
 	import { getSettingsState } from '$lib/stores/settings.svelte';
 	import ProgressBar from '$lib/components/controls/ProgressBar.svelte';
 	import VolumeSlider from '$lib/components/controls/VolumeSlider.svelte';
+	import LevelMeter from '$lib/components/controls/LevelMeter.svelte';
 	import { SkipBack, SkipForward, Play, Pause, List, Repeat, Repeat1, Shuffle, Disc3, Expand, Mic2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
 
@@ -39,6 +40,14 @@
 		if (_invoke) {
 			await settings.save({ volume: playback.volume, playMode: next });
 		}
+	}
+
+	const SPEED_PRESETS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+	let speedIndex = $state(2);
+
+	function cycleSpeed() {
+		speedIndex = (speedIndex + 1) % SPEED_PRESETS.length;
+		playback.setSpeed(SPEED_PRESETS[speedIndex]);
 	}
 
 	function onVolumeInput(v: number) {
@@ -112,6 +121,10 @@
 		</div>
 
 		<div class="bar-right">
+			<LevelMeter rms={playback.levels?.rms ?? 0} peak={playback.levels?.peak ?? 0} clip={playback.levels?.clip ?? false} />
+			<button class="speed-btn" onclick={cycleSpeed} title={t('nowplaying_bar.speed')}>
+				<span class="speed-label">{SPEED_PRESETS[speedIndex]}x</span>
+			</button>
 			<VolumeSlider value={playback.volume} oninput={onVolumeInput} />
 			<button class="bar-btn" onclick={cyclePlayMode} title={t('nowplaying_bar.play_mode')}>
 				{#if playback.playMode === 'normal'}
@@ -141,6 +154,7 @@
 		backdrop-filter: blur(40px);
 		-webkit-backdrop-filter: blur(40px);
 		border-top: 0.5px solid rgba(255, 255, 255, 0.06);
+		box-shadow: 0 -1px 24px rgba(167, 139, 250, 0.06);
 	}
 
 	.bar-body {
@@ -180,11 +194,12 @@
 
 	.ctrl-play {
 		width: 36px; height: 36px; border-radius: 50%; border: none; outline: none;
-		background: var(--accent-dim); color: var(--accent);
+		background: linear-gradient(135deg, var(--accent-dim) 0%, rgba(129, 140, 248, 0.18) 100%);
+		color: var(--accent);
 		cursor: pointer; display: flex; align-items: center; justify-content: center;
 		transition: all 0.15s var(--ease-spring);
 	}
-	.ctrl-play:hover:not(:disabled) { background: var(--accent-dim); filter: brightness(1.15); }
+	.ctrl-play:hover:not(:disabled) { filter: brightness(1.15); }
 	.ctrl-play:active:not(:disabled) { transform: scale(0.92); }
 	.ctrl-play:disabled { opacity: 0.15; cursor: default; }
 	.icon-wrap { position: relative; width: 14px; height: 14px; }
@@ -193,6 +208,15 @@
 
 	/* ── Right ── */
 	.bar-right { display: flex; align-items: center; gap: var(--space-1); flex-shrink: 0; }
+
+	.speed-btn {
+		height: 22px; padding: 0 6px; border-radius: var(--radius-sm); border: none; outline: none;
+		background: transparent; color: var(--fg-quaternary); cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
+		transition: all 0.12s; font-size: 10px; font-weight: 500; letter-spacing: 0.02em;
+	}
+	.speed-btn:hover { background: var(--bg-hover); color: var(--fg-secondary); }
+	.speed-btn:active { transform: scale(0.92); }
 
 	.bar-btn {
 		width: 30px; height: 30px; border-radius: var(--radius-sm); border: none; outline: none;

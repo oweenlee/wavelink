@@ -8,7 +8,7 @@ pub fn setup_window_appearance(window: &tauri::WebviewWindow) {
 
         unsafe {
             let Ok(handle) = window.window_handle() else {
-                tracing::warn!("获取窗口句柄失败");
+                tracing::warn!("get window handle failed");
                 return;
             };
             let RawWindowHandle::Win32(h) = handle.as_raw() else {

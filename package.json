@@ -9,7 +9,7 @@
 		"build:analyze": "ANALYZE=1 vite build && open dist/stats.html",
 		"preview": "vite preview",
 		"tauri": "tauri",
-		"prepare": "svelte-kit sync || echo ''",
+		"prepare": "svelte-kit sync",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test": "vitest run",
