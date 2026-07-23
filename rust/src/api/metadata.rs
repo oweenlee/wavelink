@@ -1,5 +1,28 @@
 use std::path::Path;
 
+/// ReplayGain 响度归一化增益值
+pub struct ReplayGainResult {
+    /// 音轨增益 (dB)，如 -5.23
+    pub track_gain_db: Option<f32>,
+    /// 专辑增益 (dB)，如 -7.14
+    pub album_gain_db: Option<f32>,
+    /// 音轨真峰值
+    pub track_peak: Option<f32>,
+    /// 专辑真峰值
+    pub album_peak: Option<f32>,
+}
+
+/// 从音频文件读取 ReplayGain 标签
+pub fn read_replaygain(path: String) -> Result<ReplayGainResult, String> {
+    let rg = audio_core::decoder::read_replaygain(std::path::Path::new(&path))?;
+    Ok(ReplayGainResult {
+        track_gain_db: rg.track_gain_db,
+        album_gain_db: rg.album_gain_db,
+        track_peak: rg.track_peak,
+        album_peak: rg.album_peak,
+    })
+}
+
 /// 读取音频文件封面图（JPEG/PNG 原始字节），用 lofty 提取
 pub fn get_cover_bytes(path: String) -> Result<Vec<u8>, String> {
     let p = Path::new(&path);
@@ -49,18 +72,27 @@ pub struct MetadataResult {
     pub album: Option<String>,
     pub duration_secs: f64,
     pub has_cover: bool,
+    pub cover_bytes: Vec<u8>,
 }
 
-/// 读取音频文件元数据（标题/艺术家/专辑/封面/时长）
+/// 读取音频文件元数据（标题/艺术家/专辑/封面/时长），同时提取封面字节
+/// 避免 Dart 层再调 getCoverBytes 二次解析文件
 pub fn read_metadata(path: String) -> Result<MetadataResult, String> {
     let meta = audio_core::decoder::read_metadata(Path::new(&path))?;
 
-    // 用 lofty 确认是否有封面（比 symphonia 更准）
-    let has_cover = if !meta.has_cover {
-        extract_cover_lofty(Path::new(&path)).is_ok()
-    } else {
-        true
-    };
+    let mut cover_bytes = Vec::new();
+    let mut has_cover = meta.has_cover;
+
+    if has_cover {
+        if let Ok(data) = audio_core::decoder::read_cover(Path::new(&path)) {
+            cover_bytes = data;
+        } else if let Ok(data) = extract_cover_lofty(Path::new(&path)) {
+            cover_bytes = data;
+        }
+    } else if let Ok(data) = extract_cover_lofty(Path::new(&path)) {
+        cover_bytes = data;
+        has_cover = true;
+    }
 
     Ok(MetadataResult {
         title: meta.title,
@@ -68,5 +100,6 @@ pub fn read_metadata(path: String) -> Result<MetadataResult, String> {
         album: meta.album,
         duration_secs: meta.duration_secs,
         has_cover,
+        cover_bytes,
     })
 }

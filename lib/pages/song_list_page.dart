@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:wavelink_mobile/l10n/app_localizations.dart';
+import '../l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../models/song.dart';
 import '../providers/playback_provider.dart';

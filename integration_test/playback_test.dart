@@ -23,7 +23,7 @@ void main() {
 
   /// 测试：单曲稳态播放无 underrun
   test('稳态播放 should have zero underrun', () async {
-    await rs.initRingbuf();
+    await rs.initEngine();
 
     // 选取一个典型的 44.1kHz 文件
     final file = _pickFile(mediaDir, ext: 'm4a');
@@ -31,8 +31,7 @@ void main() {
     print('文件: $file');
 
     // 播放
-    await rs.startDecoder(file!);
-    await audio_out.waitForReady(timeoutMs: BigInt.from(5000));
+    await rs.enginePlay(file!);
 
     // 等待缓冲
     await Future.delayed(const Duration(seconds: 2));
@@ -53,18 +52,16 @@ void main() {
 
   /// 测试：单个 seek 后无 underrun
   test('单次 seek 后 should have zero underrun', () async {
-    await rs.initRingbuf();
+    await rs.initEngine();
 
     final file = _pickFile(mediaDir, ext: 'm4a');
     expect(file, isNotNull);
 
-    await rs.startDecoder(file!);
+    await rs.enginePlay(file!);
     await Future.delayed(const Duration(seconds: 2));
 
     // seek 到 30 秒处
-    await rs.stopDecoder();
-    await rs.startDecoder(file!, seekSecs: 30.0);
-    await audio_out.waitForReady(timeoutMs: BigInt.from(5000));
+    await rs.engineSeek(30.0);
     await Future.delayed(const Duration(milliseconds: 500));
 
     final underrunBefore = await audio_out.getUnderrunCount();
@@ -82,21 +79,19 @@ void main() {
 
   /// 测试：连续 5 次 seek（模拟快速滑动）
   test('连续 seek 5 次 should not spike underrun', () async {
-    await rs.initRingbuf();
+    await rs.initEngine();
 
     final file = _pickFile(mediaDir, ext: 'm4a');
     expect(file, isNotNull);
 
-    await rs.startDecoder(file!);
+    await rs.enginePlay(file!);
     await Future.delayed(const Duration(seconds: 2));
 
     final underrunBefore = await audio_out.getUnderrunCount();
     int maxDelta = 0;
 
     for (var i = 0; i < 5; i++) {
-      await rs.stopDecoder();
-      await rs.startDecoder(file!, seekSecs: (10.0 + i * 15.0).toDouble());
-      await audio_out.waitForReady(timeoutMs: BigInt.from(3000));
+      await rs.engineSeek(10.0 + i * 15.0);
       await Future.delayed(const Duration(milliseconds: 200));
 
       final ur = await audio_out.getUnderrunCount();
@@ -112,7 +107,7 @@ void main() {
 
   /// 测试：快速切歌（3 首不同的歌）
   test('快速切歌 3 次 should be stable', () async {
-    await rs.initRingbuf();
+    await rs.initEngine();
 
     final files = [_pickFile(mediaDir, ext: 'm4a')!, _pickFile(mediaDir, ext: 'mp3')!, _pickFile(mediaDir, ext: 'flac')!];
     print('测试文件: $files');
@@ -120,8 +115,7 @@ void main() {
     final underrunBefore = await audio_out.getUnderrunCount();
 
     for (var i = 0; i < 3; i++) {
-      await rs.startDecoder(files[i % files.length]);
-      await audio_out.waitForReady(timeoutMs: BigInt.from(5000));
+      await rs.enginePlay(files[i % files.length]);
       await Future.delayed(const Duration(seconds: 1));
     }
 
@@ -135,7 +129,7 @@ void main() {
 
   /// 测试：44.1kHz vs 48kHz 文件对比
   test('48kHz 文件播放应无杂音', () async {
-    await rs.initRingbuf();
+    await rs.initEngine();
 
     // 找一个 48kHz 文件（蔡琴的就是 48kHz）
     final files = Directory(mediaDir).listSync().whereType<File>().toList();
@@ -149,8 +143,7 @@ void main() {
     expect(file48k, isNotNull, reason: '未找到 48kHz 测试文件');
     print('48kHz 文件: ${file48k!.path}');
 
-    await rs.startDecoder(file48k.path);
-    await audio_out.waitForReady(timeoutMs: BigInt.from(5000));
+    await rs.enginePlay(file48k.path);
 
     // 缓冲
     await Future.delayed(const Duration(seconds: 2));

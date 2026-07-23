@@ -1,5 +1,5 @@
 /// 播放杂音排查测试
-/// 检测 ringbuf underrun 和解码连续性
+/// 检测引擎播放连续性和 underrun
 
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,7 +9,7 @@ import '../lib/src/rust/api/audio_output.dart' as audio_out;
 void main() {
   setUpAll(() async {
     await rs.initRust();
-    await rs.initRingbuf();
+    await rs.initEngine();
   });
 
   /// 找 test-media 目录（从项目根目录）
@@ -26,7 +26,7 @@ void main() {
     return null;
   }
 
-  test('decoder pushes data to ringbuf without underrun', () async {
+  test('engine plays without underrun', () async {
     final mediaDir = findTestMedia();
     assert(mediaDir != null, 'test-media/ not found');
 
@@ -42,52 +42,44 @@ void main() {
     assert(testFile != null, 'No audio file found in test-media');
     print('Testing with: ${testFile!.path}');
 
-    // 启动解码器
-    await rs.startDecoder(testFile.path);
-    
-    // 等待缓冲
+    // 启动引擎播放
+    await rs.enginePlay(testFile.path);
+
+    // 等待播放推进
     await Future.delayed(const Duration(seconds: 2));
-    
-    // 检查 ringbuf 状态
-    final occupied = await audio_out.debugOccupied();
+
+    final pos = await rs.enginePositionSecs();
     final underrunBefore = await audio_out.getUnderrunCount();
-    
-    print('After 2s buffer: occupied=$occupied, underruns=$underrunBefore');
-    
-    // ringbuf 应该有数据
-    expect(occupied, greaterThan(BigInt.zero), 
-        reason: 'ringbuf 为空，解码器未推入数据');
-    
-    // 模拟 iOS 回调拉取：连续拉 3 秒
-    int underrunCount = 0;
-    const totalPulls = 120; // 120 * 25ms ≈ 3s
-    final leftBuf = Float64List(1024);
-    final rightBuf = Float64List(1024);
-    
-    for (var i = 0; i < totalPulls; i++) {
-      // 模拟 fill_buffer_stereo 回调
-      // 注意：这里不能直接调 Rust extern "C" 函数，
-      // 只能通过 debugOccupied 间接观察
-      await Future.delayed(const Duration(milliseconds: 25));
-    }
-    
-    final occupiedAfter = await audio_out.debugOccupied();
+
+    print('After 2s: position=$pos secs, underruns=$underrunBefore');
+
+    // 引擎应正在播放，位置应推进
+    expect(pos, greaterThan(0.0),
+        reason: '引擎未播放，位置为 0');
+
+    // 持续播放 3 秒
+    await Future.delayed(const Duration(seconds: 3));
+
+    final posAfter = await rs.enginePositionSecs();
     final underrunAfter = await audio_out.getUnderrunCount();
     final underrunsDuring = underrunAfter - underrunBefore;
-    
-    print('After 3s pull: occupied=$occupiedAfter, underruns delta=$underrunsDuring');
-    
+
+    print('After 5s total: position=$posAfter secs, underruns delta=$underrunsDuring');
+
+    // 位置应持续推进
+    expect(posAfter, greaterThan(pos),
+        reason: '播放未推进');
     // 期望无新增 underrun
     expect(underrunsDuring, equals(BigInt.zero),
-        reason: '检测到 ringbuf underrun，可能有杂音');
-    
-    await rs.stopDecoder();
+        reason: '检测到 underrun，可能有杂音');
+
+    await rs.engineStop();
   });
-  
+
   test('seek does not cause underrun', () async {
     final mediaDir = findTestMedia();
     assert(mediaDir != null, 'test-media/ not found');
-    
+
     final files = Directory(mediaDir!).listSync().whereType<File>();
     File? testFile;
     for (final f in files) {
@@ -97,26 +89,25 @@ void main() {
       }
     }
     assert(testFile != null, 'No audio file found');
-    
-    await rs.startDecoder(testFile!.path);
+
+    await rs.enginePlay(testFile!.path);
     await Future.delayed(const Duration(seconds: 1));
-    
+
     // 连续 seek 5 次
     for (var i = 0; i < 5; i++) {
       final underrunBefore = await audio_out.getUnderrunCount();
-      
-      await rs.stopDecoder();
-      await rs.startDecoder(testFile.path, seekSecs: 10.0 + i * 5.0);
+
+      await rs.engineSeek(10.0 + i * 5.0);
       await Future.delayed(const Duration(milliseconds: 500));
-      
+
       final underrunAfter = await audio_out.getUnderrunCount();
       final delta = underrunAfter - underrunBefore;
-      
+
       print('Seek #$i: underrun delta=$delta');
       expect(delta, equals(BigInt.zero),
           reason: 'Seek #$i 后出现 underrun');
     }
-    
-    await rs.stopDecoder();
+
+    await rs.engineStop();
   });
 }

@@ -8,11 +8,16 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `extract_cover_lofty`
 
+/// 从音频文件读取 ReplayGain 标签
+Future<ReplayGainResult> readReplaygain({required String path}) =>
+    RustLib.instance.api.crateApiMetadataReadReplaygain(path: path);
+
 /// 读取音频文件封面图（JPEG/PNG 原始字节），用 lofty 提取
 Future<Uint8List> getCoverBytes({required String path}) =>
     RustLib.instance.api.crateApiMetadataGetCoverBytes(path: path);
 
-/// 读取音频文件元数据（标题/艺术家/专辑/封面/时长）
+/// 读取音频文件元数据（标题/艺术家/专辑/封面/时长），同时提取封面字节
+/// 避免 Dart 层再调 getCoverBytes 二次解析文件
 Future<MetadataResult> readMetadata({required String path}) =>
     RustLib.instance.api.crateApiMetadataReadMetadata(path: path);
 
@@ -23,6 +28,7 @@ class MetadataResult {
   final String? album;
   final double durationSecs;
   final bool hasCover;
+  final Uint8List coverBytes;
 
   const MetadataResult({
     this.title,
@@ -30,6 +36,7 @@ class MetadataResult {
     this.album,
     required this.durationSecs,
     required this.hasCover,
+    required this.coverBytes,
   });
 
   @override
@@ -38,7 +45,8 @@ class MetadataResult {
       artist.hashCode ^
       album.hashCode ^
       durationSecs.hashCode ^
-      hasCover.hashCode;
+      hasCover.hashCode ^
+      coverBytes.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -49,5 +57,45 @@ class MetadataResult {
           artist == other.artist &&
           album == other.album &&
           durationSecs == other.durationSecs &&
-          hasCover == other.hasCover;
+          hasCover == other.hasCover &&
+          coverBytes == other.coverBytes;
+}
+
+/// ReplayGain 响度归一化增益值
+class ReplayGainResult {
+  /// 音轨增益 (dB)，如 -5.23
+  final double? trackGainDb;
+
+  /// 专辑增益 (dB)，如 -7.14
+  final double? albumGainDb;
+
+  /// 音轨真峰值
+  final double? trackPeak;
+
+  /// 专辑真峰值
+  final double? albumPeak;
+
+  const ReplayGainResult({
+    this.trackGainDb,
+    this.albumGainDb,
+    this.trackPeak,
+    this.albumPeak,
+  });
+
+  @override
+  int get hashCode =>
+      trackGainDb.hashCode ^
+      albumGainDb.hashCode ^
+      trackPeak.hashCode ^
+      albumPeak.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReplayGainResult &&
+          runtimeType == other.runtimeType &&
+          trackGainDb == other.trackGainDb &&
+          albumGainDb == other.albumGainDb &&
+          trackPeak == other.trackPeak &&
+          albumPeak == other.albumPeak;
 }

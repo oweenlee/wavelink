@@ -92,5 +92,21 @@
   "unknownArtist": "未知艺术家",
   "importedMusic": "导入的音乐",
   "prefsNotInit": "PreferencesService 尚未初始化，请先调用 PreferencesService.init()",
-  "minuteFormat": "{m} 分钟"
+  "minuteFormat": "{m} 分钟",
+
+  "eqPresetFlat": "平坦",
+  "eqPresetRock": "摇滚",
+  "eqPresetPop": "流行",
+  "eqPresetDance": "舞曲",
+  "eqPresetClassical": "古典",
+  "eqPresetSoft": "柔和",
+  "eqPresetFullBass": "重低音",
+  "eqPresetFullTreble": "重高音",
+  "eqPresetTechno": "电子",
+  "eqPresetVocals": "人声",
+
+  "diagnosticTitle": "播放诊断",
+  "diagnosticTotalUnderrun": "累计欠载次数",
+  "diagnosticRecentUnderrun": "近期欠载",
+  "diagnosticHint": "如果欠载次数持续增加，请尝试关闭后台应用或切换输出设备。"
 }

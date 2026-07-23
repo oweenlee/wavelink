@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:wavelink_mobile/l10n/app_localizations.dart';
+import '../l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../models/lyric_line.dart';
 import '../models/song.dart';
@@ -7,6 +7,10 @@ import '../providers/playback_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/progress_slider_widget.dart';
 import '../widgets/spectrum_bar.dart';
+import '../widgets/album_cover.dart';
+import '../widgets/lyrics_overlay.dart';
+import '../widgets/queue_sheet.dart';
+import '../widgets/effects_sheet.dart';
 
 class NowPlayingPage extends StatefulWidget {
   const NowPlayingPage({super.key});
@@ -52,22 +56,20 @@ class _NowPlayingPageState extends State<NowPlayingPage>
   }
 
   void _openQueue(BuildContext ctx) {
-    final p = ctx.read<PlaybackProvider>();
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _QueueSheet(player: p),
+      builder: (_) => const QueueSheet(),
     );
   }
 
   void _openEffects(BuildContext ctx) {
-    final p = ctx.read<PlaybackProvider>();
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _EffectsSheet(player: p),
+      builder: (_) => const EffectsSheet(),
     );
   }
 
@@ -94,7 +96,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                         size: 80,
                         color: AppTheme.textTertiary,
                       ),
-                      SizedBox(height: 16),
+                      const SizedBox(height: 16),
                       Text(
                         l10n.nowPlayingEmpty,
                         style: TextStyle(
@@ -144,7 +146,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            _AlbumCover(color: song.dominantColor),
+                            AlbumCover(color: song.dominantColor),
                             const SizedBox(height: 20),
                             _SongInfo(song: song),
                             const SizedBox(height: 12),
@@ -186,7 +188,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
             if (_lyricsOverlay)
               SlideTransition(
                 position: _lyricsSlide,
-                child: _LyricsOverlay(
+                child: LyricsOverlay(
                   lyrics: player.currentLyrics ?? [],
                   line: player.currentLyricLine,
                   dominantColor: song.dominantColor,
@@ -307,6 +309,42 @@ class _Tags extends StatelessWidget {
         if (player.isSongFavorite(song.id))
           _Tag(icon: Icons.favorite_rounded, label: l10n.favorited),
       ],
+    );
+  }
+}
+
+class _Tag extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _Tag({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.15),
+          width: 0.5,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: AppTheme.textSecondary),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppTheme.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -593,691 +631,6 @@ class _BarItem extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  Bottom Sheets
-// ═══════════════════════════════════════════════════════════════
-
-// ── Queue Sheet ──
-
-class _QueueSheet extends StatelessWidget {
-  final PlaybackProvider player;
-  const _QueueSheet({required this.player});
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return _SheetShell(
-      title: l10n.queueTitle,
-      builder: (scroll) {
-        if (player.queue.isEmpty) {
-          return Center(
-            child: Text(
-              l10n.queueEmpty,
-              style: TextStyle(fontSize: 15, color: AppTheme.textTertiary),
-            ),
-          );
-        }
-        return ReorderableListView.builder(
-          scrollController: scroll,
-          padding: const EdgeInsets.only(top: 8, bottom: 80),
-          itemCount: player.queue.length,
-          onReorderItem: (o, n) => player.reorderQueue(o, n),
-          itemBuilder: (ctx, i) {
-            final s = player.queue[i];
-            final isCurrent = i == player.currentIndex;
-            return Dismissible(
-              key: ValueKey('q_${s.id}_$i'),
-              direction: DismissDirection.endToStart,
-              background: Container(
-                alignment: Alignment.centerRight,
-                padding: const EdgeInsets.only(right: 20),
-                color: AppTheme.danger.withValues(alpha: 0.3),
-                child: const Icon(
-                  Icons.delete_outline_rounded,
-                  color: AppTheme.danger,
-                ),
-              ),
-              onDismissed: (_) => player.removeFromQueue(i),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 6,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.drag_handle_rounded,
-                      size: 18,
-                      color: AppTheme.textTertiary,
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: s.dominantColor,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: isCurrent
-                          ? const Center(child: _NowPlayingIndicator())
-                          : null,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            s.title,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: isCurrent
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
-                              color: isCurrent
-                                  ? AppTheme.accentBlue
-                                  : AppTheme.textPrimary,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            s.artist,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.textTertiary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      s.formattedDuration,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppTheme.textTertiary,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: () => player.removeFromQueue(i),
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: Icon(
-                          Icons.close_rounded,
-                          size: 16,
-                          color: AppTheme.textTertiary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
-// ── Effects Sheet ──
-
-class _EffectsSheet extends StatelessWidget {
-  final PlaybackProvider player;
-  const _EffectsSheet({required this.player});
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final dsp = player.dspSettings;
-    return _SheetShell(
-      title: l10n.soundSettings,
-      builder: (scroll) {
-        return ListView(
-          controller: scroll,
-          padding: EdgeInsets.zero,
-          children: [
-            _EffectItem(
-              icon: Icons.tune_rounded,
-              label: l10n.eq10Band,
-              subtitle: dsp.enabled ? l10n.enabled : l10n.disabled,
-              trailing: _Toggle(
-                value: dsp.enabled,
-                onChanged: player.toggleDspEnabled,
-              ),
-            ),
-            const _Divider(),
-            _EffectItem(
-              icon: Icons.vibration_rounded,
-              label: l10n.bauerCrossfeed,
-              subtitle: dsp.crossfeed ? l10n.enabled : l10n.bauerCrossfeed,
-              trailing: _Toggle(
-                value: dsp.crossfeed,
-                onChanged: player.toggleCrossfeed,
-              ),
-            ),
-            const _Divider(),
-            _EffectItem(
-              icon: Icons.arrow_right_alt_rounded,
-              label: l10n.stereoWidening,
-              subtitle: dsp.widener ? l10n.enabled : l10n.stereoWidening,
-              trailing: _Toggle(
-                value: dsp.widener,
-                onChanged: player.toggleWidener,
-              ),
-            ),
-            const _Divider(),
-            _EffectItem(
-              icon: Icons.volume_up_rounded,
-              label: l10n.truePeakLimiter,
-              subtitle: dsp.limiter ? l10n.enabled : l10n.truePeakLimiter,
-              trailing: _Toggle(
-                value: dsp.limiter,
-                onChanged: player.toggleLimiter,
-              ),
-            ),
-            const _Divider(),
-            _EffectItem(
-              icon: Icons.graphic_eq_rounded,
-              label: l10n.tpdfDither,
-              subtitle: dsp.dither ? l10n.enabled : l10n.tpdfDither,
-              trailing: _Toggle(
-                value: dsp.dither,
-                onChanged: player.toggleDither,
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-// ── Lyrics Overlay (full screen) ──
-
-class _LyricsOverlay extends StatefulWidget {
-  final List<LyricLine> lyrics;
-  final int line;
-  final Color dominantColor;
-  final VoidCallback onClose;
-  const _LyricsOverlay({
-    required this.lyrics,
-    required this.line,
-    required this.dominantColor,
-    required this.onClose,
-  });
-
-  @override
-  State<_LyricsOverlay> createState() => _LyricsOverlayState();
-}
-
-class _LyricsOverlayState extends State<_LyricsOverlay> {
-  final _scroll = ScrollController();
-  int _prev = -1;
-
-  @override
-  void didUpdateWidget(_LyricsOverlay old) {
-    super.didUpdateWidget(old);
-    if (widget.line != _prev && widget.line >= 0 && widget.lyrics.isNotEmpty) {
-      _prev = widget.line;
-      _scrollToCurrent();
-    }
-  }
-
-  void _scrollToCurrent() {
-    if (_scroll.hasClients) {
-      final offset =
-          widget.line * 56.0 - (MediaQuery.of(context).size.height * 0.35);
-      _scroll.animateTo(
-        offset.clamp(0.0, _scroll.position.maxScrollExtent),
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeOutCubic,
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _scroll.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return Container(
-      color: AppTheme.background.withValues(alpha: 0.97),
-      child: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      color: AppTheme.textPrimary,
-                    ),
-                    onPressed: widget.onClose,
-                    splashRadius: 20,
-                  ),
-                  const Spacer(),
-                  Text(
-                    l10n.lyrics,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      color: AppTheme.textPrimary.withValues(alpha: 0.8),
-                    ),
-                  ),
-                  const Spacer(),
-                  const SizedBox(width: 48),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ShaderMask(
-                shaderCallback: (bounds) => LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black,
-                    Colors.transparent,
-                    Colors.transparent,
-                    Colors.black,
-                  ],
-                  stops: const [0.0, 0.08, 0.92, 1.0],
-                ).createShader(bounds),
-                blendMode: BlendMode.dstOut,
-                child: ListView.builder(
-                  controller: _scroll,
-                  padding: EdgeInsets.only(
-                    top: MediaQuery.of(context).size.height * 0.15,
-                    bottom: MediaQuery.of(context).size.height * 0.35,
-                  ),
-                  itemCount: widget.lyrics.length,
-                  itemBuilder: (ctx, i) {
-                    final l = widget.lyrics[i];
-                    final cur = i == widget.line;
-                    final past = i < widget.line;
-                    return AnimatedDefaultTextStyle(
-                      duration: const Duration(milliseconds: 300),
-                      style: TextStyle(
-                        fontSize: cur ? 18 : 14,
-                        fontWeight: cur ? FontWeight.w600 : FontWeight.w400,
-                        color: cur
-                            ? Colors.white
-                            : past
-                            ? Colors.white.withValues(alpha: 0.35)
-                            : Colors.white.withValues(alpha: 0.5),
-                        height: 1.6,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 32,
-                          vertical: 6,
-                        ),
-                        child: Row(
-                          children: [
-                            if (cur)
-                              Container(
-                                width: 3,
-                                height: 18,
-                                margin: const EdgeInsets.only(right: 8),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.accentBlue,
-                                  borderRadius: BorderRadius.circular(2),
-                                ),
-                              ),
-                            Expanded(
-                              child: Text(l.text, textAlign: TextAlign.center),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  Shared Sub-widgets
-// ═══════════════════════════════════════════════════════════════
-
-// ── Sheet Shell ──
-
-class _SheetShell extends StatelessWidget {
-  final String title;
-  final Widget Function(ScrollController) builder;
-  const _SheetShell({required this.title, required this.builder});
-
-  @override
-  Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      initialChildSize: 0.55,
-      minChildSize: 0.3,
-      maxChildSize: 0.85,
-      expand: false,
-      builder: (ctx, scroll) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: AppTheme.surfaceDark,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 10, bottom: 6),
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppTheme.textTertiary.withValues(alpha: 0.4),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 8,
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1, color: AppTheme.textTertiary),
-              Expanded(child: builder(scroll)),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ── Effect Item ──
-
-class _EffectItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String subtitle;
-  final Widget? trailing;
-  const _EffectItem({
-    required this.icon,
-    required this.label,
-    required this.subtitle,
-    this.trailing,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: AppTheme.textSecondary),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textTertiary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          ?trailing,
-        ],
-      ),
-    );
-  }
-}
-
-class _Divider extends StatelessWidget {
-  const _Divider();
-  @override
-  Widget build(BuildContext context) {
-    return Divider(
-      height: 1,
-      indent: 54,
-      color: AppTheme.textTertiary.withValues(alpha: 0.15),
-    );
-  }
-}
-
-class _Toggle extends StatelessWidget {
-  final bool value;
-  final VoidCallback onChanged;
-  const _Toggle({required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 44,
-      height: 24,
-      child: GestureDetector(
-        onTap: onChanged,
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            color: value
-                ? AppTheme.accentBlue
-                : AppTheme.textTertiary.withValues(alpha: 0.3),
-          ),
-          padding: const EdgeInsets.all(2),
-          child: AnimatedAlign(
-            duration: const Duration(milliseconds: 200),
-            alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-            child: Container(
-              width: 20,
-              height: 20,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Album Cover ──
-
-class _AlbumCover extends StatefulWidget {
-  final Color color;
-  const _AlbumCover({required this.color});
-
-  @override
-  State<_AlbumCover> createState() => _AlbumCoverState();
-}
-
-class _AlbumCoverState extends State<_AlbumCover>
-    with SingleTickerProviderStateMixin {
-  double _tiltX = 0, _tiltY = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size.width * 0.5;
-
-    return GestureDetector(
-      onPanUpdate: (d) {
-        setState(() {
-          _tiltX = ((d.localPosition.dx - size / 2) / size * 0.06).clamp(
-            -0.03,
-            0.03,
-          );
-          _tiltY = ((d.localPosition.dy - size / 2) / size * 0.06).clamp(
-            -0.03,
-            0.03,
-          );
-        });
-      },
-      onPanEnd: (_) => setState(() {
-        _tiltX = 0;
-        _tiltY = 0;
-      }),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeOut,
-        transform: Matrix4.identity()
-          ..setEntry(3, 2, 0.001)
-          ..rotateX(_tiltY)
-          ..rotateY(_tiltX),
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: widget.color,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: widget.color.withValues(alpha: 0.5),
-                blurRadius: 40,
-                spreadRadius: 5,
-                offset: Offset(_tiltX * 200, _tiltY * 200),
-              ),
-            ],
-          ),
-          child: Center(
-            child: Icon(
-              Icons.music_note_rounded,
-              color: Colors.white.withValues(alpha: 0.2),
-              size: size * 0.3,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── NowPlaying Indicator ──
-
-class _NowPlayingIndicator extends StatefulWidget {
-  const _NowPlayingIndicator();
-
-  @override
-  State<_NowPlayingIndicator> createState() => _NowPlayingIndicatorState();
-}
-
-class _NowPlayingIndicatorState extends State<_NowPlayingIndicator>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ac;
-
-  @override
-  void initState() {
-    super.initState();
-    _ac = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _ac.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ac,
-      builder: (_, a) => Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: List.generate(3, (i) {
-          final h = 6 + (_ac.value + i * 0.3) % 1.0 * 10;
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 1),
-            child: Container(
-              width: 2,
-              height: h.clamp(4.0, 16.0),
-              decoration: BoxDecoration(
-                color: AppTheme.accentBlue,
-                borderRadius: BorderRadius.circular(1),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
-}
-
-// ── Tag ──
-
-class _Tag extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  const _Tag({required this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.15),
-          width: 0.5,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: AppTheme.textSecondary),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 11,
-              color: AppTheme.textSecondary,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
       ),
     );
   }

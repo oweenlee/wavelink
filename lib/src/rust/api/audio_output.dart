@@ -6,36 +6,19 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `clear_ringbuf_impl`, `clear_ringbuf`, `fill_buffer_stereo_impl`, `ringbuf_capacity`
+// These functions are ignored because they are not marked as `pub`: `clear_ringbuf_impl`, `fill_buffer_stereo_impl`, `update_spectrum`
 
 /// 由 Swift 通过 extern "C" 调用，设置硬件采样率
 Future<void> setHwSampleRate({required int rate}) =>
     RustLib.instance.api.crateApiAudioOutputSetHwSampleRate(rate: rate);
 
-Future<void> initAudioRingbuf() =>
-    RustLib.instance.api.crateApiAudioOutputInitAudioRingbuf();
+Future<int> getHwSampleRate() =>
+    RustLib.instance.api.crateApiAudioOutputGetHwSampleRate();
 
 /// 读取当前频谱（16 频段，0~1）
 Future<Float32List> getSpectrum() =>
     RustLib.instance.api.crateApiAudioOutputGetSpectrum();
 
-/// 等待解码器首帧就绪（consumer 线程发 ready 信号）
-/// 返回 true 表示首帧已到，false 表示超时
-Future<bool> waitForReady({required BigInt timeoutMs}) =>
-    RustLib.instance.api.crateApiAudioOutputWaitForReady(timeoutMs: timeoutMs);
-
 /// 读取 underrun 计数
 Future<BigInt> getUnderrunCount() =>
     RustLib.instance.api.crateApiAudioOutputGetUnderrunCount();
-
-Future<void> startFileDecoder({required String path, double? seekSecs}) =>
-    RustLib.instance.api.crateApiAudioOutputStartFileDecoder(
-      path: path,
-      seekSecs: seekSecs,
-    );
-
-Future<BigInt> debugOccupied() =>
-    RustLib.instance.api.crateApiAudioOutputDebugOccupied();
-
-Future<void> stopFileDecoder() =>
-    RustLib.instance.api.crateApiAudioOutputStopFileDecoder();

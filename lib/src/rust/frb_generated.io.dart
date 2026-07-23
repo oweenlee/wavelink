@@ -5,9 +5,11 @@
 
 import 'api/analyze.dart';
 import 'api/audio_output.dart';
+import 'api/cue.dart';
 import 'api/decode.dart';
-import 'api/dsp.dart';
+import 'api/engine.dart';
 import 'api/metadata.dart';
+import 'api/playlist.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
@@ -63,13 +65,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_box_autoadd_f_64(dynamic raw);
 
   @protected
+  CueFileResult dco_decode_cue_file_result(dynamic raw);
+
+  @protected
+  CueSheetResult dco_decode_cue_sheet_result(dynamic raw);
+
+  @protected
+  CueTrackResult dco_decode_cue_track_result(dynamic raw);
+
+  @protected
   DecodeChunk dco_decode_decode_chunk(dynamic raw);
 
   @protected
   DecodeResult dco_decode_decode_result(dynamic raw);
-
-  @protected
-  EqPreset dco_decode_eq_preset(dynamic raw);
 
   @protected
   double dco_decode_f_32(dynamic raw);
@@ -79,6 +87,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   int dco_decode_i_32(dynamic raw);
+
+  @protected
+  LevelsDto dco_decode_levels_dto(dynamic raw);
+
+  @protected
+  List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<CueFileResult> dco_decode_list_cue_file_result(dynamic raw);
+
+  @protected
+  List<CueTrackResult> dco_decode_list_cue_track_result(dynamic raw);
+
+  @protected
+  List<PlaylistEntryResult> dco_decode_list_playlist_entry_result(dynamic raw);
 
   @protected
   List<double> dco_decode_list_prim_f_32_loose(dynamic raw);
@@ -103,6 +126,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
+
+  @protected
+  PlaylistEntryResult dco_decode_playlist_entry_result(dynamic raw);
+
+  @protected
+  ReplayGainResult dco_decode_replay_gain_result(dynamic raw);
 
   @protected
   int dco_decode_u_32(dynamic raw);
@@ -156,13 +185,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
+  CueFileResult sse_decode_cue_file_result(SseDeserializer deserializer);
+
+  @protected
+  CueSheetResult sse_decode_cue_sheet_result(SseDeserializer deserializer);
+
+  @protected
+  CueTrackResult sse_decode_cue_track_result(SseDeserializer deserializer);
+
+  @protected
   DecodeChunk sse_decode_decode_chunk(SseDeserializer deserializer);
 
   @protected
   DecodeResult sse_decode_decode_result(SseDeserializer deserializer);
-
-  @protected
-  EqPreset sse_decode_eq_preset(SseDeserializer deserializer);
 
   @protected
   double sse_decode_f_32(SseDeserializer deserializer);
@@ -172,6 +207,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   int sse_decode_i_32(SseDeserializer deserializer);
+
+  @protected
+  LevelsDto sse_decode_levels_dto(SseDeserializer deserializer);
+
+  @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<CueFileResult> sse_decode_list_cue_file_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<CueTrackResult> sse_decode_list_cue_track_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<PlaylistEntryResult> sse_decode_list_playlist_entry_result(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<double> sse_decode_list_prim_f_32_loose(SseDeserializer deserializer);
@@ -198,6 +254,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
+  PlaylistEntryResult sse_decode_playlist_entry_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ReplayGainResult sse_decode_replay_gain_result(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
@@ -257,13 +321,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_cue_file_result(CueFileResult self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_cue_sheet_result(
+    CueSheetResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_cue_track_result(
+    CueTrackResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_decode_chunk(DecodeChunk self, SseSerializer serializer);
 
   @protected
   void sse_encode_decode_result(DecodeResult self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_eq_preset(EqPreset self, SseSerializer serializer);
 
   @protected
   void sse_encode_f_32(double self, SseSerializer serializer);
@@ -273,6 +349,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_levels_dto(LevelsDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_cue_file_result(
+    List<CueFileResult> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_cue_track_result(
+    List<CueTrackResult> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_playlist_entry_result(
+    List<PlaylistEntryResult> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_prim_f_32_loose(
@@ -312,6 +412,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_playlist_entry_result(
+    PlaylistEntryResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_replay_gain_result(
+    ReplayGainResult self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);

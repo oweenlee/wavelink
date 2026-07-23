@@ -92,5 +92,21 @@
   "unknownArtist": "Unknown Artist",
   "importedMusic": "Imported Music",
   "prefsNotInit": "PreferencesService not initialized, call PreferencesService.init() first",
-  "minuteFormat": "{m} min"
+  "minuteFormat": "{m} min",
+
+  "eqPresetFlat": "Flat",
+  "eqPresetRock": "Rock",
+  "eqPresetPop": "Pop",
+  "eqPresetDance": "Dance",
+  "eqPresetClassical": "Classical",
+  "eqPresetSoft": "Soft",
+  "eqPresetFullBass": "Full Bass",
+  "eqPresetFullTreble": "Full Treble",
+  "eqPresetTechno": "Techno",
+  "eqPresetVocals": "Vocals",
+
+  "diagnosticTitle": "Playback Diagnostics",
+  "diagnosticTotalUnderrun": "Total Underruns",
+  "diagnosticRecentUnderrun": "Recent Underruns",
+  "diagnosticHint": "If underruns keep increasing, try closing background apps or switching output device."
 }

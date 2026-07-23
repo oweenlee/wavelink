@@ -14,6 +14,10 @@ Future<DecodeResult> decodeFile({required String path}) =>
 Future<DecodeResult> decodeDsdFile({required String path}) =>
     RustLib.instance.api.crateApiDecodeDecodeDsdFile(path: path);
 
+/// 快速探测音频文件的采样率（不完整解码，只读文件头），失败返回 0
+Future<int> probeSampleRate({required String path}) =>
+    RustLib.instance.api.crateApiDecodeProbeSampleRate(path: path);
+
 /// 检查文件是否是 DSD 格式
 Future<bool> isDsdFile({required String path}) =>
     RustLib.instance.api.crateApiDecodeIsDsdFile(path: path);

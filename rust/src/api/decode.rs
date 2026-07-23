@@ -45,6 +45,11 @@ pub fn decode_dsd_file(path: String) -> Result<DecodeResult, String> {
     })
 }
 
+/// 快速探测音频文件的采样率（不完整解码，只读文件头），失败返回 0
+pub fn probe_sample_rate(path: String) -> u32 {
+    audio_core::decoder::probe_sample_rate(std::path::Path::new(&path)).unwrap_or(0)
+}
+
 /// 检查文件是否是 DSD 格式
 pub fn is_dsd_file(path: String) -> bool {
     let p = Path::new(&path);
@@ -81,6 +86,7 @@ pub fn stream_decoder_create(path: String, seek_secs: Option<f64>) -> Result<Str
         ch,
         Arc::new(AtomicU64::new(0)),
         seek_secs,
+        None,
     )
     .map_err(|e| format!("启动流式解码失败: {e}"))?;
 

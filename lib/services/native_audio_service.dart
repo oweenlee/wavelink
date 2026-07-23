@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// iOS 音频输出 + 锁屏控制管理器
@@ -34,7 +35,9 @@ class NativeAudioService {
         onError: (_) {},
         cancelOnError: false,
       );
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[NativeAudio] 初始化事件通道失败: $e');
+    }
     _initialized = true;
   }
 

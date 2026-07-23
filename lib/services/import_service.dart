@@ -48,22 +48,21 @@ class ImportService {
         try {
           final meta = await rs.readMetadata(file.path);
           final title = meta.title ?? _titleFromPath(file.path);
-          final artist = meta.artist ?? '未知艺术家';
-          final albumName = meta.album ?? '导入的音乐';
+          final artist = meta.artist ?? 'Unknown Artist';
+          final albumName = meta.album ?? 'Imported Music';
           final duration = meta.durationSecs > 0
               ? Duration(milliseconds: (meta.durationSecs * 1000).round())
               : _estimateDuration(file);
 
-          // 提取封面并缓存
+          // 封面字节已由 readMetadata 一并返回，避免二次解析
           String? coverUrl;
-          if (meta.hasCover) {
+          if (meta.hasCover && meta.coverBytes.isNotEmpty) {
             try {
-              final bytes = await rs.getCoverBytes(file.path);
               final cacheFile = File('${cacheDir.path}/${file.path.hashCode}.jpg');
-              await cacheFile.writeAsBytes(bytes);
+              await cacheFile.writeAsBytes(meta.coverBytes);
               coverUrl = cacheFile.path;
-            } catch (_) {
-              // 封面提取失败，不阻塞导入
+            } catch (e) {
+              debugPrint('[Import] 封面缓存失败: $e');
             }
           }
 
@@ -78,8 +77,8 @@ class ImportService {
             coverUrl: coverUrl,
             hasCover: meta.hasCover,
           );
-        } catch (_) {
-          // Rust 读取失败，降级到文件名猜测
+        } catch (e) {
+          debugPrint('[Import] Rust 元数据读取失败，降级到文件名猜测: $e');
         }
       }
 

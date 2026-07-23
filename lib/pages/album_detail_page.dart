@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:wavelink_mobile/l10n/app_localizations.dart';
+import '../l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../models/song.dart';
 import '../providers/playback_provider.dart';
 import '../theme/app_theme.dart';
+import '../widgets/now_playing_indicator.dart';
 
 class AlbumDetailPage extends StatelessWidget {
   final Album album;
@@ -313,7 +314,9 @@ class _TrackTile extends StatelessWidget {
             SizedBox(
               width: 24,
               child: isCurrent
-                  ? const _NowPlayingIndicator()
+                  ? const NowPlayingIndicator(
+                      baseHeight: 4, barScale: 8, maxHeight: 12,
+                    )
                   : Text(
                       '$index',
                       style: const TextStyle(
@@ -365,51 +368,4 @@ class _TrackTile extends StatelessWidget {
   }
 }
 
-class _NowPlayingIndicator extends StatefulWidget {
-  const _NowPlayingIndicator();
-  @override
-  State<_NowPlayingIndicator> createState() => _NowPlayingIndicatorState();
-}
 
-class _NowPlayingIndicatorState extends State<_NowPlayingIndicator>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ac;
-  @override
-  void initState() {
-    super.initState();
-    _ac = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _ac.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ac,
-      builder: (_, _) => Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: List.generate(3, (i) {
-          final h = 4 + (_ac.value + i * 0.3) % 1.0 * 8;
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 1),
-            child: Container(
-              width: 2,
-              height: h.clamp(4.0, 12.0),
-              decoration: BoxDecoration(
-                color: AppTheme.accentBlue,
-                borderRadius: BorderRadius.circular(1),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
-}

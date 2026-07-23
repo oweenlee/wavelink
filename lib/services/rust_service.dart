@@ -1,15 +1,19 @@
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import '../src/rust/frb_generated.dart';
 import '../src/rust/api/decode.dart' as decode;
 import '../src/rust/api/analyze.dart' as analyze;
 import '../src/rust/api/metadata.dart' as meta;
 import '../src/rust/api/audio_output.dart' as audio_out;
+import '../src/rust/api/cue.dart' as cue;
+import '../src/rust/api/playlist.dart' as playlist;
+import '../src/rust/api/engine.dart' as engine;
 
 export '../src/rust/api/decode.dart' show DecodeResult, DecodeChunk, StreamDecoder;
 export '../src/rust/api/analyze.dart' show AnalyzeResult;
-export '../src/rust/api/dsp.dart' show EqPreset;
-export '../src/rust/api/metadata.dart' show MetadataResult;
-export '../src/rust/api/audio_output.dart' show initAudioRingbuf, startFileDecoder, stopFileDecoder, waitForReady;
+export '../src/rust/api/metadata.dart' show MetadataResult, ReplayGainResult;
+export '../src/rust/api/cue.dart' show CueSheetResult, CueFileResult, CueTrackResult;
+export '../src/rust/api/playlist.dart' show PlaylistEntryResult;
+export '../src/rust/api/engine.dart' show LevelsDto;
 
 /// Rust 后端是否已加载
 bool rustAvailable = false;
@@ -19,7 +23,8 @@ Future<void> initRust() async {
   try {
     await RustLib.init();
     rustAvailable = true;
-  } catch (_) {
+  } catch (e) {
+    debugPrint('[Rust] 初始化失败: $e');
     rustAvailable = false;
   }
 }
@@ -36,6 +41,11 @@ Future<decode.DecodeResult> decodeDsdFile(String path) {
 
 Future<bool> isDsdFile(String path) {
   return decode.isDsdFile(path: path);
+}
+
+/// 快速探测音频文件采样率，失败返回 0
+Future<int> probeSampleRate(String path) {
+  return decode.probeSampleRate(path: path);
 }
 
 // ── 分析 ──
@@ -66,17 +76,10 @@ Future<Uint8List> getCoverBytes(String path) {
   return meta.getCoverBytes(path: path);
 }
 
-// ── 音频输出 ringbuf ──
-
-/// 初始化音频输出 ringbuf
-Future<void> initRingbuf() => audio_out.initAudioRingbuf();
-
-/// 启动后台解码线程，直接推入 ringbuf（不经 Dart 中转）
-Future<void> startDecoder(String path, {double? seekSecs}) =>
-    audio_out.startFileDecoder(path: path, seekSecs: seekSecs);
-
-/// 停止后台解码线程
-Future<void> stopDecoder() => audio_out.stopFileDecoder();
+/// 读取 ReplayGain 响度归一化增益值
+Future<meta.ReplayGainResult> readReplaygain(String path) {
+  return meta.readReplaygain(path: path);
+}
 
 // ── 流式解码 ──
 
@@ -94,4 +97,79 @@ Future<decode.DecodeChunk?> streamDecoderNextChunk(
 /// 停止流式解码
 Future<void> streamDecoderStop(decode.StreamDecoder decoder) {
   return decode.streamDecoderStop(decoder: decoder);
+}
+
+// ── CUE 分轨 ──
+
+/// 解析 .cue 文件，返回分轨表
+Future<cue.CueSheetResult> parseCueFile(String path) {
+  return cue.parseCueFile(path: path);
+}
+
+// ── 播放列表 ──
+
+/// 解析播放列表文件（自动识别 M3U/M3U8/PLS），返回条目列表
+Future<List<playlist.PlaylistEntryResult>> parsePlaylistFile(String path) {
+  return playlist.parsePlaylistFile(path: path);
+}
+
+// ── 引擎控制 ──
+
+Future<void> initEngine() => engine.engineInit();
+Future<void> deinitEngine() => engine.engineDeinit();
+
+Future<void> enginePlay(String path) => engine.enginePlay(path: path);
+Future<void> enginePlayQueue(List<String> paths) =>
+    engine.enginePlayQueue(paths: paths);
+Future<void> engineSetPeqBand({required int index, required double freq, required double gainDb, required double q}) =>
+    engine.engineSetPeqBand(index: index, freq: freq, gainDb: gainDb, q: q);
+Future<void> engineApplyPreset({required String presetName}) =>
+    engine.engineApplyPreset(presetName: presetName);
+Future<void> engineSetVolume({required double vol}) =>
+    engine.engineSetVolume(vol: vol);
+Future<void> engineSetSpeed({required double speed}) =>
+    engine.engineSetSpeed(speed: speed);
+Future<void> engineSetCrossfeed({required bool enabled}) =>
+    engine.engineSetCrossfeed(enabled: enabled);
+Future<void> engineSetStereoWidener({required bool enabled, required double width}) =>
+    engine.engineSetStereoWidener(enabled: enabled, width: width);
+Future<void> engineSetPlayMode({required int mode}) =>
+    engine.engineSetPlayMode(mode: mode);
+Future<void> enginePause() => engine.enginePause();
+Future<void> engineResume() => engine.engineResume();
+Future<void> engineStop() => engine.engineStop();
+Future<void> engineSeek(double posSecs) =>
+    engine.engineSeek(posSecs: posSecs);
+Future<void> engineNext() => engine.engineNext();
+Future<void> enginePrev() => engine.enginePrev();
+
+Future<String?> enginePollEvents() => engine.enginePollEvents();
+
+Future<double> enginePositionSecs() => engine.enginePositionSecs();
+Future<double> engineDurationSecs() => engine.engineDurationSecs();
+Future<bool> engineIsPlaying() => engine.engineIsPlaying();
+Future<String> engineCurrentPath() => engine.engineCurrentPath();
+Future<String> engineLastError() => engine.engineLastError();
+
+// ── 频谱 / underrun ──
+
+Future<List<double>> getSpectrum() async {
+  if (!rustAvailable) return List.filled(16, 0.0);
+  try {
+    final raw = await audio_out.getSpectrum();
+    return raw.map((e) => e.toDouble()).toList();
+  } catch (e) {
+    debugPrint('[Rust] 获取频谱失败: $e');
+    return List.filled(16, 0.0);
+  }
+}
+
+Future<int> getUnderrunCount() async {
+  if (!rustAvailable) return 0;
+  try {
+    return (await audio_out.getUnderrunCount()).toInt();
+  } catch (e) {
+    debugPrint('[Rust] 获取 underrun 失败: $e');
+    return 0;
+  }
 }

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:wavelink_mobile/l10n/app_localizations.dart';
+import '../l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../providers/playback_provider.dart';
@@ -203,21 +203,37 @@ class _LanguageSelector extends StatelessWidget {
 class _EqPresetSelector extends StatelessWidget {
   const _EqPresetSelector();
 
-  static const _options = [
-    (EqPresetKind.flat, '平直'),
-    (EqPresetKind.rock, '摇滚'),
-    (EqPresetKind.pop, '流行'),
-    (EqPresetKind.dance, '舞曲'),
-    (EqPresetKind.classical, '古典'),
-    (EqPresetKind.soft, '柔和'),
-    (EqPresetKind.fullBass, '重低音'),
-    (EqPresetKind.fullTreble, '高音增强'),
-    (EqPresetKind.techno, '电子'),
-    (EqPresetKind.vocals, '人声'),
+  static const _presets = [
+    EqPresetKind.flat,
+    EqPresetKind.rock,
+    EqPresetKind.pop,
+    EqPresetKind.dance,
+    EqPresetKind.classical,
+    EqPresetKind.soft,
+    EqPresetKind.fullBass,
+    EqPresetKind.fullTreble,
+    EqPresetKind.techno,
+    EqPresetKind.vocals,
   ];
+
+  String _label(AppLocalizations l10n, EqPresetKind k) {
+    return switch (k) {
+      EqPresetKind.flat => l10n.eqPresetFlat,
+      EqPresetKind.rock => l10n.eqPresetRock,
+      EqPresetKind.pop => l10n.eqPresetPop,
+      EqPresetKind.dance => l10n.eqPresetDance,
+      EqPresetKind.classical => l10n.eqPresetClassical,
+      EqPresetKind.soft => l10n.eqPresetSoft,
+      EqPresetKind.fullBass => l10n.eqPresetFullBass,
+      EqPresetKind.fullTreble => l10n.eqPresetFullTreble,
+      EqPresetKind.techno => l10n.eqPresetTechno,
+      EqPresetKind.vocals => l10n.eqPresetVocals,
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final player = context.watch<PlaybackProvider>();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -225,19 +241,19 @@ class _EqPresetSelector extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'EQ 预设',
+            l10n.eq10Band,
             style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
           ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _options.map((opt) {
-              final selected = player.dspSettings.preset == opt.$1;
+            children: _presets.map((kind) {
+              final selected = player.dspSettings.preset == kind;
               return ChoiceChip(
-                label: Text(opt.$2),
+                label: Text(_label(l10n, kind)),
                 selected: selected,
-                onSelected: (_) => player.applyEqPreset(opt.$1),
+                onSelected: (_) => player.applyEqPreset(kind),
                 selectedColor: AppTheme.accentBlue.withValues(alpha: 0.2),
                 labelStyle: TextStyle(
                   color: selected ? AppTheme.accentBlue : AppTheme.textSecondary,

@@ -1,11 +1,7 @@
-/// 音频诊断页面 — 实时显示 ringbuf 状态和 underrun 计数
-/// 杂音排查用
-
-import 'dart:async';
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+import '../l10n/app_localizations.dart';
 import '../services/rust_service.dart' as rs;
-import '../src/rust/api/audio_output.dart' as audio_out;
+import '../theme/app_theme.dart';
 
 class DiagnosticPage extends StatefulWidget {
   const DiagnosticPage({super.key});
@@ -15,44 +11,49 @@ class DiagnosticPage extends StatefulWidget {
 }
 
 class _DiagnosticPageState extends State<DiagnosticPage> {
-  Timer? _timer;
-  BigInt _occupied = BigInt.zero;
-  BigInt _underrun = BigInt.zero;
-  BigInt _prevUnderun = BigInt.zero;
+  String _position = '-';
+  String _duration = '-';
+  bool _isPlaying = false;
+  String _currentPath = '-';
+  int _underrun = 0;
+  int _prevUnderun = 0;
   int _underrunDelta = 0;
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(milliseconds: 500), (_) => _poll());
+    _refresh();
   }
 
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _poll() async {
+  Future<void> _refresh() async {
     if (!rs.rustAvailable) return;
     try {
-      final occ = await audio_out.debugOccupied();
-      final ur = await audio_out.getUnderrunCount();
+      final pos = await rs.enginePositionSecs();
+      final dur = await rs.engineDurationSecs();
+      final playing = await rs.engineIsPlaying();
+      final path = await rs.engineCurrentPath();
+      final ur = await rs.getUnderrunCount();
       setState(() {
-        _underrunDelta = (ur - _prevUnderun).toInt();
+        _position = '${pos.toStringAsFixed(1)}s';
+        _duration = '${dur.toStringAsFixed(1)}s';
+        _isPlaying = playing;
+        _currentPath = path.isNotEmpty ? path.split('/').last : '-';
+        _underrunDelta = ur - _prevUnderun;
         _prevUnderun = ur;
-        _occupied = occ;
         _underrun = ur;
       });
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Diagnostic] 刷新失败: $e');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('音频诊断'),
+        title: Text(l10n.diagnosticTitle),
         backgroundColor: AppTheme.surfaceDark,
       ),
       body: Padding(
@@ -60,15 +61,20 @@ class _DiagnosticPageState extends State<DiagnosticPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _card('Ringbuf 占用', '${_occupied} 样本'),
-            _card('总 underrun', '$_underrun'),
-            _card('近期 underrun', '$_underrunDelta 次/500ms',
-                color: _underrunDelta > 0 ? Colors.red : Colors.green),
+            _card('Status', _isPlaying ? 'Playing' : 'Stopped'),
+            _card('Position', _position),
+            _card('Duration', _duration),
+            _card('File', _currentPath),
+            _card(l10n.diagnosticTotalUnderrun, '$_underrun'),
+            _card(
+              l10n.diagnosticRecentUnderrun,
+              '$_underrunDelta (500ms)',
+              color: _underrunDelta > 0 ? Colors.red : Colors.green,
+            ),
             const SizedBox(height: 20),
-            const Text(
-              '提示：近期 underrun > 0 说明音频输出时缓冲区抽干了，\n'
-              '这是杂音/断音的根源。正常播放时应该始终为 0。',
-              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+            Text(
+              l10n.diagnosticHint,
+              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
             ),
           ],
         ),
