@@ -210,12 +210,12 @@
 
 			// link nodes
 			const dotR = 2.5 * logoScale;
-			ctx.fillStyle = '#c4b5fd';
+			ctx.fillStyle = '#f0c860';
 			ctx.beginPath();
 			ctx.arc(cx - sw * 1.1, cy, dotR, 0, Math.PI * 2);
 			ctx.fill();
 
-			ctx.fillStyle = '#67e8f9';
+			ctx.fillStyle = '#c8956c';
 			ctx.beginPath();
 			ctx.arc(cx + sw * 1.1, cy, dotR, 0, Math.PI * 2);
 			ctx.fill();
@@ -339,6 +339,6 @@
     width: 100vw;
     height: 100vh;
     z-index: 99999;
-    background: #0a0a0e;
+    background: #0a0a0a;
   }
 </style>

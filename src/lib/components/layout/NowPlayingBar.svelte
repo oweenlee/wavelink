@@ -80,7 +80,7 @@
 
 	let coverStyle = $derived.by(() => {
 		if (coverDataUrl) return `background-image: url(${coverDataUrl})`;
-		return 'background: linear-gradient(135deg, #1a1a24, #2a2438)';
+		return 'background: linear-gradient(135deg, #1a1a1a, #242420)'
 	});
 </script>
 

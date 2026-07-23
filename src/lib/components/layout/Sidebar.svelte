@@ -21,8 +21,8 @@
 			</defs>
 			<path d="M2 8C7 7 7 17 12 17C17 17 17 7 22 8" fill="none" stroke="url(#sw1)" stroke-width="2.5" stroke-linecap="round"/>
 			<path d="M2 16C7 17 7 7 12 7C17 7 17 17 22 16" fill="none" stroke="url(#sw2)" stroke-width="2" stroke-linecap="round"/>
-			<circle cx="7" cy="12" r="1.3" fill="#c4b5fd"/>
-			<circle cx="17" cy="12" r="1.3" fill="#67e8f9"/>
+			<circle cx="7" cy="12" r="1.3" fill="#f0c860"/>
+			<circle cx="17" cy="12" r="1.3" fill="#c8956c"/>
 		</svg>
 		<span class="logo-text">WaveLink</span>
 	</div>

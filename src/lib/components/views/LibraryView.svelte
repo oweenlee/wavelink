@@ -459,7 +459,7 @@
 		width: 100%;
 		aspect-ratio: 1;
 		border-radius: var(--radius-md);
-		background: linear-gradient(135deg, #1a1a24, #2a2438);
+		background: linear-gradient(135deg, #1a1a1a, #242420);
 		background-size: cover;
 		background-position: center;
 		display: flex;

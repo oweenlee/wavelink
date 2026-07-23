@@ -333,13 +333,13 @@
 				rgba(0,0,0,0.15) 2px,
 				rgba(0,0,0,0.15) 3px
 			),
-			linear-gradient(135deg, #1a1a24, #2a2438);
+			linear-gradient(135deg, #1a1a1a, #242420);
 		box-shadow: 0 16px 48px rgba(0,0,0,0.5), inset 0 0 60px rgba(0,0,0,0.3);
 	}
 	.np-art {
 		position: relative;
 		width: 180px; height: 180px; border-radius: 50%;
-		background: linear-gradient(135deg, #1a1a24, #2a2438);
+		background: linear-gradient(135deg, #1a1a1a, #242420);
 		background-size: cover; background-position: center;
 		box-shadow: 0 0 0 4px rgba(0,0,0,0.3), 0 4px 20px rgba(0,0,0,0.4);
 		display: flex; align-items: center; justify-content: center;
