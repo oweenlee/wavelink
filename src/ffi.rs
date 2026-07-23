@@ -11,6 +11,8 @@ use std::collections::VecDeque;
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_double, c_float, c_int, c_uint, c_void};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::analysis;
 use crate::decoder;
@@ -64,13 +66,21 @@ impl From<crate::error::EngineError> for AcError {
 // ============================================================
 
 /// 引擎事件
+///
+/// 字符串字段（path）通过调用方提供的缓冲区传出，不再固定长度。
+/// 调用方在调用 ac_engine_poll_event 前设置 path / path_cap，
+/// 函数填充后设置 path_len 为实际需要的长度（不含 null 终止符）。
 #[repr(C)]
 pub struct AcEvent {
     /// 事件类型：0=TrackChanged, 1=PlaybackStopped, 2=Position,
-    /// 3=DurationSecs, 4=Error, 5=QueueChanged, 6=Spectrum
+    /// 3=DurationSecs, 4=Error, 5=QueueChanged, 6=Spectrum, 7=Levels
     pub event_type: c_int,
-    /// 曲目路径 / 错误消息
-    pub path: [c_char; 1024],
+    /// 字符串输出缓冲区（调用方分配）
+    pub path: *mut c_char,
+    /// 缓冲区容量（含 null 终止符位置）
+    pub path_cap: c_int,
+    /// 实际字符串长度（不含 null 终止符）；若 >= path_cap 表示缓冲区不足
+    pub path_len: c_int,
     /// 时间值（Position / DurationSecs）
     pub value: c_double,
     /// 频谱 16 频段（Spectrum）
@@ -142,6 +152,30 @@ fn write_cstr(dst: &mut [c_char], src: &str) {
     dst[len] = 0;
 }
 
+/// 写入字符串到原始指针缓冲区，返回实际长度（不含 null）
+unsafe fn write_cstr_raw(buf: *mut c_char, cap: c_int, src: &str) -> c_int {
+    let bytes = src.as_bytes();
+    let write_len = if cap > 0 { bytes.len().min(cap as usize - 1) } else { 0 };
+    if write_len > 0 && !buf.is_null() {
+        for (i, &b) in bytes[..write_len].iter().enumerate() {
+            *buf.add(i) = b as c_char;
+        }
+        *buf.add(write_len) = 0;
+    }
+    bytes.len() as c_int
+}
+
+/// 写入可选字符串到原始指针缓冲区
+unsafe fn write_cstr_raw_opt(buf: *mut c_char, cap: c_int, src: &Option<String>) -> c_int {
+    match src {
+        Some(ref s) => write_cstr_raw(buf, cap, s),
+        None => {
+            if !buf.is_null() && cap > 0 { *buf = 0; }
+            0
+        }
+    }
+}
+
 fn write_cstr_opt(dst: &mut [c_char], src: &Option<String>) {
     match src {
         Some(s) => write_cstr(dst, s),
@@ -153,6 +187,22 @@ fn write_cstr_opt(dst: &mut [c_char], src: &Option<String>) {
 // 引擎
 // ============================================================
 
+/// 事件回调函数类型
+///
+/// - `event`: 指向事件数据的指针（仅在回调执行期间有效）
+/// - `user_data`: 调用方自定义上下文指针
+pub type AcEventCallback = extern "C" fn(event: *const AcEvent, user_data: *mut c_void);
+
+/// 回调状态（内部使用）
+struct CallbackState {
+    callback: AcEventCallback,
+    user_data: *mut c_void,
+    /// 用于停止监听线程
+    stop: Arc<AtomicBool>,
+    /// 监听线程句柄
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
 /// 引擎不透明句柄（FFI 层内部使用）
 pub struct AcEngine {
     handle: EngineHandle,
@@ -160,6 +210,8 @@ pub struct AcEngine {
     events: parking_lot::Mutex<EventState>,
     /// 流式播放的写入句柄（网络流媒体用）
     stream_handle: parking_lot::Mutex<Option<crate::stream::StreamHandle>>,
+    /// 事件回调状态
+    callback: parking_lot::Mutex<Option<CallbackState>>,
 }
 
 struct EventState {
@@ -171,29 +223,33 @@ fn fill_ac_event(ev: &EngineEvent, out: &mut AcEvent) {
     match ev {
         EngineEvent::TrackChanged(path) => {
             out.event_type = 0;
-            write_cstr(&mut out.path, path);
+            out.path_len = unsafe { write_cstr_raw(out.path, out.path_cap, path) };
         }
         EngineEvent::PlaybackStopped => {
             out.event_type = 1;
+            out.path_len = 0;
         }
         EngineEvent::Position(pos) => {
             out.event_type = 2;
             out.value = *pos;
+            out.path_len = 0;
         }
         EngineEvent::DurationSecs(dur) => {
             out.event_type = 3;
             out.value = *dur;
+            out.path_len = 0;
         }
         EngineEvent::Error(msg) => {
             out.event_type = 4;
-            write_cstr(&mut out.path, msg);
+            out.path_len = unsafe { write_cstr_raw(out.path, out.path_cap, msg) };
         }
         EngineEvent::QueueChanged(_paths, current) => {
             out.event_type = 5;
-            write_cstr(&mut out.path, current);
+            out.path_len = unsafe { write_cstr_raw(out.path, out.path_cap, current) };
         }
         EngineEvent::Spectrum(bands) => {
             out.event_type = 6;
+            out.path_len = 0;
             for (i, &b) in bands.iter().enumerate().take(16) {
                 out.spectrum[i] = b;
             }
@@ -201,6 +257,7 @@ fn fill_ac_event(ev: &EngineEvent, out: &mut AcEvent) {
         EngineEvent::Levels(lv) => {
             out.event_type = 7;
             out.value = lv.rms as c_double;
+            out.path_len = 0;
             // 复用 spectrum[0] 传 peak，spectrum[1] 传 clip
             out.spectrum[0] = lv.peak;
             out.spectrum[1] = if lv.clip { 1.0 } else { 0.0 };
@@ -242,6 +299,7 @@ pub unsafe extern "C" fn ac_engine_create(
             buf: VecDeque::new(),
         }),
         stream_handle: parking_lot::Mutex::new(None),
+        callback: parking_lot::Mutex::new(None),
     });
     Box::into_raw(engine) as *mut c_void
 }
@@ -250,7 +308,15 @@ pub unsafe extern "C" fn ac_engine_create(
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_destroy(engine: *mut c_void) {
     if !engine.is_null() {
-        drop(Box::from_raw(engine as *mut AcEngine));
+        let e = Box::from_raw(engine as *mut AcEngine);
+        // 停止回调监听线程
+        if let Some(cb) = e.callback.lock().take() {
+            cb.stop.store(true, Ordering::Release);
+            if let Some(t) = cb.thread {
+                let _ = t.join();
+            }
+        }
+        drop(e);
     }
 }
 
@@ -668,13 +734,83 @@ pub unsafe extern "C" fn ac_engine_poll_event(
     if let Some(ev) = state.buf.pop_front() {
         let out_ref = &mut *out;
         out_ref.event_type = -1;
-        out_ref.path = [0; 1024];
+        out_ref.path_len = 0;
         out_ref.value = 0.0;
         out_ref.spectrum = [0.0; 16];
         fill_ac_event(&ev, out_ref);
         1
     } else {
         0
+    }
+}
+
+/// 设置事件回调函数。
+///
+/// 设置后，引擎事件将通过回调函数推送，无需轮询。
+/// 传 callback = null 则禁用回调，恢复轮询模式。
+///
+/// 注意：回调在独立监听线程中调用，回调函数必须是线程安全的。
+/// 回调中的 event 指针仅在回调执行期间有效，不要保存或跨线程传递。
+#[no_mangle]
+pub unsafe extern "C" fn ac_engine_set_event_callback(
+    engine: *mut c_void,
+    callback: Option<AcEventCallback>,
+    user_data: *mut c_void,
+) {
+    if engine.is_null() {
+        return;
+    }
+    let e = &*(engine as *const AcEngine);
+    let mut cb_guard = e.callback.lock();
+
+    // 停止现有监听线程
+    if let Some(old) = cb_guard.take() {
+        old.stop.store(true, Ordering::Release);
+        if let Some(t) = old.thread {
+            let _ = t.join();
+        }
+    }
+
+    // 如果提供了回调，启动监听线程
+    if let Some(cb_fn) = callback {
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_clone = stop.clone();
+
+        // 从事件 channel 中取出 receiver（与轮询共享同一个 channel）
+        // 注意：设置回调后轮询仍可用，但事件会被监听线程消费
+        let rx = e.events.lock().rx.clone();
+
+        let thread = std::thread::spawn(move || {
+            let mut str_buf = vec![0i8; 4096];
+            loop {
+                if stop_clone.load(Ordering::Acquire) {
+                    break;
+                }
+                match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                    Ok(ev) => {
+                        let mut ac_ev = AcEvent {
+                            event_type: 0,
+                            path: str_buf.as_mut_ptr(),
+                            path_cap: str_buf.len() as c_int,
+                            path_len: 0,
+                            value: 0.0,
+                            spectrum: [0.0; 16],
+                        };
+                        fill_ac_event(&ev, &mut ac_ev);
+                        cb_fn(&ac_ev as *const AcEvent, user_data);
+                    }
+                    Err(crossbeam_channel::RecvTimeoutError::Timeout) => continue,
+                    Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+        });
+
+        *cb_guard = Some(CallbackState {
+            callback: cb_fn,
+            user_data,
+            stop,
+            thread: Some(thread),
+        });
     }
 }
 
@@ -819,29 +955,32 @@ pub unsafe extern "C" fn ac_probe_sample_rate(path: *const c_char) -> c_int {
 // 设备枚举
 // ============================================================
 
-/// 列出可用输出设备名称。返回设备数量，名称写入 out_names（每个最长 256 字节）。
-/// max_count 为 out_names 数组容量。仅 cpal 后端有效，其他平台返回 0。
+/// 列出可用输出设备名称。返回设备数量。
+/// out_buf: 连续存储缓冲区，每个设备名占 name_size 字节（含 null 终止符）。
+/// max_count: 最多写入的设备数。仅 cpal 后端有效，其他平台返回 0。
 #[no_mangle]
 pub unsafe extern "C" fn ac_list_output_devices(
-    out_names: *mut [c_char; 256],
+    out_buf: *mut c_char,
+    name_size: c_int,
     max_count: c_int,
 ) -> c_int {
     #[cfg(feature = "cpal-backend")]
     {
-        if out_names.is_null() || max_count <= 0 {
+        if out_buf.is_null() || name_size <= 0 || max_count <= 0 {
             return 0;
         }
         let names = crate::output::list_device_names();
         let count = names.len().min(max_count as usize);
-        let dst = std::slice::from_raw_parts_mut(out_names, count);
+        let slot = name_size as usize;
         for (i, name) in names.iter().take(count).enumerate() {
-            write_cstr(&mut dst[i], name);
+            let dst = out_buf.add(i * slot);
+            let _ = write_cstr_raw(dst, name_size, name);
         }
         count as c_int
     }
     #[cfg(not(feature = "cpal-backend"))]
     {
-        let _ = (out_names, max_count);
+        let _ = (out_buf, name_size, max_count);
         0
     }
 }

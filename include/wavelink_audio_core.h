@@ -12,10 +12,19 @@ extern "C" {
 
 // ==================== 事件 ====================
 
+// 事件回调函数类型
+typedef void (*AcEventCallback)(const AcEvent* event, void* user_data);
+
+// 引擎事件
+// 字符串字段通过调用方提供的缓冲区传出。
+// 调用前设置 path / path_cap，函数填充后设置 path_len。
 typedef struct {
     int event_type;              // 0=TrackChanged, 1=PlaybackStopped, 2=Position,
-                                 // 3=DurationSecs, 4=Error, 5=QueueChanged, 6=Spectrum
-    char path[1024];             // 曲目路径（TrackChanged）/ 错误消息（Error）
+                                 // 3=DurationSecs, 4=Error, 5=QueueChanged,
+                                 // 6=Spectrum, 7=Levels
+    char* path;                  // 字符串输出缓冲区（调用方分配）
+    int   path_cap;              // 缓冲区容量（含 null 终止符位置）
+    int   path_len;              // 实际字符串长度（不含 null）；>= path_cap 表示缓冲区不足
     double value;                // 时间值（Position / DurationSecs）
     float spectrum[16];          // 频谱 16 频段（Spectrum）
 } AcEvent;
@@ -91,10 +100,16 @@ double ac_engine_duration(const void* engine);
 int    ac_engine_is_playing(const void* engine);
 unsigned int ac_engine_underrun_count(const void* engine);
 
-// ==================== 事件轮询 ====================
+// ==================== 事件轮询 & 回调 ====================
 
 // 轮询一个事件，返回 1 有事件、0 无事件
+// 调用前需设置 out->path 和 out->path_cap
 int ac_engine_poll_event(void* engine, AcEvent* out);
+
+// 设置事件回调函数。设置后事件通过回调推送，无需轮询。
+// 传 callback = NULL 则禁用回调，恢复轮询模式。
+// 回调在独立监听线程中调用，必须线程安全。
+void ac_engine_set_event_callback(void* engine, AcEventCallback callback, void* user_data);
 
 // ==================== 元数据 & 封面 ====================
 
@@ -135,8 +150,9 @@ void ac_stream_eof(void* engine);
 // ==================== 设备枚举 ====================
 
 // 枚举输出设备，返回实际设备数。
-// out_names: 设备名数组（每项 256 字节），max_count: 数组容量。
-int ac_list_output_devices(char (*out_names)[256], int max_count);
+// out_buf: 连续存储缓冲区，每个设备名占 name_size 字节（含 null）。
+// max_count: 最多写入的设备数。
+int ac_list_output_devices(char* out_buf, int name_size, int max_count);
 
 // ==================== 工具 ====================
 
