@@ -7,10 +7,11 @@
 //! 使用方式见 `run_consumer_loop()` 的文档。
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender, RecvTimeoutError};
+use parking_lot::Mutex;
 use realfft::num_complex::Complex;
 use realfft::RealFftPlanner;
 
@@ -191,7 +192,13 @@ pub fn run_consumer_loop(
                     }
                 }
 
-                // 3) 余弦淡入
+                // 3) 坏帧检测（在淡入之前，避免淡入把首帧压到接近零被误判）
+                if buf.iter().all(|&s| s == 0.0) || buf.iter().any(|&s| !s.is_finite()) {
+                    on_bad_frame();
+                    continue;
+                }
+
+                // 4) 余弦淡入
                 if fade_remaining > 0 {
                     let n = fade_remaining.min(buf.len());
                     let done = fade_total - fade_remaining;
@@ -204,15 +211,9 @@ pub fn run_consumer_loop(
                     fade_remaining -= n;
                 }
 
-                // 4) 坏帧检测
-                if buf.iter().all(|&s| s == 0.0) || buf.iter().any(|&s| !s.is_finite()) {
-                    on_bad_frame();
-                    continue;
-                }
-
                 // 5) 变速重采样
                 let output_buf = {
-                    let sp = *speed.lock().unwrap_or_else(|e| e.into_inner());
+                    let sp = *speed.lock();
                     if (sp - 1.0).abs() > 0.001 {
                         speed_changer.set_speed(sp);
                         let out = speed_changer.process(&buf, ch);
@@ -256,6 +257,7 @@ pub fn run_consumer_loop(
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
+    use parking_lot::Mutex as PlMutex;
     use std::thread;
     use crossbeam_channel::{bounded, unbounded};
 
@@ -290,7 +292,7 @@ mod tests {
     {
         let stop = Arc::new(AtomicBool::new(false));
         let s = stop.clone();
-        let speed = Arc::new(Mutex::new(1.0f32));
+        let speed = Arc::new(PlMutex::new(1.0f32));
         let (ready_tx, ready_rx) = bounded(1);
         let handle = thread::spawn(move || {
             let push = &push_fn;
@@ -340,7 +342,7 @@ mod tests {
             run_consumer_loop(
                 rx, &default_config(),
                 push, passthrough, nospec, on_bad, nooutput, noeot,
-                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
             );
         });
 
@@ -375,7 +377,7 @@ mod tests {
             run_consumer_loop(
                 rx, &default_config(),
                 push, passthrough, nospec, on_bad, nooutput, noeot,
-                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
             );
         });
 
@@ -408,7 +410,7 @@ mod tests {
             run_consumer_loop(
                 rx, &cfg,
                 push, passthrough, nospec, nobad, nooutput, noeot,
-                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
             );
         });
 
@@ -440,7 +442,7 @@ mod tests {
             run_consumer_loop(
                 rx, &cfg,
                 push, passthrough, nospec, nobad, nooutput, noeot,
-                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
             );
         });
 
@@ -494,7 +496,7 @@ mod tests {
             run_consumer_loop(
                 rx, &default_config(),
                 push, passthrough, nospec, nobad, on_output, on_eot,
-                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
             );
         });
 
@@ -548,7 +550,7 @@ mod tests {
             run_consumer_loop(
                 rx, &cfg,
                 push, passthrough, on_spec, nobad, nooutput, noeot,
-                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
             );
         });
 
@@ -587,7 +589,7 @@ mod tests {
             run_consumer_loop(
                 rx, &default_config(),
                 push, passthrough, nospec, nobad, on_output, noeot,
-                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
             );
         });
 
@@ -626,7 +628,7 @@ mod tests {
             run_consumer_loop(
                 rx, &default_config(),
                 push, dsp, nospec, nobad, nooutput, noeot,
-                &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
             );
         });
 

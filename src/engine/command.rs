@@ -30,6 +30,17 @@ pub enum PlayMode {
 pub enum EngineCommand {
     /// 播放单个文件（可选同步确认）
     Play(String, CmdAck),
+    /// 从流式数据源播放（网络流媒体，可选同步确认）
+    PlayStream {
+        /// 格式提示（如 "mp3", "flac", "aac"）
+        format_hint: Option<String>,
+        /// 内容长度（字节，可选）
+        content_length: Option<u64>,
+        /// 应答通道
+        ack: CmdAck,
+        /// 流句柄共享存储（FFI 层持有 Arc，引擎线程写入）
+        stream_handle_out: Option<std::sync::Arc<crossbeam_channel::Sender<crate::stream::StreamHandle>>>,
+    },
     /// 设置播放队列并从第一首开始播放
     PlayQueue(Vec<String>),
     /// 下一首

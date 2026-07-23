@@ -118,6 +118,26 @@ int ac_replaygain_read(const char* path, float* track_gain_db,
 
 int ac_analyze_file(const char* path, AcAnalysis* result);
 
+// ==================== 流式播放（网络流媒体） ====================
+
+// 开始流式播放。平台层负责网络 I/O，通过 ac_stream_write 写入数据。
+// format_hint 为格式提示（如 "mp3", "flac", "aac"），传 NULL 则自动探测。
+// 返回 0 成功，-1 失败。
+int ac_engine_play_stream(void* engine, const char* format_hint);
+
+// 向流式播放写入音频数据。应在 ac_engine_play_stream 成功后调用。
+// 返回实际写入的字节数，0 表示流已关闭或失败。
+int ac_stream_write(void* engine, const uint8_t* data, int len);
+
+// 通知流式播放数据已结束（EOF）。
+void ac_stream_eof(void* engine);
+
+// ==================== 设备枚举 ====================
+
+// 枚举输出设备，返回实际设备数。
+// out_names: 设备名数组（每项 256 字节），max_count: 数组容量。
+int ac_list_output_devices(char (*out_names)[256], int max_count);
+
 // ==================== 工具 ====================
 
 int ac_probe_sample_rate(const char* path);

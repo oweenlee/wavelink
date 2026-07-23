@@ -30,6 +30,8 @@ pub mod ffi;
 pub mod engine;
 /// 音频输出抽象（cpal / HeadlessOutput）
 pub mod output;
+/// 流式音频数据源（网络流媒体解码用，平台层写入字节流）
+pub mod stream;
 
 /// 目标输出采样率（默认 44100 Hz），可通过 EngineConfig 覆盖
 pub const TARGET_SAMPLE_RATE: u32 = 44100;

@@ -83,6 +83,35 @@ impl Decoder {
     }
     /// 停止后台解码线程
     pub fn stop(&self) { if let Some(ref t) = self.tx { let _ = t.send(()); } }
+
+    /// 从流式数据源启动解码（网络流媒体用）。
+    ///
+    /// - `source` — 平台层写入字节流的 `StreamMediaSource`
+    /// - `target_rate` / `target_channels` — 输出重采样目标
+    /// - `position` — 外部可读的解码进度
+    /// - `format_hint` — 可选格式提示（如 "mp3", "flac", "aac"），帮助 Symphonia 探测
+    pub fn start_from_stream(
+        source: crate::stream::StreamMediaSource,
+        target_rate: u32, target_channels: u32,
+        position: Arc<AtomicU64>,
+        format_hint: Option<String>,
+    ) -> Result<(Receiver<DecodedFrame>, Self), String> {
+        let (tx, rx) = bounded(8);
+        let (stx, srx) = unbounded();
+        let pos_clone = position.clone();
+        let handle = thread::spawn(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run_from_stream(source, target_rate, target_channels, tx, srx, position, format_hint)
+            }));
+            if let Err(panic_info) = result {
+                let msg = if let Some(s) = panic_info.downcast_ref::<&str>() { s.to_string() }
+                          else if let Some(s) = panic_info.downcast_ref::<String>() { s.clone() }
+                          else { "流式解码线程未知 panic".to_string() };
+                error!("流式解码线程 crash: {msg}");
+            }
+        });
+        Ok((rx, Decoder { tx: Some(stx), handle: Some(handle), position: pos_clone }))
+    }
 }
 
 /// 有界 channel 发送：利用 crossbeam 背压阻塞，每 10ms 检查 stop 信号避免死锁
@@ -97,6 +126,72 @@ fn try_send_or_stop(tx: &Sender<DecodedFrame>, frame: DecodedFrame, stop_rx: &Re
             }
             Err(SendTimeoutError::Disconnected(_)) => return,
         }
+    }
+}
+
+/// 创建 rubato 重采样器（如源/目标采样率不同）
+fn create_resampler(src_rate: u32, target_rate: u32, out_ch: usize) -> Option<SincFixedOut<f64>> {
+    if (src_rate as i64 - target_rate as i64).abs() <= 1 { return None; }
+    let params = InterpolationParameters {
+        sinc_len: 256,
+        f_cutoff: 0.95,
+        interpolation: InterpolationType::Linear,
+        oversampling_factor: 256,
+        window: WindowFunction::BlackmanHarris2,
+    };
+    Some(SincFixedOut::<f64>::new(
+        target_rate as f64 / src_rate as f64, params, 1024, out_ch,
+    ))
+}
+
+/// 重采样并发送（或直发）。返回更新后的 pts。
+fn resample_and_send(
+    mixed: &[f32],
+    resampler: &mut Option<SincFixedOut<f64>>,
+    rubato_buf: &mut [Vec<f64>],
+    out_ch: usize,
+    target_rate: u32,
+    target_ch: u32,
+    pts: f64,
+    tx: &Sender<DecodedFrame>,
+    stop_rx: &Receiver<()>,
+) -> f64 {
+    if let Some(ref mut resampler) = resampler {
+        for c in 0..out_ch {
+            rubato_buf[c].extend(mixed.iter().skip(c).step_by(out_ch).map(|&s| s as f64));
+        }
+        let mut cur_pts = pts;
+        loop {
+            let needed = resampler.nbr_frames_needed();
+            if rubato_buf[0].len() < needed { break; }
+            let waves_in: Vec<Vec<f64>> = rubato_buf.iter_mut()
+                .map(|buf| buf.drain(..needed).collect())
+                .collect();
+            match resampler.process(&waves_in) {
+                Ok(waves_out) => {
+                    let out_frames = waves_out[0].len();
+                    let mut samples = Vec::with_capacity(out_frames * out_ch);
+                    for f in 0..out_frames {
+                        for c in 0..out_ch {
+                            samples.push(waves_out[c][f] as f32);
+                        }
+                    }
+                    try_send_or_stop(tx, DecodedFrame {
+                        samples, pts_secs: cur_pts,
+                        sample_rate: target_rate, channels: target_ch,
+                    }, stop_rx);
+                    cur_pts += out_frames as f64 / target_rate as f64;
+                }
+                Err(e) => warn!("rubato 重采样失败: {e:?}"),
+            }
+        }
+        cur_pts
+    } else {
+        try_send_or_stop(tx, DecodedFrame {
+            samples: mixed.to_vec(), pts_secs: pts,
+            sample_rate: target_rate, channels: target_ch,
+        }, stop_rx);
+        pts + (mixed.len() / out_ch) as f64 / target_rate as f64
     }
 }
 
@@ -171,26 +266,9 @@ fn run(
     }
 
     // ── 创建 rubato 重采样器（如有必要） ──
-    let need_resample = (src_rate as i64 - target_rate as i64).abs() > 1;
-    let mut rubato_resampler: Option<SincFixedOut<f64>> = None;
-    let mut rubato_buf: Vec<Vec<f64>> = Vec::new(); // 声道级输入缓冲
-    if need_resample {
-        let params = InterpolationParameters {
-            sinc_len: 256,
-            f_cutoff: 0.95,
-            interpolation: InterpolationType::Linear,
-            oversampling_factor: 256,
-            window: WindowFunction::BlackmanHarris2,
-        };
-        let r = SincFixedOut::<f64>::new(
-            target_rate as f64 / src_rate as f64,
-            params, 1024, target_ch as usize,
-        );
-        rubato_buf = vec![Vec::new(); target_ch as usize];
-        rubato_resampler = Some(r);
-    }
-
     let out_ch = target_ch as usize;
+    let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
+    let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
 
     loop {
         if stop_rx.try_recv().is_ok() { break; }
@@ -245,49 +323,98 @@ fn run(
             }
         }
 
-        // rubato 异步 SRC：累积到足够帧数后批量处理
-        if let Some(ref mut resampler) = rubato_resampler {
-            // 追加到声道缓冲
-            for c in 0..out_ch {
-                rubato_buf[c].extend(
-                    mixed.iter().skip(c).step_by(out_ch).map(|&s| s as f64)
-                );
-            }
-            // 循环处理直到缓冲不够
-            loop {
-                let needed = resampler.nbr_frames_needed();
-                if rubato_buf[0].len() < needed { break; }
-                let waves_in: Vec<Vec<f64>> = rubato_buf.iter_mut()
-                    .map(|buf| buf.drain(..needed).collect())
-                    .collect();
-                match resampler.process(&waves_in) {
-                    Ok(waves_out) => {
-                        let out_frames = waves_out[0].len();
-                        let mut samples = Vec::with_capacity(out_frames * out_ch);
-                        for f in 0..out_frames {
-                            for c in 0..out_ch {
-                                samples.push(waves_out[c][f] as f32);
-                            }
-                        }
-                        try_send_or_stop(&tx, DecodedFrame {
-                            samples,
-                            pts_secs: packet.pts.get() as f64 / src_rate as f64,
-                            sample_rate: target_rate,
-                            channels: target_ch,
-                        }, &stop_rx);
-                    }
-                    Err(e) => warn!("rubato 重采样失败: {e:?}"),
-                }
-            }
-        } else {
-            // 无需重采样，直接发送
-            try_send_or_stop(&tx, DecodedFrame {
-                samples: mixed,
-                pts_secs: packet.pts.get() as f64 / src_rate as f64,
-                sample_rate: target_rate,
-                channels: target_ch,
-            }, &stop_rx);
+        // rubato 异步 SRC + 发送
+        let pts = packet.pts.get() as f64 / src_rate as f64;
+        let _ = resample_and_send(&mixed, &mut rubato_resampler, &mut rubato_buf,
+            out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
+    }
+}
+
+/// 流式解码：从 `StreamMediaSource` 读取字节流 → Symphonia 解码 → 重采样 → 发送
+fn run_from_stream(
+    source: crate::stream::StreamMediaSource,
+    target_rate: u32, target_ch: u32,
+    tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
+    _position: Arc<AtomicU64>,
+    format_hint: Option<String>,
+) {
+    let mss = MediaSourceStream::new(Box::new(source), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ref ext) = format_hint {
+        hint.with_extension(ext);
+    }
+    let mut format = match symphonia::default::get_probe().probe(
+        &hint, mss, FormatOptions::default(), MetadataOptions::default(),
+    ) { Ok(p) => p, Err(e) => { warn!("流式探测失败: {e}"); return; } };
+    let (track_id, audio_cp) = {
+        let track = match format.default_track(TrackType::Audio) {
+            Some(t) => t, None => { warn!("流式: 无音频轨"); return; }
+        };
+        let cp = match &track.codec_params {
+            Some(symphonia::core::codecs::CodecParameters::Audio(a)) => a.clone(),
+            _ => { warn!("流式: 非音频编解码参数"); return; }
+        };
+        (track.id, cp)
+    };
+    let src_rate = audio_cp.sample_rate.unwrap_or(44100);
+    let out_ch = target_ch as usize;
+    info!("流式解码: {}Hz, hint={:?}", src_rate, format_hint);
+
+    let mut decoder = match symphonia::default::get_codecs().make_audio_decoder(&audio_cp, &AudioDecoderOptions::default()) {
+        Ok(d) => d,
+        Err(_) => match symphonia_adapter_oporus::OpusDecoder::try_registry_new(&audio_cp, &AudioDecoderOptions::default()) {
+            Ok(d) => { info!("流式: 使用 Opus 适配器解码"); d }
+            Err(e) => { warn!("流式: 创建解码器失败: {e}"); return; }
         }
+    };
+
+    let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
+    let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
+
+    loop {
+        if stop_rx.try_recv().is_ok() { break; }
+        let packet = match format.next_packet() {
+            Ok(Some(pkt)) => pkt,
+            Ok(None) => { debug!("流式 EOF"); break; }
+            Err(symphonia::core::errors::Error::IoError(ref e))
+                if e.kind() == std::io::ErrorKind::UnexpectedEof => { debug!("流式 EOF"); break; }
+            Err(e) => { debug!("流式结束: {e}"); break; }
+        };
+        if packet.track_id != track_id { continue; }
+
+        let decoded = match decoder.decode(&packet) {
+            Ok(buf) => buf,
+            Err(symphonia::core::errors::Error::DecodeError(_)) => continue,
+            Err(e) => { debug!("流式解码错误: {e}"); continue; }
+        };
+
+        let spec = decoded.spec().clone();
+        let num_samples = decoded.samples_interleaved();
+        let mut interleaved = vec![0.0f32; num_samples];
+        decoded.copy_to_slice_interleaved(&mut interleaved);
+
+        if interleaved.iter().any(|&s| !s.is_finite()) {
+            debug!("流式: 解码帧含无效样本，跳过");
+            continue;
+        }
+
+        let in_ch = spec.channels().count();
+        let in_frames = interleaved.len() / in_ch;
+        let mut mixed = Vec::with_capacity(in_frames * out_ch);
+        for f in 0..in_frames {
+            let off = f * in_ch;
+            if out_ch == 1 {
+                mixed.push(interleaved[off..off + in_ch].iter().sum::<f32>() / in_ch as f32);
+            } else {
+                let l = if in_ch >= 1 { interleaved[off] } else { 0.0 };
+                let r = if in_ch >= 2 { interleaved[off + 1] } else { l };
+                mixed.push(l); mixed.push(r);
+            }
+        }
+
+        let pts = packet.pts.get() as f64 / src_rate as f64;
+        let _ = resample_and_send(&mixed, &mut rubato_resampler, &mut rubato_buf,
+            out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
     }
 }
 
@@ -562,18 +689,7 @@ fn run_dsd(
     let mut output_frames: u64 = 0;
 
     // 重采样器（如需要）
-    let need_resample = (src_rate as i64 - target_rate as i64).abs() > 1;
-    let mut resampler: Option<SincFixedOut<f64>> = if need_resample {
-        let params = InterpolationParameters {
-            sinc_len: 256, f_cutoff: 0.95,
-            interpolation: InterpolationType::Linear,
-            oversampling_factor: 256,
-            window: WindowFunction::BlackmanHarris2,
-        };
-        Some(SincFixedOut::<f64>::new(target_rate as f64 / src_rate as f64, params, 1024, out_ch))
-    } else {
-        None
-    };
+    let mut resampler = create_resampler(src_rate, target_rate, out_ch);
     let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
     let mut pts = 0.0f64;
 
@@ -624,36 +740,8 @@ fn run_dsd(
         if mixed.is_empty() { break; }
 
         // 重采样或直发
-        if let Some(ref mut resampler) = resampler {
-            for c in 0..out_ch {
-                rubato_buf[c].extend(mixed.iter().skip(c).step_by(out_ch).map(|&s| s as f64));
-            }
-            loop {
-                let needed = resampler.nbr_frames_needed();
-                if rubato_buf[0].len() < needed { break; }
-                let waves_in: Vec<Vec<f64>> = rubato_buf.iter_mut()
-                    .map(|buf| buf.drain(..needed).collect()).collect();
-                match resampler.process(&waves_in) {
-                    Ok(waves_out) => {
-                        let out_frames = waves_out[0].len();
-                        let mut samples = Vec::with_capacity(out_frames * out_ch);
-                        for f in 0..out_frames {
-                            for c in 0..out_ch { samples.push(waves_out[c][f] as f32); }
-                        }
-                        try_send_or_stop(&tx, DecodedFrame {
-                            samples, pts_secs: pts, sample_rate: target_rate, channels: target_ch,
-                        }, &stop_rx);
-                        pts += out_frames as f64 / target_rate as f64;
-                    }
-                    Err(e) => warn!("DSD rubato 重采样失败: {e:?}"),
-                }
-            }
-        } else {
-            try_send_or_stop(&tx, DecodedFrame {
-                samples: mixed.clone(), pts_secs: pts, sample_rate: target_rate, channels: target_ch,
-            }, &stop_rx);
-            pts += (mixed.len() / out_ch) as f64 / target_rate as f64;
-        }
+        pts = resample_and_send(&mixed, &mut resampler, &mut rubato_buf,
+            out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
 
         output_frames += (mixed.len() / out_ch) as u64;
         if let Some(max_frames) = max_output_frames {
@@ -666,33 +754,8 @@ fn run_dsd(
     if !pcm.is_empty() && stop_rx.try_recv().is_err() {
         let mixed = mix_channels(&pcm, src_ch, out_ch);
         if !mixed.is_empty() {
-            if let Some(ref mut resampler) = resampler {
-                for c in 0..out_ch {
-                    rubato_buf[c].extend(mixed.iter().skip(c).step_by(out_ch).map(|&s| s as f64));
-                }
-                // 刷新重采样器剩余
-                loop {
-                    let needed = resampler.nbr_frames_needed();
-                    if rubato_buf[0].len() < needed { break; }
-                    let waves_in: Vec<Vec<f64>> = rubato_buf.iter_mut()
-                        .map(|buf| buf.drain(..needed).collect()).collect();
-                    if let Ok(waves_out) = resampler.process(&waves_in) {
-                        let out_frames = waves_out[0].len();
-                        let mut samples = Vec::with_capacity(out_frames * out_ch);
-                        for f in 0..out_frames {
-                            for c in 0..out_ch { samples.push(waves_out[c][f] as f32); }
-                        }
-                        try_send_or_stop(&tx, DecodedFrame {
-                            samples, pts_secs: pts, sample_rate: target_rate, channels: target_ch,
-                        }, &stop_rx);
-                        pts += out_frames as f64 / target_rate as f64;
-                    }
-                }
-            } else {
-                try_send_or_stop(&tx, DecodedFrame {
-                    samples: mixed, pts_secs: pts, sample_rate: target_rate, channels: target_ch,
-                }, &stop_rx);
-            }
+            let _ = resample_and_send(&mixed, &mut resampler, &mut rubato_buf,
+                out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
         }
     }
 }
@@ -755,18 +818,7 @@ fn run_wavpack(
     };
 
     // 重采样器
-    let need_resample = (src_rate as i64 - target_rate as i64).abs() > 1;
-    let mut resampler: Option<SincFixedOut<f64>> = if need_resample {
-        let params = InterpolationParameters {
-            sinc_len: 256, f_cutoff: 0.95,
-            interpolation: InterpolationType::Linear,
-            oversampling_factor: 256,
-            window: WindowFunction::BlackmanHarris2,
-        };
-        Some(SincFixedOut::<f64>::new(target_rate as f64 / src_rate as f64, params, 1024, out_ch))
-    } else {
-        None
-    };
+    let mut resampler = create_resampler(src_rate, target_rate, out_ch);
     let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
     let mut pts = 0.0f64;
     let mut output_frames: u64 = 0;
@@ -809,36 +861,8 @@ fn run_wavpack(
             if mixed.is_empty() { break; }
 
             // 重采样或直发
-            if let Some(ref mut resampler) = resampler {
-                for c in 0..out_ch {
-                    rubato_buf[c].extend(mixed.iter().skip(c).step_by(out_ch).map(|&s| s as f64));
-                }
-                loop {
-                    let needed = resampler.nbr_frames_needed();
-                    if rubato_buf[0].len() < needed { break; }
-                    let waves_in: Vec<Vec<f64>> = rubato_buf.iter_mut()
-                        .map(|buf| buf.drain(..needed).collect()).collect();
-                    match resampler.process(&waves_in) {
-                        Ok(waves_out) => {
-                            let out_frames = waves_out[0].len();
-                            let mut samples = Vec::with_capacity(out_frames * out_ch);
-                            for f in 0..out_frames {
-                                for c in 0..out_ch { samples.push(waves_out[c][f] as f32); }
-                            }
-                            try_send_or_stop(&tx, DecodedFrame {
-                                samples, pts_secs: pts, sample_rate: target_rate, channels: target_ch,
-                            }, &stop_rx);
-                            pts += out_frames as f64 / target_rate as f64;
-                        }
-                        Err(e) => warn!("WavPack 重采样失败: {e:?}"),
-                    }
-                }
-            } else {
-                try_send_or_stop(&tx, DecodedFrame {
-                    samples: mixed.clone(), pts_secs: pts, sample_rate: target_rate, channels: target_ch,
-                }, &stop_rx);
-                pts += (mixed.len() / out_ch) as f64 / target_rate as f64;
-            }
+            pts = resample_and_send(&mixed, &mut resampler, &mut rubato_buf,
+                out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
 
             output_frames += (mixed.len() / out_ch) as u64;
             if let Some(max_f) = max_output_frames {
@@ -851,31 +875,8 @@ fn run_wavpack(
     if !batch.is_empty() && stop_rx.try_recv().is_err() {
         let mixed = mix_channels(&batch, src_ch, out_ch);
         if !mixed.is_empty() {
-            if let Some(ref mut resampler) = resampler {
-                for c in 0..out_ch {
-                    rubato_buf[c].extend(mixed.iter().skip(c).step_by(out_ch).map(|&s| s as f64));
-                }
-                loop {
-                    let needed = resampler.nbr_frames_needed();
-                    if rubato_buf[0].len() < needed { break; }
-                    let waves_in: Vec<Vec<f64>> = rubato_buf.iter_mut()
-                        .map(|buf| buf.drain(..needed).collect()).collect();
-                    if let Ok(waves_out) = resampler.process(&waves_in) {
-                        let out_frames = waves_out[0].len();
-                        let mut samples = Vec::with_capacity(out_frames * out_ch);
-                        for f in 0..out_frames {
-                            for c in 0..out_ch { samples.push(waves_out[c][f] as f32); }
-                        }
-                        try_send_or_stop(&tx, DecodedFrame {
-                            samples, pts_secs: pts, sample_rate: target_rate, channels: target_ch,
-                        }, &stop_rx);
-                    }
-                }
-            } else {
-                try_send_or_stop(&tx, DecodedFrame {
-                    samples: mixed, pts_secs: pts, sample_rate: target_rate, channels: target_ch,
-                }, &stop_rx);
-            }
+            let _ = resample_and_send(&mixed, &mut resampler, &mut rubato_buf,
+                out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
         }
     }
 }

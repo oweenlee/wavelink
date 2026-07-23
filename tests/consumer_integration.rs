@@ -8,7 +8,8 @@
 mod common;
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::thread;
 use std::time::Duration;
 
@@ -49,7 +50,7 @@ fn test_real_wav_through_consumer() {
             rx,
             &config,
             &|buf| {
-                *tp.lock().unwrap() += buf.len();
+                *tp.lock() += buf.len();
                 buf.len()
             },
             &|_| {},
@@ -71,7 +72,7 @@ fn test_real_wav_through_consumer() {
     // 等待解码完成
     consumer_h.join().expect("consumer 线程不应 panic");
 
-    let total = *total_pushed.lock().unwrap();
+    let total = *total_pushed.lock();
     eprintln!("WAV 2s consumer total samples: {total}");
 
     // test_wav_48k 中 44.1k 2s 立体声 = 176400 样本，这里也接近
@@ -114,7 +115,7 @@ fn test_consumer_output_count_matches() {
             &|_| {},
             &|| {},
             &|n| {
-                *oc.lock().unwrap() += n;
+                *oc.lock() += n;
             },
             &|| None,
             &s,
@@ -129,7 +130,7 @@ fn test_consumer_output_count_matches() {
 
     consumer_h.join().expect("consumer join");
 
-    let reported = *output_count.lock().unwrap();
+    let reported = *output_count.lock();
     eprintln!("on_samples_output total: {reported}");
     assert!(
         reported >= 176_000 && reported <= 177_000,
@@ -166,7 +167,7 @@ fn test_48k_wav_through_consumer() {
             rx,
             &config,
             &|buf| {
-                *tp.lock().unwrap() += buf.len();
+                *tp.lock() += buf.len();
                 buf.len()
             },
             &|_| {},
@@ -186,7 +187,7 @@ fn test_48k_wav_through_consumer() {
 
     consumer_h.join().expect("consumer join");
 
-    let total = *total_pushed.lock().unwrap();
+    let total = *total_pushed.lock();
     eprintln!("48kHz WAV 2s consumer total samples: {total}");
 
     // 48kHz 2s 立体声 → 192000 样本（rubato 重采样到 48kHz = 无重采样）

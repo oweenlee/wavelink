@@ -16,7 +16,6 @@ use crate::analysis;
 use crate::decoder;
 use crate::engine::{EngineHandle, EngineEvent, PlayMode};
 use crate::dsp::PeqBand;
-use crate::output::headless_inner;
 use crossbeam_channel::Receiver;
 use ringbuf::traits::{Consumer, Observer};
 
@@ -157,7 +156,10 @@ fn write_cstr_opt(dst: &mut [c_char], src: &Option<String>) {
 /// 引擎不透明句柄（FFI 层内部使用）
 pub struct AcEngine {
     handle: EngineHandle,
-    events: std::sync::Mutex<EventState>,
+    /// 使用 parking_lot::Mutex：无 poison 机制，避免 FFI 边界 panic（UB）
+    events: parking_lot::Mutex<EventState>,
+    /// 流式播放的写入句柄（网络流媒体用）
+    stream_handle: parking_lot::Mutex<Option<crate::stream::StreamHandle>>,
 }
 
 struct EventState {
@@ -235,10 +237,11 @@ pub unsafe extern "C" fn ac_engine_create(
     let (handle, rx) = EngineHandle::start_with_config(config);
     let engine = Box::new(AcEngine {
         handle,
-        events: std::sync::Mutex::new(EventState {
+        events: parking_lot::Mutex::new(EventState {
             rx,
             buf: VecDeque::new(),
         }),
+        stream_handle: parking_lot::Mutex::new(None),
     });
     Box::into_raw(engine) as *mut c_void
 }
@@ -553,7 +556,8 @@ pub unsafe extern "C" fn ac_audio_read(
     if engine.is_null() || buffer.is_null() || samples <= 0 {
         return 0;
     }
-    let inner = match headless_inner() {
+    let e = &*(engine as *const AcEngine);
+    let inner = match e.handle.output_inner.read().ok().and_then(|g| g.clone()) {
         Some(i) => i,
         None => return 0,
     };
@@ -653,7 +657,7 @@ pub unsafe extern "C" fn ac_engine_poll_event(
         return 0;
     }
     let e = &*(engine as *const AcEngine);
-    let mut state = e.events.lock().unwrap();
+    let mut state = e.events.lock();
 
     // 把 channel 中积压的事件全部拉入 buf
     while let Ok(ev) = state.rx.try_recv() {
@@ -809,4 +813,114 @@ pub unsafe extern "C" fn ac_probe_sample_rate(path: *const c_char) -> c_int {
     }
     let p = Path::new(cstr_to_str(path));
     decoder::probe_sample_rate(p).unwrap_or(0) as c_int
+}
+
+// ============================================================
+// 设备枚举
+// ============================================================
+
+/// 列出可用输出设备名称。返回设备数量，名称写入 out_names（每个最长 256 字节）。
+/// max_count 为 out_names 数组容量。仅 cpal 后端有效，其他平台返回 0。
+#[no_mangle]
+pub unsafe extern "C" fn ac_list_output_devices(
+    out_names: *mut [c_char; 256],
+    max_count: c_int,
+) -> c_int {
+    #[cfg(feature = "cpal-backend")]
+    {
+        if out_names.is_null() || max_count <= 0 {
+            return 0;
+        }
+        let names = crate::output::list_device_names();
+        let count = names.len().min(max_count as usize);
+        let dst = std::slice::from_raw_parts_mut(out_names, count);
+        for (i, name) in names.iter().take(count).enumerate() {
+            write_cstr(&mut dst[i], name);
+        }
+        count as c_int
+    }
+    #[cfg(not(feature = "cpal-backend"))]
+    {
+        let _ = (out_names, max_count);
+        0
+    }
+}
+
+// ============================================================
+// 流式播放（网络流媒体）
+// ============================================================
+
+/// 开始流式播放。平台层负责网络 I/O，通过 ac_stream_write 写入数据。
+/// format_hint 为格式提示（如 "mp3", "flac", "aac"），传 null 则自动探测。
+/// 返回 0 成功，-1 失败。
+#[no_mangle]
+pub unsafe extern "C" fn ac_engine_play_stream(
+    engine: *mut c_void,
+    format_hint: *const c_char,
+) -> c_int {
+    if engine.is_null() {
+        return -1;
+    }
+    let e = &*(engine as *const AcEngine);
+    let hint = if format_hint.is_null() {
+        None
+    } else {
+        let s = cstr_to_str(format_hint);
+        if s.is_empty() { None } else { Some(s.to_string()) }
+    };
+
+    // 创建 oneshot channel 接收 StreamHandle
+    let (handle_tx, handle_rx) = crossbeam_channel::bounded(1);
+    let shared_tx = std::sync::Arc::new(handle_tx);
+
+    let cmd = EngineCommand::PlayStream {
+        format_hint: hint,
+        content_length: None,
+        ack: None,
+        stream_handle_out: Some(shared_tx),
+    };
+    let _ = e.handle.tx().send(cmd);
+
+    // 等待引擎线程返回 StreamHandle（最多 3 秒）
+    match handle_rx.recv_timeout(Duration::from_secs(3)) {
+        Ok(sh) => {
+            *e.stream_handle.lock() = Some(sh);
+            0
+        }
+        Err(_) => -1,
+    }
+}
+
+/// 向流式播放写入音频数据。应在 ac_engine_play_stream 成功后调用。
+/// 返回实际写入的字节数，0 表示流已关闭或失败。
+#[no_mangle]
+pub unsafe extern "C" fn ac_stream_write(
+    engine: *mut c_void,
+    data: *const u8,
+    len: c_int,
+) -> c_int {
+    if engine.is_null() || data.is_null() || len <= 0 {
+        return 0;
+    }
+    let e = &*(engine as *const AcEngine);
+    let guard = e.stream_handle.lock();
+    match guard.as_ref() {
+        Some(sh) => {
+            let slice = std::slice::from_raw_parts(data, len as usize);
+            sh.write(slice) as c_int
+        }
+        None => 0,
+    }
+}
+
+/// 通知流式播放数据已结束（EOF）。
+#[no_mangle]
+pub unsafe extern "C" fn ac_stream_eof(engine: *mut c_void) {
+    if engine.is_null() {
+        return;
+    }
+    let e = &*(engine as *const AcEngine);
+    if let Some(sh) = e.stream_handle.lock().as_ref() {
+        sh.signal_eof();
+    }
 }

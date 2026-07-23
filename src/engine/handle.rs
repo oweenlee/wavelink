@@ -1,11 +1,12 @@
 //! EngineHandle — 对外的线程安全句柄
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
 use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
+use parking_lot::Mutex;
 
 use super::command::{EngineCommand, EngineEvent, Levels, PlayMode};
 use super::worker::run_engine;
@@ -31,6 +32,8 @@ pub struct EngineHandle {
     pub(crate) levels: Arc<Mutex<Levels>>,
     /// 共享输出内部状态（替代全局 static，供 FFI 层读取音频数据）
     pub output_inner: Arc<RwLock<Option<Arc<AudioOutputInner>>>>,
+    /// 实际输出采样率（与 EngineState.output_sample_rate 同步）
+    pub(crate) output_sample_rate: Arc<AtomicU32>,
 }
 
 impl EngineHandle {
@@ -48,20 +51,22 @@ impl EngineHandle {
         let playing = Arc::new(AtomicBool::new(false));
         let levels = Arc::new(Mutex::new(Levels::default()));
         let output_inner: Arc<RwLock<Option<Arc<AudioOutputInner>>>> = Arc::new(RwLock::new(None));
+        let output_sample_rate = Arc::new(AtomicU32::new(config.sample_rate));
         let pos_clone = Arc::clone(&position);
         let dur_clone = Arc::clone(&duration_us);
         let playing_clone = Arc::clone(&playing);
         let levels_clone = Arc::clone(&levels);
         let output_inner_clone = Arc::clone(&output_inner);
+        let output_sr_clone = Arc::clone(&output_sample_rate);
         let config_shared = Arc::new(RwLock::new(config.clone()));
         let config_for_engine = Arc::clone(&config_shared);
-        thread::spawn(move || run_engine(cmd_rx, event_tx, pos_clone, dur_clone, playing_clone, config, config_for_engine, levels_clone, output_inner_clone));
-        (EngineHandle { tx, position, duration_us, playing, config: config_shared, levels, output_inner }, event_rx)
+        thread::spawn(move || run_engine(cmd_rx, event_tx, pos_clone, dur_clone, playing_clone, config, config_for_engine, levels_clone, output_inner_clone, output_sr_clone));
+        (EngineHandle { tx, position, duration_us, playing, config: config_shared, levels, output_inner, output_sample_rate }, event_rx)
     }
 
     /// 获取当前音频电平（RMS / 峰值 / 削波标志）
     pub fn levels(&self) -> Levels {
-        self.levels.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.levels.lock().clone()
     }
 
     /// 开始播放指定路径的音频文件（异步，fire-and-forget）
@@ -70,6 +75,17 @@ impl EngineHandle {
     pub fn play_sync(&self, path: String) -> Result<(), EngineError> {
         let (ack_tx, ack_rx) = bounded(1);
         let _ = self.tx.send(EngineCommand::Play(path, Some(ack_tx)));
+        ack_rx.recv_timeout(Duration::from_secs(5))
+            .unwrap_or(Err(EngineError::InvalidState("应答超时".into())))
+    }
+    /// 开始流式播放（网络流媒体用，异步）
+    pub fn play_stream(&self, format_hint: Option<String>, content_length: Option<u64>) {
+        let _ = self.tx.send(EngineCommand::PlayStream { format_hint, content_length, ack: None, stream_handle_out: None });
+    }
+    /// 同步流式播放（等待引擎确认启动成功）
+    pub fn play_stream_sync(&self, format_hint: Option<String>, content_length: Option<u64>) -> Result<(), EngineError> {
+        let (ack_tx, ack_rx) = bounded(1);
+        let _ = self.tx.send(EngineCommand::PlayStream { format_hint, content_length, ack: Some(ack_tx), stream_handle_out: None });
         ack_rx.recv_timeout(Duration::from_secs(5))
             .unwrap_or(Err(EngineError::InvalidState("应答超时".into())))
     }
@@ -136,10 +152,9 @@ impl EngineHandle {
     /// 获取当前播放位置（秒）
     pub fn position_secs(&self) -> f64 {
         let samples = self.position.load(Ordering::Acquire);
-        let cfg = self.config.read().unwrap_or_else(|e| e.into_inner());
-        let sr = cfg.sample_rate as f64;
-        let ch = cfg.channels as f64;
-        samples as f64 / (sr * ch)
+        let sr = self.output_sample_rate.load(Ordering::Acquire) as f64;
+        let ch = self.config.read().unwrap_or_else(|e| e.into_inner()).channels as f64;
+        if sr > 0.0 && ch > 0.0 { samples as f64 / (sr * ch) } else { 0.0 }
     }
     /// 获取当前曲目时长（秒），0 表示未知
     pub fn duration_secs(&self) -> f64 {

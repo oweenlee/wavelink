@@ -69,15 +69,15 @@ pub fn start_global_capture(sample_rate: u32, channels: u32) -> Result<(), Strin
     ).map_err(|e| format!("构建输入流失败: {e}"))?;
 
     stream.play().map_err(|e| format!("启动输入流失败: {e}"))?;
-    // 将 stream 泄漏为 'static，通过全局状态管理生命周期
+    // cpal::Stream 是 !Send，无法存入 Mutex，用 AtomicUsize 存储裸指针
+    // SAFETY: stop_global_capture 会在 CAPTURE_ACTIVE=true 时重建 Box 并 drop
     let stream_ptr = Box::into_raw(Box::new(stream));
-    // 存入全局（仅用于 stop 时 drop）
     GLOBAL_STREAM.store(stream_ptr as usize, Ordering::Release);
     CAPTURE_ACTIVE.store(true, Ordering::Release);
     Ok(())
 }
 
-/// 全局 stream 指针，仅用于 stop 时重建 Box 并 drop
+/// cpal::Stream 全局存储（!Send 限制，用裸指针 + AtomicUsize）
 static GLOBAL_STREAM: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// 停止捕获
@@ -88,7 +88,7 @@ pub fn stop_global_capture() {
     }
     let ptr = GLOBAL_STREAM.swap(0, Ordering::AcqRel);
     if ptr != 0 {
-        // 重建 Box 自动 drop，停止 stream
+        // SAFETY: ptr 由 start_global_capture 中 Box::into_raw 产生，且仅在此处重建一次
         let _ = unsafe { Box::from_raw(ptr as *mut cpal::Stream) };
     }
     CAPTURE_ACTIVE.store(false, Ordering::Release);

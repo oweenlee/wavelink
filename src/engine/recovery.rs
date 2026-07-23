@@ -2,11 +2,12 @@
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use crossbeam_channel::unbounded;
-use tracing::{error, info};
+use parking_lot::Mutex;
+use tracing::{error, info, warn};
 
 use super::command::EngineEvent;
 use super::state::EngineState;
@@ -34,7 +35,13 @@ impl EngineState {
         if let Some(flag) = &self.consumer_stop { flag.store(true, Ordering::SeqCst); }
         if let Some(d) = &self.decoder { d.stop(); }
         if let Some(d) = &self.next_decoder { d.stop(); }
-        if let Some(t) = self.consumer_thread.take() { let _ = t.join(); }
+        if let Some(t) = self.consumer_thread.take() {
+            let (done_tx, done_rx) = crossbeam_channel::bounded::<()>(1);
+            std::thread::spawn(move || { let _ = t.join(); let _ = done_tx.send(()); });
+            if done_rx.recv_timeout(Duration::from_secs(2)).is_err() {
+                warn!("消费者线程 join 超时（2s），放弃等待");
+            }
+        }
         self.decoder = None;
         self.next_decoder = None;
         self.next_entry = None;

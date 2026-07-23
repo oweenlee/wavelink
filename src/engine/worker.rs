@@ -1,11 +1,12 @@
 //! 引擎线程主循环 + 消费者线程
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
 use crossbeam_channel::{select, unbounded, Receiver, Sender};
+use parking_lot::Mutex;
 use ringbuf::traits::Producer;
 use tracing::{debug, error, info, warn};
 
@@ -64,9 +65,11 @@ pub(crate) fn run_engine(
     config_shared: Arc<RwLock<EngineConfig>>,
     levels: Arc<Mutex<Levels>>,
     output_inner_shared: Arc<RwLock<Option<Arc<AudioOutputInner>>>>,
+    output_sample_rate_shared: Arc<std::sync::atomic::AtomicU32>,
 ) {
     let mut state = EngineState::new(config, position, duration_us, playing, external_tx.clone(), levels);
     state.output_inner_shared = Some(output_inner_shared);
+    state.output_sample_rate_shared = Some(output_sample_rate_shared);
     info!("引擎线程启动");
 
     // 创建内部事件 channel：消费者发 "曲目结束" 走这
@@ -85,6 +88,12 @@ pub(crate) fn run_engine(
                     match msg {
                         Ok(EngineCommand::Play(p, ack)) => {
                             state.play_file(&p);
+                            if let Some(tx) = ack {
+                                let _ = tx.send(Ok(()));
+                            }
+                        }
+                        Ok(EngineCommand::PlayStream { format_hint, content_length, ack, stream_handle_out }) => {
+                            state.play_stream(format_hint, content_length, stream_handle_out);
                             if let Some(tx) = ack {
                                 let _ = tx.send(Ok(()));
                             }
@@ -171,7 +180,7 @@ pub(crate) fn run_engine(
                         }
                     }
                     let pos_samples = state.position.load(Ordering::Acquire) as f64;
-                    let sr = state.config.sample_rate as f64;
+                    let sr = state.output_sample_rate as f64;
                     let ch = state.config.channels as f64;
                     let pos_secs = pos_samples / (sr * ch);
                     let _ = external_tx.send(EngineEvent::Position(pos_secs));
@@ -225,13 +234,13 @@ pub(crate) fn spawn_consumer(
                 recv_timeout_ms: 500,
             };
 
-            let pcm_mutex = std::sync::Mutex::new(pcm);
+            let pcm_mutex = Mutex::new(pcm);
             crate::consumer::run_consumer_loop(
             rx,
             &config,
-            &|s| pcm_mutex.lock().unwrap_or_else(|e| e.into_inner()).push_slice(s),
+            &|s| pcm_mutex.lock().push_slice(s),
             &|buf| {
-                if let Ok(mut pipeline) = dsp.lock() { pipeline.process(buf); }
+                dsp.lock().process(buf);
                 // 计算 RMS 和峰值
                 let mut sum_sq = 0.0f32;
                 let mut peak_val = 0.0f32;
@@ -242,17 +251,16 @@ pub(crate) fn spawn_consumer(
                 }
                 let n = buf.len() as f32;
                 let rms = (sum_sq / n).sqrt();
-                if let Ok(mut lv) = levels.lock() {
-                    lv.rms = rms;
-                    lv.peak = lv.peak.max(peak_val) * 0.95;
-                    lv.clip = peak_val >= 1.0;
-                }
+                let mut lv = levels.lock();
+                lv.rms = rms;
+                lv.peak = lv.peak.max(peak_val) * 0.95;
+                lv.clip = peak_val >= 1.0;
             },
             &|bands| { let _ = event_tx.send(EngineEvent::Spectrum(bands.to_vec())); },
             &|| { let _ = event_tx.send(EngineEvent::Error("解码器输出坏帧（全零/NaN），已跳过".into())); },
             &|n| { position.fetch_add(n, Ordering::Release); },
             &|| {
-                let mut guard = next_rx.lock().unwrap_or_else(|e| e.into_inner());
+                let mut guard = next_rx.lock();
                 if let Some(preloaded) = guard.take() {
                     let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
                     Some(preloaded)

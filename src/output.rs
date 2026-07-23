@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use ringbuf::traits::{Consumer, Split};
+use ringbuf::traits::Split;
 use ringbuf::{HeapCons, HeapProd, HeapRb};
 
 /// 解码端向 ring buffer 推入样本的生产端
@@ -53,13 +53,6 @@ pub trait AudioOutput {
 }
 
 // ─── HeadlessOutput ──────────────────────────────────────────
-
-static HEADLESS_INNER: parking_lot::Mutex<Option<Arc<AudioOutputInner>>> = parking_lot::Mutex::new(None);
-
-/// 获取 HeadlessOutput 的 AudioOutputInner（供 FFI ac_audio_read 使用）
-pub(crate) fn headless_inner() -> Option<Arc<AudioOutputInner>> {
-    HEADLESS_INNER.lock().clone()
-}
 
 struct HeadlessOutput {
     inner: Arc<AudioOutputInner>,
@@ -131,7 +124,6 @@ pub fn open(
         underrun_count: AtomicU64::new(0),
         stream_failed: AtomicBool::new(false),
     });
-    let _ = { *HEADLESS_INNER.lock() = Some(inner.clone()); };
     let out = HeadlessOutput {
         inner: inner.clone(),
         playing: AtomicBool::new(true),
@@ -139,14 +131,6 @@ pub fn open(
         channels,
     };
     Ok((Box::new(out) as Box<dyn AudioOutput>, prod, inner, sample_rate))
-}
-
-/// 从 HeadlessOutput 的 ringbuf 读取交错 PCM 样本（供移动端平台回调使用）。
-/// 返回实际读取的样本数；若引擎未初始化或无 headless 输出，返回 0。
-pub fn read_output_samples(buf: &mut [f32]) -> usize {
-    headless_inner()
-        .map(|inner| inner.consumer.lock().pop_slice(buf))
-        .unwrap_or(0)
 }
 
 /// 列出所有可用输出设备名称（仅 cpal 后端）

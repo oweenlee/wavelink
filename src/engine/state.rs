@@ -1,12 +1,13 @@
 //! EngineState — 引擎内部运行状态（只存在于引擎线程）
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
+use parking_lot::Mutex;
 use tracing::{debug, error, info, warn};
 
 use super::command::{EngineEvent, Levels, PlayMode};
@@ -15,6 +16,7 @@ use super::worker::spawn_consumer;
 use crate::decoder::{Decoder, DecodedFrame};
 use crate::dsp::{DspPipeline, PeqBand};
 use crate::output::{AudioOutput, AudioOutputInner};
+use crate::stream::StreamHandle;
 use crate::EngineConfig;
 
 /// 协商最优输出采样率：文件原始率 > 设备支持列表中最近的
@@ -67,6 +69,12 @@ pub struct EngineState {
     pub(crate) levels: Arc<Mutex<Levels>>,
     /// 共享输出内部状态（替代全局 static，供 EngineHandle/FFI 读取）
     pub(crate) output_inner_shared: Option<Arc<RwLock<Option<Arc<AudioOutputInner>>>>>,
+    /// 流式播放的写入句柄（网络流媒体用，FFI 层通过此句柄写入数据）
+    pub(crate) stream_handle: Option<StreamHandle>,
+    /// 共享的实际输出采样率（与 EngineHandle 同步）
+    pub(crate) output_sample_rate_shared: Option<Arc<AtomicU32>>,
+    /// 当前播放是否已获取排他模式（跟踪实际状态，避免 config 被修改后不一致）
+    pub(crate) exclusive_mode_acquired: bool,
 }
 
 impl EngineState {
@@ -101,6 +109,9 @@ impl EngineState {
             speed: Arc::new(Mutex::new(1.0)),
             levels,
             output_inner_shared: None,
+            stream_handle: None,
+            output_sample_rate_shared: None,
+            exclusive_mode_acquired: false,
         }
     }
 
@@ -110,6 +121,13 @@ impl EngineState {
             if let Ok(mut guard) = shared.write() {
                 *guard = self.output_inner.clone();
             }
+        }
+    }
+
+    /// 同步 output_sample_rate 到共享原子（供 EngineHandle 读取）
+    pub(crate) fn sync_output_sample_rate(&self) {
+        if let Some(ref shared) = self.output_sample_rate_shared {
+            shared.store(self.output_sample_rate, Ordering::Release);
         }
     }
 
@@ -159,6 +177,9 @@ impl EngineState {
                         match output.set_sample_rate(target_sr) {
                             Ok(new_sr) => {
                                 self.output_sample_rate = new_sr;
+                                if let Some(ref shared) = self.output_sample_rate_shared {
+                                    shared.store(new_sr, Ordering::Release);
+                                }
                                 info!("采样率自适应: 文件={}Hz, 输出切换为={}Hz", file_sr, new_sr);
                             }
                             Err(e) => {
@@ -175,12 +196,14 @@ impl EngineState {
             // 独占模式：首次打开输出时获取
             if self.config.exclusive_mode {
                 crate::exclusive::acquire_exclusive_mode();
+                self.exclusive_mode_acquired = true;
             }
             match crate::output::open(ch, sr, self.config.buffer_ms, self.config.output_device.as_deref()) {
                 Ok((output, prod, inner, actual_rate)) => {
                     self.output_inner = Some(inner);
                     self.output = Some(output);
                     self.output_sample_rate = actual_rate;
+                    self.sync_output_sample_rate();
                     self.sync_output_inner();
                     (prod, actual_rate, ch)
                 }
@@ -244,16 +267,110 @@ impl EngineState {
 
         if let Some(ir_path) = self.pending_ir.clone() {
             if let Some(dsp) = &self.dsp {
-                if let Ok(mut pipeline) = dsp.lock() {
-                    if let Err(e) = pipeline.load_conv_ir(&ir_path) {
-                        error!("加载 IR 失败(play_file): {e}");
-                        self.pending_ir = None;
-                    }
+                if let Err(e) = dsp.lock().load_conv_ir(&ir_path) {
+                    error!("加载 IR 失败(play_file): {e}");
+                    self.pending_ir = None;
                 }
             }
         }
 
         self.preload_next();
+    }
+
+    /// 从流式数据源播放（网络流媒体用）。
+    pub(crate) fn play_stream(
+        &mut self,
+        format_hint: Option<String>,
+        content_length: Option<u64>,
+        stream_handle_out: Option<std::sync::Arc<crossbeam_channel::Sender<StreamHandle>>>,
+    ) {
+        self.stop_playback();
+        self.stream_handle = None;
+        self.current_entry = None;
+
+        let sr = self.config.sample_rate;
+        let ch = self.config.channels;
+
+        // 复用或创建输出
+        let (pcm, actual_sr, actual_ch) = if let Some(ref mut output) = self.output {
+            let out_sr = self.output_sample_rate;
+            let out_ch = self.config.channels;
+            (output.swap_consumer(self.config.buffer_ms, out_sr, out_ch), out_sr, out_ch)
+        } else {
+            if self.config.exclusive_mode {
+                crate::exclusive::acquire_exclusive_mode();
+                self.exclusive_mode_acquired = true;
+            }
+            match crate::output::open(ch, sr, self.config.buffer_ms, self.config.output_device.as_deref()) {
+                Ok((output, prod, inner, actual_rate)) => {
+                    self.output_inner = Some(inner);
+                    self.output = Some(output);
+                    self.output_sample_rate = actual_rate;
+                    self.sync_output_sample_rate();
+                    self.sync_output_inner();
+                    (prod, actual_rate, ch)
+                }
+                Err(e) => {
+                    error!("流式: 打开音频输出失败: {e}");
+                    self.emit(EngineEvent::Error(format!("打开音频输出失败: {e}")));
+                    return;
+                }
+            }
+        };
+
+        // 创建流式数据源对
+        let (source, handle) = crate::stream::stream_pair(content_length);
+
+        // 启动流式解码
+        let (rx, decoder) = match Decoder::start_from_stream(
+            source, actual_sr, actual_ch, self.position.clone(), format_hint,
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("流式: 启动解码失败: {e}");
+                self.emit(EngineEvent::Error(format!("流式解码失败: {e}")));
+                return;
+            }
+        };
+
+        let dsp = Arc::new(Mutex::new(DspPipeline::new(
+            actual_sr, actual_ch as usize, &self.peq_bands,
+            true, self.current_volume, 24,
+        )));
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let position_clone = self.position.clone();
+        let consumer_event_tx = self.internal_event_tx.clone();
+        let (ready_tx, ready_rx) = unbounded::<bool>();
+        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone());
+
+        let output = self.output.as_ref().expect("output 必须在之前创建");
+        match ready_rx.recv_timeout(Duration::from_secs(3)) {
+            Ok(true) => {
+                output.resume();
+                info!("流式播放已启动");
+                self.playing.store(true, Ordering::Release);
+                let _ = self.external_tx.send(EngineEvent::TrackChanged("stream".into()));
+                self.emit_queue();
+            }
+            _ => {
+                error!("流式: 解码失败（无有效音频帧）");
+                self.emit(EngineEvent::Error("流式解码失败: 无有效音频数据".into()));
+                self.stop_playback();
+                return;
+            }
+        }
+
+        self.decoder = Some(decoder);
+        self.consumer_thread = Some(consumer);
+        self.dsp = Some(dsp);
+        self.consumer_stop = Some(stop_flag);
+        self.stream_handle = Some(handle.clone());
+        self.apply_pending_replaygain();
+
+        // 将 StreamHandle 克隆一份发送给 FFI 层
+        if let Some(tx) = stream_handle_out {
+            let _ = tx.send(handle);
+        }
     }
 
     pub(crate) fn play_file(&mut self, path: &str) {
@@ -352,7 +469,7 @@ impl EngineState {
             Ok(v) => v,
             Err(e) => { error!("预加载解码失败: {e}"); return; }
         };
-        *self.next_rx.lock().unwrap_or_else(|e| e.into_inner()) = Some(rx);
+        *self.next_rx.lock() = Some(rx);
         self.next_decoder = Some(decoder);
         self.next_entry = Some(entry.clone());
         debug!("已预加载: {}", self.next_entry.as_ref().unwrap().display);
@@ -390,9 +507,7 @@ impl EngineState {
     pub(crate) fn apply_pending_replaygain(&mut self) {
         if let Some(gain_db) = self.pending_replaygain_db {
             if let Some(dsp) = &self.dsp {
-                if let Ok(mut pipeline) = dsp.lock() {
-                    pipeline.set_replaygain_db(gain_db);
-                }
+                dsp.lock().set_replaygain_db(gain_db);
             }
         }
     }
@@ -400,11 +515,9 @@ impl EngineState {
     pub(crate) fn load_ir(&mut self, path: &str) {
         self.pending_ir = Some(path.to_string());
         if let Some(dsp) = &self.dsp {
-            if let Ok(mut pipeline) = dsp.lock() {
-                if let Err(e) = pipeline.load_conv_ir(path) {
-                    error!("加载 IR 失败: {e}");
-                    self.pending_ir = None;
-                }
+            if let Err(e) = dsp.lock().load_conv_ir(path) {
+                error!("加载 IR 失败: {e}");
+                self.pending_ir = None;
             }
         }
     }
@@ -412,9 +525,7 @@ impl EngineState {
     pub(crate) fn clear_ir(&mut self) {
         self.pending_ir = None;
         if let Some(dsp) = &self.dsp {
-            if let Ok(mut pipeline) = dsp.lock() {
-                pipeline.clear_conv_ir();
-            }
+            dsp.lock().clear_conv_ir();
         }
     }
 
@@ -423,51 +534,39 @@ impl EngineState {
             self.peq_bands[index] = PeqBand { freq: band.freq, gain_db: band.gain_db, q: band.q };
         }
         if let Some(dsp) = &self.dsp {
-            if let Ok(mut pipeline) = dsp.lock() {
-                pipeline.set_peq_band(index, &band, self.output_sample_rate as f32);
-            }
+            dsp.lock().set_peq_band(index, &band, self.output_sample_rate as f32);
         }
     }
 
     pub(crate) fn set_stereo_widener(&mut self, enabled: bool, width: f32) {
         if let Some(dsp) = &self.dsp {
-            if let Ok(mut pipeline) = dsp.lock() {
-                pipeline.set_stereo_widener(enabled, width);
-            }
+            dsp.lock().set_stereo_widener(enabled, width);
         }
     }
 
     pub(crate) fn set_crossfeed(&mut self, enabled: bool) {
         if let Some(dsp) = &self.dsp {
-            if let Ok(mut pipeline) = dsp.lock() {
-                pipeline.set_crossfeed(enabled);
-            }
+            dsp.lock().set_crossfeed(enabled);
         }
     }
 
     pub(crate) fn set_volume(&mut self, vol: f32) {
         self.current_volume = vol;
         if let Some(dsp) = &self.dsp {
-            if let Ok(mut pipeline) = dsp.lock() {
-                pipeline.set_volume(vol);
-            }
+            dsp.lock().set_volume(vol);
         }
     }
 
     pub(crate) fn set_replaygain_db(&mut self, gain_db: f32) {
         self.pending_replaygain_db = Some(gain_db);
         if let Some(dsp) = &self.dsp {
-            if let Ok(mut pipeline) = dsp.lock() {
-                pipeline.set_replaygain_db(gain_db);
-            }
+            dsp.lock().set_replaygain_db(gain_db);
         }
     }
 
     pub(crate) fn set_speed(&mut self, speed: f32) {
         let s = speed.clamp(0.25, 4.0);
-        if let Ok(mut sp) = self.speed.lock() {
-            *sp = s;
-        }
+        *self.speed.lock() = s;
         info!("播放速度: {s:.2}x");
     }
 
@@ -476,9 +575,7 @@ impl EngineState {
     pub(crate) fn pause(&mut self) {
         self.playing.store(false, Ordering::Release);
         if let Some(dsp) = &self.dsp {
-            if let Ok(mut p) = dsp.lock() {
-                p.start_fade_out(5);
-            }
+            dsp.lock().start_fade_out(5);
         }
         if let Some(o) = &self.output { o.pause(); }
     }
@@ -486,26 +583,23 @@ impl EngineState {
     pub(crate) fn resume(&self) {
         if let Some(o) = &self.output { o.resume(); }
         if let Some(dsp) = &self.dsp {
-            if let Ok(mut p) = dsp.lock() {
-                p.start_fade_in(5);
-            }
+            dsp.lock().start_fade_in(5);
         }
         self.playing.store(true, Ordering::Release);
     }
 
     pub(crate) fn stop_full(&mut self) {
         if let Some(dsp) = &self.dsp {
-            if let Ok(mut p) = dsp.lock() {
-                p.start_fade_out(3);
-            }
+            dsp.lock().start_fade_out(3);
         }
         self.stop_playback();
         self.output = None;
         self.output_inner = None;
         self.sync_output_inner();
-        // 释放独占模式
-        if self.config.exclusive_mode {
+        // 释放独占模式（使用实际获取时的状态，而非当前 config）
+        if self.exclusive_mode_acquired {
             crate::exclusive::release_exclusive_mode();
+            self.exclusive_mode_acquired = false;
         }
     }
 
@@ -515,7 +609,14 @@ impl EngineState {
         if let Some(d) = &self.decoder { d.stop(); }
         if let Some(d) = &self.next_decoder { d.stop(); }
         if let Some(o) = &self.output { o.pause(); }
-        if let Some(t) = self.consumer_thread.take() { let _ = t.join(); }
+        // 带超时的 join：消费者线程 recv_timeout 最大 500ms，留 2s 余量
+        if let Some(t) = self.consumer_thread.take() {
+            let (done_tx, done_rx) = crossbeam_channel::bounded::<()>(1);
+            std::thread::spawn(move || { let _ = t.join(); let _ = done_tx.send(()); });
+            if done_rx.recv_timeout(Duration::from_secs(2)).is_err() {
+                warn!("消费者线程 join 超时（2s），放弃等待");
+            }
+        }
         self.decoder = None;
         self.next_decoder = None;
         self.next_entry = None;
@@ -590,6 +691,9 @@ pub(crate) mod tests {
             speed: Arc::new(Mutex::new(1.0)),
             levels: Arc::new(Mutex::new(Levels::default())),
             output_inner_shared: None,
+            stream_handle: None,
+            output_sample_rate_shared: None,
+            exclusive_mode_acquired: false,
         };
         (s, rx)
     }

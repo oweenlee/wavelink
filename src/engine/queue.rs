@@ -30,6 +30,10 @@ impl QueueEntry {
     pub fn end_secs_opt(&self) -> Option<f64> {
         if self.end_secs > 0.0 { Some(self.end_secs) } else { None }
     }
+    /// 唯一标识（audio_file + start_secs），用于队列移除时精确匹配
+    pub fn unique_key(&self) -> (&str, u64) {
+        (&self.audio_file, (self.start_secs * 1000.0) as u64)
+    }
 }
 
 /// 将路径列表解析为 QueueEntry 列表，展开 .cue 文件中的虚轨
@@ -188,7 +192,8 @@ impl EngineState {
         if q_idx < self.queue.len() {
             let removed = self.queue.remove(q_idx);
             tracing::info!("从队列移除: {}", removed.display);
-            self.original_queue.retain(|e| e.display != removed.display);
+            let key = removed.unique_key();
+            self.original_queue.retain(|e| e.unique_key() != key);
             self.emit_queue();
         }
     }
