@@ -2,7 +2,7 @@
 	import { formatTime } from '$lib/utils/time';
 
 	interface Props { value: number; max: number; currentTime: number; ondrag: (ratio: number) => void; color?: string; }
-	let { value, max, currentTime, ondrag, color = '#8888cc' }: Props = $props();
+	let { value, max, currentTime, ondrag, color = '#e2a63d' }: Props = $props();
 
 	let isDragging = $state(false);
 	let trackEl: HTMLDivElement | undefined = $state();

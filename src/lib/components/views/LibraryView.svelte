@@ -523,7 +523,7 @@
 	.confirm-dialog {
 		position: fixed; top: 50%; left: 50%; z-index: 201;
 		transform: translate(-50%, -50%);
-		background: rgba(22,22,35,0.94); backdrop-filter: blur(48px);
+		background: rgba(18,18,18,0.97);
 		border: 1px solid var(--separator); border-radius: var(--radius-xl);
 		padding: 24px; max-width: 360px; width: 90vw;
 	}

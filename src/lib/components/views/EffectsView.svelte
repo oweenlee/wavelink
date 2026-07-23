@@ -644,7 +644,7 @@
 	.effects-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 
 	.toggle { display: inline-flex; align-items: center; gap: 10px; padding: 4px; border: none; background: var(--bg-hover); border-radius: 20px; cursor: pointer; transition: all 0.2s; width: 52px; position: relative; }
-	.toggle.active { background: var(--accent, #8888cc); }
+	.toggle.active { background: var(--accent, #e2a63d); }
 	.toggle-knob { width: 18px; height: 18px; border-radius: 50%; background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.2); transition: transform 0.2s; }
 	.toggle.active .toggle-knob { transform: translateX(26px); }
 	.toggle-label { position: absolute; left: 56px; font-size: 12px; color: var(--fg-secondary); white-space: nowrap; }
@@ -656,6 +656,6 @@
 	.slider-row { display: flex; align-items: center; gap: 10px; }
 	.slider-label { font-size: 11px; color: var(--fg-tertiary); min-width: 32px; }
 	.slider { flex: 1; max-width: 140px; -webkit-appearance: none; appearance: none; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); outline: none; cursor: pointer; }
-	.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--accent, #8888cc); cursor: pointer; }
+	.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--accent, #e2a63d); cursor: pointer; }
 	.slider-val { font-size: 11px; color: var(--fg-tertiary); min-width: 28px; }
 </style>

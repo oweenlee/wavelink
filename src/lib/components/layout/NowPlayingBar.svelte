@@ -150,11 +150,10 @@
 <style>
 	.bar {
 		position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
-		background: rgba(10, 10, 14, 0.72);
-		backdrop-filter: blur(40px);
-		-webkit-backdrop-filter: blur(40px);
-		border-top: 0.5px solid rgba(255, 255, 255, 0.06);
-		box-shadow: 0 -1px 24px rgba(167, 139, 250, 0.06);
+		background: rgba(10, 10, 10, 0.92);
+		backdrop-filter: blur(20px);
+		-webkit-backdrop-filter: blur(20px);
+		border-top: 1px solid rgba(255, 255, 255, 0.06);
 	}
 
 	.bar-body {

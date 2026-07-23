@@ -34,9 +34,9 @@
 	}
 
 	const accentColors = [
-		{ name: t('settings.purple'), color: '#8888cc' }, { name: t('settings.blue'), color: '#4488cc' },
-		{ name: t('settings.green'), color: '#44aa88' }, { name: t('settings.amber'), color: '#cc8844' },
-		{ name: t('settings.rose'), color: '#cc4488' }, { name: t('settings.silver'), color: '#aabbcc' },
+		{ name: t('settings.amber'), color: '#e2a63d' }, { name: t('settings.blue'), color: '#5b9bd5' },
+		{ name: t('settings.green'), color: '#5daa72' }, { name: t('settings.copper'), color: '#c8956c' },
+		{ name: t('settings.rose'), color: '#d4728a' }, { name: t('settings.silver'), color: '#a0aab4' },
 	];
 
 	async function setAccentColor(color: string) {
@@ -225,7 +225,7 @@
 
 	.slider-row { display: flex; align-items: center; gap: 10px; }
 	.slider { -webkit-appearance: none; appearance: none; width: 140px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); outline: none; cursor: pointer; }
-	.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--accent, #8888cc); cursor: pointer; }
+	.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--accent, #e2a63d); cursor: pointer; }
 	.slider-val { font-size: 11px; color: var(--fg-tertiary); min-width: 50px; text-align: right; }
 
 	.color-row { display: flex; gap: 10px; }
@@ -234,7 +234,7 @@
 	.color-dot.active { border-color: rgba(255, 255, 255, 0.6); box-shadow: 0 0 12px rgba(255, 255, 255, 0.1); }
 
 	.toggle { display: inline-flex; align-items: center; padding: 4px; border: none; background: var(--bg-hover); border-radius: 20px; cursor: pointer; transition: all 0.2s; width: 52px; height: 26px; position: relative; }
-	.toggle.active { background: var(--accent, #8888cc); }
+	.toggle.active { background: var(--accent, #e2a63d); }
 	.toggle-knob { width: 18px; height: 18px; border-radius: 50%; background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.2); transition: transform 0.2s; }
 	.toggle.active .toggle-knob { transform: translateX(26px); }
 

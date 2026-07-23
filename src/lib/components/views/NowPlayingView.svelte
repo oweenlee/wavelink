@@ -278,7 +278,7 @@
 	.np {
 		position: fixed; inset: 0; z-index: 999;
 		overflow: hidden;
-		background: rgb(8, 8, 16);
+		background: #080808;
 		display: flex; align-items: center; justify-content: center;
 		animation: npFadeIn 0.25s ease-out;
 	}
@@ -286,8 +286,8 @@
 		content: '';
 		position: absolute; inset: 0;
 		background: var(--cover, none) center/cover;
-		filter: blur(80px) saturate(1.2);
-		opacity: 0.25;
+		filter: blur(80px) saturate(0.8);
+		opacity: 0.18;
 		transition: opacity 0.6s;
 		pointer-events: none;
 	}
@@ -298,15 +298,14 @@
 	.np-close {
 		position: absolute; top: 24px; right: 24px; z-index: 10;
 		width: 36px; height: 36px; border-radius: 50%;
-		border: 0.5px solid rgba(255,255,255,0.08);
-		background: rgba(255,255,255,0.04); backdrop-filter: blur(16px);
-		-webkit-backdrop-filter: blur(16px);
+		border: 1px solid rgba(255,255,255,0.08);
+		background: rgba(255,255,255,0.06);
 		color: var(--fg-secondary); cursor: pointer;
 		display: flex; align-items: center; justify-content: center;
-		transition: all 0.15s;
+		transition: background 0.15s, color 0.15s;
 	}
-	.np-close:hover { background: rgba(255,255,255,0.1); color: var(--fg-primary); transform: scale(1.08); }
-	.np-close:active { transform: scale(0.94); }
+	.np-close:hover { background: rgba(255,255,255,0.12); color: var(--fg-primary); }
+	.np-close:active { background: rgba(255,255,255,0.15); }
 
 	/* ── Body ── */
 	.np-body {
@@ -395,15 +394,14 @@
 	.np-queue-btn {
 		position: absolute; bottom: 20px; right: 24px; z-index: 10;
 		width: 36px; height: 36px; border-radius: 50%;
-		border: 0.5px solid rgba(255,255,255,0.08);
-		background: rgba(255,255,255,0.04); backdrop-filter: blur(16px);
-		-webkit-backdrop-filter: blur(16px);
+		border: 1px solid rgba(255,255,255,0.08);
+		background: rgba(255,255,255,0.06);
 		color: var(--fg-secondary); cursor: pointer;
 		display: flex; align-items: center; justify-content: center;
-		transition: all 0.15s;
+		transition: background 0.15s, color 0.15s;
 	}
-	.np-queue-btn:hover { background: rgba(255,255,255,0.1); color: var(--fg-primary); transform: scale(1.08); }
-	.np-queue-btn:active { transform: scale(0.94); }
+	.np-queue-btn:hover { background: rgba(255,255,255,0.12); color: var(--fg-primary); }
+	.np-queue-btn:active { background: rgba(255,255,255,0.15); }
 
 	/* ── Queue panel — slide from right ── */
 	.np-queue-overlay {
@@ -413,9 +411,8 @@
 	.np-queue-panel {
 		position: absolute; top: 0; right: 0; bottom: 0; z-index: 20;
 		width: 320px;
-		background: rgba(12, 12, 22, 0.96);
-		backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-		border-left: 0.5px solid rgba(255,255,255,0.06);
+		background: rgba(12, 12, 12, 0.97);
+		border-left: 1px solid rgba(255,255,255,0.06);
 		display: flex; flex-direction: column;
 	}
 	.np-queue-header {

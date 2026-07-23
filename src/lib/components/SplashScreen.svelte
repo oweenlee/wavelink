@@ -25,8 +25,8 @@
 
     const W = () => canvas.clientWidth || innerWidth;
     const H = () => canvas.clientHeight || innerHeight;
-	const ACCENT = '#a78bfa';
-	const ACCENT2 = '#7ec8e3';
+	const ACCENT = '#e2a63d';
+	const ACCENT2 = '#c8956c';
 	const FG = '#eeeeee';
 	const MUTED = '#999999';
 
@@ -110,8 +110,8 @@
 
       // ---- background glow ----
       const glow = ctx.createRadialGradient(W() / 2, H() / 2, 0, W() / 2, H() / 2, 200);
-      glow.addColorStop(0, 'rgba(167,139,250,0.06)');
-      glow.addColorStop(1, 'rgba(167,139,250,0)');
+      glow.addColorStop(0, 'rgba(226,166,61,0.06)');
+      glow.addColorStop(1, 'rgba(226,166,61,0)');
       ctx.fillStyle = glow;
       ctx.fillRect(0, 0, W(), H());
 
@@ -119,8 +119,8 @@
       if (t > 1.5 && t < DURATION - FADE_DURATION) {
         const bg = ctx.createRadialGradient(W() / 2, H() / 2, 0, W() / 2, H() / 2, 200);
         const ba = 0.06 + Math.sin(t * 1.5) * 0.03;
-        bg.addColorStop(0, `rgba(167,139,250,${ba})`);
-        bg.addColorStop(1, 'rgba(167,139,250,0)');
+        bg.addColorStop(0, `rgba(226,166,61,${ba})`);
+        bg.addColorStop(1, 'rgba(226,166,61,0)');
         ctx.fillStyle = bg;
         ctx.fillRect(0, 0, W(), H());
       }
@@ -142,7 +142,7 @@
             bd.cur += (bd.target * easeProg - bd.cur) * 0.12;
           }
           const a = 0.3 + 0.5 * (bd.cur / maxH);
-          ctx.fillStyle = `rgba(167,139,250,${Math.min(a * waveAlpha, 0.8)})`;
+          ctx.fillStyle = `rgba(226,166,61,${Math.min(a * waveAlpha, 0.8)})`;
           ctx.fillRect(sx + i * (barW + barGap), barCenterY() - bd.cur, barW, bd.cur * 2);
         });
       } else {
@@ -151,7 +151,7 @@
           const wave = Math.sin(t * 2.5 - i * 0.45) * 0.08;
           bd.target = bd.target * (1 + wave);
           bd.cur += (bd.target - bd.cur) * 0.06;
-          ctx.fillStyle = `rgba(167,139,250,0.55)`;
+          ctx.fillStyle = `rgba(226,166,61,0.55)`;
           ctx.fillRect(sx + i * (barW + barGap), barCenterY() - bd.cur, barW, bd.cur * 2);
         });
       }
@@ -175,8 +175,8 @@
 			const da = t > 1.5 && t < DURATION - FADE_DURATION
 				? (0.25 + Math.sin(t * 1.5) * 0.1) * logoAlpha
 				: dGlowAlpha;
-			dg.addColorStop(0, `rgba(167,139,250,${da})`);
-			dg.addColorStop(1, 'rgba(167,139,250,0)');
+			dg.addColorStop(0, `rgba(226,166,61,${da})`);
+			dg.addColorStop(1, 'rgba(226,166,61,0)');
 			ctx.fillStyle = dg;
 			ctx.beginPath();
 			ctx.arc(cx, cy, 80 * logoScale, 0, Math.PI * 2);

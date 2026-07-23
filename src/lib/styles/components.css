@@ -2,23 +2,21 @@
    Components — reusable utility styles
    ══════════════════════════════════════════════ */
 
-/* ── Glass utilities ── */
+/* ── Panel utilities (solid, not glass) ── */
 .glass {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: var(--bg-surface);
 }
 
-.glass-l1 { background: rgba(255, 255, 255, 0.04); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
-.glass-l2 { background: rgba(255, 255, 255, 0.06); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
-.glass-l3 { background: rgba(255, 255, 255, 0.08); backdrop-filter: blur(32px); -webkit-backdrop-filter: blur(32px); }
+.glass-l1 { background: var(--bg-surface); }
+.glass-l2 { background: var(--bg-elevated); }
+.glass-l3 { background: #222222; }
 
 /* ── Scrollbar ── */
-* { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.06) transparent; }
+* { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.08) transparent; }
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.06); border-radius: 2px; transition: background 0.2s; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.12); }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.15); }
 
 ::selection { background: var(--accent-dim); color: white; }
 
@@ -26,7 +24,7 @@
 .card {
   background: var(--bg-surface);
   border: 1px solid var(--separator);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: var(--space-5) var(--space-6);
 }
 
@@ -41,12 +39,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.12s;
+  transition: color 0.15s, background 0.15s;
 }
 
 .btn-base:hover { background: var(--bg-hover); color: var(--fg-primary); }
-.btn-base:active { transform: scale(0.97); }
-.btn-base:disabled { opacity: 0.15; cursor: default; }
+.btn-base:active { background: var(--bg-active); }
+.btn-base:disabled { opacity: 0.2; cursor: default; }
 
 /* ── Icon button ── */
 .icon-btn {
@@ -60,12 +58,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.12s;
+  transition: color 0.15s, background 0.15s;
 }
 
 .icon-btn:hover { background: var(--bg-hover); color: var(--fg-primary); }
-.icon-btn:active { transform: scale(0.97); }
-.icon-btn:disabled { opacity: 0.15; cursor: default; }
+.icon-btn:active { background: var(--bg-active); }
+.icon-btn:disabled { opacity: 0.2; cursor: default; }
 .icon-btn.active { color: var(--accent); }
 
 /* ── Input ── */
@@ -90,10 +88,10 @@
   gap: var(--space-2);
   padding: var(--space-1);
   border: none;
-  background: var(--bg-hover);
+  background: #2a2a2a;
   border-radius: var(--space-5);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.2s;
   width: 52px;
   position: relative;
 }
@@ -115,9 +113,9 @@
 .slider {
   -webkit-appearance: none;
   appearance: none;
-  height: 4px;
+  height: 3px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.1);
+  background: #2a2a2a;
   outline: none;
   cursor: pointer;
 }

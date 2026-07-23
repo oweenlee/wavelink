@@ -144,8 +144,8 @@
 		width: min(440px, 90vw);
 		transform: translate(-50%, -50%);
 		transform-origin: center;
-		background: rgba(18, 18, 28, 0.95);
-		backdrop-filter: blur(40px);
+		background: rgba(18, 18, 18, 0.96);
+		backdrop-filter: blur(20px);
 		border: 1px solid rgba(255,255,255,0.06);
 		border-radius: var(--radius-xl);
 		box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255,255,255,0.03);

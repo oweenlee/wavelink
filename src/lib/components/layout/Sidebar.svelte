@@ -11,12 +11,12 @@
 		<svg class="logo-svg" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
 			<defs>
 				<linearGradient id="sw1" x1="0" y1="0" x2="24" y2="0">
-					<stop offset="0" stop-color="#a78bfa"/>
-					<stop offset="100" stop-color="#818cf8"/>
+					<stop offset="0" stop-color="#e2a63d"/>
+					<stop offset="100" stop-color="#f0c860"/>
 				</linearGradient>
 				<linearGradient id="sw2" x1="0" y1="0" x2="24" y2="0">
-					<stop offset="0" stop-color="#7ec8e3"/>
-					<stop offset="100" stop-color="#818cf8"/>
+					<stop offset="0" stop-color="#c8956c"/>
+					<stop offset="100" stop-color="#e2a63d"/>
 				</linearGradient>
 			</defs>
 			<path d="M2 8C7 7 7 17 12 17C17 17 17 7 22 8" fill="none" stroke="url(#sw1)" stroke-width="2.5" stroke-linecap="round"/>

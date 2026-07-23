@@ -11,23 +11,24 @@
   let smooth = new Float32Array(16);
   let rafId = 0;
 
-  // 颜色渐变点：紫 → 品红 → 橙
+  // 颜色渐变点：深琥珀 → 亮金 → 暖白
   const colors = [
-    [167, 139, 250],
-    [180, 130, 240],
-    [200, 120, 220],
-    [220, 110, 200],
-    [240, 100, 180],
-    [244, 114, 182],
-    [246, 116, 170],
-    [248, 120, 155],
-    [250, 130, 140],
-    [250, 140, 125],
-    [251, 150, 115],
-    [251, 155, 105],
-    [251, 160, 95],
-    [251, 165, 85],
-    [251, 172, 78],
+    [180, 120, 30],
+    [195, 135, 35],
+    [210, 150, 40],
+    [220, 160, 50],
+    [226, 166, 61],
+    [230, 175, 75],
+    [235, 185, 90],
+    [238, 195, 105],
+    [240, 205, 120],
+    [242, 212, 135],
+    [244, 220, 150],
+    [245, 226, 165],
+    [246, 232, 180],
+    [248, 238, 195],
+    [250, 244, 210],
+    [252, 248, 225],
     [251, 180, 70],
   ];
 
@@ -65,8 +66,8 @@
       }
 
       // 细发光（仅曲线本身）
-      ctx.shadowColor = 'rgba(167, 139, 250, 0.2)';
-      ctx.shadowBlur = 12;
+      ctx.shadowColor = 'rgba(226, 166, 61, 0.15)';
+      ctx.shadowBlur = 10;
 
       // 主曲线
       ctx.beginPath();
@@ -80,10 +81,10 @@
 
       ctx.lineWidth = 2;
       const grad = ctx.createLinearGradient(0, 0, width, 0);
-      grad.addColorStop(0, '#a78bfa');
-      grad.addColorStop(0.4, '#c084fc');
-      grad.addColorStop(0.7, '#f472b6');
-      grad.addColorStop(1, '#fb923c');
+      grad.addColorStop(0, '#b4781e');
+      grad.addColorStop(0.4, '#e2a63d');
+      grad.addColorStop(0.7, '#f0c860');
+      grad.addColorStop(1, '#faf0d8');
       ctx.strokeStyle = grad;
       ctx.stroke();
 

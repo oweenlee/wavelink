@@ -1,49 +1,47 @@
 /* ══════════════════════════════════════════════
-   Design Tokens — Lavender Dark
-   Modern dark · Pure base · Purple accent
-   Inspired by Apple's clean UI philosophy
+   Design Tokens — Obsidian & Amber
+   Pure black · Warm amber accent · Analog HiFi soul
    ══════════════════════════════════════════════ */
 
 :root {
-  /* ── Background — deeper base with richer ambient glow ── */
-  --bg: #0a0a0e;
-  --bg-gradient: radial-gradient(ellipse 140% 80% at 30% -20%, rgba(167, 139, 250, 0.12) 0%, transparent 70%),
-                 radial-gradient(ellipse 80% 100% at 80% 100%, rgba(167, 139, 250, 0.06) 0%, transparent 60%);
-  --bg-surface: rgba(255, 255, 255, 0.06);
-  --bg-elevated: rgba(255, 255, 255, 0.09);
-  --bg-hover: rgba(255, 255, 255, 0.065);
-  --bg-active: rgba(255, 255, 255, 0.10);
+  /* ── Background — true black, no gradients ── */
+  --bg: #0a0a0a;
+  --bg-gradient: none;
+  --bg-surface: #141414;
+  --bg-elevated: #1c1c1c;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-active: rgba(255, 255, 255, 0.08);
 
-  /* ── Glass panels ── */
-  --glass-bg: rgba(255, 255, 255, 0.04);
-  --glass-blur: blur(32px);
-  --glass-border: 0.5px solid rgba(255, 255, 255, 0.06);
+  /* ── Panels — solid, not glass ── */
+  --glass-bg: #111111;
+  --glass-blur: none;
+  --glass-border: 1px solid rgba(255, 255, 255, 0.06);
 
-  /* ── Foreground — higher contrast for readability ── */
-  --fg-primary: #f0f0f2;
-  --fg-secondary: #a8a8b0;
-  --fg-tertiary: #787880;
-  --fg-quaternary: rgba(255, 255, 255, 0.12);
+  /* ── Foreground ── */
+  --fg-primary: #f5f5f3;
+  --fg-secondary: #9a9a96;
+  --fg-tertiary: #5c5c58;
+  --fg-quaternary: rgba(255, 255, 255, 0.10);
 
   /* ── Separator ── */
-  --separator: rgba(255, 255, 255, 0.07);
+  --separator: rgba(255, 255, 255, 0.06);
 
-  /* ── Accent (Amethyst — vibrant purple) ── */
-  --accent: #a78bfa;
-  --accent-dim: rgba(167, 139, 250, 0.22);
-  --accent-glow: rgba(167, 139, 250, 0.18);
+  /* ── Accent — Amber (VU meter / tube glow) ── */
+  --accent: #e2a63d;
+  --accent-dim: rgba(226, 166, 61, 0.15);
+  --accent-glow: rgba(226, 166, 61, 0.10);
 
   /* ── Semantic ── */
-  --danger: #e5484d;
-  --danger-dim: rgba(229, 72, 77, 0.15);
-  --success: #5bbd78;
-  --success-dim: rgba(91, 189, 120, 0.15);
+  --danger: #d94f4f;
+  --danger-dim: rgba(217, 79, 79, 0.12);
+  --success: #5daa72;
+  --success-dim: rgba(93, 170, 114, 0.12);
 
-  /* ── Radius ── */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
+  /* ── Radius — tighter, hardware-like ── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
 
   /* ── Spacing ── */
   --space-1: 4px;
@@ -64,13 +62,13 @@
   --font-size-sm: 12px;
   --font-size-md: 14px;
   --font-size-lg: 18px;
-  --font-size-xl: 22px;
-  --font-size-2xl: 26px;
+  --font-size-xl: 24px;
+  --font-size-2xl: 28px;
 
-  /* ── Shadow (tinted to bg hue) ── */
-  --shadow-sm: 0 1px 3px rgba(10, 10, 14, 0.7);
-  --shadow-md: 0 4px 16px rgba(10, 10, 14, 0.8);
-  --shadow-lg: 0 12px 48px rgba(10, 10, 14, 0.85);
+  /* ── Shadow — subtle, no tint ── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.7);
 
   /* ── Easing ── */
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);

@@ -8,7 +8,7 @@
 	type LrcLine = { time: number; text: string };
 	let currentLine = $state('');
 	let nextLine = $state('');
-	let accentColor = $state('#8888cc');
+	let accentColor = $state('#e2a63d');
 
 	$effect(() => {
 		if (!browser) return;
