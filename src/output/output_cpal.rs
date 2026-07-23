@@ -27,6 +27,9 @@ pub struct AudioOutputCpal {
     playing: Arc<AtomicBool>,
     sample_rate: u32,
     channels: u32,
+    /// 保存设备名称用于采样率切换时重建 stream
+    device_name: Option<String>,
+    buffer_ms: u32,
 }
 
 impl AudioOutput for AudioOutputCpal {
@@ -55,6 +58,105 @@ impl AudioOutput for AudioOutputCpal {
     }
     fn sample_rate(&self) -> u32 { self.sample_rate }
     fn channels(&self) -> u32 { self.channels }
+
+    fn set_sample_rate(&mut self, rate: u32) -> Result<u32, crate::error::EngineError> {
+        if rate == self.sample_rate {
+            return Ok(rate);
+        }
+        info!("采样率切换: {} -> {}Hz", self.sample_rate, rate);
+        // 重建 stream
+        let host = cpal::default_host();
+        let device = match &self.device_name {
+            Some(name) => {
+                let mut devices = host.devices().map_err(|e| crate::error::EngineError::OutputOpenFailed(format!("枚举设备失败: {e}")))?;
+                devices.find(|d| d.name().ok().as_deref() == Some(name))
+                    .ok_or_else(|| crate::error::EngineError::OutputOpenFailed(format!("未找到设备: {name}")))?
+            }
+            None => host.default_output_device()
+                .ok_or_else(|| crate::error::EngineError::OutputOpenFailed("未找到默认输出设备".into()))?,
+        };
+
+        let config = cpal::StreamConfig {
+            channels: self.channels as u16,
+            sample_rate: cpal::SampleRate(rate),
+            buffer_size: cpal::BufferSize::Default,
+        };
+
+        let buf_samples = (rate as f32 * self.buffer_ms as f32 / 1000.0) as usize * self.channels as usize;
+        let rb = HeapRb::<f32>::new(buf_samples.max(64));
+        let (_producer, consumer) = rb.split();
+
+        let new_inner = Arc::new(AudioOutputInner {
+            consumer: parking_lot::Mutex::new(consumer),
+            underrun_count: std::sync::atomic::AtomicU64::new(0),
+            stream_failed: std::sync::atomic::AtomicBool::new(false),
+        });
+
+        let playing = Arc::new(AtomicBool::new(false));
+        let playing_clone = playing.clone();
+        let inner_clone = new_inner.clone();
+        let err_inner = new_inner.clone();
+
+        let stream = device.build_output_stream(
+            &config,
+            move |data: &mut [f32], _info: &cpal::OutputCallbackInfo| {
+                if !playing_clone.load(Ordering::Acquire) {
+                    data.fill(0.0);
+                    return;
+                }
+                let mut guard = inner_clone.consumer.lock();
+                let n = guard.pop_slice(data);
+                if n < data.len() {
+                    inner_clone.underrun_count.fetch_add(1, Ordering::Relaxed);
+                    data[n..].fill(0.0);
+                }
+            },
+            move |err| {
+                error!("音频流错误 (rate switch): {err}");
+                err_inner.stream_failed.store(true, Ordering::Release);
+            },
+            None,
+        ).map_err(|e| crate::error::EngineError::OutputOpenFailed(format!("采样率 {rate}Hz 不支持: {e}")))?;
+
+        // 停止旧 stream，启动新 stream
+        let _ = self.stream.pause();
+        if let Err(e) = stream.play() {
+            return Err(crate::error::EngineError::OutputOpenFailed(format!("启动新采样率流失败: {e}")));
+        }
+
+        self.stream = stream;
+        self.inner = new_inner;
+        self.playing = playing;
+        self.sample_rate = rate;
+        info!("采样率切换成功: {}Hz", rate);
+        Ok(rate)
+    }
+
+    fn supported_sample_rates(&self) -> Vec<u32> {
+        let host = cpal::default_host();
+        let device = match &self.device_name {
+            Some(name) => {
+                let Ok(mut devices) = host.devices() else { return vec![self.sample_rate] };
+                match devices.find(|d| d.name().ok().as_deref() == Some(name)) {
+                    Some(d) => d,
+                    None => return vec![self.sample_rate],
+                }
+            }
+            None => match host.default_output_device() {
+                Some(d) => d,
+                None => return vec![self.sample_rate],
+            },
+        };
+        let mut rates: Vec<u32> = device.supported_output_configs()
+            .map(|cfgs| cfgs.flat_map(|c| vec![c.min_sample_rate().0, c.max_sample_rate().0]).collect())
+            .unwrap_or_default();
+        rates.sort();
+        rates.dedup();
+        if rates.is_empty() {
+            rates.push(self.sample_rate);
+        }
+        rates
+    }
 }
 
 impl Drop for AudioOutputCpal {
@@ -154,6 +256,8 @@ pub(crate) fn open_inner(
                 playing,
                 sample_rate,
                 channels,
+                device_name: device_name.map(|s| s.to_string()),
+                buffer_ms,
             }
         }
         Err(e) => {
@@ -224,6 +328,8 @@ pub(crate) fn open_inner(
                     playing: fb_playing,
                     sample_rate: fallback_rate,
                     channels,
+                    device_name: device_name.map(|s| s.to_string()),
+                    buffer_ms,
                 },
                 fb_prod,
                 fb_inner,

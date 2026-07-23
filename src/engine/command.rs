@@ -1,0 +1,136 @@
+//! 引擎命令与事件类型定义
+
+use crossbeam_channel::Sender;
+
+use crate::dsp::PeqBand;
+use crate::error::EngineError;
+use crate::EngineConfig;
+
+/// 命令应答通道类型
+pub type CmdAck = Option<Sender<Result<(), EngineError>>>;
+
+/// 频谱分析数据（16 个频段幅值，0.0~1.0 归一化）
+pub const SPECTRUM_BANDS: usize = 16;
+
+/// 播放模式
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlayMode {
+    /// 顺序播放（默认）
+    Normal,
+    /// 单曲循环
+    RepeatOne,
+    /// 列表循环
+    RepeatAll,
+    /// 随机播放
+    Shuffle,
+}
+
+/// 发给引擎线程的命令
+pub enum EngineCommand {
+    /// 播放单个文件（可选同步确认）
+    Play(String, CmdAck),
+    /// 设置播放队列并从第一首开始播放
+    PlayQueue(Vec<String>),
+    /// 下一首
+    NextTrack,
+    /// 上一首（播放超过 3 秒则回到开头，否则切回上一曲）
+    PrevTrack,
+    /// 暂停播放
+    Pause,
+    /// 恢复播放
+    Resume,
+    /// 停止播放并清空队列
+    Stop,
+    /// 跳转到指定位置（秒，可选同步确认）
+    Seek(f64, CmdAck),
+    /// 加载脉冲响应文件
+    LoadIr(String),
+    /// 清除脉冲响应
+    ClearIr,
+    /// 设置参数均衡器某频段的参数
+    SetPeqBand {
+        /// 频段索引（0-30）
+        index: usize,
+        /// 频段参数（频率 / 增益 / Q 值）
+        band: PeqBand,
+    },
+    /// 设置立体声展宽
+    SetStereoWidener {
+        /// 是否启用展宽
+        enabled: bool,
+        /// 展宽系数（0=单声道, 1=原始, >1=展宽）
+        width: f32,
+    },
+    /// 设置跨馈
+    SetCrossfeed(bool),
+    /// 设置音量
+    SetVolume(f32),
+    /// 设置 ReplayGain 增益（dB）
+    SetReplaygainGain(f32),
+    /// 更新引擎配置，下次播放时生效
+    SetConfig(EngineConfig),
+    /// 设置播放模式
+    SetPlayMode(PlayMode),
+    /// 从队列中移除指定索引的曲目
+    RemoveFromQueue(usize),
+    /// 设置输出设备（下次播放生效，可选同步确认）
+    SetOutputDevice(String, CmdAck),
+    /// 设置播放速度（0.25 ~ 4.0），1.0 = 正常
+    SetSpeed(f32),
+    /// 查询 underrun 计数（通过 oneshot channel 返回）
+    QueryUnderrunCount(Sender<u64>),
+    /// 开始音频输入捕获
+    StartCapture {
+        /// 捕获采样率
+        sample_rate: u32,
+        /// 捕获声道数
+        channels: u32,
+    },
+    /// 停止音频输入捕获
+    StopCapture,
+    /// 音频会话中断开始（如电话呼入），引擎自动暂停播放
+    SessionInterruptionBegan,
+    /// 音频会话中断结束，引擎自动恢复播放
+    SessionInterruptionEnded,
+    /// 退出引擎线程
+    Quit,
+}
+
+/// 引擎发出的事件（主线程通过 Receiver 收取）
+#[derive(Debug, Clone)]
+pub enum EngineEvent {
+    /// 曲目变更（携带新曲目路径/显示名）
+    TrackChanged(String),
+    /// 播放停止
+    PlaybackStopped,
+    /// 播放位置更新（秒）
+    Position(f64),
+    /// 当前曲目时长（秒）
+    DurationSecs(f64),
+    /// 错误消息
+    Error(String),
+    /// 队列变更（当前队列 + 当前曲目路径）
+    QueueChanged(Vec<String>, String),
+    /// 实时频谱数据（16 个频段，0.0~1.0 归一化）
+    Spectrum(Vec<f32>),
+    /// 电平数据（RMS / 峰值 / 削波标志）
+    Levels(Levels),
+}
+
+/// 实时音频电平：每帧计算 RMS 和峰值（各声道最大值）
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub struct Levels {
+    /// RMS 音量（归一化 0.0~1.0，各声道 RMS 的最大值）
+    pub rms: f32,
+    /// 峰值（归一化 0.0~1.0，各声道绝对值的最大值）
+    pub peak: f32,
+    /// 是否削波（任意样本绝对值 ≥ 1.0）
+    pub clip: bool,
+}
+
+impl Default for Levels {
+    fn default() -> Levels {
+        Levels { rms: 0.0, peak: 0.0, clip: false }
+    }
+}

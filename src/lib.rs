@@ -17,6 +17,10 @@ pub mod dsd;
 pub mod cue;
 /// DSP 管线：参数均衡器 / 串音补偿 / 立体声展宽 / 限幅 / 抖动
 pub mod dsp;
+/// 统一错误类型
+pub mod error;
+/// 独占模式（macOS Hog Mode / Windows WASAPI Exclusive）
+pub mod exclusive;
 
 #[cfg(feature = "ffi")]
 /// C 语言 FFI 绑定（引擎控制 / 元数据 / 音频分析）
@@ -45,6 +49,10 @@ pub struct EngineConfig {
     pub crossfade_ms: u32,
     /// 输出设备名称，None = 使用系统默认设备
     pub output_device: Option<String>,
+    /// 是否自动匹配文件采样率到输出设备（HiFi 场景建议开启）
+    pub auto_sample_rate: bool,
+    /// 是否请求独占模式（WASAPI Exclusive / macOS Hog Mode）
+    pub exclusive_mode: bool,
 }
 
 impl Default for EngineConfig {
@@ -55,6 +63,8 @@ impl Default for EngineConfig {
             buffer_ms: 280,
             crossfade_ms: 0,
             output_device: None,
+            auto_sample_rate: false,
+            exclusive_mode: false,
         }
     }
 }
@@ -62,6 +72,9 @@ impl Default for EngineConfig {
 /// 引擎事件 / 引擎句柄 / 播放模式 / 电平数据
 #[doc(inline)]
 pub use engine::{EngineEvent, EngineHandle, Levels, PlayMode};
+/// 统一错误类型
+#[doc(inline)]
+pub use error::EngineError;
 /// 音频文件元数据（标题/艺术家/专辑/时长/封面标志）
 #[doc(inline)]
 pub use decoder::{probe_sample_rate, read_cover, read_metadata, read_replaygain, Metadata, ReplayGain};

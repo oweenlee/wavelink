@@ -1,11 +1,16 @@
 # wavelink-audio-core API Reference
 
-> 源码 hash: `168fcb25da5c`  |  生成时间: 2026-07-21 09:32
+> 源码 hash: `48f3bb43148e`  |  生成时间: 2026-07-22 09:52
 > AI 助手优先读此文件，而非读 `src/` 源码。若 AI 返回的代码与当前签名不匹配，请重新运行 `bash doc-api.sh`。
 
 ---
 
 ### `lib.rs` — 纯 Rust 跨端音频引擎：解码 / DSP 管线 / 频谱分析 / BPM 调性检测。
+
+音频输入捕获抽象层  
+```rust
+pub mod capture;
+```
 
 平台无关的解码→DSP→ringbuf 循环（PC 和 Mobile 共享）  
 ```rust
@@ -87,7 +92,7 @@ pub crossfade_ms: u32,
 pub output_device: Option<String>,
 ```
 
-引擎事件 / 引擎句柄 / 播放模式  
+引擎事件 / 引擎句柄 / 播放模式 / 电平数据  
 ```rust
 pub use engine:: { ...
 ```
@@ -175,6 +180,35 @@ pub fn analyze_from_samples(
 
 ---
 
+### `capture.rs` — 音频输入捕获抽象层
+
+捕获缓冲消费者端（供 FFI 读取）  
+```rust
+pub struct CaptureInner { ...
+```
+
+捕获数据的环缓冲消费者端  
+```rust
+pub consumer: Mutex<HeapCons<f32>>,
+```
+
+开始捕获。返回 Ok(true) 表示成功。  
+```rust
+pub fn start_global_capture(sample_rate: u32, channels: u32) -> Result<(), String> { ...
+```
+
+停止捕获  
+```rust
+pub fn stop_global_capture() { ...
+```
+
+是否正在捕获  
+```rust
+pub fn is_capturing() -> bool { ...
+```
+
+---
+
 ### `consumer.rs` — 平台无关的解码→DSP→ringbuf 循环。
 
 频谱频段数  
@@ -227,6 +261,7 @@ pub recv_timeout_ms: u64,
 - `on_end_of_track` — 当前解码器结束时回调，返回新解码器可无缝切歌  
 - `stop` — 停止信号，设 true 后循环尽快退出  
 - `ready_tx` — 首帧就绪时发送 true，通知播放器可以起播  
+- `speed` — 共享播放速度（0.25 ~ 4.0），设 1.0 不变速  
 ```rust
 pub fn run_consumer_loop(
 ```
@@ -426,6 +461,16 @@ pub duration_secs: f64,
 pub has_cover: bool,
 ```
 
+采样率（Hz）  
+```rust
+pub sample_rate: Option<u32>,
+```
+
+声道数  
+```rust
+pub channels: Option<u32>,
+```
+
 读取音频文件元数据（标题/艺术家/专辑/流派/年份/音轨号/光盘号/封面/时长）  
 ```rust
 pub fn read_metadata(path: &Path) -> Result<Metadata, String> { ...
@@ -586,7 +631,7 @@ pub fn new(b0: f32, b1: f32, b2: f32, a1: f32, a2: f32) -> Self { ...
 ```
 
 Peaking EQ（参数均衡，RBJ audio EQ cookbook）。  
-freq 中心频率，sample_rate 采样率，gain_db 增益(dB)，q 品质因数。  
+freq 中心频率，sample_rate 采样率，gain_db 增益(dB)，q 品质因数（自动防零）。  
 ```rust
 pub fn peaking(freq: f32, sample_rate: f32, gain_db: f32, q: f32) -> Self { ...
 ```
@@ -719,7 +764,7 @@ pub fn process(&mut self, buf: &mut [f32], channel: usize) { ...
 
 ### `dsp/pipeline.rs` — DSP 管线：串联各滤波器
 
-DSP 管线，按顺序串联：DC HPF → ReplayGain → 卷积 EQ → PEQ → Crossfeed → 展宽 → 限幅 → 音量 → 抖动  
+DSP 管线，按顺序串联：DC HPF → ReplayGain → 卷积 EQ → PEQ → Crossfeed → 展宽 → 限幅 → 音量 → 淡入淡出 → 抖动  
 ```rust
 pub struct DspPipeline { ...
 ```
@@ -785,6 +830,16 @@ pub fn set_replaygain_db(&mut self, gain_db: f32) { ...
 pub fn set_volume(&mut self, volume: f32) { ...
 ```
 
+开始淡入（暂停→恢复时消 pop）  
+```rust
+pub fn start_fade_in(&mut self, duration_ms: u32) { ...
+```
+
+开始淡出（暂停/停止时消 pop）  
+```rust
+pub fn start_fade_out(&mut self, duration_ms: u32) { ...
+```
+
 启用/禁用 ATH 噪声整形（替代 TPDF）  
 ```rust
 pub fn set_noise_shaping(&mut self, enabled: bool) { ...
@@ -808,6 +863,30 @@ pub enum PresetName { ...
 按预设名称返回对应的 PEQ 频段参数  
 ```rust
 pub fn preset_bands(name: PresetName) -> Vec<PeqBand> { ...
+```
+
+---
+
+### `dsp/speed.rs` — 变速播放：线性插值重采样
+
+新建变速器，初始速度 1.0（正常）  
+```rust
+pub fn new() -> Self { ...
+```
+
+设置播放速度（0.25 ~ 4.0）  
+```rust
+pub fn set_speed(&mut self, speed: f32) { ...
+```
+
+获取当前速度  
+```rust
+pub fn speed(&self) -> f32 { ...
+```
+
+对交错 PCM 做变速重采样。返回的切片引用内部 buffer，下次调用失效。  
+```rust
+pub fn process<'a>(&'a mut self, input: &'a [f32], channels: usize) -> &'a [f32] { ...
 ```
 
 ---
@@ -864,7 +943,6 @@ pub const SPECTRUM_BANDS: usize = 16;
 ```
 
 发给引擎线程的命令  
-发给引擎线程的命令  
 ```rust
 pub enum EngineCommand { ...
 ```
@@ -872,6 +950,26 @@ pub enum EngineCommand { ...
 引擎发出的事件（主线程通过 Receiver 收取）  
 ```rust
 pub enum EngineEvent { ...
+```
+
+实时音频电平：每帧计算 RMS 和峰值（各声道最大值）  
+```rust
+pub struct Levels { ...
+```
+
+RMS 音量（归一化 0.0~1.0，各声道 RMS 的最大值）  
+```rust
+pub rms: f32,
+```
+
+峰值（归一化 0.0~1.0，各声道绝对值的最大值）  
+```rust
+pub peak: f32,
+```
+
+是否削波（任意样本绝对值 ≥ 1.0）  
+```rust
+pub clip: bool,
 ```
 
 对外的句柄（Send + Sync）  
@@ -894,6 +992,11 @@ pub fn start() -> (EngineHandle, Receiver<EngineEvent>) { ...
 pub fn start_with_config(config: EngineConfig) -> (EngineHandle, Receiver<EngineEvent>) { ...
 ```
 
+获取当前音频电平（RMS / 峰值 / 削波标志）  
+```rust
+pub fn levels(&self) -> Levels { ...
+```
+
 开始播放指定路径的音频文件  
 ```rust
 pub fn play(&self, path: String) { ...
@@ -907,6 +1010,11 @@ pub fn play_queue(&self, paths: Vec<String>) { ...
 下一首  
 ```rust
 pub fn next_track(&self) { ...
+```
+
+上一首（播放超过 3 秒则回到开头，否则切回上一曲）  
+```rust
+pub fn prev_track(&self) { ...
 ```
 
 暂停播放  
@@ -994,9 +1102,34 @@ pub fn duration_secs(&self) -> f64 { ...
 pub fn is_playing(&self) -> bool { ...
 ```
 
+设置播放速度（0.25 ~ 4.0），1.0 = 正常  
+```rust
+pub fn set_speed(&self, speed: f32) { ...
+```
+
 查询 underrun 计数  
 ```rust
 pub fn underrun_count(&self) -> u64 { ...
+```
+
+开始音频输入捕获  
+```rust
+pub fn start_capture(&self, sample_rate: u32, channels: u32) { ...
+```
+
+停止音频输入捕获  
+```rust
+pub fn stop_capture(&self) { ...
+```
+
+音频会话中断开始（如电话呼入），引擎自动暂停播放  
+```rust
+pub fn session_interruption_began(&self) { ...
+```
+
+音频会话中断结束，引擎自动恢复播放  
+```rust
+pub fn session_interruption_ended(&self) { ...
 ```
 
 引擎内部运行状态（只存在于引擎线程）  
@@ -1104,6 +1237,26 @@ pub key: [c_char; 16],
 pub energy: c_float,
 ```
 
+实时音频电平  
+```rust
+pub struct AcLevels { ...
+```
+
+RMS 音量（归一化 0.0~1.0）  
+```rust
+pub rms: c_float,
+```
+
+峰值（归一化 0.0~1.0）  
+```rust
+pub peak: c_float,
+```
+
+是否削波（1 = 削波，0 = 正常）  
+```rust
+pub clip: c_int,
+```
+
 引擎不透明句柄（FFI 层内部使用）  
 ```rust
 pub struct AcEngine { ...
@@ -1155,6 +1308,11 @@ pub unsafe extern "C" fn ac_engine_seek(engine: *mut c_void, seconds: c_double) 
 pub unsafe extern "C" fn ac_engine_next_track(engine: *mut c_void) { ...
 ```
 
+上一首（播放>3s 回开头，≤3s 切上一曲）  
+```rust
+pub unsafe extern "C" fn ac_engine_prev_track(engine: *mut c_void) { ...
+```
+
 设置播放模式：0=Normal, 1=RepeatOne, 2=RepeatAll, 3=Shuffle  
 ```rust
 pub unsafe extern "C" fn ac_engine_set_play_mode(engine: *mut c_void, mode: c_int) { ...
@@ -1200,6 +1358,33 @@ pub unsafe extern "C" fn ac_engine_clear_ir(engine: *mut c_void) { ...
 pub unsafe extern "C" fn ac_engine_set_output_device(engine: *mut c_void, name: *const c_char) { ...
 ```
 
+开始音频输入捕获。sample_rate / channels 为目标格式。  
+返回 0 成功，-1 失败。  
+```rust
+pub unsafe extern "C" fn ac_engine_start_capture(
+```
+
+停止音频输入捕获  
+```rust
+pub unsafe extern "C" fn ac_engine_stop_capture(engine: *mut c_void) { ...
+```
+
+从捕获缓冲读取 PCM 样本（与 ac_audio_read 对称）。  
+返回实际读取的样本数，0 表示无数据或失败。  
+```rust
+pub unsafe extern "C" fn ac_audio_read_capture(buffer: *mut c_float, samples: c_int) -> c_int { ...
+```
+
+音频会话中断开始（如电话呼入、其他 App 占用了音频），引擎自动暂停播放。  
+```rust
+pub unsafe extern "C" fn ac_engine_session_interruption_began(engine: *mut c_void) { ...
+```
+
+音频会话中断结束，引擎自动恢复播放。  
+```rust
+pub unsafe extern "C" fn ac_engine_session_interruption_ended(engine: *mut c_void) { ...
+```
+
 从引擎的 ringbuf 读取 PCM 样本。  
 buffer: 调用方分配的 float 缓冲区  
 samples: 期望读取的样本数（stereo 每帧=2 样本）  
@@ -1218,6 +1403,11 @@ pub unsafe extern "C" fn ac_engine_position(engine: *const c_void) -> c_double {
 pub unsafe extern "C" fn ac_engine_duration(engine: *const c_void) -> c_double { ...
 ```
 
+设置播放速度（0.25 ~ 4.0），1.0 = 正常  
+```rust
+pub unsafe extern "C" fn ac_engine_set_speed(engine: *mut c_void, speed: c_float) { ...
+```
+
 获取播放状态（1=正在播放, 0=未播放）  
 ```rust
 pub unsafe extern "C" fn ac_engine_is_playing(engine: *const c_void) -> c_int { ...
@@ -1226,6 +1416,11 @@ pub unsafe extern "C" fn ac_engine_is_playing(engine: *const c_void) -> c_int { 
 获取 underrun 计数  
 ```rust
 pub unsafe extern "C" fn ac_engine_underrun_count(engine: *const c_void) -> c_uint { ...
+```
+
+获取实时音频电平（RMS / 峰值 / 削波标志）  
+```rust
+pub unsafe extern "C" fn ac_engine_levels(
 ```
 
 轮询一个引擎事件。返回 1 表示有事件写入 out，0 表示无事件。  
@@ -1281,6 +1476,7 @@ pub struct AudioOutputInner { ...
 ```
 
 ringbuf 消费者端，回调通过它读取样本  
+使用 parking_lot::Mutex：无内核调用，适配实时音频回调线程  
 ```rust
 pub consumer: Mutex<HeapCons<f32>>,
 ```
@@ -1288,6 +1484,11 @@ pub consumer: Mutex<HeapCons<f32>>,
 underrun 计数（回调读不到数据时递增）  
 ```rust
 pub underrun_count: AtomicU64,
+```
+
+音频流是否发生错误（设备断开等），引擎可据此尝试恢复  
+```rust
+pub stream_failed: AtomicBool,
 ```
 
 音频输出 trait，各平台后端分别实现  
@@ -1355,6 +1556,21 @@ pub duration_secs: f64,
 pub fn parse_playlist(path: &Path) -> Result<Vec<PlaylistEntry>, String> { ...
 ```
 
+导出 M3U 播放列表  
+```rust
+pub fn export_m3u(path: &Path, entries: &[PlaylistEntry]) -> Result<(), String> { ...
+```
+
+导出 PLS 播放列表  
+```rust
+pub fn export_pls(path: &Path, entries: &[PlaylistEntry]) -> Result<(), String> { ...
+```
+
+根据扩展名自动推导导出格式并写入播放列表  
+```rust
+pub fn export_playlist(path: &Path, entries: &[PlaylistEntry]) -> Result<(), String> { ...
+```
+
 ---
 
-> 242 个 pub 项。运行 `bash doc-api.sh` 刷新。
+> 283 个 pub 项。运行 `bash doc-api.sh` 刷新。

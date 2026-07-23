@@ -63,9 +63,10 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → cpal �
 | `dsp::limiter` | 4x 过采样真峰值限幅 |
 | `dsp::dither` | TPDF 抖动 (声道独立噪声序列) |
 | `dsp::pipeline` | `DspPipeline` 串联所有滤波器；10 种 EQ 预设；运行时调参 |
-| `engine` | Actor 模型引擎线程；队列 + 4 种播放模式 + 无缝预加载 + CUE 分轨虚拟队列 + 交叉淡入 + 实时频谱 + 坏帧保护 |
+| `engine` | Actor 模型引擎线程；队列 + 4 种播放模式 + 无缝预加载 + CUE 分轨虚拟队列 + 交叉淡入 + 实时频谱 + 实时电平 + 变速播放 + 会话管理 + 坏帧保护 |
 | `output` | cpal 输出 + `swap_consumer` + 采样率 fallback + underrun 计数 |
 | `analysis` | BPM (自相关) + 调性 (Chromagram + Krumhansl-Schmuckler) + 能量 |
+| `capture` | 音频输入捕获 (cpal 后端, 全局状态管理) |
 | `dsd` | DSD→PCM 转换 (3 级 sinc 降采样) |
 | `cue` | CUE 分轨解析 (parse_cue / CueSheet / CueTrack) |
 | `playlist` | M3U/M3U8/PLS 播放列表解析 |
@@ -122,12 +123,17 @@ let (engine, events) = EngineHandle::start_with_config(config);
 | 播放/暂停/恢复/停止/Seek | ✅ |
 | 队列管理 + 4 种播放模式 | ✅ |
 | 无缝预加载 + 交叉淡入 | ✅ |
+| 变速播放 (0.5x~2.0x) | ✅ |
 | Seek 复用 cpal 流 (~20ms) | ✅ |
 | 可配置采样率/声道/缓冲/淡入 | ✅ |
 | 采样率 fallback | ✅ |
 | 实时频谱 (16 频段, FFT) | ✅ |
+| 实时电平表 (RMS/Peak/Clipping) | ✅ |
 | 坏帧保护 | ✅ |
 | underrun 计数 | ✅ |
+| 上一首/下一首 | ✅ |
+| 音频输入捕获 (cpal 录音) | ✅ |
+| 会话中断管理 (iOS 音频打断) | ✅ |
 | **分析** | |
 | BPM (自相关, 60-200 BPM) | ✅ |
 | 调性 (Chromagram + Krumhansl-Schmuckler) | ✅ |
@@ -139,14 +145,18 @@ let (engine, events) = EngineHandle::start_with_config(config);
 | 引擎 CUE 虚拟队列展开 | ✅ |
 | **FFI (C 绑定)** | |
 | 引擎创建/销毁/控制 | ✅ |
-| 播放控制 (play/play_queue/pause/resume/stop/seek/next) | ✅ |
+| 播放控制 (play/play_queue/pause/resume/stop/seek/prev/next) | ✅ |
 | DSP 控制 (音量/PEQ/展宽/Crossfeed/ReplayGain/IR) | ✅ |
 | 队列 & 播放模式 (Normal/RepeatOne/RepeatAll/Shuffle) | ✅ |
-| 事件轮询 (非阻塞, 7 种事件类型) | ✅ |
+| 事件轮询 (非阻塞, 8 种事件类型) | ✅ |
 | 元数据读取 (lofty: title/artist/album/genre/year/track/disc/封面) | ✅ |
 | ReplayGain 标签读取 (track/album gain+peak) | ✅ |
 | 封面读取 (音频 + MP4 + MKV/WebM 附件) / 释放 | ✅ |
 | 音频分析 (BPM/Key/能量) | ✅ |
+| 变速播放 | ✅ |
+| 实时电平表 (RMS/Peak/Clipping) | ✅ |
+| 音频输入捕获 (启动/停止/读取) | ✅ |
+| 会话中断管理 (iOS 音频打断) | ✅ |
 | 采样率探测 | ✅ |
 | 曲库查询 | ✅ |
 | 音频分析 (JSON 输出) | ✅ |

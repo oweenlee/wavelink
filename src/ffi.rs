@@ -21,6 +21,46 @@ use crossbeam_channel::Receiver;
 use ringbuf::traits::{Consumer, Observer};
 
 // ============================================================
+// 统一错误码
+// ============================================================
+
+/// FFI 统一错误码（所有 FFI 函数返回值）
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AcError {
+    /// 成功
+    Ok = 0,
+    /// 文件不存在
+    FileNotFound = 1,
+    /// 解码失败
+    DecodeFailed = 2,
+    /// 打开音频输出失败
+    OutputOpenFailed = 3,
+    /// 音频设备丢失
+    DeviceLost = 4,
+    /// 无效参数
+    InvalidParam = 5,
+    /// 引擎未就绪
+    EngineNotReady = 6,
+    /// 独占模式获取失败
+    ExclusiveModeFailed = 7,
+}
+
+impl From<crate::error::EngineError> for AcError {
+    fn from(e: crate::error::EngineError) -> Self {
+        match e {
+            crate::error::EngineError::FileNotFound(_) => AcError::FileNotFound,
+            crate::error::EngineError::DecodeFailed(_) => AcError::DecodeFailed,
+            crate::error::EngineError::OutputOpenFailed(_) => AcError::OutputOpenFailed,
+            crate::error::EngineError::DeviceLost => AcError::DeviceLost,
+            crate::error::EngineError::InvalidParam(_) => AcError::InvalidParam,
+            crate::error::EngineError::InvalidState(_) => AcError::EngineNotReady,
+            crate::error::EngineError::ExclusiveModeFailed(_) => AcError::ExclusiveModeFailed,
+        }
+    }
+}
+
+// ============================================================
 // C 兼容数据结构
 // ============================================================
 
@@ -189,6 +229,7 @@ pub unsafe extern "C" fn ac_engine_create(
         buffer_ms: buffer_ms.max(0) as u32,
         crossfade_ms: crossfade_ms.max(0) as u32,
         output_device: device,
+        ..Default::default()
     };
 
     let (handle, rx) = EngineHandle::start_with_config(config);
