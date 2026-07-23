@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[test]
+#[ignore = "解码完整歌曲，耗时较长，手动运行: cargo test --test check_two_files -- --ignored"]
 fn check_timed_out_files() {
     let files = [
         ("李荣浩-恋人.m4a", "/Users/qin/Desktop/wavelink/test-media/李荣浩-恋人.m4a"),

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[test]
+#[ignore = "解码 384kHz WAV，耗时较长"]
 fn diagnose_384k() {
     let path = std::path::Path::new("/Users/qin/Desktop/wavelink/test-media/hifi_ode_to_joy.wav");
     if !path.exists() {

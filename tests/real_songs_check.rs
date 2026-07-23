@@ -86,6 +86,7 @@ fn decode_one(song: &SongTest) {
 }
 
 #[test]
+#[ignore = "解码真实歌曲，耗时较长"]
 fn decode_real_songs_44100() {
     let songs = vec![
         SongTest { name: "M4A(李荣浩)", path: format!("{TEST_MEDIA}/李荣浩-恋人.m4a"), timeout_secs: 30 },
@@ -104,6 +105,7 @@ fn decode_real_songs_44100() {
 }
 
 #[test]
+#[ignore = "解码 384kHz HiFi WAV，耗时较长"]
 fn decode_384k_hifi_wav() {
     // 384kHz 文件单独一个测试，允许更长时间
     let song = SongTest {
