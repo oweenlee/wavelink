@@ -179,7 +179,7 @@ impl EngineHandle {
     pub fn underrun_count(&self) -> u64 {
         let (tx, rx) = bounded(1);
         let _ = self.tx.send(EngineCommand::QueryUnderrunCount(tx));
-        rx.recv().unwrap_or(0)
+        rx.recv_timeout(Duration::from_secs(1)).unwrap_or(0)
     }
 
     /// 开始音频输入捕获

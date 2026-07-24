@@ -169,7 +169,7 @@ impl EngineState {
         // 播放超过 3 秒→ 回到开头；否则切回上一曲
         let pos_secs = {
             let samples = self.position.load(Ordering::Acquire) as f64;
-            let sr = self.config.sample_rate as f64;
+            let sr = self.output_sample_rate as f64;
             let ch = self.config.channels as f64;
             samples / (sr * ch)
         };

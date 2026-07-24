@@ -152,3 +152,124 @@ fn test_handle_clone_drop_storm() {
     assert!(!handle.is_playing());
     handle.stop();
 }
+
+// ── 极端场景补充 ──
+
+/// 多线程并发 seek 到极端值
+#[test]
+fn test_concurrent_extreme_seek() {
+    let path = ensure_test_wav();
+    let (handle, _rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+    handle.play(path.clone());
+    std::thread::sleep(Duration::from_millis(50));
+
+    let handle = Arc::new(handle);
+    let mut threads = Vec::new();
+
+    for _ in 0..8 {
+        let h = Arc::clone(&handle);
+        threads.push(std::thread::spawn(move || {
+            for _ in 0..20 {
+                h.seek(-5.0);   // 负值
+                h.seek(999.0);  // 远超时长
+                h.seek(0.0);    // 起点
+                h.seek(0.001);  // 极小值
+            }
+        }));
+    }
+
+    for t in threads {
+        t.join().expect("极端 seek 线程不应 panic");
+    }
+    handle.stop();
+}
+
+/// 同一进程创建多个独立 EngineHandle 实例
+#[test]
+fn test_multi_engine_instances() {
+    let path = ensure_test_wav();
+    let (handle1, _rx1) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+    let (handle2, _rx2) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+
+    handle1.play(path.clone());
+    handle2.play(path.clone());
+    std::thread::sleep(Duration::from_millis(500));
+
+    assert!(handle1.is_playing() || handle2.is_playing());
+    handle1.stop();
+    handle2.stop();
+}
+
+/// 大量并发 query 操作不 panic
+#[test]
+fn test_concurrent_queries_stress() {
+    let path = ensure_test_wav();
+    let (handle, _rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+    handle.play(path.clone());
+    std::thread::sleep(Duration::from_millis(50));
+
+    let handle = Arc::new(handle);
+    let mut threads = Vec::new();
+
+    for _ in 0..16 {
+        let h = Arc::clone(&handle);
+        threads.push(std::thread::spawn(move || {
+            for _ in 0..100 {
+                let _ = h.is_playing();
+                let _ = h.position_secs();
+                let _ = h.duration_secs();
+                let _ = h.underrun_count();
+            }
+        }));
+    }
+
+    for t in threads {
+        t.join().expect("并发 query 线程不应 panic");
+    }
+    handle.stop();
+}
+
+/// 先大量 clone handle 再交错 drop，验证线程安全
+#[test]
+fn test_handle_clone_drop_in_threads() {
+    let path = ensure_test_wav();
+    let (handle, _rx) = EngineHandle::start();
+    handle.play(path.clone());
+    std::thread::sleep(Duration::from_millis(50));
+
+    let handle = Arc::new(handle);
+    let mut handles = Vec::new();
+
+    // 在 4 个线程中各 clone 25 个 handle
+    for _ in 0..4 {
+        let h = Arc::clone(&handle);
+        let t = std::thread::spawn(move || {
+            let mut local = Vec::new();
+            for _ in 0..25 {
+                local.push(h.clone());
+            }
+            // 交错 drop
+            for h in local {
+                drop(h);
+            }
+        });
+        handles.push(t);
+    }
+
+    for t in handles {
+        t.join().expect("clone/drop 线程不应 panic");
+    }
+    handle.stop();
+}

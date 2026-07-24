@@ -199,6 +199,9 @@ pub(crate) fn run_engine(
                     let ch = state.config.channels as f64;
                     let pos_secs = pos_samples / (sr * ch);
                     let _ = external_tx.send(EngineEvent::Position(pos_secs));
+                    // 定期发送电平事件（与 Position 同频，200ms）
+                    let lv = *state.levels.lock();
+                    let _ = external_tx.send(EngineEvent::Levels(lv));
                     tick = crossbeam_channel::after(Duration::from_millis(200));
                 }
             }
@@ -276,13 +279,9 @@ pub(crate) fn spawn_consumer(
             &|n| { position.fetch_add(n, Ordering::Release); },
             &|| {
                 let mut guard = next_rx.lock();
-                if let Some(preloaded) = guard.take() {
-                    let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
-                    Some(preloaded)
-                } else {
-                    let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
-                    None
-                }
+                let preloaded = guard.take();
+                let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
+                preloaded
             },
             &stop_flag,
             ready_tx,

@@ -405,3 +405,92 @@ fn test_engine_handle_dropped_without_stop() {
     drop(handle);
     std::thread::sleep(Duration::from_millis(200));
 }
+
+// ── 极端场景补充 ──
+
+#[test]
+fn test_engine_zero_buffer_ms() {
+    let path = ensure_test_wav();
+    let (handle, rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 0,
+        ..Default::default()
+    });
+    handle.play(path.clone());
+    let ev = rx.recv_timeout(Duration::from_secs(5)).expect("buffer_ms=0 应正常播放");
+    match ev {
+        EngineEvent::TrackChanged(_) => {},
+        other => panic!("期望 TrackChanged, 收到: {other:?}"),
+    }
+    assert!(handle.is_playing());
+    handle.stop();
+}
+
+#[test]
+fn test_engine_seek_when_stopped() {
+    let (handle, _rx) = EngineHandle::start();
+    // 未播放时 seek 不应 panic
+    handle.seek(0.5);
+    handle.seek(-1.0);
+    handle.seek(999.0);
+    std::thread::sleep(Duration::from_millis(100));
+}
+
+#[test]
+fn test_engine_seek_before_play() {
+    let path = ensure_test_wav();
+    let (handle, _rx) = EngineHandle::start();
+    // seek 后再 play
+    handle.seek(0.3);
+    handle.play(path.clone());
+    std::thread::sleep(Duration::from_millis(100));
+    // 不 panic 即可
+    handle.stop();
+}
+
+#[test]
+fn test_engine_unicode_path() {
+    let path = "/tmp/🎵-测试-音乐-♫.wav".to_string();
+    generate_wav(&path, 44100, 2, 0.3);
+    let (handle, rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+    handle.play(path.clone());
+    let ev = rx.recv_timeout(Duration::from_secs(5)).expect("unicode 路径应正常");
+    match ev {
+        EngineEvent::TrackChanged(ref p) => assert!(p.contains("🎵") || p.contains("测试"),
+            "unicode 路径应传回完整: {p}"),
+        EngineEvent::Error(ref msg) => panic!("unicode 路径出错: {msg}"),
+        other => panic!("期望 TrackChanged, 收到: {other:?}"),
+    }
+    handle.stop();
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn test_engine_extreme_config_values() {
+    // 极端配置值不应 panic
+    let (_handle, _rx) = EngineHandle::start_with_config(EngineConfig {
+        sample_rate: 384000,
+        channels: 8,
+        buffer_ms: 5000,
+        crossfade_ms: 10000,
+        ..Default::default()
+    });
+    // 能创建成功即可，不发 play 命令
+    std::thread::sleep(Duration::from_millis(100));
+}
+
+#[test]
+fn test_engine_play_same_file_twice() {
+    let path = ensure_test_wav();
+    let (handle, _rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+    // 连续两次 play 同一文件
+    handle.play(path.clone());
+    handle.play(path.clone());
+    std::thread::sleep(Duration::from_millis(200));
+    handle.stop();
+}

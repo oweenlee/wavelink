@@ -460,3 +460,116 @@ fn test_limiter_silent_passthrough() {
         assert_eq!(s, 0.0, "静音输入限幅后应为 0");
     }
 }
+
+// ── 极端场景补充 ──
+
+#[test]
+fn test_nan_input_no_panic() {
+    let sr = 44100u32;
+    let mut dsp = DspPipeline::new(sr, 2, &default_peq_bands(), true, 1.0, 24);
+    let mut buf = vec![f32::NAN, 0.5, f32::NAN, -0.5];
+    // NaN 输入不应导致 panic（输出可能含 NaN，consumer 坏帧检测会处理）
+    dsp.process(&mut buf);
+}
+
+#[test]
+fn test_inf_input_no_panic() {
+    let sr = 44100u32;
+    let mut dsp = DspPipeline::new(sr, 2, &default_peq_bands(), true, 1.0, 24);
+    let mut buf = vec![f32::INFINITY, -f32::INFINITY, 0.5, -0.5];
+    dsp.process(&mut buf);
+}
+
+#[test]
+fn test_mixed_nan_no_panic() {
+    let sr = 44100u32;
+    let mut dsp = DspPipeline::new(sr, 2, &default_peq_bands(), true, 0.8, 24);
+    let mut buf = generate_sine(440.0, 0.5, sr, 0.1);
+    let nan_count = buf.len().min(100);
+    for s in buf.iter_mut().rev().take(nan_count) {
+        *s = f32::NAN;
+    }
+    let mut stereo = to_stereo(&buf);
+    dsp.process(&mut stereo);
+}
+
+#[test]
+fn test_peq_extreme_q_value() {
+    let sr = 44100u32;
+    let bands = vec![PeqBand { freq: 1000.0, gain_db: 12.0, q: 100.0 }];
+    let mut dsp = DspPipeline::new(sr, 2, &bands, false, 1.0, 24);
+    let signal = generate_sine(1000.0, 0.1, sr, 0.5);
+    let mut buf = to_stereo(&signal);
+    dsp.process(&mut buf);
+    for &s in &buf {
+        assert!(s.is_finite(), "极端 Q=100 后输出非有限: {s}");
+    }
+}
+
+#[test]
+fn test_peq_freq_above_nyquist_no_panic() {
+    let sr = 44100u32;
+    let bands = vec![PeqBand { freq: 30000.0, gain_db: 12.0, q: 1.0 }];
+    let mut dsp = DspPipeline::new(sr, 2, &bands, false, 1.0, 24);
+    let signal = generate_sine(1000.0, 0.1, sr, 0.2);
+    let mut buf = to_stereo(&signal);
+    // Nyquist 以上频率可能导致不稳定，但不应 panic
+    dsp.process(&mut buf);
+}
+
+#[test]
+fn test_peq_extreme_negative_gain() {
+    let sr = 44100u32;
+    // 用高 Q 值确保衰减精确
+    let bands = vec![PeqBand { freq: 1000.0, gain_db: -40.0, q: 5.0 }];
+    let mut dsp = DspPipeline::new(sr, 2, &bands, false, 1.0, 24);
+    let signal = generate_sine(1000.0, 0.5, sr, 0.2);
+    let mut buf = to_stereo(&signal);
+    let rms_before = rms(&buf);
+    dsp.process(&mut buf);
+    let rms_after = rms(&buf);
+    let attenuation = db_from_ratio(rms_after / rms_before);
+    assert!(
+        attenuation < -30.0,
+        "-40dB PEQ 应有显著衰减, 实测: {attenuation:.1}dB"
+    );
+}
+
+#[test]
+fn test_dither_8bit() {
+    let mut d = Dither::new(2, 8, 1.0);
+    let mut buf = vec![0.0f32; 1000];
+    d.process(&mut buf, 0);
+    let energy: f32 = buf.iter().map(|&s| s * s).sum();
+    assert!(energy > 0.0, "8-bit dither 应有噪声输出");
+    let max_abs = buf.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+    assert!(
+        max_abs < 0.1,
+        "8-bit dither 噪声不应超过 10 个 LSB: {max_abs}"
+    );
+}
+
+#[test]
+fn test_dither_20bit() {
+    let mut d = Dither::new(2, 20, 1.0);
+    let mut buf = vec![0.0f32; 1000];
+    d.process(&mut buf, 0);
+    let max_abs = buf.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+    assert!(
+        max_abs < 0.001,
+        "20-bit dither 噪声幅度应在 LSB/2 附近: {max_abs}"
+    );
+}
+
+#[test]
+fn test_pipeline_multi_channel_odd() {
+    // 用 1ch 和 4ch 验证管线对不同声道数无 panic
+    for &ch in &[1u32, 4u32] {
+        let mut dsp = DspPipeline::new(44100, ch as usize, &default_peq_bands(), true, 1.0, 24);
+        let mut buf = vec![0.5f32; 1024 * ch as usize];
+        dsp.process(&mut buf);
+        for &s in &buf {
+            assert!(s.is_finite(), "DSP {ch}ch 输出出现非有限值: {s}");
+        }
+    }
+}

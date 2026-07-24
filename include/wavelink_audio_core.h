@@ -10,6 +10,20 @@
 extern "C" {
 #endif
 
+// ==================== 错误码 ====================
+
+// 所有 FFI 函数统一错误码（部分历史函数仍用 -1/0）
+typedef enum {
+    AcError_Ok = 0,
+    AcError_FileNotFound = 1,
+    AcError_DecodeFailed = 2,
+    AcError_OutputOpenFailed = 3,
+    AcError_DeviceLost = 4,
+    AcError_InvalidParam = 5,
+    AcError_EngineNotReady = 6,
+    AcError_ExclusiveModeFailed = 7,
+} AcError;
+
 // ==================== 事件 ====================
 
 // 事件回调函数类型
@@ -53,6 +67,14 @@ typedef struct {
     char key[16];
     float energy;
 } AcAnalysis;
+
+// ==================== 实时音频电平 ====================
+
+typedef struct {
+    float rms;    // RMS 音量（归一化 0.0~1.0）
+    float peak;   // 峰值（归一化 0.0~1.0）
+    int   clip;   // 是否削波（1 = 削波，0 = 正常）
+} AcLevels;
 
 // ==================== 引擎生命周期 ====================
 
@@ -105,12 +127,21 @@ void ac_engine_stop_capture(void* engine);
 // 从捕获缓冲读取 PCM 样本，返回实际读取的样本数
 int ac_audio_read_capture(void* engine, float* buffer, int samples);
 
+// ==================== 音频会话管理 ====================
+
+// 音频会话中断开始（如电话呼入），引擎自动暂停播放。
+void ac_engine_session_interruption_began(void* engine);
+// 音频会话中断结束，引擎自动恢复播放。
+void ac_engine_session_interruption_ended(void* engine);
+
 // ==================== 查询 ====================
 
 double ac_engine_position(const void* engine);
 double ac_engine_duration(const void* engine);
 int    ac_engine_is_playing(const void* engine);
 unsigned int ac_engine_underrun_count(const void* engine);
+// 获取实时音频电平（RMS / 峰值 / 削波标志），返回 AcError
+int    ac_engine_levels(const void* engine, AcLevels* out);
 
 // ==================== 事件轮询 & 回调 ====================
 

@@ -64,6 +64,7 @@ impl EngineState {
                 self.output_inner = Some(inner);
                 self.output = Some(output);
                 self.output_sample_rate = actual_rate;
+                self.sync_output_sample_rate();
                 self.sync_output_inner();
                 (prod, actual_rate, ch)
             }

@@ -242,3 +242,139 @@ fn test_consumer_stop_during_decoding() {
     let ok = consumer_h.join().is_ok();
     assert!(ok, "在真实解码中设置 stop flag 也应该退出");
 }
+
+// ── 极端场景补充 ──
+
+/// 验证 recv_timeout_ms=0（忙轮询模式）不 panic
+#[test]
+fn test_consumer_zero_timeout() {
+    let a = common::ensure_fixtures();
+    let path = a.wav.clone();
+
+    let pos = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let (rx, _dec) =
+        Decoder::start(std::path::Path::new(&path), 44100, 2, pos, None, None).expect("Decoder::start");
+
+    let total_pushed = Arc::new(Mutex::new(0usize));
+    let tp = total_pushed.clone();
+    let stop = Arc::new(AtomicBool::new(false));
+    let s = stop.clone();
+    let (ready_tx, ready_rx) = bounded(1);
+
+    let config = ConsumerConfig {
+        sample_rate: 44100,
+        channels: 2,
+        fft_interval: 3,
+        crossfade_ms: 0,
+        recv_timeout_ms: 0, // 忙轮询
+    };
+
+    let consumer_h = thread::spawn(move || {
+        run_consumer_loop(
+            rx,
+            &config,
+            &|buf| { *tp.lock() += buf.len(); buf.len() },
+            &|_| {},
+            &|_| {},
+            &|| {},
+            &|_| {},
+            &|| None,
+            &s,
+            ready_tx,
+            Arc::new(Mutex::new(1.0f32)),
+        );
+    });
+
+    ready_rx.recv_timeout(Duration::from_secs(5)).expect("consumer ready");
+    consumer_h.join().expect("consumer 不应 panic");
+
+    let total = *total_pushed.lock();
+    assert!(total > 0, "recv_timeout_ms=0 下仍有样本输出");
+}
+
+/// 极短音频文件（~10ms）通过 consumer 不 panic
+#[test]
+fn test_consumer_very_short_file() {
+    let path = "/tmp/_consumer_very_short.wav";
+    {
+        let spec = hound::WavSpec {
+            channels: 2, sample_rate: 44100, bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(path, spec).unwrap();
+        let n = (44100.0 * 0.01) as u32 * 2; // 10ms 立体声
+        for i in 0..n {
+            let t = i as f64 / 44100.0;
+            let s = (t * 440.0 * 2.0 * std::f64::consts::PI).sin() * 0.5;
+            writer.write_sample((s * i16::MAX as f64) as i16).unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+
+    let pos = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let (rx, _dec) =
+        Decoder::start(std::path::Path::new(path), 44100, 2, pos, None, None).expect("Decoder::start");
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let s = stop.clone();
+    let (ready_tx, ready_rx) = bounded(1);
+
+    let config = ConsumerConfig {
+        sample_rate: 44100, channels: 2, fft_interval: 3,
+        crossfade_ms: 0, recv_timeout_ms: 200,
+    };
+
+    let total = Arc::new(Mutex::new(0usize));
+    let total_clone = total.clone();
+    let consumer_h = thread::spawn(move || {
+        run_consumer_loop(
+            rx, &config,
+            &|buf| { *total_clone.lock() += buf.len(); buf.len() },
+            &|_| {}, &|_| {}, &|| {}, &|_| {},
+            &|| None, &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
+        );
+    });
+
+    ready_rx.recv_timeout(Duration::from_secs(5)).expect("consumer ready");
+    let ok = consumer_h.join().is_ok();
+    assert!(ok, "极短文件 consumer 不应 panic");
+    let total_out = *total.lock();
+    assert!(total_out > 0, "极短文件应产生输出样本");
+    let _ = std::fs::remove_file(path);
+}
+
+/// 静音 DSP 管线（process_dsp 设全零）时 consumer 正常结束
+#[test]
+fn test_consumer_dsp_silences_output() {
+    let a = common::ensure_fixtures();
+    let path = a.wav.clone();
+
+    let pos = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let (rx, _dec) =
+        Decoder::start(std::path::Path::new(&path), 44100, 2, pos, None, None).expect("Decoder::start");
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let s = stop.clone();
+    let (ready_tx, ready_rx) = bounded(1);
+
+    let config = ConsumerConfig {
+        sample_rate: 44100, channels: 2, fft_interval: 3,
+        crossfade_ms: 0, recv_timeout_ms: 200,
+    };
+
+    let consumer_h = thread::spawn(move || {
+        // process_dsp 将样本全设 0（模拟静音输出）
+        run_consumer_loop(
+            rx, &config,
+            &|buf| { buf.len() },
+            &|buf| { for s in buf.iter_mut() { *s = 0.0; } },
+            &|_| {}, &|| {}, &|_| {},
+            &|| None, &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
+        );
+    });
+
+    ready_rx.recv_timeout(Duration::from_secs(5)).expect("consumer ready");
+    // stop flag 无需设置，解码完成后 consumer 自动退出
+    let ok = consumer_h.join().is_ok();
+    assert!(ok, "DSP 静音处理时 consumer 不应 panic");
+}
