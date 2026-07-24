@@ -140,7 +140,10 @@ unsafe fn cstr_to_str<'a>(ptr: *const c_char) -> &'a str {
     if ptr.is_null() {
         return "";
     }
-    CStr::from_ptr(ptr).to_str().unwrap_or("")
+    CStr::from_ptr(ptr).to_str().unwrap_or_else(|e| {
+        tracing::warn!("非 UTF-8 C 字符串，已忽略: {e}");
+        ""
+    })
 }
 
 fn write_cstr(dst: &mut [c_char], src: &str) {
@@ -563,11 +566,12 @@ pub unsafe extern "C" fn ac_engine_stop_capture(engine: *mut c_void) {
 /// 从捕获缓冲读取 PCM 样本（与 ac_audio_read 对称）。
 /// 返回实际读取的样本数，0 表示无数据或失败。
 #[no_mangle]
-pub unsafe extern "C" fn ac_audio_read_capture(buffer: *mut c_float, samples: c_int) -> c_int {
-    if buffer.is_null() || samples <= 0 {
+pub unsafe extern "C" fn ac_audio_read_capture(engine: *mut c_void, buffer: *mut c_float, samples: c_int) -> c_int {
+    if engine.is_null() || buffer.is_null() || samples <= 0 {
         return 0;
     }
-    let inner = match crate::capture::capture_inner() {
+    let e = &*(engine as *const AcEngine);
+    let inner = match e.handle.capture_inner.read().ok().and_then(|g| g.clone()) {
         Some(i) => i,
         None => return 0,
     };
@@ -1018,7 +1022,7 @@ pub unsafe extern "C" fn ac_engine_play_stream(
         ack: None,
         stream_handle_out: Some(shared_tx),
     };
-    let _ = e.handle.tx().send(cmd);
+    let _ = e.handle.tx.send(cmd);
 
     // 等待引擎线程返回 StreamHandle（最多 3 秒）
     match handle_rx.recv_timeout(Duration::from_secs(3)) {

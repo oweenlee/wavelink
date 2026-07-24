@@ -27,6 +27,9 @@ typedef struct {
     int   path_len;              // 实际字符串长度（不含 null）；>= path_cap 表示缓冲区不足
     double value;                // 时间值（Position / DurationSecs）
     float spectrum[16];          // 频谱 16 频段（Spectrum）
+                                 // event_type=7 (Levels) 时复用：
+                                 //   spectrum[0]=peak, spectrum[1]=clip(1.0/0.0)
+                                 //   value=RMS
 } AcEvent;
 
 // ==================== 元数据 ====================
@@ -92,6 +95,15 @@ void ac_engine_set_output_device(void* engine, const char* name);
 // 从引擎 ringbuf 读取 PCM 样本，返回实际读取的样本数
 // 供 Oboe (Android) / AudioUnit (iOS) 回调调用
 int ac_audio_read(void* engine, float* buffer, int samples);
+
+// ==================== 音频捕获 ====================
+
+// 开始音频输入捕获（麦克风）
+void ac_engine_start_capture(void* engine, int sample_rate, int channels);
+// 停止音频输入捕获
+void ac_engine_stop_capture(void* engine);
+// 从捕获缓冲读取 PCM 样本，返回实际读取的样本数
+int ac_audio_read_capture(void* engine, float* buffer, int samples);
 
 // ==================== 查询 ====================
 

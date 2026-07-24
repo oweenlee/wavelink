@@ -66,10 +66,12 @@ pub(crate) fn run_engine(
     levels: Arc<Mutex<Levels>>,
     output_inner_shared: Arc<RwLock<Option<Arc<AudioOutputInner>>>>,
     output_sample_rate_shared: Arc<std::sync::atomic::AtomicU32>,
+    capture_inner_shared: Arc<std::sync::RwLock<Option<Arc<crate::capture::CaptureInner>>>>,
 ) {
     let mut state = EngineState::new(config, position, duration_us, playing, external_tx.clone(), levels);
     state.output_inner_shared = Some(output_inner_shared);
     state.output_sample_rate_shared = Some(output_sample_rate_shared);
+    state.capture_inner_shared = Some(capture_inner_shared);
     info!("引擎线程启动");
 
     // 创建内部事件 channel：消费者发 "曲目结束" 走这
@@ -141,10 +143,23 @@ pub(crate) fn run_engine(
                         Ok(EngineCommand::StartCapture { sample_rate, channels }) => {
                             if let Err(e) = crate::capture::start_global_capture(sample_rate, channels) {
                                 state.emit(EngineEvent::Error(format!("捕获启动失败: {e}")));
+                            } else {
+                                // 同步 CaptureInner 到引擎实例（替代全局 CAPTURE_INNER）
+                                if let Some(ref shared) = state.capture_inner_shared {
+                                    if let Ok(mut guard) = shared.write() {
+                                        *guard = crate::capture::capture_inner();
+                                    }
+                                }
                             }
                         }
                         Ok(EngineCommand::StopCapture) => {
                             crate::capture::stop_global_capture();
+                            // 清除引擎实例上的捕获引用
+                            if let Some(ref shared) = state.capture_inner_shared {
+                                if let Ok(mut guard) = shared.write() {
+                                    *guard = None;
+                                }
+                            }
                         }
                         Ok(EngineCommand::SessionInterruptionBegan) => {
                             state.pause();

@@ -75,6 +75,8 @@ pub struct EngineState {
     pub(crate) output_sample_rate_shared: Option<Arc<AtomicU32>>,
     /// 当前播放是否已获取排他模式（跟踪实际状态，避免 config 被修改后不一致）
     pub(crate) exclusive_mode_acquired: bool,
+    /// 共享捕获缓冲（与 EngineHandle 同步，替代全局 CAPTURE_INNER）
+    pub(crate) capture_inner_shared: Option<Arc<RwLock<Option<Arc<crate::capture::CaptureInner>>>>>,
 }
 
 impl EngineState {
@@ -112,6 +114,7 @@ impl EngineState {
             stream_handle: None,
             output_sample_rate_shared: None,
             exclusive_mode_acquired: false,
+            capture_inner_shared: None,
         }
     }
 
@@ -694,6 +697,7 @@ pub(crate) mod tests {
             stream_handle: None,
             output_sample_rate_shared: None,
             exclusive_mode_acquired: false,
+            capture_inner_shared: None,
         };
         (s, rx)
     }

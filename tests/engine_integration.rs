@@ -318,3 +318,90 @@ fn test_engine_handle_clone_works() {
     handle.stop();
     drop(h2);
 }
+
+// ── 极端场景 ──
+
+#[test]
+fn test_engine_play_nonexistent_file() {
+    let (handle, rx) = EngineHandle::start();
+
+    handle.play("/tmp/_nonexistent_song_12345.wav".into());
+
+    let ev = rx.recv_timeout(Duration::from_secs(5))
+        .expect("不存在的文件应返回 Error 事件");
+    match ev {
+        EngineEvent::Error(ref msg) => assert!(!msg.is_empty(), "错误消息不应为空"),
+        other => panic!("期望 Error, 收到: {other:?}"),
+    }
+    assert!(!handle.is_playing());
+}
+
+#[test]
+fn test_engine_seek_beyond_end() {
+    let path = ensure_test_wav();
+    let (handle, rx) = EngineHandle::start();
+    handle.play(path.clone());
+    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+
+    // seek 到远超出时长，不 panic 即可
+    handle.seek(999.0);
+    std::thread::sleep(Duration::from_millis(500));
+
+    // 引擎仍可正常操作
+    assert!(!handle.is_playing() || handle.position_secs() > 0.0);
+    handle.stop();
+}
+
+#[test]
+fn test_engine_seek_negative() {
+    let path = ensure_test_wav();
+    let (handle, rx) = EngineHandle::start();
+    handle.play(path.clone());
+    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+
+    // seek 到负数，不 panic 即可
+    handle.seek(-5.0);
+    std::thread::sleep(Duration::from_millis(300));
+
+    let pos = handle.position_secs();
+    assert!(
+        pos >= 0.0 && pos <= 2.0,
+        "seek(-5) 后位置应在合理范围, 实际: {pos:.3}s"
+    );
+    handle.stop();
+}
+
+#[test]
+fn test_engine_empty_queue() {
+    let (handle, rx) = EngineHandle::start();
+    // 空队列不应 panic
+    handle.play_queue(vec![]);
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(!handle.is_playing());
+    drop(rx);
+}
+
+#[test]
+fn test_engine_rapid_play_stop_cycles() {
+    let path = ensure_test_wav();
+    let (handle, _rx) = EngineHandle::start();
+
+    // 发命令不 panic 即可（引擎异步处理，不等待完成）
+    for _ in 0..10 {
+        handle.play(path.clone());
+        handle.stop();
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    // 引擎可能已停止，也可能还在处理排队的命令——不掉 panic 就行
+    drop(handle);
+}
+
+#[test]
+fn test_engine_handle_dropped_without_stop() {
+    let path = ensure_test_wav();
+    let (handle, _rx) = EngineHandle::start();
+    handle.play(path.clone());
+    // 不调 stop，直接 drop handle → 引擎线程应安全退出
+    drop(handle);
+    std::thread::sleep(Duration::from_millis(200));
+}

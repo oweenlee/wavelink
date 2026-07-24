@@ -383,3 +383,80 @@ fn test_pipeline_volume_control() {
         "volume=0.5 时输出 RMS 应为输入一半, 实测: {ratio:.4}"
     );
 }
+
+// ── 极端场景 ──
+
+#[test]
+fn test_pipeline_empty_buffer() {
+    let mut dsp = DspPipeline::new(44100, 2, &[], false, 1.0, 24);
+    // 空缓冲区不应 panic
+    dsp.process(&mut []);
+    dsp.process(&mut [0.0f32; 0]);
+}
+
+#[test]
+fn test_pipeline_single_stereo_frame() {
+    let mut dsp = DspPipeline::new(44100, 2, &default_peq_bands(), true, 1.0, 24);
+    // 单帧立体声（2 个样本）不应 panic
+    let mut buf = vec![0.5f32, 0.5f32];
+    dsp.process(&mut buf);
+    assert_eq!(buf.len(), 2);
+    for &s in &buf {
+        assert!(!s.is_nan());
+        assert!(!s.is_infinite());
+    }
+}
+
+#[test]
+fn test_pipeline_extreme_amplitude() {
+    let mut dsp = DspPipeline::new(44100, 2, &default_peq_bands(), true, 0.5, 24);
+    let mut buf = vec![1e6f32, -1e6f32, 1e6f32, -1e6f32];
+    dsp.process(&mut buf);
+    // 不应产生 NaN 或 Inf
+    for &s in &buf {
+        assert!(s.is_finite(), "极端幅度输入不应产生非有限值: {s}");
+    }
+}
+
+#[test]
+fn test_pipeline_dc_removal() {
+    let mut dsp = DspPipeline::new(44100, 2, &[], false, 1.0, 24);
+    // 纯直流信号，2Hz HPF 需要 ~0.5s 稳定 → 用 132300 样本（3s）
+    let mut buf = vec![1.0f32; 132300];
+    dsp.process(&mut buf);
+    // 检查末尾 10%（HPF 应已稳定）
+    let tail = &buf[buf.len() * 9 / 10..];
+    let max_abs = tail.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+    assert!(
+        max_abs < 0.01,
+        "DC 信号经 HPF 后应被滤除, 末尾最大: {max_abs}"
+    );
+}
+
+#[test]
+fn test_pipeline_square_wave_no_clip() {
+    let mut dsp = DspPipeline::new(44100, 2, &[], false, 1.0, 24);
+    // 满刻度方波（限幅器最差情况）
+    let mut buf = Vec::with_capacity(4096);
+    for i in 0..2048 {
+        let v = if i % 100 < 50 { 1.0 } else { -1.0 };
+        buf.push(v);
+        buf.push(v);
+    }
+    dsp.process(&mut buf);
+    let max_peak = peak(&buf);
+    assert!(
+        max_peak <= 1.0 + 1e-3,
+        "方波经管线后不应削波（限幅器保护）, 峰值: {max_peak}"
+    );
+}
+
+#[test]
+fn test_limiter_silent_passthrough() {
+    let mut lim = TruePeakLimiter::new(2, 0.0);
+    let mut buf = vec![0.0f32; 1000];
+    lim.process(&mut buf, 0);
+    for &s in &buf {
+        assert_eq!(s, 0.0, "静音输入限幅后应为 0");
+    }
+}

@@ -12,6 +12,7 @@ use super::command::{EngineCommand, EngineEvent, Levels, PlayMode};
 use super::worker::run_engine;
 use crate::dsp::PeqBand;
 use crate::error::EngineError;
+use crate::capture::CaptureInner;
 use crate::output::AudioOutputInner;
 use crate::EngineConfig;
 
@@ -34,6 +35,9 @@ pub struct EngineHandle {
     pub output_inner: Arc<RwLock<Option<Arc<AudioOutputInner>>>>,
     /// 实际输出采样率（与 EngineState.output_sample_rate 同步）
     pub(crate) output_sample_rate: Arc<AtomicU32>,
+    /// 捕获缓冲（替代全局 CAPTURE_INNER，供 FFI 层读取捕获数据）
+    #[allow(dead_code)] // 仅通过 FFI 层指针访问
+    pub(crate) capture_inner: Arc<RwLock<Option<Arc<CaptureInner>>>>,
 }
 
 impl EngineHandle {
@@ -52,16 +56,18 @@ impl EngineHandle {
         let levels = Arc::new(Mutex::new(Levels::default()));
         let output_inner: Arc<RwLock<Option<Arc<AudioOutputInner>>>> = Arc::new(RwLock::new(None));
         let output_sample_rate = Arc::new(AtomicU32::new(config.sample_rate));
+        let capture_inner: Arc<RwLock<Option<Arc<CaptureInner>>>> = Arc::new(RwLock::new(None));
         let pos_clone = Arc::clone(&position);
         let dur_clone = Arc::clone(&duration_us);
         let playing_clone = Arc::clone(&playing);
         let levels_clone = Arc::clone(&levels);
         let output_inner_clone = Arc::clone(&output_inner);
         let output_sr_clone = Arc::clone(&output_sample_rate);
+        let capture_inner_clone = Arc::clone(&capture_inner);
         let config_shared = Arc::new(RwLock::new(config.clone()));
         let config_for_engine = Arc::clone(&config_shared);
-        thread::spawn(move || run_engine(cmd_rx, event_tx, pos_clone, dur_clone, playing_clone, config, config_for_engine, levels_clone, output_inner_clone, output_sr_clone));
-        (EngineHandle { tx, position, duration_us, playing, config: config_shared, levels, output_inner, output_sample_rate }, event_rx)
+        thread::spawn(move || run_engine(cmd_rx, event_tx, pos_clone, dur_clone, playing_clone, config, config_for_engine, levels_clone, output_inner_clone, output_sr_clone, capture_inner_clone));
+        (EngineHandle { tx, position, duration_us, playing, config: config_shared, levels, output_inner, output_sample_rate, capture_inner }, event_rx)
     }
 
     /// 获取当前音频电平（RMS / 峰值 / 削波标志）
