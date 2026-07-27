@@ -189,7 +189,7 @@ mod output_cpal;
 #[cfg(feature = "oboe-backend")]
 mod output_oboe;
 
-#[cfg(feature = "audiounit-backend")]
+#[cfg(all(feature = "audiounit-backend", any(target_os = "macos", target_os = "ios")))]
 mod output_audiounit;
 
 #[cfg(feature = "wasapi-backend")]
@@ -204,12 +204,13 @@ mod output_coreaudio;
 /// 打开输出设备。
 ///
 /// 后端选择优先级:
-///   1. Windows WASAPI Exclusive（wasapi-backend feature + exclusive_mode）
-///   2. cpal 共享模式（cpal-backend feature）
-///   3. HeadlessOutput（ringbuf 无输出设备）
+///   1. Windows WASAPI Exclusive（wasapi-backend feature）
+///   2. macOS/iOS AudioUnit（audiounit-backend feature，低延迟 + 整数直出）
+///   3. cpal 共享模式（cpal-backend feature，跨平台 fallback）
+///   4. HeadlessOutput（ringbuf 无输出设备，纯数据模式）
 ///
-/// `bit_depth` 仅在 WASAPI Exclusive 后端用于格式协商，其他后端忽略。
-#[cfg_attr(not(any(feature = "cpal-backend", all(feature = "wasapi-backend", target_os = "windows"))), allow(unused_variables))]
+/// `bit_depth` 在 WASAPI 和 AudioUnit 后端用于格式协商，其他后端忽略。
+#[cfg_attr(not(any(feature = "cpal-backend", all(feature = "wasapi-backend", target_os = "windows"), all(feature = "audiounit-backend", any(target_os = "macos", target_os = "ios")))), allow(unused_variables))]
 pub fn open(
     channels: u32,
     sample_rate: u32,
@@ -220,13 +221,22 @@ pub fn open(
     // WASAPI Exclusive 后端 (仅 Windows)
     #[cfg(all(feature = "wasapi-backend", target_os = "windows"))]
     {
-        if let Ok(result) = output_wasapi::open_inner(channels, sample_rate, buffer_ms, device_name, bit_depth)
+        if let Ok(result) = output_wasapi::open_inner(channels, sample_rate, buffer_ms, device_name, _bit_depth)
         {
             return Ok((Box::new(result.0) as Box<dyn AudioOutput>, result.1, result.2, result.3));
         }
     }
 
-    // cpal 共享模式
+    // macOS/iOS AudioUnit 后端（低延迟 + 整数直出）
+    #[cfg(all(feature = "audiounit-backend", any(target_os = "macos", target_os = "ios")))]
+    {
+        if let Ok(result) = output_audiounit::open_inner(channels, sample_rate, buffer_ms, device_name, _bit_depth)
+        {
+            return Ok((Box::new(result.0) as Box<dyn AudioOutput>, result.1, result.2, result.3));
+        }
+    }
+
+    // cpal 共享模式（跨平台 fallback）
     #[cfg(feature = "cpal-backend")]
     {
         if let Ok(result) = output_cpal::open_inner(channels, sample_rate, buffer_ms, device_name)

@@ -1,12 +1,9 @@
-//! iOS AudioUnit (RemoteIO) 音频输出后端
+//! macOS/iOS AudioUnit 音频输出后端
 //!
-//! 直接在 Rust 层管理 AudioUnit，减少 Swift 桥接层。
-//! 仅在 feature = "audiounit-backend" 且 target_os = "ios" 时编译。
+//! macOS: HAL Output AudioUnit (kAudioUnitSubType_HALOutput)，支持设备选择 + 整数直出
+//! iOS: RemoteIO AudioUnit (kAudioUnitSubType_RemoteIO)
 //!
-//! 特性：
-//! - 直接创建 AudioUnit (kAudioUnitSubType_RemoteIO)
-//! - 回调中直接从 ringbuf 拉取（零额外拷贝）
-//! - 支持 AVAudioSession 采样率协商
+//! 相比 cpal 的优势：延迟更低、支持整数格式输出（bit-perfect 前提）
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -15,36 +12,39 @@ use ringbuf::traits::{Consumer, Split};
 use ringbuf::HeapRb;
 use tracing::{error, info, warn};
 
-use crate::output::{AudioOutput, AudioOutputInner, PcmProducer};
+use crate::output::{AudioOutput, AudioOutputInner, PcmProducer, SampleFormat};
 
-/// AudioUnit 音频输出句柄
+// ─── 平台常量 ────────────────────────────────────────────────
+
+#[cfg(target_os = "macos")]
+const AUDIO_OUTPUT_SUBTYPE: u32 = 0x6168616C; // 'ahal' = kAudioUnitSubType_HALOutput
+
+#[cfg(target_os = "ios")]
+const AUDIO_OUTPUT_SUBTYPE: u32 = 0x72696F63; // 'rioc' = kAudioUnitSubType_RemoteIO
+
+// ─── AudioOutputUnit ─────────────────────────────────────────
+
 pub struct AudioOutputUnit {
-    /// AudioUnit 实例指针
     unit: coreaudio_sys::AudioUnit,
-    /// 共享内部状态
-    pub inner: Arc<AudioOutputInner>,
+    inner: Arc<AudioOutputInner>,
     playing: Arc<AtomicBool>,
     sample_rate: u32,
     channels: u32,
     buffer_ms: u32,
+    sample_format: SampleFormat,
 }
 
-// AudioUnit 是 Send（单线程创建 + 回调）
 unsafe impl Send for AudioOutputUnit {}
 
 impl AudioOutput for AudioOutputUnit {
     fn pause(&self) {
         self.playing.store(false, Ordering::Release);
-        unsafe {
-            coreaudio_sys::AudioOutputUnitStop(self.unit);
-        }
+        unsafe { coreaudio_sys::AudioOutputUnitStop(self.unit); }
     }
 
     fn resume(&self) {
         self.playing.store(true, Ordering::Release);
-        unsafe {
-            coreaudio_sys::AudioOutputUnitStart(self.unit);
-        }
+        unsafe { coreaudio_sys::AudioOutputUnitStart(self.unit); }
     }
 
     fn swap_consumer(&self, buffer_ms: u32, sample_rate: u32, channels: u32) -> PcmProducer {
@@ -58,17 +58,20 @@ impl AudioOutput for AudioOutputUnit {
         prod
     }
 
-    fn sample_rate(&self) -> u32 {
-        self.sample_rate
-    }
-
-    fn channels(&self) -> u32 {
-        self.channels
-    }
+    fn sample_rate(&self) -> u32 { self.sample_rate }
+    fn channels(&self) -> u32 { self.channels }
 
     fn supported_sample_rates(&self) -> Vec<u32> {
-        // iOS AVAudioSession 通常支持 44100, 48000, 96000
-        vec![44100, 48000, 96000]
+        vec![44100, 48000, 88200, 96000, 176400, 192000]
+    }
+
+    fn set_bit_depth(&mut self, depth: u16) {
+        let fmt = match depth {
+            16 => SampleFormat::I16,
+            32 => SampleFormat::I32,
+            _ => SampleFormat::F32,
+        };
+        self.sample_format = fmt;
     }
 }
 
@@ -82,7 +85,16 @@ impl Drop for AudioOutputUnit {
     }
 }
 
-/// 渲染回调：从 ringbuf 拉取数据填入 AudioUnit buffer
+// ─── 渲染回调 ────────────────────────────────────────────────
+
+struct RenderContext {
+    inner: Arc<AudioOutputInner>,
+    playing: Arc<AtomicBool>,
+    channels: u32,
+    sample_format: SampleFormat,
+    tmp_buf: Vec<f32>,
+}
+
 extern "C" fn render_callback(
     user_data: *mut std::ffi::c_void,
     _flags: *mut coreaudio_sys::AudioUnitRenderActionFlags,
@@ -91,58 +103,175 @@ extern "C" fn render_callback(
     frames: u32,
     audio_data: *mut coreaudio_sys::AudioBufferList,
 ) -> i32 {
-    let ctx = unsafe { &*(user_data as *const RenderContext) };
+    let ctx = unsafe { &mut *(user_data as *mut RenderContext) };
 
     if !ctx.playing.load(Ordering::Acquire) {
-        // 填静音
         unsafe {
             let buf_list = &mut *audio_data;
             for i in 0..buf_list.mNumberBuffers as usize {
                 let buf = &mut buf_list.mBuffers[i];
-                let data = std::slice::from_raw_parts_mut(
-                    buf.mData as *mut f32,
-                    buf.mDataByteSize as usize / 4,
-                );
-                data.fill(0.0);
+                std::ptr::write_bytes(buf.mData, 0u8, buf.mDataByteSize as usize);
             }
         }
-        return 0; // noErr
+        return 0;
     }
+
+    let total_frames = frames as usize;
+    let ch = ctx.channels as usize;
+    let total_samples = total_frames * ch;
 
     unsafe {
         let buf_list = &mut *audio_data;
-        let total_samples = (frames as usize) * (ctx.channels as usize);
         let mut guard = ctx.inner.consumer.lock();
 
-        for i in 0..buf_list.mNumberBuffers as usize {
-            let buf = &mut buf_list.mBuffers[i];
-            let data = std::slice::from_raw_parts_mut(
-                buf.mData as *mut f32,
-                buf.mDataByteSize as usize / 4,
-            );
-            let n = guard.pop_slice(data);
-            if n < data.len() {
-                ctx.inner.underrun_count.fetch_add(1, Ordering::Relaxed);
-                data[n..].fill(0.0);
+        match ctx.sample_format {
+            SampleFormat::F32 => {
+                // 直接写入 AudioBufferList（可能是非交错）
+                let mut offset = 0;
+                for i in 0..buf_list.mNumberBuffers as usize {
+                    let buf = &mut buf_list.mBuffers[i];
+                    let data = std::slice::from_raw_parts_mut(
+                        buf.mData as *mut f32,
+                        buf.mDataByteSize as usize / 4,
+                    );
+                    let n = guard.pop_slice(data);
+                    if n < data.len() {
+                        ctx.inner.underrun_count.fetch_add(1, Ordering::Relaxed);
+                        data[n..].fill(0.0);
+                    }
+                    offset += data.len();
+                }
             }
+            SampleFormat::I16 | SampleFormat::I32 => {
+                ctx.tmp_buf.resize(total_samples.max(64), 0.0);
+                let n = guard.pop_slice(&mut ctx.tmp_buf[..total_samples]);
+                if n < total_samples {
+                    ctx.inner.underrun_count.fetch_add(1, Ordering::Relaxed);
+                    ctx.tmp_buf[n..total_samples].fill(0.0);
+                }
+
+                let mut si = 0;
+                for i in 0..buf_list.mNumberBuffers as usize {
+                    let buf = &mut buf_list.mBuffers[i];
+                    let sample_count = buf.mDataByteSize as usize
+                        / if ctx.sample_format == SampleFormat::I16 { 2 } else { 4 };
+                    match ctx.sample_format {
+                        SampleFormat::I16 => {
+                            let data = std::slice::from_raw_parts_mut(
+                                buf.mData as *mut i16, sample_count);
+                            for dst in data.iter_mut() {
+                                *dst = (ctx.tmp_buf[si].clamp(-1.0, 1.0) * 32768.0) as i16;
+                                si += 1;
+                            }
+                        }
+                        SampleFormat::I32 => {
+                            let data = std::slice::from_raw_parts_mut(
+                                buf.mData as *mut i32, sample_count);
+                            for dst in data.iter_mut() {
+                                *dst = (ctx.tmp_buf[si].clamp(-1.0, 1.0) * 2147483647.0) as i32;
+                                si += 1;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
     0 // noErr
 }
 
-/// 渲染回调上下文
-struct RenderContext {
-    inner: Arc<AudioOutputInner>,
-    playing: Arc<AtomicBool>,
+// ─── 格式辅助 ────────────────────────────────────────────────
+
+fn asbd_from_format(
+    format: SampleFormat,
+    sample_rate: f64,
     channels: u32,
+) -> coreaudio_sys::AudioStreamBasicDescription {
+    let ch = channels as u32;
+    match format {
+        SampleFormat::F32 => coreaudio_sys::AudioStreamBasicDescription {
+            mSampleRate: sample_rate,
+            mFormatID: coreaudio_sys::kAudioFormatLinearPCM,
+            mFormatFlags: coreaudio_sys::kAudioFormatFlagIsFloat
+                | coreaudio_sys::kAudioFormatFlagIsPacked,
+            mBytesPerPacket: 4 * ch,
+            mFramesPerPacket: 1,
+            mBytesPerFrame: 4 * ch,
+            mChannelsPerFrame: ch,
+            mBitsPerChannel: 32,
+            mReserved: 0,
+        },
+        SampleFormat::I16 => coreaudio_sys::AudioStreamBasicDescription {
+            mSampleRate: sample_rate,
+            mFormatID: coreaudio_sys::kAudioFormatLinearPCM,
+            mFormatFlags: coreaudio_sys::kAudioFormatFlagIsSignedInteger
+                | coreaudio_sys::kAudioFormatFlagIsPacked,
+            mBytesPerPacket: 2 * ch,
+            mFramesPerPacket: 1,
+            mBytesPerFrame: 2 * ch,
+            mChannelsPerFrame: ch,
+            mBitsPerChannel: 16,
+            mReserved: 0,
+        },
+        SampleFormat::I32 | SampleFormat::I24 => coreaudio_sys::AudioStreamBasicDescription {
+            mSampleRate: sample_rate,
+            mFormatID: coreaudio_sys::kAudioFormatLinearPCM,
+            mFormatFlags: coreaudio_sys::kAudioFormatFlagIsSignedInteger
+                | coreaudio_sys::kAudioFormatFlagIsPacked,
+            mBytesPerPacket: 4 * ch,
+            mFramesPerPacket: 1,
+            mBytesPerFrame: 4 * ch,
+            mChannelsPerFrame: ch,
+            mBitsPerChannel: 32,
+            mReserved: 0,
+        },
+    }
 }
 
-/// 打开 AudioUnit 输出
+fn negotiate_format(
+    unit: coreaudio_sys::AudioUnit,
+    channels: u32,
+    sample_rate: u32,
+    bit_depth: u16,
+) -> SampleFormat {
+    // 优先尝试 bit-perfect 请求的格式
+    if bit_depth > 0 {
+        let fmt = match bit_depth {
+            16 => SampleFormat::I16,
+            24 | 32 => SampleFormat::I32,
+            _ => SampleFormat::F32,
+        };
+        let desc = asbd_from_format(fmt, sample_rate as f64, channels);
+        let status = unsafe {
+            coreaudio_sys::AudioUnitSetProperty(
+                unit,
+                coreaudio_sys::kAudioUnitProperty_StreamFormat,
+                coreaudio_sys::kAudioUnitScope_Output,
+                0,
+                &desc as *const _ as *const std::ffi::c_void,
+                std::mem::size_of::<coreaudio_sys::AudioStreamBasicDescription>() as u32,
+            )
+        };
+        if status == 0 {
+            return fmt;
+        }
+        warn!("AudioUnit 不支持整数格式 (bit_depth={}), 回退 Float32", bit_depth);
+    }
+
+    SampleFormat::F32
+}
+
+// ─── open_inner ──────────────────────────────────────────────
+
 pub(crate) fn open_inner(
     channels: u32,
     sample_rate: u32,
     buffer_ms: u32,
+    device_name: Option<&str>,
+    bit_depth: u16,
 ) -> Result<(AudioOutputUnit, PcmProducer, Arc<AudioOutputInner>, u32), String> {
     use coreaudio_sys::*;
 
@@ -159,17 +288,16 @@ pub(crate) fn open_inner(
     let playing = Arc::new(AtomicBool::new(false));
 
     unsafe {
-        // 创建 RemoteIO AudioUnit
         let mut desc = AudioComponentDescription {
             componentType: kAudioUnitType_Output,
-            componentSubType: kAudioUnitSubType_RemoteIO,
+            componentSubType: AUDIO_OUTPUT_SUBTYPE,
             componentManufacturer: kAudioUnitManufacturer_Apple,
             componentFlags: 0,
             componentFlagsMask: 0,
         };
         let component = AudioComponentFindNext(std::ptr::null_mut(), &desc);
         if component.is_null() {
-            return Err("找不到 RemoteIO AudioUnit".into());
+            return Err("找不到 AudioUnit 输出组件".into());
         }
 
         let mut unit: AudioUnit = std::ptr::null_mut();
@@ -178,9 +306,9 @@ pub(crate) fn open_inner(
             return Err(format!("AudioComponentInstanceNew 失败: {status}"));
         }
 
-        // 启用输出
+        // 启用输出 (element 0)
         let enable: u32 = 1;
-        AudioUnitSetProperty(
+        let hr = AudioUnitSetProperty(
             unit,
             kAudioOutputUnitProperty_EnableIO,
             kAudioUnitScope_Output,
@@ -188,33 +316,53 @@ pub(crate) fn open_inner(
             &enable as *const _ as *const _,
             std::mem::size_of::<u32>() as u32,
         );
+        if hr != 0 {
+            AudioComponentInstanceDispose(unit);
+            return Err(format!("启用输出失败: {hr}"));
+        }
 
-        // 设置流格式
-        let mut stream_desc = AudioStreamBasicDescription {
-            mSampleRate: sample_rate as f64,
-            mFormatID: kAudioFormatLinearPCM,
-            mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
-            mBytesPerPacket: 4 * channels,
-            mFramesPerPacket: 1,
-            mBytesPerFrame: 4 * channels,
-            mChannelsPerFrame: channels,
-            mBitsPerChannel: 32,
-            mReserved: 0,
-        };
-        AudioUnitSetProperty(
+        // 设置目标设备（macOS HALOutput 专用）
+        #[cfg(target_os = "macos")]
+        if let Some(name) = device_name {
+            if let Some(dev_id) = find_device_id_by_name(name) {
+                AudioUnitSetProperty(
+                    unit,
+                    kAudioOutputUnitProperty_CurrentDevice,
+                    kAudioUnitScope_Global,
+                    0,
+                    &dev_id as *const _ as *const _,
+                    std::mem::size_of::<u32>() as u32,
+                );
+            } else {
+                warn!("未找到设备 '{name}'，使用默认输出");
+            }
+        }
+
+        // 协商格式：尝试整数 → 回退 Float32
+        let sample_format = negotiate_format(unit, channels, sample_rate, bit_depth);
+
+        // 设置实际使用的流格式（input scope = 我们的回调格式）
+        let desc = asbd_from_format(sample_format, sample_rate as f64, channels);
+        let hr = AudioUnitSetProperty(
             unit,
             kAudioUnitProperty_StreamFormat,
             kAudioUnitScope_Input,
             0,
-            &stream_desc as *const _ as *const _,
+            &desc as *const _ as *const _,
             std::mem::size_of::<AudioStreamBasicDescription>() as u32,
         );
+        if hr != 0 {
+            AudioComponentInstanceDispose(unit);
+            return Err(format!("设置流格式失败: {hr}"));
+        }
 
         // 设置渲染回调
         let ctx = Box::new(RenderContext {
             inner: inner.clone(),
             playing: playing.clone(),
             channels,
+            sample_format,
+            tmp_buf: Vec::new(),
         });
         let ctx_ptr = Box::into_raw(ctx);
 
@@ -232,13 +380,14 @@ pub(crate) fn open_inner(
         );
 
         // 初始化
-        let status = AudioUnitInitialize(unit);
-        if status != 0 {
+        let hr = AudioUnitInitialize(unit);
+        if hr != 0 {
+            drop(Box::from_raw(ctx_ptr));
             AudioComponentInstanceDispose(unit);
-            return Err(format!("AudioUnitInitialize 失败: {status}"));
+            return Err(format!("AudioUnitInitialize 失败: {hr}"));
         }
 
-        info!("AudioUnit 输出: {}Hz {}ch", sample_rate, channels);
+        info!("AudioUnit 输出: {}Hz {}ch 格式:{:?}", sample_rate, channels, sample_format);
 
         let output = AudioOutputUnit {
             unit,
@@ -247,8 +396,102 @@ pub(crate) fn open_inner(
             sample_rate,
             channels,
             buffer_ms,
+            sample_format,
         };
 
         Ok((output, producer, inner, sample_rate))
     }
+}
+
+// ─── macOS 设备名→ID 查找 ─────────────────────────────────────
+
+#[cfg(target_os = "macos")]
+unsafe fn find_device_id_by_name(name: &str) -> Option<u32> {
+    use coreaudio_sys::*;
+
+    let addr = AudioObjectPropertyAddress {
+        mSelector: 0x6465766D, // kAudioHardwarePropertyDevices
+        mScope: 0x676C6F62,    // kAudioObjectPropertyScopeGlobal
+        mElement: 0,
+    };
+
+    let mut data_size: u32 = 0;
+    let hr = AudioObjectGetPropertyDataSize(
+        kAudioObjectSystemObject,
+        &addr,
+        0,
+        std::ptr::null(),
+        &mut data_size,
+    );
+    if hr != 0 || data_size == 0 {
+        return None;
+    }
+
+    let count = data_size as usize / std::mem::size_of::<u32>();
+    let mut ids: Vec<u32> = vec![0; count];
+    let mut size = data_size;
+    AudioObjectGetPropertyData(
+        kAudioObjectSystemObject,
+        &addr,
+        0,
+        std::ptr::null(),
+        &mut size,
+        ids.as_mut_ptr() as *mut std::ffi::c_void,
+    );
+
+    for &dev_id in &ids {
+        let name_addr = AudioObjectPropertyAddress {
+            mSelector: 0x6E616D65, // kAudioDevicePropertyDeviceName
+            mScope: 0x676C6F62,   // kAudioObjectPropertyScopeGlobal
+            mElement: 0,
+        };
+        let mut buf = [0u8; 256];
+        let mut name_size = 256u32;
+        let hr = AudioObjectGetPropertyData(
+            dev_id,
+            &name_addr,
+            0,
+            std::ptr::null(),
+            &mut name_size,
+            buf.as_mut_ptr() as *mut std::ffi::c_void,
+        );
+        if hr == 0 {
+            if let Ok(n) = std::ffi::CStr::from_bytes_until_nul(&buf) {
+                if n.to_string_lossy() == name {
+                    return Some(dev_id);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+// macOS CoreAudio FFI 声明（与 output_coreaudio.rs 不冲突，均为 extern "C"）
+#[cfg(target_os = "macos")]
+extern "C" {
+    fn AudioObjectGetPropertyDataSize(
+        object_id: u32,
+        address: *const AudioObjectPropertyAddress,
+        qualifier_data_size: u32,
+        qualifier_data: *const std::ffi::c_void,
+        data_size: *mut u32,
+    ) -> i32;
+
+    fn AudioObjectGetPropertyData(
+        object_id: u32,
+        address: *const AudioObjectPropertyAddress,
+        qualifier_data_size: u32,
+        qualifier_data: *const std::ffi::c_void,
+        data_size: *mut u32,
+        data: *mut std::ffi::c_void,
+    ) -> i32;
+}
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+struct AudioObjectPropertyAddress {
+    mSelector: u32,
+    mScope: u32,
+    mElement: u32,
 }
