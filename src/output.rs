@@ -206,11 +206,12 @@ mod output_coreaudio;
 /// 后端选择优先级:
 ///   1. Windows WASAPI Exclusive（wasapi-backend feature）
 ///   2. macOS/iOS AudioUnit（audiounit-backend feature，低延迟 + 整数直出）
-///   3. cpal 共享模式（cpal-backend feature，跨平台 fallback）
-///   4. HeadlessOutput（ringbuf 无输出设备，纯数据模式）
+///   3. Android Oboe/AAudio Exclusive（oboe-backend feature）
+///   4. cpal 共享模式（cpal-backend feature，跨平台 fallback）
+///   5. HeadlessOutput（ringbuf 无输出设备，纯数据模式）
 ///
-/// `bit_depth` 在 WASAPI 和 AudioUnit 后端用于格式协商，其他后端忽略。
-#[cfg_attr(not(any(feature = "cpal-backend", all(feature = "wasapi-backend", target_os = "windows"), all(feature = "audiounit-backend", any(target_os = "macos", target_os = "ios")))), allow(unused_variables))]
+/// `bit_depth` 在 WASAPI、AudioUnit、Oboe 后端用于格式协商，其他后端忽略。
+#[cfg_attr(not(any(feature = "cpal-backend", all(feature = "wasapi-backend", target_os = "windows"), all(feature = "audiounit-backend", any(target_os = "macos", target_os = "ios")), all(feature = "oboe-backend", target_os = "android"))), allow(unused_variables))]
 pub fn open(
     channels: u32,
     sample_rate: u32,
@@ -231,6 +232,15 @@ pub fn open(
     #[cfg(all(feature = "audiounit-backend", any(target_os = "macos", target_os = "ios")))]
     {
         if let Ok(result) = output_audiounit::open_inner(channels, sample_rate, buffer_ms, device_name, _bit_depth)
+        {
+            return Ok((Box::new(result.0) as Box<dyn AudioOutput>, result.1, result.2, result.3));
+        }
+    }
+
+    // Android Oboe/AAudio 后端（独占模式 + 整数直出）
+    #[cfg(all(feature = "oboe-backend", target_os = "android"))]
+    {
+        if let Ok(result) = output_oboe::open_inner(channels, sample_rate, buffer_ms, device_name, _bit_depth)
         {
             return Ok((Box::new(result.0) as Box<dyn AudioOutput>, result.1, result.2, result.3));
         }
@@ -303,12 +313,18 @@ pub fn enumerate_devices() -> Vec<OutputDeviceInfo> {
         }
     }
 
+    // Android Oboe 后端
+    #[cfg(all(feature = "oboe-backend", target_os = "android"))]
+    {
+        return output_oboe::enumerate_devices();
+    }
+
     #[cfg(feature = "cpal-backend")]
     {
         return output_cpal::enumerate_devices();
     }
 
-    #[cfg(not(any(all(feature = "wasapi-backend", target_os = "windows"), target_os = "macos", feature = "cpal-backend")))]
+    #[cfg(not(any(all(feature = "wasapi-backend", target_os = "windows"), target_os = "macos", all(feature = "oboe-backend", target_os = "android"), feature = "cpal-backend")))]
     Vec::new()
 }
 
