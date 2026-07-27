@@ -53,26 +53,33 @@ impl EngineState {
         self.output_inner = None;
         self.sync_output_inner();
 
-        // 等待设备可能恢复（USB DAC 拔出后重新插入需要时间）
-        std::thread::sleep(Duration::from_millis(500));
-
-        // 重新打开输出设备
+        // 重试打开输出设备（立即尝试，失败后短间隔重试，避免固定 500ms 阻塞）
         let sr = self.config.sample_rate;
         let ch = self.config.channels;
-        let (pcm, actual_sr, actual_ch) = match crate::output::open(ch, sr, self.config.buffer_ms, self.config.output_device.as_deref()) {
-            Ok((output, prod, inner, actual_rate)) => {
-                self.output_inner = Some(inner);
-                self.output = Some(output);
-                self.output_sample_rate = actual_rate;
-                self.sync_output_sample_rate();
-                self.sync_output_inner();
-                (prod, actual_rate, ch)
+        let mut open_result = None;
+        for attempt in 0..4u32 {
+            match crate::output::open(ch, sr, self.config.buffer_ms, self.config.output_device.as_deref(), 0) {
+                Ok(v) => { open_result = Some(v); break; }
+                Err(e) => {
+                    if attempt < 3 {
+                        warn!("设备恢复尝试 {}/4 失败: {e}，150ms 后重试", attempt + 1);
+                        std::thread::sleep(Duration::from_millis(150));
+                    } else {
+                        error!("设备恢复失败，无法重新打开输出: {e}");
+                        self.emit(EngineEvent::Error(format!("音频设备恢复失败: {e}")));
+                        return;
+                    }
+                }
             }
-            Err(e) => {
-                error!("设备恢复失败，无法重新打开输出: {e}");
-                self.emit(EngineEvent::Error(format!("音频设备恢复失败: {e}")));
-                return;
-            }
+        }
+        let (pcm, actual_sr, actual_ch) = {
+            let (output, prod, inner, actual_rate) = open_result.unwrap();
+            self.output_inner = Some(inner);
+            self.output = Some(output);
+            self.output_sample_rate = actual_rate;
+            self.sync_output_sample_rate();
+            self.sync_output_inner();
+            (prod, actual_rate, ch)
         };
 
         // 从断点位置重新启动解码器

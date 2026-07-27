@@ -48,6 +48,8 @@ pub struct DspPipeline {
     ch_buf: Vec<f32>,
     /// 淡入淡出状态（防 pause/stop 爆音）
     fade: FadeState,
+    /// 绕过所有 DSP 处理（bit-perfect 模式用）
+    bypass: bool,
 }
 
 /// 单段 PEQ 参数（ISO 频段）。10 段典型配置见 `default_peq_bands()`。
@@ -104,6 +106,7 @@ impl DspPipeline {
             sample_rate: sr,
             ch_buf: Vec::new(),
             fade: FadeState::Idle,
+            bypass: false,
         }
     }
 
@@ -118,6 +121,9 @@ impl DspPipeline {
 
     /// 处理一帧交错 PCM（长度需为 channels 的整数倍）
     pub fn process(&mut self, buf: &mut [f32]) {
+        if self.bypass {
+            return;
+        }
         let ch = self.channels;
         let frames = buf.len() / ch;
 
@@ -268,6 +274,11 @@ impl DspPipeline {
     pub fn set_stereo_widener(&mut self, enabled: bool, width: f32) {
         self.widener.set_enabled(enabled);
         self.widener.set_width(width);
+    }
+
+    /// 绕过所有 DSP 处理（bit-perfect 模式）
+    pub fn set_bypass(&mut self, bypass: bool) {
+        self.bypass = bypass;
     }
 }
 

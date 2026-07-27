@@ -10,6 +10,7 @@ cpal-backend = ["cpal"]
 ffi = []
 oboe-backend = ["oboe"]
 audiounit-backend = ["coreaudio-sys"]
+wasapi-backend = []
 
 [dependencies]
 cpal = { version = "0.15", optional = true }
@@ -44,6 +45,15 @@ dsd-reader = "0.3"
 
 # 视频容器封面提取（MKV/WebM）
 matroska = "0.30"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_System_Com",
+    "Win32_System_Threading",
+    "Win32_Devices_Properties"
+] }
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

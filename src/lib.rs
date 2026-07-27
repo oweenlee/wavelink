@@ -55,6 +55,8 @@ pub struct EngineConfig {
     pub auto_sample_rate: bool,
     /// 是否请求独占模式（WASAPI Exclusive / macOS Hog Mode）
     pub exclusive_mode: bool,
+    /// Bit-perfect 模式：绕过所有 DSP，输出采样率/位深精确匹配源文件
+    pub bit_perfect: bool,
 }
 
 impl Default for EngineConfig {
@@ -67,6 +69,7 @@ impl Default for EngineConfig {
             output_device: None,
             auto_sample_rate: false,
             exclusive_mode: false,
+            bit_perfect: false,
         }
     }
 }
@@ -79,7 +82,7 @@ pub use engine::{EngineEvent, EngineHandle, Levels, PlayMode};
 pub use error::EngineError;
 /// 音频文件元数据（标题/艺术家/专辑/时长/封面标志）
 #[doc(inline)]
-pub use decoder::{probe_sample_rate, read_cover, read_metadata, read_replaygain, Metadata, ReplayGain};
+pub use decoder::{probe_bit_depth, probe_sample_rate, read_cover, read_metadata, read_replaygain, Metadata, ReplayGain};
 /// CUE 分轨解析入口及核心类型
 #[doc(inline)]
 pub use cue::{parse_cue, parse_cue_str, CueSheet, CueFile, CueTrack};

@@ -157,8 +157,18 @@ impl EngineState {
             return;
         }
 
-        let sr = self.config.sample_rate;
+        let mut sr = self.config.sample_rate;
         let ch = self.config.channels;
+        let mut source_bit_depth: u16 = 0;
+
+        // bit-perfect 模式：探测源文件采样率和位深，强制精确匹配
+        if self.config.bit_perfect {
+            if let Some(file_sr) = crate::decoder::probe_sample_rate(&path_buf) {
+                sr = file_sr;
+            }
+            source_bit_depth = crate::decoder::probe_bit_depth(&path_buf).unwrap_or(24);
+            info!("bit-perfect 模式: 采样率 {}Hz, 位深 {}bit", sr, source_bit_depth);
+        }
 
         // 计算时长（CUE 分轨使用虚轨时长）
         let dur = if entry.end_secs > 0.0 {
@@ -171,9 +181,11 @@ impl EngineState {
 
         // 复用已有 audio output（仅首次创建），避免重建 cpal stream
         let (pcm, actual_sr, actual_ch) = if let Some(ref mut output) = self.output {
-            // 采样率自适应：探测文件采样率，协商输出采样率
-            if self.config.auto_sample_rate {
-                if let Some(file_sr) = crate::decoder::probe_sample_rate(&path_buf) {
+            // 采样率自适应 / bit-perfect 强制精确匹配
+            let need_auto_sr = self.config.auto_sample_rate || self.config.bit_perfect;
+            if need_auto_sr {
+                let file_sr = if self.config.bit_perfect { Some(sr) } else { crate::decoder::probe_sample_rate(&path_buf) };
+                if let Some(file_sr) = file_sr {
                     let supported = output.supported_sample_rates();
                     let target_sr = negotiate_sample_rate(file_sr, &supported);
                     if target_sr != self.output_sample_rate {
@@ -182,6 +194,9 @@ impl EngineState {
                                 self.output_sample_rate = new_sr;
                                 if let Some(ref shared) = self.output_sample_rate_shared {
                                     shared.store(new_sr, Ordering::Release);
+                                }
+                                if target_sr != file_sr {
+                                    warn!("bit-perfect: 采样率 {}Hz 设备不支持，使用 {}Hz", file_sr, new_sr);
                                 }
                                 info!("采样率自适应: 文件={}Hz, 输出切换为={}Hz", file_sr, new_sr);
                             }
@@ -192,6 +207,9 @@ impl EngineState {
                     }
                 }
             }
+            if self.config.bit_perfect && source_bit_depth > 0 {
+                output.set_bit_depth(source_bit_depth);
+            }
             let out_sr = self.output_sample_rate;
             let out_ch = self.config.channels;
             (output.swap_consumer(self.config.buffer_ms, out_sr, out_ch), out_sr, out_ch)
@@ -201,9 +219,12 @@ impl EngineState {
                 crate::exclusive::acquire_exclusive_mode();
                 self.exclusive_mode_acquired = true;
             }
-            match crate::output::open(ch, sr, self.config.buffer_ms, self.config.output_device.as_deref()) {
+            match crate::output::open(ch, sr, self.config.buffer_ms, self.config.output_device.as_deref(), source_bit_depth) {
                 Ok((output, prod, inner, actual_rate)) => {
                     self.output_inner = Some(inner);
+                    if self.config.bit_perfect && actual_rate != sr {
+                        warn!("bit-perfect: 请求采样率 {}Hz, 实际得到 {}Hz", sr, actual_rate);
+                    }
                     self.output = Some(output);
                     self.output_sample_rate = actual_rate;
                     self.sync_output_sample_rate();
@@ -304,7 +325,7 @@ impl EngineState {
                 crate::exclusive::acquire_exclusive_mode();
                 self.exclusive_mode_acquired = true;
             }
-            match crate::output::open(ch, sr, self.config.buffer_ms, self.config.output_device.as_deref()) {
+            match crate::output::open(ch, sr, self.config.buffer_ms, self.config.output_device.as_deref(), 0) {
                 Ok((output, prod, inner, actual_rate)) => {
                     self.output_inner = Some(inner);
                     self.output = Some(output);
@@ -340,6 +361,9 @@ impl EngineState {
             actual_sr, actual_ch as usize, &self.peq_bands,
             true, self.current_volume, 24,
         )));
+        if self.config.bit_perfect {
+            dsp.lock().set_bypass(true);
+        }
         let stop_flag = Arc::new(AtomicBool::new(false));
         let position_clone = self.position.clone();
         let consumer_event_tx = self.internal_event_tx.clone();
@@ -425,6 +449,10 @@ impl EngineState {
             sr, ch as usize, &self.peq_bands,
             true, self.current_volume, 24,
         )));
+        if self.config.bit_perfect {
+            dsp.lock().set_bypass(true);
+            info!("bit-perfect: DSP 管线已绕过");
+        }
         let stop_flag = Arc::new(AtomicBool::new(false));
         let position_clone = self.position.clone();
         let consumer_event_tx = self.internal_event_tx.clone();

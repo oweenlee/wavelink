@@ -639,6 +639,26 @@ pub fn probe_sample_rate(path: &Path) -> Option<u32> {
     None
 }
 
+/// 快速探测音频文件的位深（不完整解码，只读文件头）
+pub fn probe_bit_depth(path: &Path) -> Option<u16> {
+    let file = File::open(path).ok()?;
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+    let format = symphonia::default::get_probe()
+        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+        .ok()?;
+    for track in format.tracks() {
+        if let Some(symphonia::core::codecs::CodecParameters::Audio(audio)) = &track.codec_params {
+            let bits = audio.bits_per_sample.unwrap_or(16);
+            if bits > 0 { return Some(bits as u16); }
+        }
+    }
+    None
+}
+
 // ── DSD 解码 ──────────────────────────────────────────────────────────
 
 fn run_dsd(

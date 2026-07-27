@@ -172,17 +172,50 @@ pub fn release_exclusive_mode() {
     }
 }
 
-/// 非 macOS 平台：独占模式暂不支持，返回 false
-#[cfg(not(target_os = "macos"))]
+/// Windows: WASAPI Exclusive 模式初始化 COM
+///
+/// 注意：实际独占模式获取发生在 IAudioClient::Initialize 中，
+/// 此处仅初始化 COM，确保 WASAPI FFI 可以正常工作。
+#[cfg(target_os = "windows")]
 pub fn acquire_exclusive_mode() -> bool {
-    // Windows WASAPI Exclusive 需要直接 FFI 调用 IAudioClient::Initialize
-    // 当前 cpal 不支持，预留接口
+    #[cfg(feature = "wasapi-backend")]
+    {
+        use windows_sys::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+        let hr = unsafe { CoInitializeEx(std::ptr::null_mut(), COINIT_MULTITHREADED) };
+        if hr == 0 || hr == 1 {
+            info!("WASAPI COM 初始化成功");
+            true
+        } else {
+            warn!("WASAPI COM 初始化失败: HRESULT=0x{hr:08X}");
+            false
+        }
+    }
+    #[cfg(not(feature = "wasapi-backend"))]
+    {
+        warn!("wasapi-backend 未启用，独占模式不可用");
+        false
+    }
+}
+
+/// Windows: 释放 COM
+#[cfg(target_os = "windows")]
+pub fn release_exclusive_mode() {
+    #[cfg(feature = "wasapi-backend")]
+    {
+        use windows_sys::Win32::System::Com::CoUninitialize;
+        unsafe { CoUninitialize(); }
+        info!("WASAPI COM 已释放");
+    }
+}
+
+/// 其他平台：独占模式暂不支持
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub fn acquire_exclusive_mode() -> bool {
     warn!("当前平台暂不支持独占模式");
     false
 }
 
-/// 非 macOS 平台：释放独占模式（无操作）
-#[cfg(not(target_os = "macos"))]
+/// 其他平台：释放独占模式（无操作）
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn release_exclusive_mode() {
-    // 无操作
 }

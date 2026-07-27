@@ -48,11 +48,22 @@ typedef struct {
 
 // ==================== 元数据 ====================
 
+// 字符串字段通过调用方提供的缓冲区传出。
+// 调用前设置各字段的 ptr/cap，函数填充后设置 len。
+// 若 len >= cap 表示缓冲区不足，字符串已被截断。
 typedef struct {
-    char title[512];
-    char artist[512];
-    char album[512];
-    char genre[128];
+    char* title;                 // 曲名缓冲区（调用方分配）
+    int   title_cap;
+    int   title_len;
+    char* artist;                // 艺术家缓冲区
+    int   artist_cap;
+    int   artist_len;
+    char* album;                 // 专辑名缓冲区
+    int   album_cap;
+    int   album_len;
+    char* genre;                 // 流派缓冲区
+    int   genre_cap;
+    int   genre_len;
     int  year;
     int  track_number;
     int  disc_number;
@@ -85,32 +96,33 @@ void  ac_engine_destroy(void* engine);
 
 // ==================== 播放控制 ====================
 
-void ac_engine_play(void* engine, const char* path);
-void ac_engine_play_queue(void* engine, const char* const* paths, int count);
-void ac_engine_pause(void* engine);
-void ac_engine_resume(void* engine);
-void ac_engine_stop(void* engine);
-void ac_engine_seek(void* engine, double seconds);
-void ac_engine_next_track(void* engine);
-void ac_engine_prev_track(void* engine);
+// 所有控制函数返回 AcError（0=成功）
+AcError ac_engine_play(void* engine, const char* path);
+AcError ac_engine_play_queue(void* engine, const char* const* paths, int count);
+AcError ac_engine_pause(void* engine);
+AcError ac_engine_resume(void* engine);
+AcError ac_engine_stop(void* engine);
+AcError ac_engine_seek(void* engine, double seconds);
+AcError ac_engine_next_track(void* engine);
+AcError ac_engine_prev_track(void* engine);
 
 // ==================== 队列 & 模式 ====================
 
 // mode: 0=Normal, 1=RepeatOne, 2=RepeatAll, 3=Shuffle
-void ac_engine_set_play_mode(void* engine, int mode);
-void ac_engine_remove_from_queue(void* engine, int index);
+AcError ac_engine_set_play_mode(void* engine, int mode);
+AcError ac_engine_remove_from_queue(void* engine, int index);
 
 // ==================== DSP 控制 ====================
 
-void ac_engine_set_volume(void* engine, float volume);
-void ac_engine_set_speed(void* engine, float speed);
-void ac_engine_set_replaygain_gain(void* engine, float gain_db);
-void ac_engine_set_peq_band(void* engine, int index, float freq,
+AcError ac_engine_set_volume(void* engine, float volume);
+AcError ac_engine_set_speed(void* engine, float speed);
+AcError ac_engine_set_replaygain_gain(void* engine, float gain_db);
+AcError ac_engine_set_peq_band(void* engine, int index, float freq,
                             float gain_db, float q);
-void ac_engine_set_stereo_widener(void* engine, int enabled, float width);
-void ac_engine_load_ir(void* engine, const char* path);
-void ac_engine_clear_ir(void* engine);
-void ac_engine_set_output_device(void* engine, const char* name);
+AcError ac_engine_set_stereo_widener(void* engine, int enabled, float width);
+AcError ac_engine_load_ir(void* engine, const char* path);
+AcError ac_engine_clear_ir(void* engine);
+AcError ac_engine_set_output_device(void* engine, const char* name);
 
 // ==================== 音频读取（移动端） ====================
 
@@ -120,19 +132,19 @@ int ac_audio_read(void* engine, float* buffer, int samples);
 
 // ==================== 音频捕获 ====================
 
-// 开始音频输入捕获（麦克风）
-void ac_engine_start_capture(void* engine, int sample_rate, int channels);
-// 停止音频输入捕获
-void ac_engine_stop_capture(void* engine);
+// 开始音频输入捕获（麦克风），返回 AcError
+AcError ac_engine_start_capture(void* engine, int sample_rate, int channels);
+// 停止音频输入捕获，返回 AcError
+AcError ac_engine_stop_capture(void* engine);
 // 从捕获缓冲读取 PCM 样本，返回实际读取的样本数
 int ac_audio_read_capture(void* engine, float* buffer, int samples);
 
 // ==================== 音频会话管理 ====================
 
-// 音频会话中断开始（如电话呼入），引擎自动暂停播放。
-void ac_engine_session_interruption_began(void* engine);
-// 音频会话中断结束，引擎自动恢复播放。
-void ac_engine_session_interruption_ended(void* engine);
+// 音频会话中断开始（如电话呼入），引擎自动暂停播放。返回 AcError。
+AcError ac_engine_session_interruption_began(void* engine);
+// 音频会话中断结束，引擎自动恢复播放。返回 AcError。
+AcError ac_engine_session_interruption_ended(void* engine);
 
 // ==================== 查询 ====================
 
@@ -141,7 +153,7 @@ double ac_engine_duration(const void* engine);
 int    ac_engine_is_playing(const void* engine);
 unsigned int ac_engine_underrun_count(const void* engine);
 // 获取实时音频电平（RMS / 峰值 / 削波标志），返回 AcError
-int    ac_engine_levels(const void* engine, AcLevels* out);
+AcError ac_engine_levels(const void* engine, AcLevels* out);
 
 // ==================== 事件轮询 & 回调 ====================
 
@@ -156,39 +168,39 @@ void ac_engine_set_event_callback(void* engine, AcEventCallback callback, void* 
 
 // ==================== 元数据 & 封面 ====================
 
-// 读取元数据，返回 0 成功、-1 失败
-int ac_metadata_read(const char* path, AcMetadata* meta);
+// 读取元数据，返回 AcError。调用前设置 meta 中各字符串字段的 ptr/cap。
+AcError ac_metadata_read(const char* path, AcMetadata* meta);
 
-// 读取内嵌封面（JPEG/PNG 原始字节），返回 0 成功
+// 读取内嵌封面（JPEG/PNG 原始字节），返回 AcError
 // 调用方用完后必须调用 ac_cover_free(data, len)
-int ac_cover_read(const char* path, uint8_t** out_data, int* out_len);
+AcError ac_cover_read(const char* path, uint8_t** out_data, int* out_len);
 void ac_cover_free(uint8_t* data, int len);
 
 // ==================== ReplayGain ====================
 
-// 读取 ReplayGain 标签。返回 0 成功、-1 失败。
+// 读取 ReplayGain 标签。返回 AcError。
 // has_track_gain / has_album_gain 为 1 表示对应值有效，0 表示无标签。
-int ac_replaygain_read(const char* path, float* track_gain_db,
+AcError ac_replaygain_read(const char* path, float* track_gain_db,
                        float* album_gain_db, int* has_track_gain,
                        int* has_album_gain);
 
 // ==================== 音频分析 ====================
 
-int ac_analyze_file(const char* path, AcAnalysis* result);
+AcError ac_analyze_file(const char* path, AcAnalysis* result);
 
 // ==================== 流式播放（网络流媒体） ====================
 
 // 开始流式播放。平台层负责网络 I/O，通过 ac_stream_write 写入数据。
 // format_hint 为格式提示（如 "mp3", "flac", "aac"），传 NULL 则自动探测。
-// 返回 0 成功，-1 失败。
-int ac_engine_play_stream(void* engine, const char* format_hint);
+// 返回 AcError。
+AcError ac_engine_play_stream(void* engine, const char* format_hint);
 
 // 向流式播放写入音频数据。应在 ac_engine_play_stream 成功后调用。
 // 返回实际写入的字节数，0 表示流已关闭或失败。
 int ac_stream_write(void* engine, const uint8_t* data, int len);
 
-// 通知流式播放数据已结束（EOF）。
-void ac_stream_eof(void* engine);
+// 通知流式播放数据已结束（EOF）。返回 AcError。
+AcError ac_stream_eof(void* engine);
 
 // ==================== 设备枚举 ====================
 

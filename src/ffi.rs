@@ -3,8 +3,8 @@
 //! # 约定
 //! - 引擎句柄通过不透明指针 `*mut AcEngine` 传递
 //! - 字符串参数均为 UTF-8 null-terminated C 字符串，空串 = None
-//! - 返回 0 表示成功，非 0 表示失败
-//! - 事件通过轮询获取，非阻塞
+//! - 所有函数统一返回 `AcError`（0=成功，非0=失败），仅查询类函数返回实际值
+//! - 事件通过轮询或回调获取，非阻塞
 //! - 调用方负责分配 C 结构体内存，FFI 填充内容
 
 use std::collections::VecDeque;
@@ -88,16 +88,28 @@ pub struct AcEvent {
 }
 
 /// 音频元数据
+///
+/// 字符串字段通过调用方提供的缓冲区传出。
+/// 调用前设置各字段的 ptr/cap，函数填充后设置 len。
+/// 若 len >= cap 表示缓冲区不足，字符串已被截断。
 #[repr(C)]
 pub struct AcMetadata {
-    /// 曲名
-    pub title: [c_char; 512],
-    /// 艺术家
-    pub artist: [c_char; 512],
-    /// 专辑名
-    pub album: [c_char; 512],
-    /// 流派
-    pub genre: [c_char; 128],
+    /// 曲名缓冲区（调用方分配）
+    pub title: *mut c_char,
+    pub title_cap: c_int,
+    pub title_len: c_int,
+    /// 艺术家缓冲区
+    pub artist: *mut c_char,
+    pub artist_cap: c_int,
+    pub artist_len: c_int,
+    /// 专辑名缓冲区
+    pub album: *mut c_char,
+    pub album_cap: c_int,
+    pub album_len: c_int,
+    /// 流派缓冲区
+    pub genre: *mut c_char,
+    pub genre_cap: c_int,
+    pub genre_len: c_int,
     /// 发行年份（0=未知）
     pub year: c_int,
     /// 音轨号（0=未知）
@@ -327,25 +339,26 @@ pub unsafe extern "C" fn ac_engine_destroy(engine: *mut c_void) {
 // 播放控制
 // ============================================================
 
-/// 播放指定文件
+/// 播放指定文件。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_play(engine: *mut c_void, path: *const c_char) {
+pub unsafe extern "C" fn ac_engine_play(engine: *mut c_void, path: *const c_char) -> c_int {
     if engine.is_null() || path.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.play(cstr_to_str(path).to_string());
+    AcError::Ok as c_int
 }
 
-/// 播放一组文件（替换当前队列）
+/// 播放一组文件（替换当前队列）。返回 AcError。
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_play_queue(
     engine: *mut c_void,
     paths: *const *const c_char,
     count: c_int,
-) {
+) -> c_int {
     if engine.is_null() || paths.is_null() || count <= 0 {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     let mut vec = Vec::with_capacity(count as usize);
@@ -356,77 +369,84 @@ pub unsafe extern "C" fn ac_engine_play_queue(
         }
     }
     e.handle.play_queue(vec);
+    AcError::Ok as c_int
 }
 
-/// 暂停播放
+/// 暂停播放。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_pause(engine: *mut c_void) {
+pub unsafe extern "C" fn ac_engine_pause(engine: *mut c_void) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.pause();
+    AcError::Ok as c_int
 }
 
-/// 恢复播放
+/// 恢复播放。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_resume(engine: *mut c_void) {
+pub unsafe extern "C" fn ac_engine_resume(engine: *mut c_void) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.resume();
+    AcError::Ok as c_int
 }
 
-/// 停止播放
+/// 停止播放。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_stop(engine: *mut c_void) {
+pub unsafe extern "C" fn ac_engine_stop(engine: *mut c_void) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.stop();
+    AcError::Ok as c_int
 }
 
-/// 跳转到指定位置（秒）
+/// 跳转到指定位置（秒）。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_seek(engine: *mut c_void, seconds: c_double) {
+pub unsafe extern "C" fn ac_engine_seek(engine: *mut c_void, seconds: c_double) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.seek(seconds);
+    AcError::Ok as c_int
 }
 
-/// 下一首
+/// 下一首。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_next_track(engine: *mut c_void) {
+pub unsafe extern "C" fn ac_engine_next_track(engine: *mut c_void) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.next_track();
+    AcError::Ok as c_int
 }
 
-/// 上一首（播放>3s 回开头，≤3s 切上一曲）
+/// 上一首（播放>3s 回开头，≤3s 切上一曲）。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_prev_track(engine: *mut c_void) {
+pub unsafe extern "C" fn ac_engine_prev_track(engine: *mut c_void) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.prev_track();
+    AcError::Ok as c_int
 }
 
 // ============================================================
 // 队列 & 模式
 // ============================================================
 
-/// 设置播放模式：0=Normal, 1=RepeatOne, 2=RepeatAll, 3=Shuffle
+/// 设置播放模式：0=Normal, 1=RepeatOne, 2=RepeatAll, 3=Shuffle。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_set_play_mode(engine: *mut c_void, mode: c_int) {
+pub unsafe extern "C" fn ac_engine_set_play_mode(engine: *mut c_void, mode: c_int) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let play_mode = match mode {
         1 => PlayMode::RepeatOne,
@@ -436,43 +456,47 @@ pub unsafe extern "C" fn ac_engine_set_play_mode(engine: *mut c_void, mode: c_in
     };
     let e = &*(engine as *const AcEngine);
     e.handle.set_play_mode(play_mode);
+    AcError::Ok as c_int
 }
 
-/// 从队列中移除指定位置（0-indexed）的曲目
+/// 从队列中移除指定位置（0-indexed）的曲目。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_remove_from_queue(engine: *mut c_void, index: c_int) {
+pub unsafe extern "C" fn ac_engine_remove_from_queue(engine: *mut c_void, index: c_int) -> c_int {
     if engine.is_null() || index < 0 {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.remove_from_queue(index as usize);
+    AcError::Ok as c_int
 }
 
 // ============================================================
 // DSP 控制
 // ============================================================
 
-/// 设置音量（0.0 ~ 1.0）
+/// 设置音量（0.0 ~ 1.0）。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_set_volume(engine: *mut c_void, volume: c_float) {
+pub unsafe extern "C" fn ac_engine_set_volume(engine: *mut c_void, volume: c_float) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.set_volume(volume);
+    AcError::Ok as c_int
 }
 
-/// 设置 ReplayGain 增益（dB），0 = 关闭 ReplayGain
+/// 设置 ReplayGain 增益（dB），0 = 关闭 ReplayGain。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_set_replaygain_gain(engine: *mut c_void, gain_db: c_float) {
+pub unsafe extern "C" fn ac_engine_set_replaygain_gain(engine: *mut c_void, gain_db: c_float) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.set_replaygain_gain_db(gain_db);
+    AcError::Ok as c_int
 }
 
-/// 设置 PEQ 单段参数（31 段 ISO 频段）
+/// 设置 PEQ 单段参数（31 段 ISO 频段）。返回 AcError。
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_set_peq_band(
     engine: *mut c_void,
@@ -480,57 +504,62 @@ pub unsafe extern "C" fn ac_engine_set_peq_band(
     freq: c_float,
     gain_db: c_float,
     q: c_float,
-) {
+) -> c_int {
     if engine.is_null() || index < 0 {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle
         .set_peq_band(index as usize, PeqBand { freq, gain_db, q });
+    AcError::Ok as c_int
 }
 
-/// 设置立体声展宽（enabled=0 关闭, width=1.0 原始, >1.0 展宽）
+/// 设置立体声展宽（enabled=0 关闭, width=1.0 原始, >1.0 展宽）。返回 AcError。
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_set_stereo_widener(
     engine: *mut c_void,
     enabled: c_int,
     width: c_float,
-) {
+) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.set_stereo_widener(enabled != 0, width);
+    AcError::Ok as c_int
 }
 
-/// 加载 IR 文件（FIR 卷积 EQ）
+/// 加载 IR 文件（FIR 卷积 EQ）。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_load_ir(engine: *mut c_void, path: *const c_char) {
+pub unsafe extern "C" fn ac_engine_load_ir(engine: *mut c_void, path: *const c_char) -> c_int {
     if engine.is_null() || path.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.load_ir(cstr_to_str(path).to_string());
+    AcError::Ok as c_int
 }
 
-/// 清除已加载的 IR
+/// 清除已加载的 IR。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_clear_ir(engine: *mut c_void) {
+pub unsafe extern "C" fn ac_engine_clear_ir(engine: *mut c_void) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.clear_ir();
+    AcError::Ok as c_int
 }
 
-/// 切换输出设备（移动端 Headless 模式无效）
+/// 切换输出设备（移动端 Headless 模式无效）。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_set_output_device(engine: *mut c_void, name: *const c_char) {
+pub unsafe extern "C" fn ac_engine_set_output_device(engine: *mut c_void, name: *const c_char) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.set_output_device(cstr_to_str(name).to_string());
+    AcError::Ok as c_int
 }
 
 // ============================================================
@@ -538,7 +567,7 @@ pub unsafe extern "C" fn ac_engine_set_output_device(engine: *mut c_void, name: 
 // ============================================================
 
 /// 开始音频输入捕获。sample_rate / channels 为目标格式。
-/// 返回 0 成功，-1 失败。
+/// 返回 AcError。
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_start_capture(
     engine: *mut c_void,
@@ -546,21 +575,22 @@ pub unsafe extern "C" fn ac_engine_start_capture(
     channels: c_int,
 ) -> c_int {
     if engine.is_null() {
-        return -1;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.start_capture(sample_rate.max(0) as u32, channels.max(0) as u32);
-    0
+    AcError::Ok as c_int
 }
 
-/// 停止音频输入捕获
+/// 停止音频输入捕获。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_stop_capture(engine: *mut c_void) {
+pub unsafe extern "C" fn ac_engine_stop_capture(engine: *mut c_void) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.stop_capture();
+    AcError::Ok as c_int
 }
 
 /// 从捕获缓冲读取 PCM 样本（与 ac_audio_read 对称）。
@@ -589,24 +619,26 @@ pub unsafe extern "C" fn ac_audio_read_capture(engine: *mut c_void, buffer: *mut
 // 音频会话管理
 // ============================================================
 
-/// 音频会话中断开始（如电话呼入、其他 App 占用了音频），引擎自动暂停播放。
+/// 音频会话中断开始（如电话呼入、其他 App 占用了音频），引擎自动暂停播放。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_session_interruption_began(engine: *mut c_void) {
+pub unsafe extern "C" fn ac_engine_session_interruption_began(engine: *mut c_void) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.session_interruption_began();
+    AcError::Ok as c_int
 }
 
-/// 音频会话中断结束，引擎自动恢复播放。
+/// 音频会话中断结束，引擎自动恢复播放。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_session_interruption_ended(engine: *mut c_void) {
+pub unsafe extern "C" fn ac_engine_session_interruption_ended(engine: *mut c_void) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.session_interruption_ended();
+    AcError::Ok as c_int
 }
 
 // ============================================================
@@ -665,14 +697,15 @@ pub unsafe extern "C" fn ac_engine_duration(engine: *const c_void) -> c_double {
     e.handle.duration_secs()
 }
 
-/// 设置播放速度（0.25 ~ 4.0），1.0 = 正常
+/// 设置播放速度（0.25 ~ 4.0），1.0 = 正常。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_engine_set_speed(engine: *mut c_void, speed: c_float) {
+pub unsafe extern "C" fn ac_engine_set_speed(engine: *mut c_void, speed: c_float) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     e.handle.set_speed(speed);
+    AcError::Ok as c_int
 }
 
 /// 获取播放状态（1=正在播放, 0=未播放）
@@ -695,14 +728,14 @@ pub unsafe extern "C" fn ac_engine_underrun_count(engine: *const c_void) -> c_ui
     e.handle.underrun_count() as c_uint
 }
 
-/// 获取实时音频电平（RMS / 峰值 / 削波标志）
+/// 获取实时音频电平（RMS / 峰值 / 削波标志）。返回 AcError。
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_levels(
     engine: *const c_void,
     out: *mut AcLevels,
 ) -> c_int {
     if engine.is_null() || out.is_null() {
-        return -1;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     let lv = e.handle.levels();
@@ -710,7 +743,7 @@ pub unsafe extern "C" fn ac_engine_levels(
     out.rms = lv.rms;
     out.peak = lv.peak;
     out.clip = lv.clip as c_int;
-    0
+    AcError::Ok as c_int
 }
 
 // ============================================================
@@ -825,33 +858,35 @@ pub unsafe extern "C" fn ac_engine_set_event_callback(
 // 元数据 & 封面
 // ============================================================
 
-/// 读取音频文件元数据。返回 0 成功，-1 失败。
+/// 读取音频文件元数据。返回 AcError。
+///
+/// 调用前需设置 meta 中各字符串字段的 ptr/cap，函数填充后设置 len。
 #[no_mangle]
 pub unsafe extern "C" fn ac_metadata_read(path: *const c_char, meta: *mut AcMetadata) -> c_int {
     if path.is_null() || meta.is_null() {
-        return -1;
+        return AcError::InvalidParam as c_int;
     }
     let p = Path::new(cstr_to_str(path));
     match decoder::read_metadata(p) {
         Ok(md) => {
             let out = &mut *meta;
-            write_cstr_opt(&mut out.title, &md.title);
-            write_cstr_opt(&mut out.artist, &md.artist);
-            write_cstr_opt(&mut out.album, &md.album);
-            write_cstr_opt(&mut out.genre, &md.genre);
+            out.title_len = write_cstr_raw_opt(out.title, out.title_cap, &md.title);
+            out.artist_len = write_cstr_raw_opt(out.artist, out.artist_cap, &md.artist);
+            out.album_len = write_cstr_raw_opt(out.album, out.album_cap, &md.album);
+            out.genre_len = write_cstr_raw_opt(out.genre, out.genre_cap, &md.genre);
             out.year = md.year.unwrap_or(0) as c_int;
             out.track_number = md.track_number.unwrap_or(0) as c_int;
             out.disc_number = md.disc_number.unwrap_or(0) as c_int;
             out.duration_secs = md.duration_secs;
             out.has_cover = md.has_cover as c_int;
-            0
+            AcError::Ok as c_int
         }
-        Err(_) => -1,
+        Err(_) => AcError::DecodeFailed as c_int,
     }
 }
 
 /// 读取内嵌封面图像。返回原始字节（JPEG/PNG），调用方需用 ac_cover_free 释放。
-/// 成功时写入 out_data 和 out_len，返回 0。失败返回非 0。
+/// 成功时写入 out_data 和 out_len，返回 AcError_Ok。失败返回对应错误码。
 #[no_mangle]
 pub unsafe extern "C" fn ac_cover_read(
     path: *const c_char,
@@ -859,21 +894,19 @@ pub unsafe extern "C" fn ac_cover_read(
     out_len: *mut c_int,
 ) -> c_int {
     if path.is_null() || out_data.is_null() || out_len.is_null() {
-        return -1;
+        return AcError::InvalidParam as c_int;
     }
     let p = Path::new(cstr_to_str(path));
     match decoder::read_cover(p) {
         Ok(bytes) => {
             let len = bytes.len();
-            // 泄漏 Vec 的堆内存，通过 out_data 返回指针
             let mut boxed = bytes.into_boxed_slice();
             *out_data = boxed.as_mut_ptr();
             *out_len = len as c_int;
-            // 阻止 drop，调用方负责 ac_cover_free
             std::mem::forget(boxed);
-            0
+            AcError::Ok as c_int
         }
-        Err(_) => -1,
+        Err(_) => AcError::DecodeFailed as c_int,
     }
 }
 
@@ -891,7 +924,7 @@ pub unsafe extern "C" fn ac_cover_free(data: *mut u8, len: c_int) {
 // ReplayGain 读取
 // ============================================================
 
-/// 读取 ReplayGain 标签。返回 0 成功，-1 失败。
+/// 读取 ReplayGain 标签。返回 AcError。
 /// track_gain_db / album_gain_db 为 dB 值（如 -5.23），无标签时为 0.0。
 /// has_track_gain / has_album_gain 指示对应值是否有效。
 #[no_mangle]
@@ -904,7 +937,7 @@ pub unsafe extern "C" fn ac_replaygain_read(
 ) -> c_int {
     if path.is_null() || track_gain_db.is_null() || album_gain_db.is_null()
         || has_track_gain.is_null() || has_album_gain.is_null()
-    { return -1; }
+    { return AcError::InvalidParam as c_int; }
     let p = Path::new(cstr_to_str(path));
     match decoder::read_replaygain(p) {
         Ok(rg) => {
@@ -912,9 +945,9 @@ pub unsafe extern "C" fn ac_replaygain_read(
             *album_gain_db = rg.album_gain_db.unwrap_or(0.0);
             *has_track_gain = rg.track_gain_db.is_some() as c_int;
             *has_album_gain = rg.album_gain_db.is_some() as c_int;
-            0
+            AcError::Ok as c_int
         }
-        Err(_) => -1,
+        Err(_) => AcError::DecodeFailed as c_int,
     }
 }
 
@@ -922,14 +955,14 @@ pub unsafe extern "C" fn ac_replaygain_read(
 // 音频分析
 // ============================================================
 
-/// 分析音频文件（BPM / 调性 / 能量）。返回 0 成功，-1 失败。
+/// 分析音频文件（BPM / 调性 / 能量）。返回 AcError。
 #[no_mangle]
 pub unsafe extern "C" fn ac_analyze_file(
     path: *const c_char,
     result: *mut AcAnalysis,
 ) -> c_int {
     if path.is_null() || result.is_null() {
-        return -1;
+        return AcError::InvalidParam as c_int;
     }
     let p = Path::new(cstr_to_str(path));
     match analysis::analyze_file(p) {
@@ -938,9 +971,9 @@ pub unsafe extern "C" fn ac_analyze_file(
             out.bpm = ar.bpm.unwrap_or(0.0);
             write_cstr_opt(&mut out.key, &ar.key);
             out.energy = ar.energy.unwrap_or(0.0);
-            0
+            AcError::Ok as c_int
         }
-        Err(_) => -1,
+        Err(_) => AcError::DecodeFailed as c_int,
     }
 }
 
@@ -998,14 +1031,14 @@ pub unsafe extern "C" fn ac_list_output_devices(
 
 /// 开始流式播放。平台层负责网络 I/O，通过 ac_stream_write 写入数据。
 /// format_hint 为格式提示（如 "mp3", "flac", "aac"），传 null 则自动探测。
-/// 返回 0 成功，-1 失败。
+/// 返回 AcError。
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_play_stream(
     engine: *mut c_void,
     format_hint: *const c_char,
 ) -> c_int {
     if engine.is_null() {
-        return -1;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     let hint = if format_hint.is_null() {
@@ -1015,7 +1048,6 @@ pub unsafe extern "C" fn ac_engine_play_stream(
         if s.is_empty() { None } else { Some(s.to_string()) }
     };
 
-    // 创建 oneshot channel 接收 StreamHandle
     let (handle_tx, handle_rx) = crossbeam_channel::bounded(1);
     let shared_tx = std::sync::Arc::new(handle_tx);
 
@@ -1027,13 +1059,12 @@ pub unsafe extern "C" fn ac_engine_play_stream(
     };
     let _ = e.handle.tx.send(cmd);
 
-    // 等待引擎线程返回 StreamHandle（最多 3 秒）
     match handle_rx.recv_timeout(Duration::from_secs(3)) {
         Ok(sh) => {
             *e.stream_handle.lock() = Some(sh);
-            0
+            AcError::Ok as c_int
         }
-        Err(_) => -1,
+        Err(_) => AcError::EngineNotReady as c_int,
     }
 }
 
@@ -1059,14 +1090,15 @@ pub unsafe extern "C" fn ac_stream_write(
     }
 }
 
-/// 通知流式播放数据已结束（EOF）。
+/// 通知流式播放数据已结束（EOF）。返回 AcError。
 #[no_mangle]
-pub unsafe extern "C" fn ac_stream_eof(engine: *mut c_void) {
+pub unsafe extern "C" fn ac_stream_eof(engine: *mut c_void) -> c_int {
     if engine.is_null() {
-        return;
+        return AcError::InvalidParam as c_int;
     }
     let e = &*(engine as *const AcEngine);
     if let Some(sh) = e.stream_handle.lock().as_ref() {
         sh.signal_eof();
     }
+    AcError::Ok as c_int
 }

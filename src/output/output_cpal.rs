@@ -16,7 +16,7 @@ use ringbuf::traits::{Consumer, Split};
 use ringbuf::HeapRb;
 use tracing::{error, info, warn};
 
-use crate::output::{AudioOutput, AudioOutputInner, PcmProducer};
+use crate::output::{AudioOutput, AudioOutputInner, DeviceConfig, OutputDeviceInfo, PcmProducer, SampleFormat};
 
 /// cpal 音频输出句柄
 pub struct AudioOutputCpal {
@@ -178,6 +178,80 @@ pub(crate) fn list_device_names() -> Vec<String> {
             .collect(),
         Err(_) => Vec::new(),
     }
+}
+
+/// 枚举输出设备（通过 cpal），含格式探测
+pub(crate) fn enumerate_devices() -> Vec<OutputDeviceInfo> {
+    let host = cpal::default_host();
+    let Ok(device_iter) = host.devices() else { return vec![] };
+    let default_device = host.default_output_device();
+    let common_rates = [44100u32, 48000, 88200, 96000, 176400, 192000];
+
+    let mut result = Vec::new();
+    for device in device_iter {
+        let Ok(name) = device.name() else { continue };
+        let Ok(config_ranges) = device.supported_output_configs() else { continue };
+
+        let mut configs = Vec::new();
+        let mut seen = Vec::new();
+        for cr in config_ranges {
+            let sample_format = match cr.sample_format() {
+                cpal::SampleFormat::F32 => SampleFormat::F32,
+                cpal::SampleFormat::I16 => SampleFormat::I16,
+                cpal::SampleFormat::U16 => SampleFormat::I16,
+                cpal::SampleFormat::I32 => SampleFormat::I32,
+                _ => continue,
+            };
+            let channels = cr.channels();
+            let min_rate = cr.min_sample_rate().0;
+            let max_rate = cr.max_sample_rate().0;
+            let bit_depth = match sample_format {
+                SampleFormat::I16 => 16,
+                SampleFormat::I24 => 24,
+                SampleFormat::I32 | SampleFormat::F32 => 32,
+            };
+            for &rate in &common_rates {
+                if rate >= min_rate && rate <= max_rate {
+                    let key = (rate, bit_depth, channels, sample_format as u8);
+                    if !seen.contains(&key) {
+                        seen.push(key);
+                        configs.push(DeviceConfig {
+                            sample_rate: rate,
+                            bit_depth,
+                            channels,
+                            sample_format,
+                            exclusive: false,
+                        });
+                    }
+                }
+            }
+        }
+        if configs.is_empty() {
+            for &rate in &[44100u32, 48000, 96000, 192000] {
+                configs.push(DeviceConfig {
+                    sample_rate: rate,
+                    bit_depth: 32,
+                    channels: 2,
+                    sample_format: SampleFormat::F32,
+                    exclusive: false,
+                });
+            }
+        }
+
+        let is_default = default_device.as_ref()
+            .and_then(|d| d.name().ok())
+            .map(|n| n == name)
+            .unwrap_or(false);
+
+        result.push(OutputDeviceInfo {
+            id: name.clone(),
+            name,
+            is_default,
+            is_usb: false,
+            configs,
+        });
+    }
+    result
 }
 
 /// cpal 内部打开函数，output::open() 封装后暴露出去
