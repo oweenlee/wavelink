@@ -68,3 +68,21 @@ jobs:
 
       - name: Clippy
         run: cargo clippy -- -D warnings
+
+  fuzz:
+    name: Fuzz (30s)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Fuzz DSP pipeline
+        run: cargo fuzz run dsp -- -max_total_time=30
+
+      - name: Fuzz Symphonia probe
+        run: cargo fuzz run symphonia -- -max_total_time=30
