@@ -39,7 +39,7 @@ symphonia = { version = "0.6", default-features = false, features = [
     "mp3", "flac", "pcm", "vorbis", "aac", "alac", "isomp4", "ogg", "wav", "aiff"
 ] }
 symphonia-adapter-oporus = "0.1"
-wavpack-rs = { git = "https://github.com/lexicone42/wavpack-rs" }
+wavpack-rs = { git = "https://github.com/lexicone42/wavpack-rs", rev = "009766e5d06a6072f3b95a268d73089abd2726ed" }
 rubato = "0.10"
 dsd-reader = "0.3"
 

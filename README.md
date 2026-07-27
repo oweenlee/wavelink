@@ -78,7 +78,7 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → cpal �
 ```rust
 use audio_core::{EngineConfig, EngineHandle};
 
-// 默认: 44100Hz / 2ch / 160ms 缓冲 / 0ms 淡入
+// 默认: 44100Hz / 2ch / 280ms 缓冲 / 0ms 淡入
 let (engine, events) = EngineHandle::start();
 
 // 自定义
