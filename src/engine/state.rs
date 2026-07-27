@@ -19,18 +19,6 @@ use crate::output::{AudioOutput, AudioOutputInner};
 use crate::stream::StreamHandle;
 use crate::EngineConfig;
 
-/// 协商最优输出采样率：文件原始率 > 设备支持列表中最近的
-pub(crate) fn negotiate_sample_rate(file_sr: u32, supported: &[u32]) -> u32 {
-    if supported.contains(&file_sr) {
-        return file_sr;
-    }
-    // 找最接近的支持采样率
-    supported.iter()
-        .min_by_key(|&&r| (r as i64 - file_sr as i64).unsigned_abs())
-        .copied()
-        .unwrap_or(file_sr)
-}
-
 /// 引擎内部运行状态（只存在于引擎线程）
 pub struct EngineState {
     pub(crate) config: EngineConfig,
@@ -179,66 +167,17 @@ impl EngineState {
         };
         self.duration_us.store(dur, Ordering::Release);
 
-        // 复用已有 audio output（仅首次创建），避免重建 cpal stream
-        let (pcm, actual_sr, actual_ch) = if let Some(ref mut output) = self.output {
-            // 采样率自适应 / bit-perfect 强制精确匹配
-            let need_auto_sr = self.config.auto_sample_rate || self.config.bit_perfect;
-            if need_auto_sr {
-                let file_sr = if self.config.bit_perfect { Some(sr) } else { crate::decoder::probe_sample_rate(&path_buf) };
-                if let Some(file_sr) = file_sr {
-                    let supported = output.supported_sample_rates();
-                    let target_sr = negotiate_sample_rate(file_sr, &supported);
-                    if target_sr != self.output_sample_rate {
-                        match output.set_sample_rate(target_sr) {
-                            Ok(new_sr) => {
-                                self.output_sample_rate = new_sr;
-                                if let Some(ref shared) = self.output_sample_rate_shared {
-                                    shared.store(new_sr, Ordering::Release);
-                                }
-                                if target_sr != file_sr {
-                                    warn!("bit-perfect: 采样率 {}Hz 设备不支持，使用 {}Hz", file_sr, new_sr);
-                                }
-                                info!("采样率自适应: 文件={}Hz, 输出切换为={}Hz", file_sr, new_sr);
-                            }
-                            Err(e) => {
-                                warn!("采样率切换失败，保持当前: {e}");
-                            }
-                        }
-                    }
-                }
-            }
-            if self.config.bit_perfect && source_bit_depth > 0 {
-                output.set_bit_depth(source_bit_depth);
-            }
-            let out_sr = self.output_sample_rate;
-            let out_ch = self.config.channels;
-            (output.swap_consumer(self.config.buffer_ms, out_sr, out_ch), out_sr, out_ch)
-        } else {
-            // 独占模式：首次打开输出时获取
-            if self.config.exclusive_mode {
-                crate::exclusive::acquire_exclusive_mode();
-                self.exclusive_mode_acquired = true;
-            }
-            match crate::output::open(ch, sr, self.config.buffer_ms, self.config.output_device.as_deref(), source_bit_depth) {
-                Ok((output, prod, inner, actual_rate)) => {
-                    self.output_inner = Some(inner);
-                    if self.config.bit_perfect && actual_rate != sr {
-                        warn!("bit-perfect: 请求采样率 {}Hz, 实际得到 {}Hz", sr, actual_rate);
-                    }
-                    self.output = Some(output);
-                    self.output_sample_rate = actual_rate;
-                    self.sync_output_sample_rate();
-                    self.sync_output_inner();
-                    (prod, actual_rate, ch)
-                }
-                Err(e) => {
-                    error!("打开音频输出失败: {e}");
-                    self.emit(EngineEvent::Error(format!("打开音频输出失败: {e}")));
+        // 复用已有或打开新 output
+        let (pcm, actual_sr, actual_ch) =
+            match super::output_setup::setup_output_for_entry(
+                self, &path_buf, ch, sr, source_bit_depth,
+            ) {
+                Ok(setup) => (setup.pcm, setup.actual_sr, setup.actual_ch),
+                Err(()) => {
                     self.advance_queue();
                     return;
                 }
-            }
-        };
+            };
 
         let (rx, decoder) = match Decoder::start(
             &path_buf, actual_sr, actual_ch, self.position.clone(),
