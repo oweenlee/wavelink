@@ -25,14 +25,32 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
 
-      - name: Cargo check
-        run: cargo check --all-features
+      - name: Cargo check (default)
+        run: cargo check
 
       - name: Cargo test
         run: cargo test
 
-      - name: Cargo check (FFI feature)
+      - name: Cargo check (FFI)
         run: cargo check --features ffi
+
+  platform:
+    name: Platform backends
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            features: audiounit-backend,ffi
+          - os: windows-latest
+            features: wasapi-backend,ffi
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux audio dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - run: cargo check --features "${{ matrix.features }}"
 
   clippy:
     name: Clippy
