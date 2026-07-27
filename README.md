@@ -6,7 +6,7 @@
 纯 Rust 音频引擎。零 C 依赖，macOS/Windows/Linux/Android/iOS 均可编译。
 
 ```
-Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → cpal 输出
+Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → 输出 (cpal / WASAPI / AudioUnit / Oboe)
 ```
 
 ## 架构
@@ -16,7 +16,7 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → cpal �
 │  解码线程                                                     │
 │  Symphonia: mp3/flac/wav/ogg/aac/m4a/aiff/opus               │
 │  DSD 直解: dsf/dff (3 级 sinc 降采样)                         │
-│  WavPack 直解: wv                                             │
+│  WavPack: wv (TODO: symphonia 发版后恢复, 见 #WavPack)           │
 │  rubato 异步重采样 (BlackmanHarris2, -120dB aliasing)          │
 │  声道混音: 多声道 → 立体声/单声道                                │
 └──────────────┬───────────────────────────────────────────────┘
@@ -44,10 +44,14 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → cpal �
 └──────────────┬───┘                                            │
                ▼                                                │
 ┌──────────────────────────────────────────────────────────────┐
-│  cpal 音频回调 (硬实时)                                        │
-│  Mutex<HeapCons> → 输出到默认设备                               │
-│  underrun 检测 + 计数                                          │
-│  swap_consumer: seek 时不重建 cpal stream                       │
+│  输出后端 (平台自适应)                                          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐         │
+│  │ cpal     │ │WASAPI    │ │AudioUnit │ │ Oboe     │         │
+│  │ (跨平台) │ │ (Win 独) │ │ (mac/iOS)│ │(Android) │         │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘         │
+│  Mutex<HeapCons> → 输出到设备                                   │
+│  underrun 检测 + 计数 | swap_consumer: seek 不重建 stream        │
+│  设备热插拔检测 + 自动恢复 | 独占模式 (Hog / WASAPI Exclusive)    │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -55,7 +59,7 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → cpal �
 
 | 模块 | 说明 |
 |------|------|
-| `decoder` | Symphonia 流式解码 + DSD + WavPack；rubato 异步 SRC；声道混音；seek；`decode_to_memory` |
+| `decoder` | Symphonia 流式解码 + DSD；rubato 异步 SRC；声道混音；seek；`decode_to_memory` (WavPack TODO: symphonia 发版后恢复) |
 | `dsp::biquad` | IIR 双二阶 (RBJ cookbook: peaking/lowpass/highpass/shelving) |
 | `dsp::convolver` | FIR 分区卷积 (fft-convolver) |
 | `dsp::crossfeed` | Bauer 算法耳机串音模拟 |
@@ -64,10 +68,11 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → cpal �
 | `dsp::dither` | TPDF 抖动 (声道独立噪声序列) |
 | `dsp::pipeline` | `DspPipeline` 串联所有滤波器；10 种 EQ 预设；运行时调参 |
 | `engine` | Actor 模型引擎线程；队列 + 4 种播放模式 + 无缝预加载 + CUE 分轨虚拟队列 + 交叉淡入 + 实时频谱 + 实时电平 + 变速播放 + 会话管理 + 坏帧保护 + 排他模式状态跟踪 |
-| `output` | cpal 输出 + `swap_consumer` + 采样率 fallback + underrun 计数 |
+| `output` | 多后端输出 (cpal / WASAPI / AudioUnit / Oboe) + `swap_consumer` + 采样率 fallback + underrun 计数 + 设备枚举 + 设备热插拔监视 + 输出决策 |
 | `analysis` | BPM (自相关) + 调性 (Chromagram + Krumhansl-Schmuckler) + 能量 |
 | `capture` | 音频输入捕获 (cpal 后端, 全局状态管理) |
 | `dsd` | DSD→PCM 转换 (3 级 sinc 降采样) |
+| `exclusive` | 独占模式：macOS Hog Mode / WASAPI Exclusive |
 | `cue` | CUE 分轨解析 (parse_cue / CueSheet / CueTrack) |
 | `playlist` | M3U/M3U8/PLS 播放列表解析 |
 | `stream` | 网络流媒体数据源：`StreamMediaSource`（Symphonia MediaSource）+ `StreamHandle`，平台层写入字节流，core 解码 |
@@ -86,7 +91,11 @@ let config = EngineConfig {
     sample_rate: 96000,
     channels: 2,
     buffer_ms: 80,
-    crossfade_ms: 50,  // 0 = 真无间隙播放
+    crossfade_ms: 50,       // 0 = 真·无间隙播放
+    output_device: None,    // None = 系统默认设备
+    auto_sample_rate: true, // 自动匹配文件采样率到输出设备
+    exclusive_mode: false,  // WASAPI Exclusive / macOS Hog Mode
+    bit_perfect: false,     // 绕过 DSP，精确匹配源格式
 };
 let (engine, events) = EngineHandle::start_with_config(config);
 ```
@@ -95,6 +104,10 @@ let (engine, events) = EngineHandle::start_with_config(config);
 `sample_rate` 只在需要绕过重采样（如"高解析模式"设 96000/192000）时修改，且输出设备必须支持。
 一般用户不需要改动。
 
+`bit_perfect: true` 时绕过整个 DSP 管线，输出采样率/位深精确匹配源文件（需输出设备支持）。
+
+`exclusive_mode: true` 请求独占音频设备（macOS Hog Mode / WASAPI Exclusive），其他应用无法播放声音。
+
 ## 功能清单
 
 | 功能 | 状态 |
@@ -102,7 +115,7 @@ let (engine, events) = EngineHandle::start_with_config(config);
 | **解码** | |
 | Symphonia: mp3/flac/wav/ogg/aac/m4a/aiff | ✅ |
 | Opus (symphonia-adapter-oporus) | ✅ |
-| WavPack (wv) | ✅ |
+| WavPack (wv) | ⏳ TODO: symphonia 发版后恢复 (feature `wavpack`) |
 | DSD (dsf/dff) | ✅ |
 | rubato 异步 SRC (-120dB aliasing) | ✅ |
 | 声道混音 (多声道→立体声/单声道) | ✅ |
@@ -125,15 +138,19 @@ let (engine, events) = EngineHandle::start_with_config(config);
 | 播放/暂停/恢复/停止/Seek | ✅ |
 | 队列管理 + 4 种播放模式 | ✅ |
 | 无缝预加载 + 交叉淡入 | ✅ |
-| 变速播放 (0.5x~2.0x) | ✅ |
-| Seek 复用 cpal 流 (~20ms) | ✅ |
-| 可配置采样率/声道/缓冲/淡入 | ✅ |
+| 变速播放 (0.25x~4.0x) | ✅ |
+| Seek 复用 stream (~20ms) | ✅ |
+| 可配置采样率/声道/缓冲/淡入/输出设备/独占/bit-perfect | ✅ |
 | 采样率 fallback | ✅ |
 | 实时频谱 (16 频段, FFT) | ✅ |
 | 实时电平表 (RMS/Peak/Clipping) | ✅ |
 | 坏帧保护 | ✅ |
 | underrun 计数 | ✅ |
 | 上一首/下一首 | ✅ |
+| Bit-perfect 模式 (绕过 DSP, 精确匹配源格式) | ✅ |
+| 独占模式 (macOS Hog / WASAPI Exclusive) | ✅ |
+| 设备热插拔检测 + 自动恢复 | ✅ |
+| 多后端输出 (cpal / WASAPI / AudioUnit / Oboe) | ✅ |
 | 音频输入捕获 (cpal 录音) | ✅ |
 | 会话中断管理 (iOS 音频打断) | ✅ |
 | **分析** | |
@@ -170,13 +187,14 @@ let (engine, events) = EngineHandle::start_with_config(config);
 ## 测试
 
 ```bash
-cargo test -p audio-core    # 134 个测试 (单元 + 集成)
+cargo test -p audio-core    # 205 个测试 (单元 + 集成)
 cargo test -p audio-core -- --ignored  # 含 FFmpeg 依赖的格式验证
 ```
 
 ## 依赖
 
 核心: `symphonia` / `cpal` / `rubato` / `lofty` / `ringbuf` / `crossbeam-channel`
+平台后端: `WASAPI` (Windows) / `AudioUnit` (macOS/iOS) / `Oboe` (Android) / `coreaudio-sys` (macOS 设备枚举)
 
 ### 为什么没有 FFmpeg
 

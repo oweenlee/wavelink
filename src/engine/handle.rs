@@ -175,6 +175,10 @@ impl EngineHandle {
     pub fn set_speed(&self, speed: f32) {
         let _ = self.tx.send(EngineCommand::SetSpeed(speed));
     }
+    /// 动态调整输出缓冲时长（毫秒），实时生效。仅在 Oboe 后端受支持。
+    pub fn set_buffer_ms(&self, ms: u32) {
+        let _ = self.tx.send(EngineCommand::SetBufferMs(ms));
+    }
     /// 查询 underrun 计数
     pub fn underrun_count(&self) -> u64 {
         let (tx, rx) = bounded(1);

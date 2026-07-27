@@ -150,6 +150,8 @@ pub trait AudioOutput {
 
     /// 设置目标位深（仅部分后端生效，如 WASAPI Exclusive）。
     fn set_bit_depth(&mut self, _depth: u16) {}
+    /// 动态调整缓冲时长（毫秒），仅部分后端支持实时调整。
+    fn set_buffer_ms(&mut self, _ms: u32) {}
 }
 
 // ─── HeadlessOutput ──────────────────────────────────────────
@@ -324,7 +326,8 @@ pub fn enumerate_devices() -> Vec<OutputDeviceInfo> {
         return output_cpal::enumerate_devices();
     }
 
-    #[cfg(not(any(all(feature = "wasapi-backend", target_os = "windows"), target_os = "macos", all(feature = "oboe-backend", target_os = "android"), feature = "cpal-backend")))]
+    // macOS 无 cpal 时 fallback 到空（CoreAudio 本身已处理）
+    #[cfg(not(any(all(feature = "wasapi-backend", target_os = "windows"), all(feature = "oboe-backend", target_os = "android"), feature = "cpal-backend")))]
     Vec::new()
 }
 

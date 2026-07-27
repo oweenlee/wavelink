@@ -80,14 +80,6 @@ fn test_wav_48k() {
 }
 
 #[test]
-fn test_wavpack() {
-    let a = common::ensure_fixtures();
-    if let Ok((cnt, _)) = decode_count(&a.wavpack) {
-        assert!(cnt > 10_000, "WavPack samples: {cnt}");
-    }
-}
-
-#[test]
 fn test_aiff() {
     let a = common::ensure_fixtures();
     if let Ok((cnt, _)) = decode_count(&a.aiff) {

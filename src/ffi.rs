@@ -697,6 +697,17 @@ pub unsafe extern "C" fn ac_engine_duration(engine: *const c_void) -> c_double {
     e.handle.duration_secs()
 }
 
+/// 动态调整输出缓冲时长（毫秒），实时生效。仅 Oboe 后端支持。返回 AcError。
+#[no_mangle]
+pub unsafe extern "C" fn ac_engine_set_buffer_ms(engine: *mut c_void, ms: c_int) -> c_int {
+    if engine.is_null() {
+        return AcError::InvalidParam as c_int;
+    }
+    let e = &*(engine as *const AcEngine);
+    e.handle.set_buffer_ms(ms.max(0) as u32);
+    AcError::Ok as c_int
+}
+
 /// 设置播放速度（0.25 ~ 4.0），1.0 = 正常。返回 AcError。
 #[no_mangle]
 pub unsafe extern "C" fn ac_engine_set_speed(engine: *mut c_void, speed: c_float) -> c_int {

@@ -89,6 +89,8 @@ pub enum EngineCommand {
     SetOutputDevice(String, CmdAck),
     /// 设置播放速度（0.25 ~ 4.0），1.0 = 正常
     SetSpeed(f32),
+    /// 动态调整输出缓冲时长（毫秒），实时生效
+    SetBufferMs(u32),
     /// 查询 underrun 计数（通过 oneshot channel 返回）
     QueryUnderrunCount(Sender<u64>),
     /// 开始音频输入捕获

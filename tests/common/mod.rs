@@ -15,7 +15,6 @@ pub struct TestAudio {
     pub ogg: String,
     pub m4a: String,
     pub wav_48k: String,
-    pub wavpack: String,
     pub aiff: String,
 }
 
@@ -24,7 +23,7 @@ impl TestAudio {
     pub fn all_paths(&self) -> Vec<&str> {
         vec![
             &self.wav, &self.mp3, &self.flac, &self.ogg, &self.m4a,
-            &self.wav_48k, &self.wavpack, &self.aiff,
+            &self.wav_48k, &self.aiff,
         ]
     }
 }
@@ -38,7 +37,6 @@ pub fn ensure_fixtures() -> TestAudio {
         try_convert("/tmp/test_tone.wav", "/tmp/test_flac.flac");
         try_convert_ogg("/tmp/test_tone.wav", "/tmp/test_opus.opus");
         try_convert("/tmp/test_tone.wav", "/tmp/test_aac.m4a");
-        try_convert("/tmp/test_tone.wav", "/tmp/test_wavpack.wv");
         try_convert("/tmp/test_tone.wav", "/tmp/test_aiff.aiff");
     });
 
@@ -49,7 +47,6 @@ pub fn ensure_fixtures() -> TestAudio {
         ogg: "/tmp/test_opus.opus".into(),
         m4a: "/tmp/test_aac.m4a".into(),
         wav_48k: "/tmp/test_48k.wav".into(),
-        wavpack: "/tmp/test_wavpack.wv".into(),
         aiff: "/tmp/test_aiff.aiff".into(),
     }
 }

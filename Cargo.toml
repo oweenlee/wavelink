@@ -14,7 +14,7 @@ wasapi-backend = []
 
 [dependencies]
 cpal = { version = "0.15", optional = true }
-oboe = { version = "0.6", optional = true }
+oboe = { version = "0.6", features = ["java-interface"], optional = true }
 coreaudio-sys = { version = "0.2", optional = true }
 crossbeam-channel = "0.5"
 ringbuf = "0.4"
@@ -39,7 +39,6 @@ symphonia = { version = "0.6", default-features = false, features = [
     "mp3", "flac", "pcm", "vorbis", "aac", "alac", "isomp4", "ogg", "wav", "aiff"
 ] }
 symphonia-adapter-oporus = "0.1"
-wavpack-rs = { git = "https://github.com/lexicone42/wavpack-rs", rev = "009766e5d06a6072f3b95a268d73089abd2726ed" }
 rubato = "0.10"
 dsd-reader = "0.3"
 

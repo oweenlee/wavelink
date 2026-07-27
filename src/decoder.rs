@@ -1,7 +1,7 @@
 //! 解码器（Symphonia 流式解码 + DSD 文件直解）
 
 use std::fs::File;
-use std::io::BufReader;
+
 use std::path::Path;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -201,13 +201,10 @@ fn run(
     _position: Arc<AtomicU64>, seek_pos: Option<f64>,
     end_secs: Option<f64>,
 ) {
-    // 绕过 Symphonia 直解：DSD / WavPack
+    // 绕过 Symphonia 直解：DSD
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         if ext.eq_ignore_ascii_case("dsf") || ext.eq_ignore_ascii_case("dff") {
             return run_dsd(path, target_rate, target_ch, tx, stop_rx, seek_pos, end_secs);
-        }
-        if ext.eq_ignore_ascii_case("wv") {
-            return run_wavpack(path, target_rate, target_ch, tx, stop_rx, seek_pos, end_secs);
         }
     }
 
@@ -801,105 +798,7 @@ fn mix_channels(pcm: &[f32], in_ch: usize, out_ch: usize) -> Vec<f32> {
 
 // ── WavPack 解码 ──────────────────────────────────────────────────────
 
-fn run_wavpack(
-    path: &Path, target_rate: u32, target_ch: u32,
-    tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
-    seek_pos: Option<f64>,
-    end_secs: Option<f64>,
-) {
-    let file = match File::open(path) {
-        Ok(f) => f, Err(e) => { warn!("打开 WavPack 失败: {e}"); return; }
-    };
-    let mut reader = match wavpack_rs::WavPackReader::new(BufReader::new(file)) {
-        Ok(r) => r, Err(e) => { warn!("WavPack 解析失败: {e}"); return; }
-    };
-    let info = reader.info();
-    let src_rate = info.sample_rate as u32;
-    let src_ch = info.channels as usize;
-    let out_ch = target_ch as usize;
-    info!("WavPack 流式解码: {} ({}Hz, {}ch, {}bit)", path.display(), src_rate, src_ch, info.bits_per_sample);
 
-    let max_val = (1i64 << (info.bits_per_sample - 1)) as f32;
-
-    // Seek：跳过前 N 个样本
-    let skip_samples: usize = if let Some(secs) = seek_pos {
-        (secs * src_rate as f64) as usize * src_ch
-    } else {
-        0
-    };
-
-    // end_secs 截止
-    let max_output_frames: Option<u64> = if let Some(end) = end_secs {
-        let start = seek_pos.unwrap_or(0.0);
-        let dur = end - start;
-        if dur > 0.0 { Some((dur * src_rate as f64) as u64) } else { None }
-    } else {
-        None
-    };
-
-    // 重采样器
-    let mut resampler = create_resampler(src_rate, target_rate, out_ch);
-    let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
-    let mut pts = 0.0f64;
-    let mut output_frames: u64 = 0;
-
-    // 流式读取：每次累积 4096 帧的样本，然后处理并发送
-    const BATCH_FRAMES: usize = 4096;
-    let batch_samples = BATCH_FRAMES * src_ch;
-    let mut batch: Vec<f32> = Vec::with_capacity(batch_samples);
-    let mut skipped: usize = 0;
-
-    for result in reader.samples() {
-        if stop_rx.try_recv().is_ok() { return; }
-
-        let sample = match result {
-            Ok(s) => s,
-            Err(e) => { warn!("WavPack 解码错误: {e}"); return; }
-        };
-
-        // Seek 跳过
-        if skipped < skip_samples {
-            skipped += 1;
-            continue;
-        }
-
-        batch.push(sample as f32 / max_val);
-
-        // 每累积够一批就处理发送
-        if batch.len() >= batch_samples {
-            let mixed = mix_channels(&batch, src_ch, out_ch);
-            batch.clear();
-
-            // end_secs 截断
-            let mixed = if let Some(max_f) = max_output_frames {
-                let remaining = max_f.saturating_sub(output_frames);
-                let allowed = remaining as usize * out_ch;
-                if mixed.len() > allowed { mixed[..allowed].to_vec() } else { mixed }
-            } else {
-                mixed
-            };
-            if mixed.is_empty() { break; }
-
-            // 重采样或直发
-            pts = resample_and_send(&mixed, &mut resampler, &mut rubato_buf,
-                out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
-
-            output_frames += (mixed.len() / out_ch) as u64;
-            if let Some(max_f) = max_output_frames {
-                if output_frames >= max_f { break; }
-            }
-        }
-    }
-
-    // 处理剩余不足一批的样本
-    if !batch.is_empty() && stop_rx.try_recv().is_err() {
-        let mixed = mix_channels(&batch, src_ch, out_ch);
-        if !mixed.is_empty() {
-            let _ = resample_and_send(&mixed, &mut resampler, &mut rubato_buf,
-                out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

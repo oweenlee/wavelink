@@ -242,6 +242,28 @@ impl AudioOutput for AudioOutputOboe {
     fn set_bit_depth(&mut self, depth: u16) {
         self.bit_depth = depth;
     }
+
+    fn set_buffer_ms(&mut self, ms: u32) {
+        if ms == self.buffer_ms {
+            return;
+        }
+        let old = self.buffer_ms;
+        self.buffer_ms = ms;
+        info!("Oboe 缓冲调整: {}ms → {}ms", old, ms);
+        // 重建 ringbuf + stream 以应用新缓冲大小
+        let buf_samples = (self.sample_rate as f32 * ms as f32 / 1000.0) as usize * self.channels as usize;
+        let rb = HeapRb::<f32>::new(buf_samples.max(64));
+        let (_prod, new_cons) = rb.split();
+        {
+            let mut guard = self.inner.consumer.lock();
+            guard.clear();
+            *guard = new_cons;
+        }
+        if let Err(e) = rebuild_stream(self) {
+            error!("Oboe 重建 stream 失败 (缓冲调整): {}", e);
+            self.buffer_ms = old; // 回退
+        }
+    }
 }
 
 // ─── open_inner ──────────────────────────────────────────────
@@ -309,39 +331,116 @@ pub(crate) fn open_inner(
     ))
 }
 
+// ─── set_buffer_ms ───────────────────────────────────────────
+
+/// 重建 Oboe stream 并替换缓冲 + 消费者
+fn rebuild_stream(output: &mut AudioOutputOboe) -> Result<(), String> {
+    let formats = negotiate_formats(output.channels as u16, output.sample_rate, output.bit_depth);
+    let mut last_err = String::new();
+
+    output.stream = None;
+    for &fmt in &formats {
+        match build_stream(
+            output.inner.clone(),
+            output.playing.clone(),
+            output.channels as i32,
+            output.sample_rate as i32,
+            output.exclusive,
+            fmt,
+        ) {
+            Ok((stream, actual_fmt)) => {
+                output.stream = Some(stream);
+                output.oboe_format = actual_fmt;
+                info!("Oboe stream 重建成功: {}Hz {:?} exclusive={}", output.sample_rate, actual_fmt, output.exclusive);
+                return Ok(());
+            }
+            Err(e) => {
+                last_err = e;
+            }
+        }
+    }
+    Err(format!("Oboe stream 重建失败: {}", last_err))
+}
+
 // ─── 设备枚举 ────────────────────────────────────────────────
 
+fn sr_config(sr: u32, depth: u8, fmt: crate::output::SampleFormat, exclusive: bool) -> crate::output::DeviceConfig {
+    crate::output::DeviceConfig { sample_rate: sr, bit_depth: depth, channels: 2, sample_format: fmt, exclusive }
+}
+
+fn push_configs(configs: &mut Vec<crate::output::DeviceConfig>, sr: u32, has_i16: bool, has_f32: bool, exclusive: bool) {
+    if has_i16 {
+        configs.push(sr_config(sr, 16, crate::output::SampleFormat::I16, exclusive));
+    }
+    if has_f32 {
+        configs.push(sr_config(sr, 32, crate::output::SampleFormat::F32, exclusive));
+    }
+}
+
 pub(crate) fn enumerate_devices() -> Vec<crate::output::OutputDeviceInfo> {
+    // 通过 Android Java API 枚举真实设备
+    match oboe::AudioDeviceInfo::request(oboe::AudioDeviceDirection::Output) {
+        Ok(info_list) => {
+            let mut devices = Vec::new();
+            for info in &info_list {
+                let sample_rates: Vec<u32> = if info.sample_rates.is_empty() {
+                    vec![44100, 48000]
+                } else {
+                    info.sample_rates.iter().map(|&r| r as u32).collect()
+                };
+                let has_i16 = info.formats.is_empty() || info.formats.contains(&oboe::AudioFormat::I16);
+                let has_f32 = info.formats.is_empty() || info.formats.contains(&oboe::AudioFormat::F32);
+
+                let is_usb = matches!(info.device_type,
+                    oboe::AudioDeviceType::UsbDevice |
+                    oboe::AudioDeviceType::UsbAccessory |
+                    oboe::AudioDeviceType::UsbHeadset
+                );
+                // 内置扬声器 or 唯一设备标记为默认
+                let is_default = info.device_type == oboe::AudioDeviceType::BuiltinSpeaker || devices.is_empty();
+
+                let mut configs = Vec::new();
+                for &sr in &sample_rates {
+                    push_configs(&mut configs, sr, has_i16, has_f32, true);
+                }
+                for &sr in &sample_rates {
+                    push_configs(&mut configs, sr, has_i16, has_f32, false);
+                }
+
+                // 去重
+                configs.sort_by(|a, b| a.sample_rate.cmp(&b.sample_rate).then(a.bit_depth.cmp(&b.bit_depth)));
+                configs.dedup();
+
+                devices.push(crate::output::OutputDeviceInfo {
+                    id: info.id.to_string(),
+                    name: info.product_name.clone(),
+                    is_default,
+                    is_usb,
+                    configs,
+                });
+            }
+            devices
+        }
+        Err(e) => {
+            warn!("Oboe 设备枚举失败 (回退硬编码): {}", e);
+            fallback_devices()
+        }
+    }
+}
+
+fn fallback_devices() -> Vec<crate::output::OutputDeviceInfo> {
     vec![crate::output::OutputDeviceInfo {
         id: "default".into(),
         name: "Android Audio Output".into(),
         is_default: true,
         is_usb: false,
         configs: vec![
-            crate::output::DeviceConfig {
-                sample_rate: 44100, bit_depth: 32, channels: 2,
-                sample_format: crate::output::SampleFormat::I32, exclusive: true,
-            },
-            crate::output::DeviceConfig {
-                sample_rate: 48000, bit_depth: 32, channels: 2,
-                sample_format: crate::output::SampleFormat::I32, exclusive: true,
-            },
-            crate::output::DeviceConfig {
-                sample_rate: 96000, bit_depth: 32, channels: 2,
-                sample_format: crate::output::SampleFormat::I32, exclusive: true,
-            },
-            crate::output::DeviceConfig {
-                sample_rate: 192000, bit_depth: 32, channels: 2,
-                sample_format: crate::output::SampleFormat::I32, exclusive: true,
-            },
-            crate::output::DeviceConfig {
-                sample_rate: 44100, bit_depth: 16, channels: 2,
-                sample_format: crate::output::SampleFormat::I16, exclusive: true,
-            },
-            crate::output::DeviceConfig {
-                sample_rate: 48000, bit_depth: 16, channels: 2,
-                sample_format: crate::output::SampleFormat::I16, exclusive: true,
-            },
+            sr_config(44100, 32, crate::output::SampleFormat::I32, true),
+            sr_config(48000, 32, crate::output::SampleFormat::I32, true),
+            sr_config(96000, 32, crate::output::SampleFormat::I32, true),
+            sr_config(192000, 32, crate::output::SampleFormat::I32, true),
+            sr_config(44100, 16, crate::output::SampleFormat::I16, true),
+            sr_config(48000, 16, crate::output::SampleFormat::I16, true),
         ],
     }]
 }

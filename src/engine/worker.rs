@@ -128,6 +128,12 @@ pub(crate) fn run_engine(
                             }
                             info!("引擎配置更新: {}/{}ch/{}ms", state.config.sample_rate, state.config.channels, state.config.buffer_ms);
                         },
+                        Ok(EngineCommand::SetBufferMs(ms)) => {
+                            if let Some(ref mut output) = state.output {
+                                output.set_buffer_ms(ms);
+                            }
+                            state.config.buffer_ms = ms;
+                        },
                         Ok(EngineCommand::SetSpeed(speed)) => state.set_speed(speed),
                         Ok(EngineCommand::SetPlayMode(mode)) => state.set_play_mode(mode),
                         Ok(EngineCommand::SetOutputDevice(dev, ack)) => {
