@@ -7,7 +7,7 @@
 
 mod common;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use parking_lot::Mutex;
 use std::thread;
@@ -60,7 +60,7 @@ fn test_real_wav_through_consumer() {
             &|| None,
             &s,
             ready_tx,
-            Arc::new(Mutex::new(1.0f32)),
+            Arc::new(AtomicU32::new(1.0f32.to_bits())),
         );
     });
 
@@ -120,7 +120,7 @@ fn test_consumer_output_count_matches() {
             &|| None,
             &s,
             ready_tx,
-            Arc::new(Mutex::new(1.0f32)),
+            Arc::new(AtomicU32::new(1.0f32.to_bits())),
         );
     });
 
@@ -177,7 +177,7 @@ fn test_48k_wav_through_consumer() {
             &|| None,
             &s,
             ready_tx,
-            Arc::new(Mutex::new(1.0f32)),
+            Arc::new(AtomicU32::new(1.0f32.to_bits())),
         );
     });
 
@@ -231,7 +231,7 @@ fn test_consumer_stop_during_decoding() {
             &|| None,
             &s,
             ready_tx,
-            Arc::new(Mutex::new(1.0f32)),
+            Arc::new(AtomicU32::new(1.0f32.to_bits())),
         );
     });
 
@@ -281,7 +281,7 @@ fn test_consumer_zero_timeout() {
             &|| None,
             &s,
             ready_tx,
-            Arc::new(Mutex::new(1.0f32)),
+            Arc::new(AtomicU32::new(1.0f32.to_bits())),
         );
     });
 
@@ -331,7 +331,7 @@ fn test_consumer_very_short_file() {
             rx, &config,
             &|buf| { *total_clone.lock() += buf.len(); buf.len() },
             &|_| {}, &|_| {}, &|| {}, &|_| {},
-            &|| None, &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
+            &|| None, &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
         );
     });
 
@@ -369,7 +369,7 @@ fn test_consumer_dsp_silences_output() {
             &|buf| { buf.len() },
             &|buf| { for s in buf.iter_mut() { *s = 0.0; } },
             &|_| {}, &|| {}, &|_| {},
-            &|| None, &s, ready_tx, Arc::new(Mutex::new(1.0f32)),
+            &|| None, &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
         );
     });
 

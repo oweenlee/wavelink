@@ -312,19 +312,8 @@ fn run(
 
         let in_ch = spec.channels().count();
 
-        // 声道混音
-        let in_frames = interleaved.len() / in_ch;
-        let mut mixed = Vec::with_capacity(in_frames * out_ch);
-        for f in 0..in_frames {
-            let off = f * in_ch;
-            if out_ch == 1 {
-                mixed.push(interleaved[off..off + in_ch].iter().sum::<f32>() / in_ch as f32);
-            } else {
-                let l = if in_ch >= 1 { interleaved[off] } else { 0.0 };
-                let r = if in_ch >= 2 { interleaved[off + 1] } else { l };
-                mixed.push(l); mixed.push(r);
-            }
-        }
+        // 声道混音（支持 5.1/7.1 正确 downmix）
+        let mixed = mix_channels(&interleaved, in_ch, out_ch);
 
         // rubato 异步 SRC + 发送
         let pts = packet.pts.get() as f64 / src_rate as f64;
@@ -402,18 +391,7 @@ fn run_from_stream(
         }
 
         let in_ch = spec.channels().count();
-        let in_frames = interleaved.len() / in_ch;
-        let mut mixed = Vec::with_capacity(in_frames * out_ch);
-        for f in 0..in_frames {
-            let off = f * in_ch;
-            if out_ch == 1 {
-                mixed.push(interleaved[off..off + in_ch].iter().sum::<f32>() / in_ch as f32);
-            } else {
-                let l = if in_ch >= 1 { interleaved[off] } else { 0.0 };
-                let r = if in_ch >= 2 { interleaved[off + 1] } else { l };
-                mixed.push(l); mixed.push(r);
-            }
-        }
+        let mixed = mix_channels(&interleaved, in_ch, out_ch);
 
         let pts = packet.pts.get() as f64 / src_rate as f64;
         let _ = resample_and_send(&mixed, &mut rubato_resampler, &mut rubato_buf,
@@ -424,9 +402,17 @@ fn run_from_stream(
 /// 将整个音频文件解码到内存，返回交错 PCM f32 样本。
 /// 适用于小文件（如音效、短片段）或离线分析。
 pub fn decode_to_memory(path: &Path, tr: u32, tc: u32) -> Result<Vec<f32>, String> {
+    /// 最大解码样本数（~2GB @f32），防止超大文件 OOM
+    const MAX_SAMPLES: usize = 512 * 1024 * 1024;
     let (rx, dec) = Decoder::start(path, tr, tc, Arc::new(AtomicU64::new(0)), None, None)?;
     let mut all = Vec::new();
-    while let Ok(f) = rx.recv_timeout(Duration::from_secs(10)) { all.extend(f.samples); }
+    while let Ok(f) = rx.recv_timeout(Duration::from_secs(10)) {
+        all.extend(f.samples);
+        if all.len() > MAX_SAMPLES {
+            dec.stop();
+            return Err(format!("文件过大，超过 {} 样本上限", MAX_SAMPLES));
+        }
+    }
     dec.stop();
     if all.is_empty() { Err("解码为空".into()) } else { Ok(all) }
 }
@@ -784,17 +770,49 @@ fn run_dsd(
 }
 
 /// 声道混音：将交错 PCM 从 in_ch 混到 out_ch
+///
+/// 多声道 downmix 按 ITU-R BS.775 标准：
+/// - 5.1 (FL FR FC LFE RL RR) → 2.0: L' = FL + 0.707*FC + 0.707*RL, R' = FR + 0.707*FC + 0.707*RR
+/// - 7.1 (FL FR FC LFE RL RR SL SR) → 2.0: L' = FL + 0.707*FC + 0.5*RL + 0.707*SL
+/// - 3.0+ (FL FR FC ...) → 2.0: L' = FL + 0.707*FC, R' = FR + 0.707*FC
+/// - 单声道输出：所有声道等权平均
 fn mix_channels(pcm: &[f32], in_ch: usize, out_ch: usize) -> Vec<f32> {
     if in_ch == out_ch { return pcm.to_vec(); }
     let in_frames = pcm.len() / in_ch;
     let mut mixed = Vec::with_capacity(in_frames * out_ch);
-    for f in 0..in_frames {
-        let off = f * in_ch;
-        if out_ch == 1 {
+
+    if out_ch == 1 {
+        // 单声道：所有声道等权平均
+        for f in 0..in_frames {
+            let off = f * in_ch;
             mixed.push(pcm[off..off + in_ch].iter().sum::<f32>() / in_ch as f32);
-        } else {
+        }
+    } else if in_ch <= 2 {
+        // 单声道→立体声 或 已经是立体声
+        for f in 0..in_frames {
+            let off = f * in_ch;
             let l = if in_ch >= 1 { pcm[off] } else { 0.0 };
             let r = if in_ch >= 2 { pcm[off + 1] } else { l };
+            mixed.push(l);
+            mixed.push(r);
+        }
+    } else {
+        // 多声道 → 立体声 downmix (ITU-R BS.775)
+        const C: f32 = 0.707; // 中置/环绕衰减 -3dB
+        const S: f32 = 0.5;   // 侧环绕衰减 -6dB (7.1)
+        for f in 0..in_frames {
+            let off = f * in_ch;
+            let fl = pcm[off];
+            let fr = if in_ch >= 2 { pcm[off + 1] } else { fl };
+            let fc = if in_ch >= 3 { pcm[off + 2] } else { 0.0 };
+            // ch[3] = LFE，丢弃
+            let rl = if in_ch >= 5 { pcm[off + 4] } else { 0.0 };
+            let rr = if in_ch >= 6 { pcm[off + 5] } else { 0.0 };
+            let sl = if in_ch >= 7 { pcm[off + 6] } else { 0.0 };
+            let sr = if in_ch >= 8 { pcm[off + 7] } else { 0.0 };
+
+            let l = fl + C * fc + C * rl + S * sl;
+            let r = fr + C * fc + C * rr + S * sr;
             mixed.push(l);
             mixed.push(r);
         }

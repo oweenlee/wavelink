@@ -1,6 +1,6 @@
 //! 引擎线程主循环 + 消费者线程
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
@@ -218,7 +218,7 @@ pub(crate) fn spawn_consumer(
     sample_rate: u32,
     channels: u32,
     crossfade_ms: u32,
-    speed: Arc<Mutex<f32>>,
+    speed: Arc<AtomicU32>,
     levels: Arc<Mutex<Levels>>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
@@ -333,7 +333,7 @@ mod tests {
         let rb = ringbuf::HeapRb::<f32>::new(65536);
         let (prod, _cons) = rb.split();
 
-        let consumer = spawn_consumer(rx1, prod, dsp, stop.clone(), pos, ev_tx, ready_tx, next_rx.clone(), 44100, 2, 0, Arc::new(Mutex::new(1.0)), Arc::new(Mutex::new(Levels::default())));
+        let consumer = spawn_consumer(rx1, prod, dsp, stop.clone(), pos, ev_tx, ready_tx, next_rx.clone(), 44100, 2, 0, Arc::new(AtomicU32::new(1.0f32.to_bits())), Arc::new(Mutex::new(Levels::default())));
 
         let frame = DecodedFrame {
             samples: vec![0.5f32; 1024],

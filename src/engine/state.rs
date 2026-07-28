@@ -51,8 +51,8 @@ pub struct EngineState {
     pub(crate) original_queue: Vec<QueueEntry>,
     /// 播放历史栈（用于"上一首"）
     pub(crate) history: Vec<QueueEntry>,
-    /// 变速共享状态
-    pub(crate) speed: Arc<Mutex<f32>>,
+    /// 变速共享状态（无锁，f32::to_bits 存储）
+    pub(crate) speed: Arc<AtomicU32>,
     /// 实时电平
     pub(crate) levels: Arc<Mutex<Levels>>,
     /// 共享输出内部状态（替代全局 static，供 EngineHandle/FFI 读取）
@@ -96,7 +96,7 @@ impl EngineState {
             play_mode: PlayMode::Normal,
             original_queue: Vec::new(),
             history: Vec::new(),
-            speed: Arc::new(Mutex::new(1.0)),
+            speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             levels,
             output_inner_shared: None,
             stream_handle: None,
@@ -547,7 +547,7 @@ impl EngineState {
 
     pub(crate) fn set_speed(&mut self, speed: f32) {
         let s = speed.clamp(0.25, 4.0);
-        *self.speed.lock() = s;
+        self.speed.store(s.to_bits(), Ordering::Relaxed);
         info!("播放速度: {s:.2}x");
     }
 
@@ -669,7 +669,7 @@ pub(crate) mod tests {
                 QueueEntry::for_file("/tmp/b.wav".into()),
             ],
             history: Vec::new(),
-            speed: Arc::new(Mutex::new(1.0)),
+            speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             levels: Arc::new(Mutex::new(Levels::default())),
             output_inner_shared: None,
             stream_handle: None,

@@ -6,12 +6,11 @@
 //!
 //! 使用方式见 `run_consumer_loop()` 的文档。
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender, RecvTimeoutError};
-use parking_lot::Mutex;
 use realfft::num_complex::Complex;
 use realfft::RealFftPlanner;
 
@@ -76,7 +75,7 @@ pub fn run_consumer_loop(
     on_end_of_track: &dyn Fn() -> Option<Receiver<DecodedFrame>>,
     stop: &AtomicBool,
     ready_tx: Sender<bool>,
-    speed: Arc<Mutex<f32>>,
+    speed: Arc<AtomicU32>,
 ) {
     // 线程优先级由调用方（engine.rs / audio_output.rs）在 spawn 前设置
 
@@ -213,7 +212,7 @@ pub fn run_consumer_loop(
 
                 // 5) 变速重采样
                 let output_buf = {
-                    let sp = *speed.lock();
+                    let sp = f32::from_bits(speed.load(Ordering::Relaxed));
                     if (sp - 1.0).abs() > 0.001 {
                         speed_changer.set_speed(sp);
                         let out = speed_changer.process(&buf, ch);
@@ -267,7 +266,6 @@ pub fn run_consumer_loop(
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
-    use parking_lot::Mutex as PlMutex;
     use std::thread;
     use crossbeam_channel::{bounded, unbounded};
 
@@ -302,7 +300,7 @@ mod tests {
     {
         let stop = Arc::new(AtomicBool::new(false));
         let s = stop.clone();
-        let speed = Arc::new(PlMutex::new(1.0f32));
+        let speed = Arc::new(AtomicU32::new(1.0f32.to_bits()));
         let (ready_tx, ready_rx) = bounded(1);
         let handle = thread::spawn(move || {
             let push = &push_fn;
@@ -352,7 +350,7 @@ mod tests {
             run_consumer_loop(
                 rx, &default_config(),
                 push, passthrough, nospec, on_bad, nooutput, noeot,
-                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
             );
         });
 
@@ -387,7 +385,7 @@ mod tests {
             run_consumer_loop(
                 rx, &default_config(),
                 push, passthrough, nospec, on_bad, nooutput, noeot,
-                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
             );
         });
 
@@ -420,7 +418,7 @@ mod tests {
             run_consumer_loop(
                 rx, &cfg,
                 push, passthrough, nospec, nobad, nooutput, noeot,
-                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
             );
         });
 
@@ -452,7 +450,7 @@ mod tests {
             run_consumer_loop(
                 rx, &cfg,
                 push, passthrough, nospec, nobad, nooutput, noeot,
-                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
             );
         });
 
@@ -506,7 +504,7 @@ mod tests {
             run_consumer_loop(
                 rx, &default_config(),
                 push, passthrough, nospec, nobad, on_output, on_eot,
-                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
             );
         });
 
@@ -560,7 +558,7 @@ mod tests {
             run_consumer_loop(
                 rx, &cfg,
                 push, passthrough, on_spec, nobad, nooutput, noeot,
-                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
             );
         });
 
@@ -599,7 +597,7 @@ mod tests {
             run_consumer_loop(
                 rx, &default_config(),
                 push, passthrough, nospec, nobad, on_output, noeot,
-                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
             );
         });
 
@@ -638,7 +636,7 @@ mod tests {
             run_consumer_loop(
                 rx, &default_config(),
                 push, dsp, nospec, nobad, nooutput, noeot,
-                &s, ready_tx, Arc::new(PlMutex::new(1.0f32)),
+                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
             );
         });
 
