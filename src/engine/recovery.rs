@@ -101,7 +101,7 @@ impl EngineState {
         // 重建 DSP 管线
         let dsp = Arc::new(Mutex::new(DspPipeline::new(
             actual_sr, actual_ch as usize, &self.peq_bands,
-            true, self.current_volume, 24,
+            true, self.current_volume, self.output_bit_depth,
         )));
         self.dsp = Some(dsp.clone());
 

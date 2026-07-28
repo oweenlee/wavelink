@@ -63,6 +63,8 @@ pub struct EngineState {
     pub(crate) output_sample_rate_shared: Option<Arc<AtomicU32>>,
     /// 当前播放是否已获取排他模式（跟踪实际状态，避免 config 被修改后不一致）
     pub(crate) exclusive_mode_acquired: bool,
+    /// 当前输出位深（dither 用，默认 24）
+    pub(crate) output_bit_depth: u32,
     /// 共享捕获缓冲（与 EngineHandle 同步，替代全局 CAPTURE_INNER）
     pub(crate) capture_inner_shared: Option<Arc<RwLock<Option<Arc<crate::capture::CaptureInner>>>>>,
 }
@@ -102,6 +104,7 @@ impl EngineState {
             stream_handle: None,
             output_sample_rate_shared: None,
             exclusive_mode_acquired: false,
+            output_bit_depth: 24,
             capture_inner_shared: None,
         }
     }
@@ -194,7 +197,7 @@ impl EngineState {
         };
         let dsp = Arc::new(Mutex::new(DspPipeline::new(
             actual_sr, actual_ch as usize, &self.peq_bands,
-            true, self.current_volume, 24,
+            true, self.current_volume, self.output_bit_depth,
         )));
         let stop_flag = Arc::new(AtomicBool::new(false));
         let position_clone = self.position.clone();
@@ -302,7 +305,7 @@ impl EngineState {
 
         let dsp = Arc::new(Mutex::new(DspPipeline::new(
             actual_sr, actual_ch as usize, &self.peq_bands,
-            true, self.current_volume, 24,
+            true, self.current_volume, self.output_bit_depth,
         )));
         if self.config.bit_perfect {
             dsp.lock().set_bypass(true);
@@ -394,7 +397,7 @@ impl EngineState {
         };
         let dsp = Arc::new(Mutex::new(DspPipeline::new(
             sr, ch as usize, &self.peq_bands,
-            true, self.current_volume, 24,
+            true, self.current_volume, self.output_bit_depth,
         )));
         if self.config.bit_perfect {
             dsp.lock().set_bypass(true);
@@ -675,6 +678,7 @@ pub(crate) mod tests {
             stream_handle: None,
             output_sample_rate_shared: None,
             exclusive_mode_acquired: false,
+            output_bit_depth: 24,
             capture_inner_shared: None,
         };
         (s, rx)

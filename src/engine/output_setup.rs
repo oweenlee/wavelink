@@ -16,6 +16,8 @@ pub(crate) struct OutputSetup {
     pub pcm: PcmProducer,
     pub actual_sr: u32,
     pub actual_ch: u32,
+    /// 实际输出位深（dither 用）
+    pub actual_bits: u32,
 }
 
 /// 协商最优输出采样率：文件原始率 > 设备支持列表中最近的
@@ -78,10 +80,17 @@ pub(crate) fn setup_output_for_entry(
         }
         let out_sr = state.output_sample_rate;
         let out_ch = state.config.channels;
+        let out_bits = if state.config.bit_perfect && source_bit_depth > 0 {
+            source_bit_depth as u32
+        } else {
+            state.output_bit_depth
+        };
+        state.output_bit_depth = out_bits;
         Ok(OutputSetup {
             pcm: output.swap_consumer(state.config.buffer_ms, out_sr, out_ch),
             actual_sr: out_sr,
             actual_ch: out_ch,
+            actual_bits: out_bits,
         })
     } else {
         // ── 首次打开 output ──
@@ -105,10 +114,13 @@ pub(crate) fn setup_output_for_entry(
                 state.output_sample_rate = actual_rate;
                 state.sync_output_sample_rate();
                 state.sync_output_inner();
+                let actual_bits = if source_bit_depth > 0 { source_bit_depth as u32 } else { 24 };
+                state.output_bit_depth = actual_bits;
                 Ok(OutputSetup {
                     pcm: prod,
                     actual_sr: actual_rate,
                     actual_ch: channels,
+                    actual_bits,
                 })
             }
             Err(e) => {

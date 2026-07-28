@@ -25,7 +25,8 @@ use windows_sys::Win32::Media::Audio::{
 use windows_sys::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
 };
-use windows_sys::Win32::System::Threading::{CreateEventW, SetEvent, WaitForSingleObject, INFINITE};
+use windows_sys::Win32::System::Threading::{CreateEventW, SetEvent, WaitForSingleObject, INFINITE,
+    GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL};
 
 // ─── GUID 常量 ───────────────────────────────────────────────
 
@@ -239,6 +240,8 @@ fn render_thread(
 ) {
     unsafe {
         CoInitializeEx(std::ptr::null_mut(), COINIT_MULTITHREADED);
+        // 提升渲染线程为实时优先级，减少 underrun
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 
         let mut tmp_buf: Vec<f32> = Vec::new();
 
