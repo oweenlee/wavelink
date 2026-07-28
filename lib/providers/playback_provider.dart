@@ -29,6 +29,7 @@ class PlaybackProvider extends ChangeNotifier with DspMixin, LibraryMixin {
   bool _replayGain = true;
   bool _dynamicColor = true;
   double _coverBlur = 0.7;
+  bool _showSpectrum = true;
 
   /// 解码器启动钩子（默认走引擎；测试可替换以注入延迟/记录）
   Future<void> Function(Song) startDecoderHook = (_) async {};
@@ -55,6 +56,7 @@ class PlaybackProvider extends ChangeNotifier with DspMixin, LibraryMixin {
     _replayGain = prefs.replayGain;
     _dynamicColor = prefs.dynamicColor;
     _coverBlur = prefs.coverBlur;
+    _showSpectrum = prefs.showSpectrum;
     loadDspPrefs();
     loadFavoritesPrefs();
   }
@@ -146,6 +148,7 @@ class PlaybackProvider extends ChangeNotifier with DspMixin, LibraryMixin {
   bool get replayGain => _replayGain;
   bool get dynamicColor => _dynamicColor;
   double get coverBlur => _coverBlur;
+  bool get showSpectrum => _showSpectrum;
 
   double get progress {
     final song = currentSong;
@@ -198,9 +201,9 @@ class PlaybackProvider extends ChangeNotifier with DspMixin, LibraryMixin {
       rs.engineSeek(0);
       return;
     }
-    if (_shuffle) {
-      _currentIndex =
-          (_currentIndex + 1 + _random.nextInt(_queue.length - 1)) %
+    if (_shuffle && _queue.length > 1) {
+      _currentIndex = (_currentIndex + 1 +
+          _random.nextInt(_queue.length - 1)) %
           _queue.length;
     } else {
       _currentIndex = (_currentIndex + 1) % _queue.length;
@@ -419,7 +422,7 @@ class PlaybackProvider extends ChangeNotifier with DspMixin, LibraryMixin {
 
   int findNextIndex() {
     if (_queue.isEmpty) return 0;
-    if (_shuffle) {
+    if (_shuffle && _queue.length > 1) {
       return (_currentIndex + 1 + _random.nextInt(_queue.length - 1)) %
           _queue.length;
     }
@@ -443,6 +446,12 @@ class PlaybackProvider extends ChangeNotifier with DspMixin, LibraryMixin {
   void setCoverBlur(double v) {
     _coverBlur = v.clamp(0.0, 1.0);
     PreferencesService.instance.setCoverBlur(_coverBlur);
+    notifyListeners();
+  }
+
+  void setShowSpectrum(bool v) {
+    _showSpectrum = v;
+    PreferencesService.instance.setShowSpectrum(v);
     notifyListeners();
   }
 

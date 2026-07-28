@@ -4,13 +4,11 @@ import 'dart:ui' show PlatformDispatcher;
 import 'l10n/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 import 'theme/app_theme.dart';
 import 'providers/locale_provider.dart';
-import 'pages/library_page.dart';
-import 'pages/search_page.dart';
-import 'pages/settings_page.dart';
-import 'pages/now_playing_page.dart';
 import 'widgets/mini_player_bar.dart';
+import 'routes.dart';
 
 class WaveLinkApp extends StatelessWidget {
   const WaveLinkApp({super.key});
@@ -20,11 +18,10 @@ class WaveLinkApp extends StatelessWidget {
     final localeProvider = Provider.of<LocaleProvider>(context);
     final deviceLocale = PlatformDispatcher.instance.locale;
     final locale = localeProvider.resolve(deviceLocale);
-    return MaterialApp(
+    return MaterialApp.router(
       title: 'WaveLink Mobile',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      // 国际化
       locale: locale,
       localizationsDelegates: const [
         AppLocalizations.delegate,
@@ -33,24 +30,21 @@ class WaveLinkApp extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: LocaleProvider.supported,
-      home: const AppShell(),
+      routerConfig: goRouter,
     );
   }
 }
 
-class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+class AppShell extends StatelessWidget {
+  final StatefulNavigationShell navigationShell;
 
-  @override
-  State<AppShell> createState() => _AppShellState();
-}
-
-class _AppShellState extends State<AppShell> {
-  int _currentTab = 0;
+  const AppShell({super.key, required this.navigationShell});
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final currentTab = navigationShell.currentIndex;
+
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -73,7 +67,7 @@ class _AppShellState extends State<AppShell> {
                   child: Row(
                     children: [
                       Text(
-                        _getTitle(),
+                        _getTitle(currentTab, l10n),
                         style: const TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -84,17 +78,7 @@ class _AppShellState extends State<AppShell> {
                     ],
                   ),
                 ),
-                Expanded(
-                  child: IndexedStack(
-                    index: _currentTab,
-                    children: const [
-                      LibraryPage(),
-                      NowPlayingPage(),
-                      SearchPage(),
-                      SettingsPage(),
-                    ],
-                  ),
-                ),
+                Expanded(child: navigationShell),
               ],
             ),
           ],
@@ -103,7 +87,7 @@ class _AppShellState extends State<AppShell> {
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          MiniPlayerBar(onTap: () => _openNowPlaying(context)),
+          MiniPlayerBar(onTap: () => context.push('/now-playing')),
           Container(
             decoration: BoxDecoration(
               color: AppTheme.background,
@@ -121,29 +105,29 @@ class _AppShellState extends State<AppShell> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                     _NavItem(
+                    _NavItem(
                       icon: Icons.library_music_rounded,
                       label: l10n.tabLibrary,
-                      isSelected: _currentTab == 0,
-                      onTap: () => setState(() => _currentTab = 0),
+                      isSelected: currentTab == 0,
+                      onTap: () => _goTab(0),
                     ),
                     _NavItem(
                       icon: Icons.equalizer_rounded,
                       label: l10n.tabPlay,
-                      isSelected: _currentTab == 1,
-                      onTap: () => _openNowPlaying(context),
+                      isSelected: false,
+                      onTap: () => context.push('/now-playing'),
                     ),
                     _NavItem(
                       icon: Icons.search_rounded,
                       label: l10n.tabSearch,
-                      isSelected: _currentTab == 2,
-                      onTap: () => setState(() => _currentTab = 2),
+                      isSelected: currentTab == 1,
+                      onTap: () => _goTab(1),
                     ),
                     _NavItem(
                       icon: Icons.settings_rounded,
                       label: l10n.tabSettings,
-                      isSelected: _currentTab == 3,
-                      onTap: () => setState(() => _currentTab = 3),
+                      isSelected: currentTab == 2,
+                      onTap: () => _goTab(2),
                     ),
                   ],
                 ),
@@ -155,31 +139,21 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  String _getTitle() {
-    final l10n = AppLocalizations.of(context);
-    switch (_currentTab) {
+  void _goTab(int index) {
+    navigationShell.goBranch(index, initialLocation: index == navigationShell.currentIndex);
+  }
+
+  String _getTitle(int tab, AppLocalizations l10n) {
+    switch (tab) {
       case 0:
         return l10n.titleLibrary;
-      case 2:
+      case 1:
         return l10n.titleSearch;
-      case 3:
+      case 2:
         return l10n.titleSettings;
       default:
         return '';
     }
-  }
-
-  void _openNowPlaying(BuildContext context) {
-    if (_currentTab == 1) return;
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (ctx, anim, secAnim) {
-          return FadeTransition(opacity: anim, child: const NowPlayingPage());
-        },
-        transitionDuration: const Duration(milliseconds: 350),
-        reverseTransitionDuration: const Duration(milliseconds: 300),
-      ),
-    );
   }
 }
 

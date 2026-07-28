@@ -6,3 +6,4 @@ pub mod metadata;
 pub mod audio_output;
 pub mod cue;
 pub mod playlist;
+pub mod device;

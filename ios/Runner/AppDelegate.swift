@@ -6,7 +6,7 @@ import MediaPlayer
 // ── Audio Output Manager ─────────────────────────────────────
 
 class AudioOutputManager {
-    private let engine = AVAudioEngine()
+    let engine = AVAudioEngine()
     private var sourceNode: AVAudioSourceNode?
     private var isPlayingFlag = false
     private var eventSink: FlutterEventSink?
@@ -112,7 +112,7 @@ class AudioOutputManager {
     }
 
     /// 刷新锁屏显示
-    private func refreshNowPlaying(cover: UIImage? = nil) {
+    func refreshNowPlaying(cover: UIImage? = nil) {
         var info = [String: Any]()
         info[MPMediaItemPropertyTitle] = nowTitle
         info[MPMediaItemPropertyArtist] = nowArtist
@@ -179,12 +179,21 @@ class AudioOutputManager {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-        try? AVAudioSession.sharedInstance().setActive(true)
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .default)
+        try? session.setActive(true)
 
         // 将硬件采样率传给 Rust，避免 48kHz 文件无谓重采样
-        let hwRate = AVAudioSession.sharedInstance().sampleRate
+        let hwRate = session.sampleRate
         set_hw_sample_rate(UInt32(hwRate))
+
+        // 监听音频中断（电话/闹钟/快速前后台切换），中断结束时清空 ringbuf 避免噪声
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioInterruption),
+            name: AVAudioSession.interruptionNotification,
+            object: nil
+        )
 
         GeneratedPluginRegistrant.register(with: self)
 
@@ -193,6 +202,23 @@ class AudioOutputManager {
         }
 
         return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    }
+
+    @objc private func handleAudioInterruption(_ notification: Notification) {
+        guard let info = notification.userInfo,
+              let type = info[AVAudioSessionInterruptionTypeKey] as? UInt
+        else { return }
+
+        if type == AVAudioSession.InterruptionType.ended.rawValue {
+            // 中断结束：清空 ringbuf 避免累积脏数据导致杂音
+            audio_output_clear_ringbuf()
+            // 确保 AudioUnit 恢复运行
+            if !audio.engine.isRunning {
+                try? AVAudioSession.sharedInstance().setActive(true)
+                try? audio.engine.start()
+            }
+            audio.refreshNowPlaying()
+        }
     }
 
     private var filePickerCompletion: FlutterResult?
@@ -209,6 +235,11 @@ class AudioOutputManager {
         let filePickerChannel = FlutterMethodChannel(name: "wavelink/file_picker", binaryMessenger: messenger)
         filePickerChannel.setMethodCallHandler { [weak self] call, result in
             self?.handleFilePicker(call, result: result)
+        }
+
+        let mediaStoreChannel = FlutterMethodChannel(name: "wavelink/media_store", binaryMessenger: messenger)
+        mediaStoreChannel.setMethodCallHandler { [weak self] call, result in
+            self?.handleMediaStore(call, result: result)
         }
     }
 
@@ -265,6 +296,87 @@ class AudioOutputManager {
             .compactMap { $0 as? UIWindowScene }
             .first?.windows.first?.rootViewController
         controller?.present(picker, animated: true)
+    }
+
+    // ── MediaStore (iOS MPMediaQuery 音乐库扫描) ──
+
+    private func handleMediaStore(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        switch call.method {
+        case "checkPermission":
+            let status = MPMediaLibrary.authorizationStatus()
+            result(status == .authorized || status == .restricted)
+        case "requestPermission":
+            MPMediaLibrary.requestAuthorization { status in
+                DispatchQueue.main.async {
+                    result(status == .authorized || status == .restricted)
+                }
+            }
+        case "scanAll":
+            scanMediaStore(result: result)
+        case "getArtwork":
+            guard let args = call.arguments as? [String: Any],
+                  let pidStr = args["persistentId"] as? String,
+                  let pid = UInt64(pidStr)
+            else { result(nil); return }
+            getArtwork(persistentId: pid, result: result)
+        default:
+            result(FlutterMethodNotImplemented)
+        }
+    }
+
+    private func scanMediaStore(result: @escaping FlutterResult) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let query = MPMediaQuery.songs()
+            var songs: [[String: Any]] = []
+
+            guard let items = query.items else {
+                DispatchQueue.main.async { result(songs) }
+                return
+            }
+
+            for item in items {
+                guard let assetURL = item.assetURL else { continue }
+
+                let pid = item.persistentID
+                let title = item.title ?? "Unknown"
+                let artist = item.artist ?? "Unknown Artist"
+                let album = item.albumTitle ?? "Unknown Album"
+                let durationMs = Int(item.playbackDuration * 1000)
+
+                songs.append([
+                    "id": "ios_\(pid)",
+                    "title": title,
+                    "artist": artist,
+                    "album": album,
+                    "duration": durationMs,
+                    "path": assetURL.absoluteString,
+                ])
+            }
+
+            DispatchQueue.main.async { result(songs) }
+        }
+    }
+
+    private func getArtwork(persistentId: UInt64, result: @escaping FlutterResult) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let query = MPMediaQuery.songs()
+            let filter = MPMediaPropertyPredicate(
+                value: persistentId,
+                forProperty: MPMediaItemPropertyPersistentID,
+                comparisonType: .equalTo
+            )
+            query.addFilterPredicate(filter)
+
+            guard let item = query.items?.first,
+                  let artwork = item.artwork,
+                  let image = artwork.image(at: artwork.bounds.size),
+                  let data = image.jpegData(compressionQuality: 0.8)
+            else {
+                DispatchQueue.main.async { result(nil) }
+                return
+            }
+            DispatchQueue.main.async { result(FlutterStandardTypedData(bytes: data)) }
+        }
     }
 }
 

@@ -1,15 +1,37 @@
 package com.wavelink.wavelink_mobile
 
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.NonNull
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.Result
+import java.io.File
 
 class MainActivity : FlutterActivity() {
     private val audioEngine = AudioEngine()
     private var eventSink: EventChannel.EventSink? = null
+    private var filePickerResult: Result? = null
+
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        val paths = mutableListOf<String>()
+        for (uri in uris) {
+            copyToAppStorage(uri)?.let { paths.add(it) }
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) {}
+        }
+        filePickerResult?.success(paths)
+        filePickerResult = null
+    }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -39,6 +61,17 @@ class MainActivity : FlutterActivity() {
                 }
             }
         )
+
+        // 文件选择器通道
+        MethodChannel(messenger, "wavelink/file_picker").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "pickFiles" -> {
+                    filePickerResult = result
+                    filePickerLauncher.launch(arrayOf("audio/*"))
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     private fun handleMethodCall(method: String, arguments: Any?, result: Result) {
@@ -84,6 +117,35 @@ class MainActivity : FlutterActivity() {
             }
             "isPlaying" -> result.success(audioEngine.isPlaying)
             else -> result.notImplemented()
+        }
+    }
+
+    /// 将选中文件复制到应用私有目录，确保 Rust 解码器可以访问
+    private fun copyToAppStorage(uri: Uri): String? {
+        try {
+            val inputStream = contentResolver.openInputStream(uri) ?: return null
+            val fileName = queryFileName(uri) ?: "unknown_${System.currentTimeMillis()}"
+            val destDir = File(filesDir, "Imported")
+            if (!destDir.exists()) destDir.mkdirs()
+            val destFile = File(destDir, fileName)
+            if (!destFile.exists()) {
+                inputStream.use { input ->
+                    destFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
+            return destFile.absolutePath
+        } catch (e: Exception) {
+            return null
+        }
+    }
+
+    private fun queryFileName(uri: Uri): String? {
+        val cursor = contentResolver.query(uri, null, null, null, null)
+        return cursor?.use {
+            val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (nameIndex >= 0 && it.moveToFirst()) it.getString(nameIndex) else null
         }
     }
 }

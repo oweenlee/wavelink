@@ -1,6 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 读取设备音乐库（Android 13+） -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- 读取外部存储（Android 12 及以下） -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
     <application
-        android:label="wavelink_mobile"
+        android:label="WaveLink"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

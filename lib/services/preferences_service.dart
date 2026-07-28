@@ -129,6 +129,11 @@ class PreferencesService {
     await setPlaylists(data);
   }
 
+  // ── 频谱可视化 ──
+  static const _kShowSpectrum = 'show_spectrum';
+  bool get showSpectrum => _prefs.getBool(_kShowSpectrum) ?? true;
+  Future<void> setShowSpectrum(bool v) => _prefs.setBool(_kShowSpectrum, v);
+
   // ── 语言偏好 ──
   // 取值：'system' | 'zh' | 'en'；'system' 表示跟随系统
   static const _kLocale = 'locale';

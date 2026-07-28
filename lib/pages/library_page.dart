@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
-import '../l10n/app_localizations.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../l10n/app_localizations.dart';
 import '../models/song.dart';
 import '../providers/playback_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/song_tile.dart';
-import 'album_detail_page.dart';
-import 'artist_detail_page.dart';
-import 'song_list_page.dart';
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key});
@@ -172,7 +170,6 @@ class _ImportHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final player = context.read<PlaybackProvider>();
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Row(
@@ -190,20 +187,7 @@ class _ImportHeader extends StatelessWidget {
           ),
           const Spacer(),
           GestureDetector(
-            onTap: () => player.rescanImported(),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: AppTheme.textTertiary.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.refresh_rounded,
-                  size: 16, color: AppTheme.textSecondary),
-            ),
-          ),
-          GestureDetector(
-            onTap: () => player.importFromPicker(),
+            onTap: () => context.push('/import'),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
@@ -259,21 +243,14 @@ class _AlbumsTab extends StatelessWidget {
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           child: GestureDetector(
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ChangeNotifierProvider.value(
-                  value: context.read<PlaybackProvider>(),
-                  child: AlbumDetailPage(album: Album(
-                    id: name,
-                    title: name,
-                    artist: albumSongs.first.artist,
-                    year: 0,
-                    songs: albumSongs,
-                    dominantColor: color,
-                  )),
-                ),
-              ),
-            ),
+            onTap: () => context.push('/album', extra: Album(
+              id: name,
+              title: name,
+              artist: albumSongs.first.artist,
+              year: 0,
+              songs: albumSongs,
+              dominantColor: color,
+            )),
             child: Row(
               children: [
                 Container(
@@ -352,17 +329,10 @@ class _ArtistsTab extends StatelessWidget {
         final artistColor = songs.firstWhere((s) => s.artist == name).dominantColor;
 
         return GestureDetector(
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => ChangeNotifierProvider.value(
-                value: context.read<PlaybackProvider>(),
-                child: ArtistDetailPage(
-                  artistName: name,
-                  artistColor: artistColor,
-                ),
-              ),
-            ),
-          ),
+          onTap: () => context.push('/artist', extra: {
+            'name': name,
+            'color': artistColor,
+          }),
           child: Container(
             margin: const EdgeInsets.only(bottom: 12),
             child: Row(
@@ -495,19 +465,12 @@ class _PlaylistsTab extends StatelessWidget {
 
         final pl = entries[index - 1];
         return GestureDetector(
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => ChangeNotifierProvider.value(
-                value: player,
-                child: SongListPage(
-                  title: pl.name,
-                  songs: pl.songs,
-                  accentColor: pl.color,
-                  isFavoriteList: pl.builtIn,
-                ),
-              ),
-            ),
-          ),
+          onTap: () => context.push('/song-list', extra: {
+            'title': pl.name,
+            'songs': pl.songs,
+            'accentColor': pl.color,
+            'isFavoriteList': pl.builtIn,
+          }),
           child: Container(
             margin: const EdgeInsets.only(bottom: 12),
             child: Row(

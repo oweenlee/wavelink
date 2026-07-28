@@ -1,13 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/playback_provider.dart';
+import '../theme/app_theme.dart';
 
 /// 实时频谱可视化（16 频段）。轮询 Rust 端 getSpectrum()，不依赖平台事件通道。
 class SpectrumBar extends StatefulWidget {
   final double height;
-  final Color color;
 
-  const SpectrumBar({super.key, this.height = 120, this.color = Colors.white});
+  const SpectrumBar({super.key, this.height = 120});
 
   @override
   State<SpectrumBar> createState() => _SpectrumBarState();
@@ -16,11 +17,18 @@ class SpectrumBar extends StatefulWidget {
 class _SpectrumBarState extends State<SpectrumBar> {
   List<double> _bars = List.filled(16, 0.0);
   final List<double> _smoothed = List.filled(16, 0.0);
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
     _tick();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   void _tick() {
@@ -30,16 +38,16 @@ class _SpectrumBarState extends State<SpectrumBar> {
       if (!mounted) return;
       for (var i = 0; i < _smoothed.length; i++) {
         final v = data.length > i ? data[i] : 0.0;
-        // 平滑：上升即时、下降缓慢
         _smoothed[i] = v > _smoothed[i] ? v : _smoothed[i] * 0.7 + v * 0.3;
       }
       setState(() => _bars = List.from(_smoothed));
     });
-    Future.delayed(const Duration(milliseconds: 50), _tick);
+    _timer = Timer(const Duration(milliseconds: 50), _tick);
   }
 
   @override
   Widget build(BuildContext context) {
+    const barColor = AppTheme.accentBlue;
     return SizedBox(
       height: widget.height,
       child: Row(
@@ -49,11 +57,27 @@ class _SpectrumBarState extends State<SpectrumBar> {
           return Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 1.5),
-              child: Container(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                curve: Curves.easeOut,
                 height: h,
                 decoration: BoxDecoration(
-                  color: widget.color.withValues(alpha: 0.85),
-                  borderRadius: BorderRadius.circular(3),
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      barColor.withValues(alpha: 0.15),
+                      barColor.withValues(alpha: 0.9),
+                    ],
+                  ),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: barColor.withValues(alpha: 0.35),
+                      blurRadius: 8,
+                      offset: Offset.zero,
+                    ),
+                  ],
                 ),
               ),
             ),

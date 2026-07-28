@@ -63,6 +63,8 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>WaveLink 需要访问您的音乐库以导入歌曲。</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>

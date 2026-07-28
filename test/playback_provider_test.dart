@@ -79,6 +79,21 @@ void main() {
       expect(p.currentIndex >= 0 && p.currentIndex <= 2, isTrue);
     });
 
+    test('shuffle 模式单曲队列 next 不崩溃', () {
+      final p = buildProvider();
+      p.setQueue([_song('solo')]);
+      p.toggleShuffle();
+      p.next();
+      expect(p.currentIndex, 0);
+    });
+
+    test('findNextIndex 队列单曲不崩溃', () {
+      final p = buildProvider();
+      p.setQueue([_song('solo')]);
+      p.toggleShuffle();
+      expect(p.findNextIndex(), 0);
+    });
+
     test('playSong 按 id 定位', () {
       final p = buildProvider();
       p.playSong(_song('s3'));

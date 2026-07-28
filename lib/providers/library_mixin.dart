@@ -74,8 +74,35 @@ mixin LibraryMixin on ChangeNotifier {
 
   // ── 导入与扫描 ──
 
+  /// 扫描系统音乐库（Android MediaStore / iOS MPMediaQuery）
+  Future<bool> scanMediaStore() async {
+    final songs = await ImportService.scanMediaStore();
+    if (songs.isEmpty) return false;
+    // 系统库歌曲优先，按 path 去重合并
+    final newPaths = songs.where((s) => s.path != null).map((s) => s.path!).toSet();
+    _importedSongs = [
+      ...songs,
+      ..._importedSongs.where((s) => s.path == null || !newPaths.contains(s.path)),
+    ];
+    onImportedSongsLoaded(_importedSongs);
+    notifyListeners();
+    return true;
+  }
+
+  /// 扫描 Documents 目录（已有导入文件恢复）
   Future<void> scanImported() async {
     final songs = await ImportService.scanDocuments();
+    if (songs.isNotEmpty) {
+      _importedSongs = songs;
+      onImportedSongsLoaded(songs);
+    }
+    _scanDone = true;
+    notifyListeners();
+  }
+
+  /// 扫描所有来源（系统库 + Documents）并合并去重
+  Future<void> scanAllSources() async {
+    final songs = await ImportService.scanAll();
     if (songs.isNotEmpty) {
       _importedSongs = songs;
       onImportedSongsLoaded(songs);
@@ -118,10 +145,16 @@ mixin LibraryMixin on ChangeNotifier {
   Future<int> importFromPicker() async {
     final songs = await ImportService.pickAndImport();
     if (songs.isEmpty) return 0;
-    _importedSongs = [..._importedSongs, ...songs];
-    onImportAdded(songs);
+    // 按 path 去重追加
+    final existingPaths =
+        _importedSongs.where((s) => s.path != null).map((s) => s.path!).toSet();
+    final newSongs =
+        songs.where((s) => s.path == null || !existingPaths.contains(s.path)).toList();
+    if (newSongs.isEmpty) return 0;
+    _importedSongs = [..._importedSongs, ...newSongs];
+    onImportAdded(newSongs);
     notifyListeners();
-    return songs.length;
+    return newSongs.length;
   }
 
   void onImportAdded(List<Song> songs) {

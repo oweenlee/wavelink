@@ -3,17 +3,17 @@ import '../l10n/app_localizations.dart';
 
 class Song {
   final String id;
-  final String title;
-  final String artist;
-  final String album;
-  final Duration duration;
+  String title;
+  String artist;
+  String album;
+  Duration duration;
   final Color dominantColor;
-  final bool hasLyrics;
-  final int? bpm;
-  final String? key;
-  String? coverUrl;  // 可写，供导入后惰性提取封面时更新
+  bool hasLyrics;
+  int? bpm;
+  String? key;
+  String? coverUrl;
   final String? path;
-  final bool hasCover;
+  bool hasCover;
 
   Song({
     required this.id,

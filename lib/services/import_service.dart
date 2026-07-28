@@ -4,15 +4,48 @@ import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
 import '../services/rust_service.dart' as rs;
 import '../services/file_picker_service.dart';
+import '../theme/app_theme.dart';
+import '../services/media_store_service.dart';
+import '../services/media_store_channel.dart';
 
 /// 音乐文件导入服务
+///
+/// 整合三种导入渠道：
+/// 1. 系统音乐库扫描（Android MediaStore / iOS MPMediaQuery）→ 优先
+/// 2. 文件选择器导入 → 复制到 Documents/Imported/
+/// 3. Documents/ 目录扫描 → 已有文件恢复
 class ImportService {
   static const _extensions = [
     'mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a',
     'wma', 'alac', 'aiff', 'dsf', 'dff', 'opus',
   ];
 
-  /// 从 app Documents/ 扫描已有音频文件（异步读取元数据）
+  /// 系统音乐库是否可用
+  static Future<bool> get isMediaStoreAvailable =>
+      MediaStoreService.isAvailable;
+
+  /// 从系统音乐库扫描（Android MediaStore / iOS MPMediaQuery）
+  static Future<List<Song>> scanMediaStore() async {
+    final hasPermission = await MediaStoreService.requestPermission();
+    if (!hasPermission) {
+      debugPrint('[Import] 系统音乐库权限被拒绝');
+      return [];
+    }
+
+    final songs = await MediaStoreService.scanAll();
+    if (songs.isEmpty) return [];
+
+    // 尝试用 Rust 补全/修正元数据
+    if (rs.rustAvailable) {
+      await _enrichWithRustMetadata(songs);
+    }
+
+    // 异步缓存封面（不阻塞返回）
+    _cacheCovers(songs);
+    return songs;
+  }
+
+  /// 从 app Documents/ 扫描已有音频文件
   static Future<List<Song>> scanDocuments() async {
     final dir = await getApplicationDocumentsDirectory();
     final files = await _listAudioFiles(dir);
@@ -37,13 +70,99 @@ class ImportService {
     return _extensions.contains(ext);
   }
 
-  /// 批量将文件转为 Song 对象（优先用 Rust 读取真实元数据）
+  /// 打开文件选择器 → 复制到 Documents/Imported/
+  static Future<List<Song>> pickAndImport() async {
+    final paths = await FilePickerService.pickFiles();
+    if (paths.isEmpty) return [];
+
+    final appDir = await getApplicationDocumentsDirectory();
+    final importDir = Directory('${appDir.path}/Imported');
+    if (!await importDir.exists()) await importDir.create(recursive: true);
+
+    final files = <File>[];
+    for (final srcPath in paths) {
+      final file = File(srcPath);
+      // 如果文件已在 App 目录内，不再复制
+      if (srcPath.startsWith(appDir.path)) {
+        files.add(file);
+        continue;
+      }
+      final name = srcPath.split('/').last;
+      final dest = File('${importDir.path}/$name');
+      if (!await dest.exists()) {
+        await file.copy(dest.path);
+      }
+      files.add(dest);
+    }
+    return await _filesToSongs(files);
+  }
+
+  /// 合并系统库扫描 + Documents 扫描，去重
+  static Future<List<Song>> scanAll() async {
+    final mediaSongs = await scanMediaStore();
+    final docSongs = await scanDocuments();
+
+    // 按 path 去重（系统库优先）
+    final seen = <String>{};
+    final merged = <Song>[];
+    for (final s in [...mediaSongs, ...docSongs]) {
+      if (s.path != null && seen.add(s.path!)) {
+        merged.add(s);
+      }
+    }
+    return merged;
+  }
+
+  // ── 内部方法 ──
+
+  /// 用 Rust 读取真实元数据来补全/修正歌曲信息
+  static Future<void> _enrichWithRustMetadata(List<Song> songs) async {
+    final cacheDir = await _coverCacheDir();
+    for (final song in songs) {
+      if (song.path == null) continue;
+      // iOS iPod library 歌曲无法以文件方式读取，跳过
+      if (song.path!.startsWith('ipod-library://')) continue;
+      try {
+        final meta = await rs.readMetadata(song.path!);
+        if (meta.title != null && meta.title!.isNotEmpty) {
+          song.title = meta.title!;
+        }
+        if (meta.artist != null && meta.artist!.isNotEmpty) {
+          song.artist = meta.artist!;
+        }
+        if (meta.album != null && meta.album!.isNotEmpty) {
+          song.album = meta.album!;
+        }
+        if (meta.durationSecs > 0) {
+          song.duration = Duration(
+            milliseconds: (meta.durationSecs * 1000).round(),
+          );
+        }
+        // 缓存封面
+        if (meta.hasCover && meta.coverBytes.isNotEmpty) {
+          try {
+            final cacheFile = File(
+              '${cacheDir.path}/${song.path!.hashCode}.jpg',
+            );
+            await cacheFile.writeAsBytes(meta.coverBytes);
+            song.coverUrl = cacheFile.path;
+            song.hasCover = true;
+          } catch (e) {
+            debugPrint('[Import] 封面缓存失败: $e');
+          }
+        }
+      } catch (e) {
+        debugPrint('[Import] Rust 元数据读取失败: $e');
+      }
+    }
+  }
+
+  /// 批量将文件转为 Song 对象（优先用 Rust 元数据）
   static Future<List<Song>> _filesToSongs(List<File> files) async {
     final cacheDir = await _coverCacheDir();
     final songs = <Song>[];
     for (final file in files) {
       Song? song;
-      // Rust 可用时读取真实元数据
       if (rs.rustAvailable) {
         try {
           final meta = await rs.readMetadata(file.path);
@@ -54,11 +173,12 @@ class ImportService {
               ? Duration(milliseconds: (meta.durationSecs * 1000).round())
               : _estimateDuration(file);
 
-          // 封面字节已由 readMetadata 一并返回，避免二次解析
           String? coverUrl;
           if (meta.hasCover && meta.coverBytes.isNotEmpty) {
             try {
-              final cacheFile = File('${cacheDir.path}/${file.path.hashCode}.jpg');
+              final cacheFile = File(
+                '${cacheDir.path}/${file.path.hashCode}.jpg',
+              );
               await cacheFile.writeAsBytes(meta.coverBytes);
               coverUrl = cacheFile.path;
             } catch (e) {
@@ -82,7 +202,6 @@ class ImportService {
         }
       }
 
-      // 降级：用文件名猜测
       song ??= _fileToSong(file);
       songs.add(song);
     }
@@ -102,11 +221,10 @@ class ImportService {
 
   static Color _colorFromPath(String path) {
     final hash = path.hashCode;
-    final palette = AppPalette.colors;
+    final palette = AppTheme.palette;
     return palette[hash.abs() % palette.length];
   }
 
-  /// 封面缓存目录
   static Future<Directory> _coverCacheDir() async {
     final appDir = await getApplicationDocumentsDirectory();
     final dir = Directory('${appDir.path}/.covers');
@@ -114,7 +232,6 @@ class ImportService {
     return dir;
   }
 
-  /// 纯文件名猜测降级（不含 Rust 调用）
   static Song _fileToSong(File file) {
     final name = file.path.split('/').last;
     final title = name.replaceAll(RegExp(r'\.[^.]+$'), '');
@@ -129,50 +246,48 @@ class ImportService {
     );
   }
 
-  /// 打开文件选择器 → 复制到 Documents/Imported/
-  static Future<List<Song>> pickAndImport() async {
-    final paths = await FilePickerService.pickFiles();
-    if (paths.isEmpty) return [];
+  /// 异步缓存所有封面（不阻塞返回）
+  static Future<void> _cacheCovers(List<Song> songs) async {
+    final cacheDir = await _coverCacheDir();
+    for (final song in songs) {
+      if (song.path == null || song.coverUrl != null) continue;
 
-    final appDir = await getApplicationDocumentsDirectory();
-    final importDir = Directory('${appDir.path}/Imported');
-    if (!await importDir.exists()) await importDir.create(recursive: true);
-
-    final files = <File>[];
-    for (final srcPath in paths) {
-      final name = srcPath.split('/').last;
-      final dest = File('${importDir.path}/$name');
-      if (!await dest.exists()) {
-        await File(srcPath).copy(dest.path);
+      // iOS: 通过平台通道获取封面
+      if (Platform.isIOS) {
+        await _cacheIOSCover(song, cacheDir);
+        continue;
       }
-      files.add(dest);
-    }
-    return await _filesToSongs(files);
-  }
-}
 
-/// 颜色调色板（20 种现代配色）
-class AppPalette {
-  static const colors = [
-    Color(0xFF6C5CE7), // 紫
-    Color(0xFF00B894), // 翡翠
-    Color(0xFFFD79A8), // 粉
-    Color(0xFF0984E3), // 蓝
-    Color(0xFFE17055), // 陶土
-    Color(0xFF00CEC9), // 青
-    Color(0xFFFDCB6E), // 金
-    Color(0xFFA29BFE), // 淡紫
-    Color(0xFF55EFC4), // 薄荷
-    Color(0xFFFAB1A0), // 淡粉
-    Color(0xFF74B9FF), // 天蓝
-    Color(0xFFDFE6E9), // 银灰
-    Color(0xFFE84393), // 品红
-    Color(0xFF00B894), // 翠绿
-    Color(0xFF6C5CE7), // 紫罗兰
-    Color(0xFFFDCB6E), // 琥珀
-    Color(0xFFE17055), // 珊瑚
-    Color(0xFF00CEC9), // 蓝绿
-    Color(0xFFFD79A8), // 玫瑰
-    Color(0xFF0984E3), // 钴蓝
-  ];
+      // Android: 用 Rust 提取封面
+      if (!rs.rustAvailable) continue;
+      try {
+        final bytes = await rs.getCoverBytes(song.path!);
+        if (bytes.isNotEmpty) {
+          final cacheFile = File(
+            '${cacheDir.path}/${song.path!.hashCode}.jpg',
+          );
+          await cacheFile.writeAsBytes(bytes);
+          song.coverUrl = cacheFile.path;
+          song.hasCover = true;
+        }
+      } catch (_) {}
+    }
+  }
+
+  /// iOS 平台通道封面缓存
+  static Future<void> _cacheIOSCover(Song song, Directory cacheDir) async {
+    final pid = MediaStoreIOSChannel.parsePersistentId(song.id);
+    if (pid == null) return;
+    try {
+      final bytes = await MediaStoreIOSChannel.getArtwork(pid);
+      if (bytes != null && bytes.isNotEmpty) {
+        final cacheFile = File(
+          '${cacheDir.path}/${song.path!.hashCode}.jpg',
+        );
+        await cacheFile.writeAsBytes(bytes);
+        song.coverUrl = cacheFile.path;
+        song.hasCover = true;
+      }
+    } catch (_) {}
+  }
 }

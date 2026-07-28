@@ -42,22 +42,44 @@ where
 
 /// 初始化引擎，使用 HW_SAMPLE_RATE（由 Swift 设 set_hw_sample_rate 传入）
 pub fn engine_init() -> Result<(), String> {
+    let sr = crate::api::audio_output::get_hw_sample_rate();
+    engine_init_ex(sr, 2, 280, 0, false, false, false, None)
+}
+
+/// 完整参数初始化引擎
+pub fn engine_init_ex(
+    sr: u32,
+    channels: u16,
+    buffer_ms: u32,
+    crossfade_ms: u32,
+    bit_perfect: bool,
+    auto_sample_rate: bool,
+    exclusive_mode: bool,
+    output_device: Option<String>,
+) -> Result<(), String> {
     if ENGINE.get().is_some() {
         return Ok(());
     }
-    let sr = crate::api::audio_output::get_hw_sample_rate();
     let config = EngineConfig {
         sample_rate: sr,
-        channels: 2,
-        buffer_ms: 280,
-        crossfade_ms: 0,
-        output_device: None,
+        channels: channels as u32,
+        buffer_ms,
+        crossfade_ms,
+        bit_perfect,
+        auto_sample_rate,
+        exclusive_mode,
+        output_device,
         ..Default::default()
     };
     let (handle, rx) = EngineHandle::start_with_config(config);
     ENGINE.get_or_init(|| Mutex::new(Some(handle)));
     EVENT_RX.get_or_init(|| Mutex::new(Some(rx)));
     Ok(())
+}
+
+/// 从引擎 ringbuf 读取交错 PCM 样本（供 iOS 音频回调使用）
+pub fn engine_read_samples(buf: &mut [f32]) -> usize {
+    with_engine(|h| h.read_samples(buf)).unwrap_or(0)
 }
 
 pub fn engine_deinit() {

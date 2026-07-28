@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
-import '../l10n/app_localizations.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/playback_provider.dart';
 import '../theme/app_theme.dart';
 import '../models/song.dart';
 import '../services/preferences_service.dart';
 import '../widgets/song_tile.dart';
-import 'album_detail_page.dart';
-import 'artist_detail_page.dart';
 
 enum _ResultKind { songs, albums, artists }
 
@@ -332,21 +331,14 @@ class _SearchPageState extends State<SearchPage> {
                     color: AppTheme.textSecondary,
                   ),
                 ),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ChangeNotifierProvider.value(
-                      value: context.read<PlaybackProvider>(),
-                      child: AlbumDetailPage(album: Album(
-                        id: s.album,
-                        title: s.album,
-                        artist: s.artist,
-                        year: 0,
-                        songs: albumSongs,
-                        dominantColor: s.dominantColor,
-                      )),
-                    ),
-                  ),
-                ),
+                onTap: () => context.push('/album', extra: Album(
+                  id: s.album,
+                  title: s.album,
+                  artist: s.artist,
+                  year: 0,
+                  songs: albumSongs,
+                  dominantColor: s.dominantColor,
+                )),
               ),
             );
           }
@@ -378,17 +370,10 @@ class _SearchPageState extends State<SearchPage> {
                     color: AppTheme.textSecondary,
                   ),
                 ),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ChangeNotifierProvider.value(
-                      value: context.read<PlaybackProvider>(),
-                      child: ArtistDetailPage(
-                        artistName: s.artist,
-                        artistColor: s.dominantColor,
-                      ),
-                    ),
-                  ),
-                ),
+                onTap: () => context.push('/artist', extra: {
+                  'name': s.artist,
+                  'color': s.dominantColor,
+                }),
               ),
             );
           }

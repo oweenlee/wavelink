@@ -14,6 +14,17 @@ class AppTheme {
   static const Color success = Color(0xFF30D158);
   static const Color edgeHighlight = Color(0x1AFFFFFF);
 
+  /// 专辑/歌手占位色盘（确定性，按 path hash 取模）
+  static const List<Color> palette = [
+    Color(0xFF6C5CE7), Color(0xFF00B894), Color(0xFFFD79A8),
+    Color(0xFF0984E3), Color(0xFFE17055), Color(0xFF00CEC9),
+    Color(0xFFFDCB6E), Color(0xFFA29BFE), Color(0xFF55EFC4),
+    Color(0xFFFAB1A0), Color(0xFF74B9FF), Color(0xFFDFE6E9),
+    Color(0xFFE84393), Color(0xFF6C5CE7), Color(0xFFFDCB6E),
+    Color(0xFFE17055), Color(0xFF00CEC9), Color(0xFFFD79A8),
+    Color(0xFF0984E3), Color(0xFF00B894),
+  ];
+
   static ThemeData get darkTheme => ThemeData(
     brightness: Brightness.dark,
     scaffoldBackgroundColor: background,

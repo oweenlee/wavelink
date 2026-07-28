@@ -68,7 +68,7 @@ pub(crate) unsafe fn fill_buffer_stereo_impl(
     }
     let buf: &mut [f32] = &mut (*rt_buf)[..frames * 2];
 
-    let n = audio_core::output::read_output_samples(buf);
+    let n = crate::api::engine::engine_read_samples(buf);
 
     let fc = n / 2;
     for i in 0..fc.min(frames) {

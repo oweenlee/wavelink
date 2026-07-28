@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../l10n/app_localizations.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 import '../providers/playback_provider.dart';
 import '../providers/locale_provider.dart';
-import 'diagnostic_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -87,16 +87,41 @@ class SettingsPage extends StatelessWidget {
               value: player.coverBlur,
               onChanged: player.setCoverBlur,
             ),
+            _SwitchItem(
+              icon: Icons.bar_chart_rounded,
+              label: l10n.showSpectrum,
+              value: player.showSpectrum,
+              onChanged: (v) => player.setShowSpectrum(v),
+            ),
           ],
         ),
         const SizedBox(height: 24),
         _Section(
           title: l10n.settingsLibrary,
           children: [
-            _SettingItem(
+            _ActionItem(
+              icon: Icons.library_music_rounded,
+              label: l10n.scanMusicLibrary,
+              onTap: () async {
+                final player = context.read<PlaybackProvider>();
+                final ok = await player.scanMediaStore();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(ok ? l10n.scanComplete : l10n.scanNoPermission),
+                      backgroundColor: ok ? AppTheme.accentBlue : AppTheme.danger,
+                    ),
+                  );
+                }
+              },
+            ),
+            _ActionItem(
               icon: Icons.folder_rounded,
               label: l10n.scanDir,
-              onTap: () {},
+              onTap: () async {
+                final player = context.read<PlaybackProvider>();
+                await player.importFromPicker();
+              },
             ),
             _ActionItem(
               icon: Icons.refresh_rounded,
@@ -130,10 +155,8 @@ class SettingsPage extends StatelessWidget {
             _SettingItem(icon: Icons.code_rounded, label: l10n.licenses, onTap: () {}),
             _SettingItem(
               icon: Icons.bug_report_rounded,
-              label: '音频诊断',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const DiagnosticPage()),
-              ),
+              label: l10n.audioDiagnostic,
+              onTap: () => context.push('/diagnostic'),
             ),
           ],
         ),
