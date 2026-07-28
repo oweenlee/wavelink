@@ -1,13 +1,50 @@
 //! Crossfeed（Bauer 算法）
 //!
-//! 耳机聆听时左右声道完全分离，缺少音箱摆放时的"串音"，
+//! 耳机聆听时左右声道完全分离，缺少音箱摆放时的“串音”，
 //! 导致声场不自然、中频凹陷。Bauer 算法把对侧信号经低通+衰减后混入同侧，
 //! 模拟音箱串音。
 //!
-//! CMOY 预设: 700Hz 低通, 6.0dB 衰减, ~300µs 延迟
+//! 支持三种经典预设：
+//! - CMOY: 700Hz 低通, 6.0dB 衰减, 300µs 延迟（最流行）
+//! - Chu Moy: 700Hz 低通, 6.0dB 衰减, 250µs 延迟（CMOY 变体，稍紧凑）
+//! - Jan Meier: 650Hz 低通, 9.5dB 衰减, 250µs 延迟（更温和，适合古典）
 
 use crate::dsp::biquad::Biquad;
 use std::collections::VecDeque;
+
+/// Crossfeed 预设参数
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CrossfeedConfig {
+    /// 低通截止频率 (Hz)
+    pub cutoff_hz: f32,
+    /// 对侧信号衰减 (dB)
+    pub attenuation_db: f32,
+    /// 延迟线时长 (µs)
+    pub delay_us: f32,
+}
+
+impl CrossfeedConfig {
+    /// CMOY 预设（最流行）: 700Hz, -6.0dB, 300µs
+    pub const CMOY: CrossfeedConfig = CrossfeedConfig {
+        cutoff_hz: 700.0,
+        attenuation_db: 6.0,
+        delay_us: 300.0,
+    };
+
+    /// Chu Moy 预设（CMOY 变体，稍紧凑）: 700Hz, -6.0dB, 250µs
+    pub const CHU_MOY: CrossfeedConfig = CrossfeedConfig {
+        cutoff_hz: 700.0,
+        attenuation_db: 6.0,
+        delay_us: 250.0,
+    };
+
+    /// Jan Meier 预设（更温和，适合古典）: 650Hz, -9.5dB, 250µs
+    pub const JAN_MEIER: CrossfeedConfig = CrossfeedConfig {
+        cutoff_hz: 650.0,
+        attenuation_db: 9.5,
+        delay_us: 250.0,
+    };
+}
 
 /// Bauer 算法跨馈处理器
 pub struct Crossfeed {
@@ -22,16 +59,18 @@ pub struct Crossfeed {
 }
 
 impl Crossfeed {
-    /// 创建 Crossfeed，使用 CMOY 预设
-    /// - `sample_rate`: 采样率（Hz）
+    /// 创建 Crossfeed，使用 CMOY 预设（默认）
     pub fn new(sample_rate: f32) -> Self {
-        // CMOY 预设: 700Hz 低通, 6.0dB 衰减, 300µs 延迟
-        let cutoff_hz = 700.0;
-        let delay_samples = ((sample_rate * 0.0003).round() as usize).max(1);
-        let mix_gain = 10f32.powf(-6.0 / 20.0); // 0.5
+        Self::with_config(sample_rate, CrossfeedConfig::CMOY)
+    }
 
-        let lpf_l = Biquad::lowpass(cutoff_hz, sample_rate, 0.707);
-        let lpf_r = Biquad::lowpass(cutoff_hz, sample_rate, 0.707);
+    /// 创建 Crossfeed，使用自定义配置
+    pub fn with_config(sample_rate: f32, config: CrossfeedConfig) -> Self {
+        let delay_samples = ((sample_rate * config.delay_us * 1e-6).round() as usize).max(1);
+        let mix_gain = 10f32.powf(-config.attenuation_db / 20.0);
+
+        let lpf_l = Biquad::lowpass(config.cutoff_hz, sample_rate, 0.707);
+        let lpf_r = Biquad::lowpass(config.cutoff_hz, sample_rate, 0.707);
 
         Crossfeed {
             lpf_l,
