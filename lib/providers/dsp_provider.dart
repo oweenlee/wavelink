@@ -1,47 +1,55 @@
 import 'package:flutter/material.dart';
 import '../models/playback_types.dart';
-import '../services/rust_service.dart' as rs;
-import '../services/preferences_service.dart';
+import '../data/repositories/audio_engine_repository.dart';
+import '../data/repositories/preferences_repository.dart';
 
 class DspProvider extends ChangeNotifier {
+  DspProvider({
+    required AudioEngineRepository engineRepo,
+    required PreferencesRepository prefsRepo,
+  })  : _engineRepo = engineRepo,
+        _prefsRepo = prefsRepo;
+
+  final AudioEngineRepository _engineRepo;
+  final PreferencesRepository _prefsRepo;
   DspSettings _dspSettings = DspSettings();
 
   DspSettings get dspSettings => _dspSettings;
   bool get dspAvailable => true;
 
-  Future<List<double>> getSpectrum() => rs.getSpectrum();
-  Future<int> getUnderrunCount() => rs.getUnderrunCount();
+  Future<List<double>> getSpectrum() => _engineRepo.getSpectrum();
+  Future<int> getUnderrunCount() => _engineRepo.getUnderrunCount();
 
   void toggleDspEnabled() {
     _dspSettings = _dspSettings.copyWith(enabled: !_dspSettings.enabled);
-    PreferencesService.instance.setDspEnabled(_dspSettings.enabled);
+    _prefsRepo.setDspEnabled(_dspSettings.enabled);
     applyDsp();
     notifyListeners();
   }
 
   void toggleCrossfeed() {
     _dspSettings = _dspSettings.copyWith(crossfeed: !_dspSettings.crossfeed);
-    PreferencesService.instance.setDspCrossfeed(_dspSettings.crossfeed);
+    _prefsRepo.setDspCrossfeed(_dspSettings.crossfeed);
     applyDsp();
     notifyListeners();
   }
 
   void toggleWidener() {
     _dspSettings = _dspSettings.copyWith(widener: !_dspSettings.widener);
-    PreferencesService.instance.setDspWidener(_dspSettings.widener);
+    _prefsRepo.setDspWidener(_dspSettings.widener);
     applyDsp();
     notifyListeners();
   }
 
   void toggleLimiter() {
     _dspSettings = _dspSettings.copyWith(limiter: !_dspSettings.limiter);
-    PreferencesService.instance.setDspLimiter(_dspSettings.limiter);
+    _prefsRepo.setDspLimiter(_dspSettings.limiter);
     notifyListeners();
   }
 
   void toggleDither() {
     _dspSettings = _dspSettings.copyWith(dither: !_dspSettings.dither);
-    PreferencesService.instance.setDspDither(_dspSettings.dither);
+    _prefsRepo.setDspDither(_dspSettings.dither);
     notifyListeners();
   }
 
@@ -54,29 +62,27 @@ class DspProvider extends ChangeNotifier {
   String _presetName(EqPresetKind kind) => kind.name;
 
   Future<void> applyDsp() async {
-    if (!rs.rustAvailable) return;
+    if (!_engineRepo.rustAvailable) return;
     try {
       if (_dspSettings.enabled) {
-        await rs.engineApplyPreset(
-            presetName: _presetName(_dspSettings.preset));
+        await _engineRepo.applyPreset(_presetName(_dspSettings.preset));
       } else {
-        await rs.engineApplyPreset(presetName: 'flat');
+        await _engineRepo.applyPreset('flat');
       }
-      await rs.engineSetCrossfeed(enabled: _dspSettings.crossfeed);
-      await rs.engineSetStereoWidener(enabled: _dspSettings.widener, width: 0.5);
+      await _engineRepo.setCrossfeed(_dspSettings.crossfeed);
+      await _engineRepo.setStereoWidener(_dspSettings.widener, 0.5);
     } catch (e) {
       debugPrint('[DSP] 应用设置失败: $e');
     }
   }
 
   void loadDspPrefs() {
-    final prefs = PreferencesService.instance;
     _dspSettings = DspSettings(
-      enabled: prefs.dspEnabled,
-      crossfeed: prefs.dspCrossfeed,
-      widener: prefs.dspWidener,
-      limiter: prefs.dspLimiter,
-      dither: prefs.dspDither,
+      enabled: _prefsRepo.dspEnabled,
+      crossfeed: _prefsRepo.dspCrossfeed,
+      widener: _prefsRepo.dspWidener,
+      limiter: _prefsRepo.dspLimiter,
+      dither: _prefsRepo.dspDither,
     );
   }
 }

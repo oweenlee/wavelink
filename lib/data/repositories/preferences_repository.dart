@@ -1,0 +1,74 @@
+import '../services/preferences_service.dart';
+
+/// 用户偏好设置的单一来源
+///
+/// 封装 SharedPreferences 的所有读写操作
+/// 当前直接委托给 PreferencesService，后续可替换存储后端
+class PreferencesRepository {
+  // ── 音量 ──
+
+  double get volume => PreferencesService.instance.volume;
+  Future<void> setVolume(double v) => PreferencesService.instance.setVolume(v);
+
+  // ── 循环模式 ──
+
+  String get loopMode => PreferencesService.instance.loopMode;
+  Future<void> setLoopMode(String mode) =>
+      PreferencesService.instance.setLoopMode(mode);
+
+  // ── 随机 ──
+
+  bool get shuffle => PreferencesService.instance.shuffle;
+  Future<void> setShuffle(bool v) =>
+      PreferencesService.instance.setShuffle(v);
+
+  // ── DSP 设置 ──
+
+  bool get dspEnabled => PreferencesService.instance.dspEnabled;
+  bool get dspCrossfeed => PreferencesService.instance.dspCrossfeed;
+  bool get dspWidener => PreferencesService.instance.dspWidener;
+  bool get dspLimiter => PreferencesService.instance.dspLimiter;
+  bool get dspDither => PreferencesService.instance.dspDither;
+
+  Future<void> setDspEnabled(bool v) =>
+      PreferencesService.instance.setDspEnabled(v);
+  Future<void> setDspCrossfeed(bool v) =>
+      PreferencesService.instance.setDspCrossfeed(v);
+  Future<void> setDspWidener(bool v) =>
+      PreferencesService.instance.setDspWidener(v);
+  Future<void> setDspLimiter(bool v) =>
+      PreferencesService.instance.setDspLimiter(v);
+  Future<void> setDspDither(bool v) =>
+      PreferencesService.instance.setDspDither(v);
+
+  // ── 收藏 ──
+
+  Set<String> get favorites => PreferencesService.instance.favorites;
+  Future<void> setFavorites(Set<String> ids) =>
+      PreferencesService.instance.setFavorites(ids);
+
+  // ── 播放列表 ──
+
+  Map<String, List<String>> get playlists =>
+      PreferencesService.instance.playlists;
+  Future<void> savePlaylist(String name, List<String> songIds) =>
+      PreferencesService.instance.savePlaylist(name, songIds);
+
+  // ── 外观偏好 ──
+
+  bool get replayGain => PreferencesService.instance.replayGain;
+  Future<void> setReplayGain(bool v) =>
+      PreferencesService.instance.setReplayGain(v);
+
+  bool get dynamicColor => PreferencesService.instance.dynamicColor;
+  Future<void> setDynamicColor(bool v) =>
+      PreferencesService.instance.setDynamicColor(v);
+
+  double get coverBlur => PreferencesService.instance.coverBlur;
+  Future<void> setCoverBlur(double v) =>
+      PreferencesService.instance.setCoverBlur(v);
+
+  bool get showSpectrum => PreferencesService.instance.showSpectrum;
+  Future<void> setShowSpectrum(bool v) =>
+      PreferencesService.instance.setShowSpectrum(v);
+}

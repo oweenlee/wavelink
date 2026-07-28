@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:wavelink_mobile/services/preferences_service.dart';
+import 'package:wavelink_mobile/data/services/preferences_service.dart';
 
 void main() {
   setUp(() async {

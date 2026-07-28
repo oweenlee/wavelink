@@ -4,20 +4,35 @@ import 'package:flutter/material.dart';
 import '../models/song.dart';
 import '../models/lyric_line.dart';
 import '../models/playback_types.dart';
-import '../services/preferences_service.dart';
-import '../services/rust_service.dart' as rs;
+import '../data/repositories/audio_engine_repository.dart';
+import '../data/repositories/song_repository.dart';
+import '../data/repositories/preferences_repository.dart';
+import '../data/services/rust_service.dart' show AnalyzeResult;
 import 'audio_player_provider.dart';
 import 'queue_provider.dart';
 import 'library_provider.dart';
 import 'dsp_provider.dart';
 
 class PlaybackProvider extends ChangeNotifier {
-  final AudioPlayerProvider audioPlayer = AudioPlayerProvider();
-  final QueueProvider queueProvider = QueueProvider();
-  final LibraryProvider library = LibraryProvider();
-  final DspProvider dsp = DspProvider();
+  final AudioPlayerProvider audioPlayer;
+  final QueueProvider queueProvider;
+  final LibraryProvider library;
+  final DspProvider dsp;
+  final PreferencesRepository _prefsRepo;
 
-  PlaybackProvider() {
+  PlaybackProvider({
+    required AudioEngineRepository engineRepo,
+    required SongRepository songRepo,
+    required PreferencesRepository prefsRepo,
+  })  : audioPlayer = AudioPlayerProvider(engineRepo: engineRepo),
+        queueProvider = QueueProvider(prefsRepo: prefsRepo),
+        library = LibraryProvider(
+          songRepo: songRepo,
+          engineRepo: engineRepo,
+          prefsRepo: prefsRepo,
+        ),
+        dsp = DspProvider(engineRepo: engineRepo, prefsRepo: prefsRepo),
+        _prefsRepo = prefsRepo {
     _wire();
     _loadPreferences();
     audioPlayer.init();
@@ -52,11 +67,10 @@ class PlaybackProvider extends ChangeNotifier {
   }
 
   void _loadPreferences() {
-    final prefs = PreferencesService.instance;
-    audioPlayer.setVolume(prefs.volume);
-    if (prefs.shuffle) queueProvider.toggleShuffle();
+    audioPlayer.setVolume(_prefsRepo.volume);
+    if (_prefsRepo.shuffle) queueProvider.toggleShuffle();
     queueProvider.setLoopMode(LoopMode.values.firstWhere(
-      (m) => m.name == prefs.loopMode,
+      (m) => m.name == _prefsRepo.loopMode,
       orElse: () => LoopMode.list,
     ));
     dsp.loadDspPrefs();
@@ -69,7 +83,7 @@ class PlaybackProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  // ── 向后兼容 getter（委托到子 Provider） ──
+  // ── 向后兼容 getter ──
 
   List<Song> get queue => queueProvider.queue;
   int get currentIndex => queueProvider.currentIndex;
@@ -97,7 +111,7 @@ class PlaybackProvider extends ChangeNotifier {
   DspSettings get dspSettings => dsp.dspSettings;
   bool get dspAvailable => dsp.dspAvailable;
 
-  rs.AnalyzeResult? getAnalysis(String songId) =>
+  AnalyzeResult? getAnalysis(String songId) =>
       audioPlayer.getAnalysis(songId);
 
   // ── 外观偏好 ──
@@ -112,7 +126,7 @@ class PlaybackProvider extends ChangeNotifier {
   void setCoverBlur(double v) {}
   void setShowSpectrum(bool v) {}
 
-  // ── 向后兼容方法（委托） ──
+  // ── 向后兼容方法 ──
 
   bool autoPlayOnQueueSet = true;
 
@@ -148,7 +162,8 @@ class PlaybackProvider extends ChangeNotifier {
       audioPlayer.seekToStart();
     } else {
       final prevIdx =
-          (queueProvider.currentIndex - 1 + queueProvider.queue.length) % queueProvider.queue.length;
+          (queueProvider.currentIndex - 1 + queueProvider.queue.length) %
+              queueProvider.queue.length;
       queueProvider.advanceTo(prevIdx);
       audioPlayer.playSong(queueProvider.currentSong!);
     }

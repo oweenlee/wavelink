@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/preferences_service.dart';
+import '../data/services/preferences_service.dart';
 
 /// 管理当前界面语言。
 /// - 'system'：跟随系统语言（取 [WidgetsBinding] 的设备 locale，命中 zh/en 才用，否则回退英文）

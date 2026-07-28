@@ -4,10 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
 import '../models/lyric_line.dart';
-import '../services/native_audio_service.dart';
-import '../services/rust_service.dart' as rs;
+import '../data/services/native_audio_service.dart';
+import '../data/repositories/audio_engine_repository.dart';
+import '../data/services/rust_service.dart' show AnalyzeResult;
 
 class AudioPlayerProvider extends ChangeNotifier {
+  AudioPlayerProvider({required AudioEngineRepository engineRepo})
+      : _engineRepo = engineRepo;
+
+  final AudioEngineRepository _engineRepo;
   final NativeAudioService _nativeAudio = NativeAudioService();
   StreamSubscription<AudioEvent>? _eventSub;
   Timer? _progressTimer;
@@ -17,7 +22,6 @@ class AudioPlayerProvider extends ChangeNotifier {
   double _position = 0.0;
   double _volume = 0.8;
   int _playToken = 0;
-  final Map<String, rs.AnalyzeResult> _analysisCache = {};
 
   Future<void> Function(Song) startDecoderHook = (_) async {};
   VoidCallback? onTrackEnd;
@@ -25,12 +29,11 @@ class AudioPlayerProvider extends ChangeNotifier {
   Song? _currentSong;
   void setCurrentSong(Song? song) => _currentSong = song;
 
-  // ── getters ──
-
   bool get isPlaying => _isPlaying;
   double get position => _position;
   double get volume => _volume;
   Song? get currentSong => _currentSong;
+  AudioEngineRepository get engineRepo => _engineRepo;
 
   double get progress {
     final song = _currentSong;
@@ -41,9 +44,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   List<LyricLine>? get currentLyrics => null;
   int get currentLyricLine => -1;
 
-  rs.AnalyzeResult? getAnalysis(String songId) => _analysisCache[songId];
-
-  // ── 生命周期 ──
+  AnalyzeResult? getAnalysis(String songId) => _engineRepo.getAnalysis(songId);
 
   Future<void> init() async {
     try {
@@ -54,8 +55,8 @@ class AudioPlayerProvider extends ChangeNotifier {
           _handleRemoteCommand(event);
         }
       });
-      if (rs.rustAvailable) {
-        await rs.initEngine();
+      if (_engineRepo.rustAvailable) {
+        await _engineRepo.initEngine();
       }
     } catch (e) {
       debugPrint('[Audio] 初始化原生音频失败: $e');
@@ -66,12 +67,10 @@ class AudioPlayerProvider extends ChangeNotifier {
   void dispose() {
     _progressTimer?.cancel();
     _eventSub?.cancel();
-    rs.deinitEngine();
+    _engineRepo.deinitEngine();
     _nativeAudio.dispose();
     super.dispose();
   }
-
-  // ── 播放控制 ──
 
   void play() {
     if (_currentSong == null) return;
@@ -95,8 +94,8 @@ class AudioPlayerProvider extends ChangeNotifier {
     await _nativeAudio.stop();
     if (token != _playToken) return;
 
-    if (song.path != null && rs.rustAvailable) {
-      await rs.enginePlay(song.path!);
+    if (song.path != null && _engineRepo.rustAvailable) {
+      await _engineRepo.play(song.path!);
     }
     if (token != _playToken) return;
 
@@ -113,7 +112,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   void pause() {
     _isPlaying = false;
     _progressTimer?.cancel();
-    rs.enginePause();
+    _engineRepo.pause();
     _nativeAudio.pause();
     notifyListeners();
   }
@@ -125,7 +124,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     } else {
       _isPlaying = true;
       _startProgressTimer();
-      rs.engineResume();
+      _engineRepo.resume();
       _nativeAudio.resume();
       notifyListeners();
     }
@@ -138,8 +137,6 @@ class AudioPlayerProvider extends ChangeNotifier {
     _updateLockScreenMetadata();
     notifyListeners();
   }
-
-  // ── seek ──
 
   void seek(double value, {bool immediate = false}) {
     final song = _currentSong;
@@ -175,19 +172,15 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (song == null) return;
     _position = posMs.clamp(0, song.duration.inMilliseconds.toDouble());
     notifyListeners();
-    if (!_nativeReady || !rs.rustAvailable) return;
-    rs.engineSeek(_position / 1000.0);
+    if (!_nativeReady || !_engineRepo.rustAvailable) return;
+    _engineRepo.seek(_position / 1000.0);
   }
-
-  // ── 音量 ──
 
   void setVolume(double v) {
     _volume = v.clamp(0.0, 1.0);
-    rs.engineSetVolume(vol: _volume);
+    _engineRepo.setVolume(_volume);
     notifyListeners();
   }
-
-  // ── 进度 ──
 
   void _startProgressTimer() {
     _progressTimer?.cancel();
@@ -199,7 +192,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   Future<void> _tick() async {
     if (!_isPlaying) return;
     try {
-      final event = await rs.enginePollEvents();
+      final event = await _engineRepo.pollEvents();
       if (event == 'stopped') {
         _progressTimer?.cancel();
         _isPlaying = false;
@@ -207,7 +200,7 @@ class AudioPlayerProvider extends ChangeNotifier {
         onTrackEnd?.call();
         return;
       } else if (event == 'error') {
-        final err = await rs.engineLastError();
+        final err = await _engineRepo.lastError();
         debugPrint('[Audio] 引擎错误: $err');
       }
     } catch (e) {
@@ -215,7 +208,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
 
     try {
-      final secs = await rs.enginePositionSecs();
+      final secs = await _engineRepo.positionSecs();
       _position = secs * 1000;
     } catch (e) {
       _position += 250;
@@ -234,22 +227,17 @@ class AudioPlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── 分析缓存 ──
-
   Future<void> _analyzeCurrent() async {
     final song = _currentSong;
-    if (song == null || !rs.rustAvailable) return;
-    if (_analysisCache.containsKey(song.id)) return;
+    if (song == null || !_engineRepo.rustAvailable) return;
+    if (_engineRepo.hasAnalysis(song.id)) return;
     try {
-      final result = await rs.analyzeAudioFile(song.path!);
-      _analysisCache[song.id] = result;
+      await _engineRepo.analyzeFile(song.path!);
       notifyListeners();
     } catch (e) {
       debugPrint('[Audio] 分析音频失败: $e');
     }
   }
-
-  // ── 锁屏 ──
 
   void _handleRemoteCommand(RemoteCommand cmd) {
     switch (cmd.command) {
@@ -290,7 +278,7 @@ class AudioPlayerProvider extends ChangeNotifier {
       return;
     }
     try {
-      final bytes = await rs.getCoverBytes(song.path!);
+      final bytes = await _engineRepo.getCoverBytes(song.path!);
       final cacheDir = Directory('${appDir.path}/.covers');
       if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
       await cacheFile.writeAsBytes(bytes);

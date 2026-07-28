@@ -5,7 +5,7 @@ import '../l10n/app_localizations.dart';
 import '../providers/playback_provider.dart';
 import '../theme/app_theme.dart';
 import '../models/song.dart';
-import '../services/preferences_service.dart';
+import '../data/services/preferences_service.dart';
 import '../widgets/song_tile.dart';
 
 enum _ResultKind { songs, albums, artists }

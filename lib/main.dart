@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'services/rust_service.dart';
-import 'services/preferences_service.dart';
+import 'data/services/rust_service.dart';
+import 'data/services/preferences_service.dart';
+import 'data/repositories/audio_engine_repository.dart';
+import 'data/repositories/song_repository.dart';
+import 'data/repositories/preferences_repository.dart';
 import 'providers/playback_provider.dart';
 import 'providers/locale_provider.dart';
 import 'app.dart';
@@ -21,7 +24,16 @@ Future<void> main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  final playback = PlaybackProvider();
+  // 创建 Repository 层
+  final engineRepo = AudioEngineRepository();
+  final songRepo = SongRepository();
+  final prefsRepo = PreferencesRepository();
+
+  final playback = PlaybackProvider(
+    engineRepo: engineRepo,
+    songRepo: songRepo,
+    prefsRepo: prefsRepo,
+  );
   runApp(
     MultiProvider(
       providers: [

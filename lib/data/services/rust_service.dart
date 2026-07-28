@@ -1,19 +1,19 @@
 import 'package:flutter/foundation.dart';
-import '../src/rust/frb_generated.dart';
-import '../src/rust/api/decode.dart' as decode;
-import '../src/rust/api/analyze.dart' as analyze;
-import '../src/rust/api/metadata.dart' as meta;
-import '../src/rust/api/audio_output.dart' as audio_out;
-import '../src/rust/api/cue.dart' as cue;
-import '../src/rust/api/playlist.dart' as playlist;
-import '../src/rust/api/engine.dart' as engine;
+import '../../src/rust/frb_generated.dart';
+import '../../src/rust/api/decode.dart' as decode;
+import '../../src/rust/api/analyze.dart' as analyze;
+import '../../src/rust/api/metadata.dart' as meta;
+import '../../src/rust/api/audio_output.dart' as audio_out;
+import '../../src/rust/api/cue.dart' as cue;
+import '../../src/rust/api/playlist.dart' as playlist;
+import '../../src/rust/api/engine.dart' as engine;
 
-export '../src/rust/api/decode.dart' show DecodeResult, DecodeChunk, StreamDecoder;
-export '../src/rust/api/analyze.dart' show AnalyzeResult;
-export '../src/rust/api/metadata.dart' show MetadataResult, ReplayGainResult;
-export '../src/rust/api/cue.dart' show CueSheetResult, CueFileResult, CueTrackResult;
-export '../src/rust/api/playlist.dart' show PlaylistEntryResult;
-export '../src/rust/api/engine.dart' show LevelsDto;
+export '../../src/rust/api/decode.dart' show DecodeResult, DecodeChunk, StreamDecoder;
+export '../../src/rust/api/analyze.dart' show AnalyzeResult;
+export '../../src/rust/api/metadata.dart' show MetadataResult, ReplayGainResult;
+export '../../src/rust/api/cue.dart' show CueSheetResult, CueFileResult, CueTrackResult;
+export '../../src/rust/api/playlist.dart' show PlaylistEntryResult;
+export '../../src/rust/api/engine.dart' show LevelsDto;
 
 /// Rust 后端是否已加载
 bool rustAvailable = false;

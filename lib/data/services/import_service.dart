@@ -1,12 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-import '../models/song.dart';
-import '../services/rust_service.dart' as rs;
-import '../services/file_picker_service.dart';
-import '../theme/app_theme.dart';
-import '../services/media_store_service.dart';
-import '../services/media_store_channel.dart';
+import '../../models/song.dart';
+import 'rust_service.dart' as rs;
+import 'file_picker_service.dart';
+import '../../theme/app_theme.dart';
+import 'media_store_service.dart';
+import 'media_store_channel.dart';
 
 /// 音乐文件导入服务
 ///
@@ -41,7 +41,7 @@ class ImportService {
     }
 
     // 异步缓存封面（不阻塞返回）
-    _cacheCovers(songs);
+    cacheCovers(songs);
     return songs;
   }
 
@@ -247,7 +247,7 @@ class ImportService {
   }
 
   /// 异步缓存所有封面（不阻塞返回）
-  static Future<void> _cacheCovers(List<Song> songs) async {
+  static Future<void> cacheCovers(List<Song> songs) async {
     final cacheDir = await _coverCacheDir();
     for (final song in songs) {
       if (song.path == null || song.coverUrl != null) continue;

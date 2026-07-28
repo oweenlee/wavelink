@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
-import '../services/rust_service.dart' as rs;
+import '../data/services/rust_service.dart' as rs;
 import '../theme/app_theme.dart';
 
 class DiagnosticPage extends StatefulWidget {

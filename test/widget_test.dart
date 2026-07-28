@@ -7,7 +7,10 @@ import 'package:wavelink_mobile/app.dart';
 import 'package:wavelink_mobile/models/song.dart';
 import 'package:wavelink_mobile/models/lyric_line.dart';
 import 'package:wavelink_mobile/providers/playback_provider.dart';
-import 'package:wavelink_mobile/services/preferences_service.dart';
+import 'package:wavelink_mobile/data/services/preferences_service.dart';
+import 'package:wavelink_mobile/data/repositories/audio_engine_repository.dart';
+import 'package:wavelink_mobile/data/repositories/song_repository.dart';
+import 'package:wavelink_mobile/data/repositories/preferences_repository.dart';
 
 void main() {
   setUp(() async {
@@ -22,7 +25,11 @@ void main() {
   });
 
   Widget buildApp() => ChangeNotifierProvider(
-        create: (_) => PlaybackProvider(),
+        create: (_) => PlaybackProvider(
+          engineRepo: AudioEngineRepository(),
+          songRepo: SongRepository(),
+          prefsRepo: PreferencesRepository(),
+        ),
         child: const WaveLinkApp(),
       );
 

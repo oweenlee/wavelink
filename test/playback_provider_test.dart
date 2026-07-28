@@ -4,7 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wavelink_mobile/models/song.dart';
 import 'package:wavelink_mobile/providers/playback_provider.dart';
-import 'package:wavelink_mobile/services/preferences_service.dart';
+import 'package:wavelink_mobile/data/services/preferences_service.dart';
+import 'package:wavelink_mobile/data/repositories/audio_engine_repository.dart';
+import 'package:wavelink_mobile/data/repositories/song_repository.dart';
+import 'package:wavelink_mobile/data/repositories/preferences_repository.dart';
 
 Song _song(String id, {String title = '', String artist = ''}) => Song(
       id: id,
@@ -30,7 +33,11 @@ void main() {
   });
 
   PlaybackProvider buildProvider({bool autoPlay = false}) {
-    final p = PlaybackProvider();
+    final p = PlaybackProvider(
+      engineRepo: AudioEngineRepository(),
+      songRepo: SongRepository(),
+      prefsRepo: PreferencesRepository(),
+    );
     p.autoPlayOnQueueSet = autoPlay;
     // 注入测试歌曲，绕过 Documents 扫描结果
     p.setQueue([

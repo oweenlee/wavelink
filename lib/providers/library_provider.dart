@@ -2,19 +2,28 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
-import '../services/import_service.dart';
-import '../services/preferences_service.dart';
-import '../services/rust_service.dart' as rs;
+import '../data/repositories/song_repository.dart';
+import '../data/repositories/audio_engine_repository.dart';
+import '../data/repositories/preferences_repository.dart';
 
 class LibraryProvider extends ChangeNotifier {
+  LibraryProvider({
+    required SongRepository songRepo,
+    required AudioEngineRepository engineRepo,
+    required PreferencesRepository prefsRepo,
+  })  : _songRepo = songRepo,
+        _engineRepo = engineRepo,
+        _prefsRepo = prefsRepo;
+
+  final SongRepository _songRepo;
+  final AudioEngineRepository _engineRepo;
+  final PreferencesRepository _prefsRepo;
   final Set<String> _favoriteIds = {};
   List<Song> _importedSongs = [];
   bool _scanDone = false;
 
-  /// 获取当前队列的歌曲列表，由 PlaybackProvider 协调器提供
   List<Song> Function() queueSupplier = () => [];
-
-  // ── getters ──
+  Song? Function() currentSongSupplier = () => null;
 
   List<Song> get importedSongs => _importedSongs;
   List<Song> get allSongs => _importedSongs;
@@ -39,7 +48,9 @@ class LibraryProvider extends ChangeNotifier {
     return out;
   }
 
-  Song? Function() currentSongSupplier = () => null;
+  VoidCallback? onSongsLoaded;
+  VoidCallback? onSongsAdded;
+  VoidCallback? onSongsRescanned;
 
   // ── 收藏 ──
 
@@ -67,17 +78,17 @@ class LibraryProvider extends ChangeNotifier {
   }
 
   void _persistFavorites() {
-    PreferencesService.instance.setFavorites(_favoriteIds);
+    _prefsRepo.setFavorites(_favoriteIds);
   }
 
   void loadFavoritesPrefs() {
-    _favoriteIds.addAll(PreferencesService.instance.favorites);
+    _favoriteIds.addAll(_prefsRepo.favorites);
   }
 
   // ── 导入与扫描 ──
 
   Future<bool> scanMediaStore() async {
-    final songs = await ImportService.scanMediaStore();
+    final songs = await _songRepo.scanMediaStore();
     if (songs.isEmpty) return false;
     final newPaths =
         songs.where((s) => s.path != null).map((s) => s.path!).toSet();
@@ -86,15 +97,17 @@ class LibraryProvider extends ChangeNotifier {
       ..._importedSongs
           .where((s) => s.path == null || !newPaths.contains(s.path)),
     ];
+    _songRepo.setCachedSongs(_importedSongs);
     onImportedSongsLoaded(_importedSongs);
     notifyListeners();
     return true;
   }
 
   Future<void> scanImported() async {
-    final songs = await ImportService.scanDocuments();
+    final songs = await _songRepo.scanDocuments();
     if (songs.isNotEmpty) {
       _importedSongs = songs;
+      _songRepo.setCachedSongs(songs);
       onImportedSongsLoaded(songs);
     }
     _scanDone = true;
@@ -102,25 +115,22 @@ class LibraryProvider extends ChangeNotifier {
   }
 
   Future<void> scanAllSources() async {
-    final songs = await ImportService.scanAll();
+    final songs = await _songRepo.scanAll();
     if (songs.isNotEmpty) {
       _importedSongs = songs;
+      _songRepo.setCachedSongs(songs);
       onImportedSongsLoaded(songs);
     }
     _scanDone = true;
     notifyListeners();
   }
 
-  VoidCallback? onSongsLoaded;
-  VoidCallback? onSongsAdded;
-  VoidCallback? onSongsRescanned;
-
   void onImportedSongsLoaded(List<Song> songs) {
     onSongsLoaded?.call();
   }
 
   Future<void> batchExtractCovers(List<Song> songs) async {
-    if (!rs.rustAvailable) return;
+    if (!_engineRepo.rustAvailable) return;
     final appDir = await getApplicationDocumentsDirectory();
     final cacheDir = Directory('${appDir.path}/.covers');
     if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
@@ -135,7 +145,7 @@ class LibraryProvider extends ChangeNotifier {
         continue;
       }
       try {
-        final bytes = await rs.getCoverBytes(song.path!);
+        final bytes = await _engineRepo.getCoverBytes(song.path!);
         await cacheFile.writeAsBytes(bytes);
         song.coverUrl = cacheFile.path;
         changed = true;
@@ -147,7 +157,7 @@ class LibraryProvider extends ChangeNotifier {
   }
 
   Future<int> importFromPicker() async {
-    final songs = await ImportService.pickAndImport();
+    final songs = await _songRepo.pickAndImport();
     if (songs.isEmpty) return 0;
     final existingPaths =
         _importedSongs.where((s) => s.path != null).map((s) => s.path!).toSet();
@@ -156,6 +166,7 @@ class LibraryProvider extends ChangeNotifier {
         .toList();
     if (newSongs.isEmpty) return 0;
     _importedSongs = [..._importedSongs, ...newSongs];
+    _songRepo.addSongs(newSongs);
     onImportAdded(newSongs);
     notifyListeners();
     return newSongs.length;
@@ -166,8 +177,9 @@ class LibraryProvider extends ChangeNotifier {
   }
 
   Future<void> rescanImported() async {
-    final songs = await ImportService.scanDocuments();
+    final songs = await _songRepo.scanDocuments();
     _importedSongs = songs;
+    _songRepo.setCachedSongs(songs);
     onRescan(songs);
     notifyListeners();
   }
@@ -178,16 +190,16 @@ class LibraryProvider extends ChangeNotifier {
 
   // ── 播放列表 ──
 
-  Map<String, List<String>> get playlists => PreferencesService.instance.playlists;
+  Map<String, List<String>> get playlists => _prefsRepo.playlists;
 
   Future<void> saveCurrentQueueAsPlaylist(String name) async {
     final ids = queueSupplier().map((s) => s.id).toList();
-    await PreferencesService.instance.savePlaylist(name, ids);
+    await _prefsRepo.savePlaylist(name, ids);
     notifyListeners();
   }
 
   Future<void> savePlaylist(String name, List<String> songIds) async {
-    await PreferencesService.instance.savePlaylist(name, songIds);
+    await _prefsRepo.savePlaylist(name, songIds);
     notifyListeners();
   }
 

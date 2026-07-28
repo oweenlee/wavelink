@@ -3,7 +3,7 @@
 
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wavelink_mobile/services/rust_service.dart' as rs;
+import 'package:wavelink_mobile/data/services/rust_service.dart' as rs;
 import '../lib/src/rust/api/audio_output.dart' as audio_out;
 
 void main() {
