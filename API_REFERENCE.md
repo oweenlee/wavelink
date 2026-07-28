@@ -1,6 +1,6 @@
 # wavelink-audio-core API Reference
 
-> Source hash: `669a216a8042` | Generated: 2026-07-28 10:38
+> Source hash: `4084d45fbb6e` | Generated: 2026-07-28 22:18
 > AI 助手优先读此文件，而非读 `src/` 源码。若 AI 返回的代码与当前签名不匹配，请重新运行 `bash doc-api.sh`。
 
 ## Table of Contents
@@ -384,6 +384,11 @@ pub fn set_volume(&self, vol: f32) { ...
 设置 ReplayGain 增益（dB），作为 Pre-amp 在 DSP 管线 HPF 后、EQ 前应用  
 ```rust
 pub fn set_replaygain_gain_db(&self, gain_db: f32) { ...
+```
+
+设置 ReplayGain 真峰值（0~1），增益将被限制为不超过 0dBFS。None = 不限制  
+```rust
+pub fn set_replaygain_peak(&self, peak: Option<f32>) { ...
 ```
 
 更新引擎配置（采样率/声道/缓冲），下次播放时生效  
@@ -1269,15 +1274,54 @@ pub fn is_active(&self) -> bool { ...
 
 ### Crossfeed (`dsp/crossfeed.rs`)
 
+Crossfeed 预设参数  
+```rust
+pub struct CrossfeedConfig { ...
+```
+
+低通截止频率 (Hz)  
+```rust
+pub cutoff_hz: f32,
+```
+
+对侧信号衰减 (dB)  
+```rust
+pub attenuation_db: f32,
+```
+
+延迟线时长 (µs)  
+```rust
+pub delay_us: f32,
+```
+
+CMOY 预设（最流行）: 700Hz, -6.0dB, 300µs  
+```rust
+pub const CMOY: CrossfeedConfig = CrossfeedConfig { ...
+```
+
+Chu Moy 预设（CMOY 变体，稍紧凑）: 700Hz, -6.0dB, 250µs  
+```rust
+pub const CHU_MOY: CrossfeedConfig = CrossfeedConfig { ...
+```
+
+Jan Meier 预设（更温和，适合古典）: 650Hz, -9.5dB, 250µs  
+```rust
+pub const JAN_MEIER: CrossfeedConfig = CrossfeedConfig { ...
+```
+
 Bauer 算法跨馈处理器  
 ```rust
 pub struct Crossfeed { ...
 ```
 
-创建 Crossfeed，使用 CMOY 预设  
-- `sample_rate`: 采样率（Hz）  
+创建 Crossfeed，使用 CMOY 预设（默认）  
 ```rust
 pub fn new(sample_rate: f32) -> Self { ...
+```
+
+创建 Crossfeed，使用自定义配置  
+```rust
+pub fn with_config(sample_rate: f32, config: CrossfeedConfig) -> Self { ...
 ```
 
 处理交错立体声缓冲 [L, R, L, R, ...]  
@@ -1437,12 +1481,17 @@ pub fn preset_bands(name: PresetName) -> Vec<PeqBand> { ...
 
 ### Speed Changer (`dsp/speed.rs`)
 
+变速重采样器（rubato sinc 高质量实现）  
+```rust
+pub struct SpeedChanger { ...
+```
+
 新建变速器，初始速度 1.0（正常）  
 ```rust
 pub fn new() -> Self { ...
 ```
 
-设置播放速度（0.25 ~ 4.0）  
+设置播放速度（0.25 ~ 4.0），速度变化时重建重采样器  
 ```rust
 pub fn set_speed(&mut self, speed: f32) { ...
 ```
@@ -2157,7 +2206,10 @@ pub fn release_exclusive_mode() { ...
 
 ### 输出设备设置：复用或打开新 output (`engine/output_setup.rs`)
 
-输出设备设置：复用或打开新 output
+实际输出位深（dither 用）  
+```rust
+pub actual_bits: u32,
+```
 
 ### macOS CoreAudio 设备枚举 (`output/output_coreaudio.rs`)
 
@@ -2180,4 +2232,4 @@ Windows WASAPI Exclusive 模式输出后端
 
 ---
 
-> 367 pub items (44 FFI exports). Run `bash doc-api.sh` to refresh.
+> 378 pub items (44 FFI exports). Run `bash doc-api.sh` to refresh.
