@@ -136,6 +136,8 @@ impl EngineHandle {
     pub fn set_volume(&self, vol: f32) { let _ = self.tx.send(EngineCommand::SetVolume(vol)); }
     /// 设置 ReplayGain 增益（dB），作为 Pre-amp 在 DSP 管线 HPF 后、EQ 前应用
     pub fn set_replaygain_gain_db(&self, gain_db: f32) { let _ = self.tx.send(EngineCommand::SetReplaygainGain(gain_db)); }
+    /// 设置 ReplayGain 真峰值（0~1），增益将被限制为不超过 0dBFS。None = 不限制
+    pub fn set_replaygain_peak(&self, peak: Option<f32>) { let _ = self.tx.send(EngineCommand::SetReplaygainPeak(peak)); }
     /// 更新引擎配置（采样率/声道/缓冲），下次播放时生效
     pub fn set_config(&self, config: EngineConfig) {
         let _ = self.tx.send(EngineCommand::SetConfig(config));

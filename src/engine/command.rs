@@ -79,6 +79,8 @@ pub enum EngineCommand {
     SetVolume(f32),
     /// 设置 ReplayGain 增益（dB）
     SetReplaygainGain(f32),
+    /// 设置 ReplayGain 真峰值（用于限制增益不过载），None = 不限制
+    SetReplaygainPeak(Option<f32>),
     /// 更新引擎配置，下次播放时生效
     SetConfig(EngineConfig),
     /// 设置播放模式

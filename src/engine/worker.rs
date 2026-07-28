@@ -95,6 +95,7 @@ pub(crate) fn run_engine(
                         Ok(EngineCommand::SetCrossfeed(enabled)) => state.set_crossfeed(enabled),
                         Ok(EngineCommand::SetVolume(vol)) => state.set_volume(vol),
                         Ok(EngineCommand::SetReplaygainGain(gain)) => state.set_replaygain_db(gain),
+                        Ok(EngineCommand::SetReplaygainPeak(peak)) => state.set_replaygain_peak(peak),
                         Ok(EngineCommand::SetConfig(cfg)) => {
                             let device = state.config.output_device.take();
                             state.config = cfg.clone();

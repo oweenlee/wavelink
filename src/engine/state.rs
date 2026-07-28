@@ -33,6 +33,8 @@ pub struct EngineState {
     pub(crate) current_volume: f32,
     pub(crate) pending_ir: Option<String>,
     pub(crate) pending_replaygain_db: Option<f32>,
+    /// ReplayGain 真峰值（限制增益不过载）
+    pub(crate) pending_replaygain_peak: Option<f32>,
     pub(crate) current_entry: Option<QueueEntry>,
     pub(crate) position: Arc<AtomicU64>,
     pub(crate) queue: Vec<QueueEntry>,
@@ -84,6 +86,7 @@ impl EngineState {
             current_volume: 1.0,
             pending_ir: None,
             pending_replaygain_db: None,
+            pending_replaygain_peak: None,
             current_entry: None,
             position,
             queue: Vec::new(),
@@ -490,9 +493,24 @@ impl EngineState {
 
     pub(crate) fn apply_pending_replaygain(&mut self) {
         if let Some(gain_db) = self.pending_replaygain_db {
+            let effective = self.effective_replaygain_db(gain_db);
             if let Some(dsp) = &self.dsp {
-                dsp.lock().set_replaygain_db(gain_db);
+                dsp.lock().set_replaygain_db(effective);
             }
+        }
+    }
+
+    /// 计算有效 ReplayGain 增益：用 peak 标签限制增益不超过 0dBFS
+    fn effective_replaygain_db(&self, gain_db: f32) -> f32 {
+        match self.pending_replaygain_peak {
+            Some(peak) if peak > 0.0 => {
+                let max_gain_db = -20.0 * peak.log10();
+                if gain_db > max_gain_db {
+                    tracing::debug!("ReplayGain 增益受 peak 限制: {gain_db:.1}dB → {max_gain_db:.1}dB (peak={peak})");
+                }
+                gain_db.min(max_gain_db)
+            }
+            _ => gain_db,
         }
     }
 
@@ -543,9 +561,16 @@ impl EngineState {
 
     pub(crate) fn set_replaygain_db(&mut self, gain_db: f32) {
         self.pending_replaygain_db = Some(gain_db);
+        let effective = self.effective_replaygain_db(gain_db);
         if let Some(dsp) = &self.dsp {
-            dsp.lock().set_replaygain_db(gain_db);
+            dsp.lock().set_replaygain_db(effective);
         }
+    }
+
+    pub(crate) fn set_replaygain_peak(&mut self, peak: Option<f32>) {
+        self.pending_replaygain_peak = peak;
+        // 更新 peak 后重新应用增益限制
+        self.apply_pending_replaygain();
     }
 
     pub(crate) fn set_speed(&mut self, speed: f32) {
@@ -655,6 +680,7 @@ pub(crate) mod tests {
             current_volume: 1.0,
             pending_ir: None,
             pending_replaygain_db: None,
+            pending_replaygain_peak: None,
             current_entry: Some(QueueEntry::for_file("/tmp/test.wav".into())),
             position,
             queue: queue_entries,
