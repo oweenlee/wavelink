@@ -6,9 +6,9 @@ import 'data/services/preferences_service.dart';
 import 'data/repositories/audio_engine_repository.dart';
 import 'data/repositories/song_repository.dart';
 import 'data/repositories/preferences_repository.dart';
-import 'providers/playback_provider.dart';
-import 'providers/locale_provider.dart';
-import 'app.dart';
+import 'ui/features/playback/view_models/playback_provider.dart';
+import 'ui/features/settings/view_models/locale_provider.dart';
+import 'ui/core/app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

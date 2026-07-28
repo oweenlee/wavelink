@@ -1,4 +1,4 @@
-import '../../models/song.dart';
+import '../../domain/models/song.dart';
 import '../services/import_service.dart';
 
 /// 歌曲数据的单一来源

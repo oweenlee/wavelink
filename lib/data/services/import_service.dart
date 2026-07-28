@@ -1,10 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-import '../../models/song.dart';
+import '../../domain/models/song.dart';
 import 'rust_service.dart' as rs;
 import 'file_picker_service.dart';
-import '../../theme/app_theme.dart';
+import '../../ui/core/theme/app_theme.dart';
 import 'media_store_service.dart';
 import 'media_store_channel.dart';
 

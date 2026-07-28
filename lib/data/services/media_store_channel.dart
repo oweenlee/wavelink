@@ -2,8 +2,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../models/song.dart';
-import '../../theme/app_theme.dart';
+import '../../domain/models/song.dart';
+import '../../ui/core/theme/app_theme.dart';
 
 /// iOS 端系统音乐库扫描通道（封装 MPMediaQuery 原生调用）
 class MediaStoreIOSChannel {

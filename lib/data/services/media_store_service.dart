@@ -2,8 +2,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
-import '../../models/song.dart';
-import '../../theme/app_theme.dart';
+import '../../domain/models/song.dart';
+import '../../ui/core/theme/app_theme.dart';
 import 'media_store_channel.dart';
 
 /// 通过平台系统音乐库（Android MediaStore / iOS MPMediaQuery）扫描音乐
