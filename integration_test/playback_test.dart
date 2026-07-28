@@ -2,6 +2,7 @@
 /// flutter test integration_test/playback_test.dart
 
 import 'dart:io';
+import 'package:checks/checks.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wavelink_mobile/data/services/rust_service.dart' as rs;
 import 'package:wavelink_mobile/src/rust/api/audio_output.dart' as audio_out;
@@ -14,11 +15,11 @@ void main() {
 
   setUpAll(() async {
     await rs.initRust();
-    expect(rs.rustAvailable, isTrue, reason: 'Rust 未加载');
+    check(rs.rustAvailable).equals(isTrue, reason: 'Rust 未加载');
 
     // 找 test-media
     mediaDir = _findTestMedia();
-    expect(mediaDir, isNotEmpty, reason: 'test-media/ 未找到');
+    check(mediaDir).equals(isNotEmpty, reason: 'test-media/ 未找到');
   });
 
   /// 测试：单曲稳态播放无 underrun
@@ -27,7 +28,7 @@ void main() {
 
     // 选取一个典型的 44.1kHz 文件
     final file = _pickFile(mediaDir, ext: 'm4a');
-    expect(file, isNotNull, reason: '没有 m4a 文件');
+    check(file).equals(isNotNull, reason: '没有 m4a 文件');
     print('文件: $file');
 
     // 播放
@@ -46,8 +47,7 @@ void main() {
     final delta = (underrunAfter - underrunBefore).toInt();
     print('5 秒后 underrun: $underrunAfter, 增量: $delta');
 
-    expect(delta, lessThanOrEqualTo(0),
-        reason: '稳态播放不应 underrun，增量为 $delta');
+    check(delta).isLessOrEqual(0);
   });
 
   /// 测试：单个 seek 后无 underrun
@@ -55,7 +55,7 @@ void main() {
     await rs.initEngine();
 
     final file = _pickFile(mediaDir, ext: 'm4a');
-    expect(file, isNotNull);
+    check(file).isNotNull();
 
     await rs.enginePlay(file!);
     await Future.delayed(const Duration(seconds: 2));
@@ -73,8 +73,7 @@ void main() {
     final delta = (underrunAfter - underrunBefore).toInt();
     print('seek 后 3s underrun 增量: $delta');
 
-    expect(delta, lessThanOrEqualTo(0),
-        reason: 'seek 后不应 underrun');
+    check(delta).isLessOrEqual(0);
   });
 
   /// 测试：连续 5 次 seek（模拟快速滑动）
@@ -82,7 +81,7 @@ void main() {
     await rs.initEngine();
 
     final file = _pickFile(mediaDir, ext: 'm4a');
-    expect(file, isNotNull);
+    check(file).isNotNull();
 
     await rs.enginePlay(file!);
     await Future.delayed(const Duration(seconds: 2));
@@ -101,8 +100,7 @@ void main() {
     }
 
     print('最大 underrun 增量: $maxDelta');
-    expect(maxDelta, lessThanOrEqualTo(1),
-        reason: '连续 seek 时 underrun 不应超过 1 次');
+    check(maxDelta).isLessOrEqual(1);
   });
 
   /// 测试：快速切歌（3 首不同的歌）
@@ -123,8 +121,7 @@ void main() {
     final delta = (underrunAfter - underrunBefore).toInt();
     print('切歌后 underrun 增量: $delta');
 
-    expect(delta, lessThanOrEqualTo(1),
-        reason: '切歌后 underrun 不应超过 1 次');
+    check(delta).isLessOrEqual(1);
   });
 
   /// 测试：44.1kHz vs 48kHz 文件对比
@@ -140,7 +137,7 @@ void main() {
         break;
       }
     }
-    expect(file48k, isNotNull, reason: '未找到 48kHz 测试文件');
+    check(file48k).equals(isNotNull, reason: '未找到 48kHz 测试文件');
     print('48kHz 文件: ${file48k!.path}');
 
     await rs.enginePlay(file48k.path);
@@ -158,8 +155,7 @@ void main() {
     final delta = (underrunAfter - underrunBefore).toInt();
     print('48kHz 5s 后 underrun 增量: $delta');
 
-    expect(delta, lessThanOrEqualTo(0),
-        reason: '48kHz 文件播放不应 underrun（硬件采样率适配后）');
+    check(delta).isLessOrEqual(0);
   });
 }
 

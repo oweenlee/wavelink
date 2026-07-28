@@ -2,6 +2,7 @@
 /// 检测引擎播放连续性和 underrun
 
 import 'dart:io';
+import 'package:checks/checks.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wavelink_mobile/data/services/rust_service.dart' as rs;
 import '../lib/src/rust/api/audio_output.dart' as audio_out;
@@ -54,8 +55,7 @@ void main() {
     print('After 2s: position=$pos secs, underruns=$underrunBefore');
 
     // 引擎应正在播放，位置应推进
-    expect(pos, greaterThan(0.0),
-        reason: '引擎未播放，位置为 0');
+    check(pos).isGreaterThan(0.0);
 
     // 持续播放 3 秒
     await Future.delayed(const Duration(seconds: 3));
@@ -67,11 +67,9 @@ void main() {
     print('After 5s total: position=$posAfter secs, underruns delta=$underrunsDuring');
 
     // 位置应持续推进
-    expect(posAfter, greaterThan(pos),
-        reason: '播放未推进');
+    check(posAfter).isGreaterThan(pos);
     // 期望无新增 underrun
-    expect(underrunsDuring, equals(BigInt.zero),
-        reason: '检测到 underrun，可能有杂音');
+    check(underrunsDuring).equals(BigInt.zero);
 
     await rs.engineStop();
   });
@@ -104,8 +102,7 @@ void main() {
       final delta = underrunAfter - underrunBefore;
 
       print('Seek #$i: underrun delta=$delta');
-      expect(delta, equals(BigInt.zero),
-          reason: 'Seek #$i 后出现 underrun');
+      check(delta).equals(BigInt.zero);
     }
 
     await rs.engineStop();

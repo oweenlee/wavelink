@@ -2,6 +2,7 @@
 /// flutter test integration_test/playback_diag_test.dart
 
 import 'dart:io';
+import 'package:checks/checks.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wavelink_mobile/data/services/rust_service.dart' as rs;
 import 'package:wavelink_mobile/src/rust/api/audio_output.dart' as audio_out;
@@ -10,15 +11,15 @@ void main() {
   testWidgets('诊断：播放和 seek 时的引擎 underrun', (tester) async {
     // 初始化 Rust
     await rs.initRust();
-    expect(rs.rustAvailable, isTrue, reason: 'Rust 未加载');
+    check(rs.rustAvailable).equals(isTrue, reason: 'Rust 未加载');
 
     // 找 test-media 目录
     final mediaDir = _findTestMedia();
-    expect(mediaDir, isNotNull, reason: 'test-media/ 未找到');
+    check(mediaDir).equals(isNotNull, reason: 'test-media/ 未找到');
 
     // 选一个测试文件
     final testFile = _pickFile(mediaDir!);
-    expect(testFile, isNotNull, reason: 'test-media 中没有音频文件');
+    check(testFile).equals(isNotNull, reason: 'test-media 中没有音频文件');
     print('══════ 测试文件: $testFile ══════');
 
     await rs.initEngine();

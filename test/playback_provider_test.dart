@@ -8,6 +8,7 @@ import 'package:wavelink_mobile/data/services/preferences_service.dart';
 import 'package:wavelink_mobile/data/repositories/audio_engine_repository.dart';
 import 'package:wavelink_mobile/data/repositories/song_repository.dart';
 import 'package:wavelink_mobile/data/repositories/preferences_repository.dart';
+import 'package:checks/checks.dart';
 
 Song _song(String id, {String title = '', String artist = ''}) => Song(
       id: id,
@@ -51,39 +52,39 @@ void main() {
   group('PlaybackProvider 队列逻辑', () {
     test('setQueue 设置队列并重置索引', () {
       final p = buildProvider();
-      expect(p.queue.length, 3);
-      expect(p.currentIndex, 0);
-      expect(p.currentSong?.id, 's1');
+      check(p.queue.length).equals(3);
+      check(p.currentIndex).equals(0);
+      check(p.currentSong?.id).equals('s1');
     });
 
     test('next 顺序播放与循环边界', () {
       final p = buildProvider();
       p.next();
-      expect(p.currentIndex, 1);
+      check(p.currentIndex).equals(1);
       p.next();
       p.next();
-      expect(p.currentIndex, 0); // 回到开头
+      check(p.currentIndex).equals(0); // 回到开头
     });
 
     test('previous 在开头回绕', () {
       final p = buildProvider();
       p.previous();
-      expect(p.currentIndex, 2);
+      check(p.currentIndex).equals(2);
     });
 
     test('single 循环模式重复当前曲', () {
       final p = buildProvider();
       p.toggleLoopMode(); // list -> single
-      expect(p.loopMode, LoopMode.single);
+      check(p.loopMode).equals(LoopMode.single);
       p.next();
-      expect(p.currentIndex, 0);
+      check(p.currentIndex).equals(0);
     });
 
     test('shuffle 模式 random next 不越界', () {
       final p = buildProvider();
       p.toggleShuffle();
       p.next();
-      expect(p.currentIndex >= 0 && p.currentIndex <= 2, isTrue);
+      check(p.currentIndex >= 0 && p.currentIndex <= 2).isTrue();
     });
 
     test('shuffle 模式单曲队列 next 不崩溃', () {
@@ -91,89 +92,89 @@ void main() {
       p.setQueue([_song('solo')]);
       p.toggleShuffle();
       p.next();
-      expect(p.currentIndex, 0);
+      check(p.currentIndex).equals(0);
     });
 
     test('findNextIndex 队列单曲不崩溃', () {
       final p = buildProvider();
       p.setQueue([_song('solo')]);
       p.toggleShuffle();
-      expect(p.findNextIndex(), 0);
+      check(p.findNextIndex()).equals(0);
     });
 
     test('playSong 按 id 定位', () {
       final p = buildProvider();
       p.playSong(_song('s3'));
-      expect(p.currentIndex, 2);
+      check(p.currentIndex).equals(2);
     });
 
     test('addToQueue / playNext 插入', () {
       final p = buildProvider();
       p.addToQueue(_song('sX'));
-      expect(p.queue.length, 4);
+      check(p.queue.length).equals(4);
       p.playNext(_song('sY'));
       // 插入到 currentIndex+1
-      expect(p.queue[p.currentIndex + 1].id, 'sY');
+      check(p.queue[p.currentIndex + 1].id).equals('sY');
     });
 
     test('removeFromQueue 当前项后自动前进', () {
       final p = buildProvider();
       p.next(); // index=1
       p.removeFromQueue(1);
-      expect(p.queue.length, 2);
-      expect(p.currentIndex, 0);
+      check(p.queue.length).equals(2);
+      check(p.currentIndex).equals(0);
     });
 
     test('reorderQueue 移动元素', () {
       final p = buildProvider();
       p.reorderQueue(0, 2); // 末尾前移：s1 移到 index 1
-      expect(p.queue[1].id, 's1');
+      check(p.queue[1].id).equals('s1');
     });
   });
 
   group('PlaybackProvider 收藏与偏好', () {
     test('toggleFavorite 增删并持久化', () async {
       final p = buildProvider();
-      expect(p.isSongFavorite('s1'), isFalse);
+      check(p.isSongFavorite('s1')).isFalse();
       p.toggleFavorite(); // 收藏当前 s1
-      expect(p.isSongFavorite('s1'), isTrue);
-      expect(p.favoriteSongs.any((s) => s.id == 's1'), isTrue);
+      check(p.isSongFavorite('s1')).isTrue();
+      check(p.favoriteSongs.any((s) => s.id == 's1')).isTrue();
       p.toggleFavorite();
-      expect(p.isSongFavorite('s1'), isFalse);
+      check(p.isSongFavorite('s1')).isFalse();
     });
 
     test('setFavorite 显式设置', () {
       final p = buildProvider();
       p.setFavorite('s2', true);
-      expect(p.isSongFavorite('s2'), isTrue);
+      check(p.isSongFavorite('s2')).isTrue();
       p.setFavorite('s2', false);
-      expect(p.isSongFavorite('s2'), isFalse);
+      check(p.isSongFavorite('s2')).isFalse();
     });
 
     test('setVolume 夹紧范围并持久化', () async {
       final p = buildProvider();
       p.setVolume(2.0);
-      expect(p.volume, 1.0);
+      check(p.volume).equals(1.0);
       p.setVolume(-1);
-      expect(p.volume, 0.0);
-      expect(PreferencesService.instance.volume, 0.0);
+      check(p.volume).equals(0.0);
+      check(PreferencesService.instance.volume).equals(0.0);
     });
 
     test('toggleLoopMode 循环三态', () {
       final p = buildProvider();
-      expect(p.loopMode, LoopMode.list);
+      check(p.loopMode).equals(LoopMode.list);
       p.toggleLoopMode();
       p.toggleLoopMode();
-      expect(p.loopMode, LoopMode.shuffle);
-      expect(PreferencesService.instance.loopMode, 'shuffle');
+      check(p.loopMode).equals(LoopMode.shuffle);
+      check(PreferencesService.instance.loopMode).equals('shuffle');
     });
 
     test('DSP toggle 持久化', () async {
       final p = buildProvider();
-      expect(p.dspSettings.crossfeed, isFalse);
+      check(p.dspSettings.crossfeed).isFalse();
       p.toggleCrossfeed();
-      expect(p.dspSettings.crossfeed, isTrue);
-      expect(PreferencesService.instance.dspCrossfeed, isTrue);
+      check(p.dspSettings.crossfeed).isTrue();
+      check(PreferencesService.instance.dspCrossfeed).isTrue();
     });
   });
 
@@ -182,8 +183,8 @@ void main() {
       final p = buildProvider();
       await p.saveCurrentQueueAsPlaylist('测试列表');
       final songs = p.playlistSongs('测试列表');
-      expect(songs.length, 3);
-      expect(songs.first.id, 's1');
+      check(songs.length).equals(3);
+      check(songs.first.id).equals('s1');
     });
   });
 
@@ -226,8 +227,7 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 50));
 
       // 此时 stop 已被调用但还没 resolve，play 绝不应先于解码器启动
-      expect(audioCalls.contains('play'), isFalse,
-          reason: '解码器未就绪前不应调用 play()');
+      check(audioCalls.contains('play')).isFalse();
 
       // 让 stop / 解码器依次完成
       stopCompleter.complete();
@@ -235,14 +235,12 @@ void main() {
       // 等待 _playCurrent 的 .then 链跑完（play 在解码器就绪后才调用）
       await Future.delayed(const Duration(milliseconds: 50));
 
-      expect(stopResolved, isTrue);
-      expect(audioCalls, contains('play'),
-          reason: '解码器就绪后应调用 play() 恢复输出');
+      check(stopResolved).isTrue();
+      check(audioCalls).contains('play');
       // 关键断言：play 的出现位置必须在最后一次 stop 之后
       final lastStop = audioCalls.lastIndexOf('stop');
       final firstPlay = audioCalls.indexOf('play');
-      expect(firstPlay, greaterThan(lastStop),
-          reason: 'play() 必须在 stop() 之后调用，不能在切换窗口期抢跑');
+      check(firstPlay).isGreaterThan(lastStop);
     });
 
     test('切歌竞态：上一首未结束不应让 play 抢跑', () async {
@@ -268,15 +266,14 @@ void main() {
 
       // 序列应以 stop 开头、以 play 结尾，且最后一个 play 之后不应再出现 stop
       //（即不会在播放中突然清空 ringbuf 造成爆音）
-      expect(audioCalls.first, 'stop');
-      expect(audioCalls.last, 'play');
+      check(audioCalls.first).equals('stop');
+      check(audioCalls.last).equals('play');
       final lastPlay = audioCalls.lastIndexOf('play');
       final stopsAfterPlay = audioCalls
           .sublist(lastPlay + 1)
           .where((m) => m == 'stop')
           .length;
-      expect(stopsAfterPlay, 0,
-          reason: '最后一个 play() 之后不应再出现 stop（不会在播放中突然清空）');
+      check(stopsAfterPlay).equals(0);
     });
   });
 }

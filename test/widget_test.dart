@@ -1,3 +1,4 @@
+import 'package:checks/checks.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -43,7 +44,7 @@ void main() {
         duration: const Duration(minutes: 3, seconds: 5),
         dominantColor: const Color(0xFF000000),
       );
-      expect(s.formattedDuration, '03:05');
+      check(s.formattedDuration).equals('03:05');
     });
 
     test('Album.totalDuration 累加', () {
@@ -73,11 +74,11 @@ void main() {
         songs: songs,
         dominantColor: const Color(0xFF000000),
       );
-      expect(album.totalDuration, const Duration(seconds: 75));
+      check(album.totalDuration).equals(const Duration(seconds: 75));
     });
 
     test('LyricLine.totalMs 取整', () {
-      expect(const LyricLine(timeMs: 1234.6, text: 'x').totalMs, 1235);
+      check(LyricLine(1234.6, 'x').totalMs).equals(1235);
     });
   });
 
