@@ -20,31 +20,7 @@ use crate::EngineConfig;
 
 /// 用 Symphonia 探测音频时长（微秒）
 pub(crate) fn probe_duration_symphonia(path: &std::path::Path) -> Option<u64> {
-    let file = std::fs::File::open(path).ok()?;
-    let mss = symphonia::core::io::MediaSourceStream::new(
-        Box::new(file), Default::default()
-    );
-    let mut hint = symphonia::core::formats::probe::Hint::new();
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
-    }
-    let format = symphonia::default::get_probe().probe(
-        &hint, mss,
-        symphonia::core::formats::FormatOptions::default(),
-        symphonia::core::meta::MetadataOptions::default(),
-    ).ok()?;
-    let dur = format.tracks().iter()
-        .find(|t| matches!(&t.codec_params, Some(symphonia::core::codecs::CodecParameters::Audio(p))
-            if p.codec != symphonia::core::codecs::audio::CODEC_ID_NULL_AUDIO))
-        .and_then(|t| {
-            let frames = t.num_frames?;
-            let tb = t.time_base?;
-            let secs = frames as f64 * tb.numer.get() as f64 / tb.denom.get() as f64;
-            if secs > 0.0 { Some((secs * 1_000_000.0) as u64) } else { None }
-        });
-    if dur.is_some() { return dur; }
-    drop(format);
-    None
+    crate::decoder::probe_duration_secs(path).map(|secs| (secs * 1_000_000.0) as u64)
 }
 
 /// 计算切歌淡入所需的样本数

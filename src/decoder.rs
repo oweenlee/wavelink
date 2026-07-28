@@ -23,6 +23,9 @@ use crate::dsd;
 use lofty::prelude::*;
 use lofty::read_from_path;
 
+/// 解码器输出 channel 容量（帧数），利用 crossbeam 背压阻塞避免内存无限增长
+const DECODE_CHANNEL_CAPACITY: usize = 8;
+
 /// 解码输出的一帧 PCM 数据。
 pub struct DecodedFrame {
     /// 交错 PCM f32 样本（L/R/L/R/...）
@@ -63,7 +66,7 @@ impl Decoder {
         position: Arc<AtomicU64>, seek_pos: Option<f64>,
         end_secs: Option<f64>,
     ) -> Result<(Receiver<DecodedFrame>, Self), String> {
-        let (tx, rx) = bounded(8);
+        let (tx, rx) = bounded(DECODE_CHANNEL_CAPACITY);
         let (stx, srx) = unbounded();
         let p = path.to_path_buf();
         let pos_clone = position.clone();
@@ -96,7 +99,7 @@ impl Decoder {
         position: Arc<AtomicU64>,
         format_hint: Option<String>,
     ) -> Result<(Receiver<DecodedFrame>, Self), String> {
-        let (tx, rx) = bounded(8);
+        let (tx, rx) = bounded(DECODE_CHANNEL_CAPACITY);
         let (stx, srx) = unbounded();
         let pos_clone = position.clone();
         let handle = thread::spawn(move || {
@@ -256,10 +259,13 @@ fn run(
         if _seeked.is_err() {
             debug!("format.seek() 不支持, 使用跳帧方式");
         }
-        // 解码器状态在 seek 后需要重置
+        // 解码器状态在 seek 后需要重置，重建失败则终止（旧 decoder 状态已被 seek 污染）
         let new_dec = symphonia::default::get_codecs().make_audio_decoder(&audio_cp, &AudioDecoderOptions::default())
             .or_else(|_| symphonia_adapter_oporus::OpusDecoder::try_registry_new(&audio_cp, &AudioDecoderOptions::default()));
-        if let Ok(d) = new_dec { decoder = d; }
+        match new_dec {
+            Ok(d) => decoder = d,
+            Err(e) => { warn!("seek 后解码器重建失败，终止解码: {e}"); return; }
+        }
     }
 
     // ── 创建 rubato 重采样器（如有必要） ──
@@ -495,7 +501,7 @@ pub fn read_metadata(path: &Path) -> Result<Metadata, String> {
 }
 
 /// 用 Symphonia 探测音频时长（秒），不完整解码
-fn probe_duration_secs(path: &Path) -> Option<f64> {
+pub(crate) fn probe_duration_secs(path: &Path) -> Option<f64> {
     let file = File::open(path).ok()?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();

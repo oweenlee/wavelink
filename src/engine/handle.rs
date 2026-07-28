@@ -22,7 +22,7 @@ pub struct EngineHandle {
     /// 命令发送端
     pub(crate) tx: Sender<EngineCommand>,
     /// 当前播放位置（样本数），外部可读
-    pub position: Arc<AtomicU64>,
+    pub(crate) position: Arc<AtomicU64>,
     /// 曲目时长（微秒）
     pub(crate) duration_us: Arc<AtomicU64>,
     /// 播放状态（是否正在播放）

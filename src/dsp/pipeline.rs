@@ -102,7 +102,7 @@ impl DspPipeline {
             widener: StereoWidener::new(),
             limiter: TruePeakLimiter::new(channels, 0.0),
             dither: Dither::new(channels, bits, 1.0),
-            volume: volume.clamp(0.0, 1.5),
+            volume: volume.clamp(0.0, 2.0),
             sample_rate: sr,
             ch_buf: Vec::new(),
             fade: FadeState::Idle,
@@ -244,9 +244,9 @@ impl DspPipeline {
         self.replaygain_scale = 10f32.powf(gain_db / 20.0);
     }
 
-    /// 运行时调整音量 (0.0 ~ 1.5)，限幅器之后应用
+    /// 运行时调整音量 (0.0 ~ 2.0)，限幅器之后应用
     pub fn set_volume(&mut self, volume: f32) {
-        self.volume = volume.clamp(0.0, 1.5);
+        self.volume = volume.clamp(0.0, 2.0);
     }
 
     /// 开始淡入（暂停→恢复时消 pop）

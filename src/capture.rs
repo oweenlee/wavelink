@@ -29,7 +29,15 @@ pub(crate) fn capture_inner() -> Option<Arc<CaptureInner>> {
 /// 捕获运行状态
 static CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-/// 开始捕获。返回 Ok(true) 表示成功。
+/// 捕获线程停止信号发送端（drop 即通知线程退出）
+static CAPTURE_STOP: Mutex<Option<crossbeam_channel::Sender<()>>> = Mutex::new(None);
+/// 捕获线程 JoinHandle
+static CAPTURE_THREAD: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
+
+/// 开始捕获。返回 Ok(()) 表示成功。
+///
+/// cpal::Stream 是 !Send，无法跨线程传递。改为在专用线程内创建并持有 stream，
+/// 通过 channel 信号控制生命周期，避免裸指针。
 #[cfg(feature = "cpal-backend")]
 pub fn start_global_capture(sample_rate: u32, channels: u32) -> Result<(), String> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -38,15 +46,6 @@ pub fn start_global_capture(sample_rate: u32, channels: u32) -> Result<(), Strin
         return Err("捕获已在运行中".to_string());
     }
 
-    let host = cpal::default_host();
-    let device = host.default_input_device()
-        .ok_or_else(|| "未找到输入设备".to_string())?;
-    let config = cpal::StreamConfig {
-        channels: channels as u16,
-        sample_rate: cpal::SampleRate(sample_rate),
-        buffer_size: cpal::BufferSize::Default,
-    };
-
     let rb = HeapRb::<f32>::new(65536);
     let (mut prod, cons) = rb.split();
     let inner = Arc::new(CaptureInner {
@@ -54,31 +53,68 @@ pub fn start_global_capture(sample_rate: u32, channels: u32) -> Result<(), Strin
     });
     *CAPTURE_INNER.lock() = Some(inner);
 
-    let err_fn = |err| tracing::error!("捕获回调错误: {err}");
+    let (stop_tx, stop_rx) = crossbeam_channel::bounded::<()>(1);
+    // 用于等待线程内 stream 创建成功的应答
+    let (ready_tx, ready_rx) = crossbeam_channel::bounded::<Result<(), String>>(1);
 
-    let stream = device.build_input_stream(
-        &config,
-        move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            let n = prod.push_slice(data);
-            if n < data.len() {
-                tracing::warn!("捕获缓冲满，丢弃 {} 样本", data.len() - n);
+    let handle = std::thread::Builder::new()
+        .name("audio-capture".into())
+        .spawn(move || {
+            let host = cpal::default_host();
+            let device = match host.default_input_device() {
+                Some(d) => d,
+                None => { let _ = ready_tx.send(Err("未找到输入设备".into())); return; }
+            };
+            let config = cpal::StreamConfig {
+                channels: channels as u16,
+                sample_rate: cpal::SampleRate(sample_rate),
+                buffer_size: cpal::BufferSize::Default,
+            };
+            let err_fn = |err| tracing::error!("捕获回调错误: {err}");
+            let stream = match device.build_input_stream(
+                &config,
+                move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                    let n = prod.push_slice(data);
+                    if n < data.len() {
+                        tracing::warn!("捕获缓冲满，丢弃 {} 样本", data.len() - n);
+                    }
+                },
+                err_fn,
+                None,
+            ) {
+                Ok(s) => s,
+                Err(e) => { let _ = ready_tx.send(Err(format!("构建输入流失败: {e}"))); return; }
+            };
+            if let Err(e) = stream.play() {
+                let _ = ready_tx.send(Err(format!("启动输入流失败: {e}")));
+                return;
             }
-        },
-        err_fn,
-        None,
-    ).map_err(|e| format!("构建输入流失败: {e}"))?;
+            let _ = ready_tx.send(Ok(()));
+            // stream 活在此线程栈上，阻塞等待停止信号
+            let _ = stop_rx.recv();
+            // recv 返回（stop 信号或 sender 被 drop）→ stream 自然 drop
+            tracing::debug!("捕获线程退出");
+        })
+        .map_err(|e| format!("启动捕获线程失败: {e}"))?;
 
-    stream.play().map_err(|e| format!("启动输入流失败: {e}"))?;
-    // cpal::Stream 是 !Send，无法存入 Mutex，用 AtomicUsize 存储裸指针
-    // SAFETY: stop_global_capture 会在 CAPTURE_ACTIVE=true 时重建 Box 并 drop
-    let stream_ptr = Box::into_raw(Box::new(stream));
-    GLOBAL_STREAM.store(stream_ptr as usize, Ordering::Release);
+    // 等待线程内 stream 创建结果
+    match ready_rx.recv_timeout(std::time::Duration::from_secs(5)) {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            *CAPTURE_INNER.lock() = None;
+            return Err(e);
+        }
+        Err(_) => {
+            *CAPTURE_INNER.lock() = None;
+            return Err("捕获线程启动超时".into());
+        }
+    }
+
+    *CAPTURE_STOP.lock() = Some(stop_tx);
+    *CAPTURE_THREAD.lock() = Some(handle);
     CAPTURE_ACTIVE.store(true, Ordering::Release);
     Ok(())
 }
-
-/// cpal::Stream 全局存储（!Send 限制，用裸指针 + AtomicUsize）
-static GLOBAL_STREAM: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// 停止捕获
 #[cfg(feature = "cpal-backend")]
@@ -86,10 +122,12 @@ pub fn stop_global_capture() {
     if !CAPTURE_ACTIVE.load(Ordering::Acquire) {
         return;
     }
-    let ptr = GLOBAL_STREAM.swap(0, Ordering::AcqRel);
-    if ptr != 0 {
-        // SAFETY: ptr 由 start_global_capture 中 Box::into_raw 产生，且仅在此处重建一次
-        let _ = unsafe { Box::from_raw(ptr as *mut cpal::Stream) };
+    // 发送停止信号（或 drop sender），捕获线程退出后 stream 自然 drop
+    if let Some(tx) = CAPTURE_STOP.lock().take() {
+        let _ = tx.send(());
+    }
+    if let Some(handle) = CAPTURE_THREAD.lock().take() {
+        let _ = handle.join();
     }
     CAPTURE_ACTIVE.store(false, Ordering::Release);
     *CAPTURE_INNER.lock() = None;

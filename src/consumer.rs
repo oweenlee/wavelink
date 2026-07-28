@@ -225,10 +225,20 @@ pub fn run_consumer_loop(
 
                 // 6) 推入 ringbuf（ringbuf 无阻塞 API，满时短暂让出 CPU）
                 let mut remaining: &[f32] = output_buf;
+                let mut spin_count = 0u32;
                 while !remaining.is_empty() && !stop.load(Ordering::SeqCst) {
                     let n = push_samples(remaining);
                     if n == 0 {
-                        std::thread::sleep(Duration::from_millis(5));
+                        // 先 spin 几次，避免 sleep 导致 underrun；连续满才 yield
+                        spin_count += 1;
+                        if spin_count < 64 {
+                            std::hint::spin_loop();
+                        } else {
+                            std::thread::yield_now();
+                            spin_count = 0;
+                        }
+                    } else {
+                        spin_count = 0;
                     }
                     remaining = &remaining[n..];
                 }

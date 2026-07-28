@@ -135,6 +135,7 @@ impl EngineState {
             }
         }
         self.stop_playback();
+        self.position.store(0, Ordering::SeqCst);
         self.current_entry = Some(entry.clone());
         let path_buf = Path::new(&entry.audio_file).to_path_buf();
 
@@ -200,7 +201,10 @@ impl EngineState {
         let consumer_event_tx = self.internal_event_tx.clone();
         let (ready_tx, ready_rx) = unbounded::<bool>();
         let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone());
-        let output = self.output.as_ref().expect("output 必须在之前创建");
+        let output = match self.output.as_ref() {
+            Some(o) => o,
+            None => { error!("播放时输出设备未初始化"); self.stop_playback(); self.advance_queue(); return; }
+        };
         match ready_rx.recv_timeout(Duration::from_secs(3)) {
             Ok(true) => {
                 output.resume();
@@ -309,7 +313,10 @@ impl EngineState {
         let (ready_tx, ready_rx) = unbounded::<bool>();
         let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone());
 
-        let output = self.output.as_ref().expect("output 必须在之前创建");
+        let output = match self.output.as_ref() {
+            Some(o) => o,
+            None => { error!("流式播放时输出设备未初始化"); self.stop_playback(); return; }
+        };
         match ready_rx.recv_timeout(Duration::from_secs(3)) {
             Ok(true) => {
                 output.resume();
@@ -373,9 +380,10 @@ impl EngineState {
             return;
         }
 
-        let pcm = self.output.as_ref().map(|o| {
-            o.swap_consumer(self.config.buffer_ms, sr, ch)
-        }).expect("seek 时 output 应已存在");
+        let pcm = match self.output.as_ref() {
+            Some(o) => o.swap_consumer(self.config.buffer_ms, sr, ch),
+            None => { error!("seek 时输出设备未初始化"); return; }
+        };
 
         let (rx, decoder) = match Decoder::start(
             &path_buf, sr, ch, self.position.clone(),
@@ -397,7 +405,10 @@ impl EngineState {
         let consumer_event_tx = self.internal_event_tx.clone();
         let (ready_tx, ready_rx) = unbounded::<bool>();
         let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), sr, ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone());
-        let output = self.output.as_ref().expect("output 应存在");
+        let output = match self.output.as_ref() {
+            Some(o) => o,
+            None => { error!("seek 后输出设备未初始化"); return; }
+        };
         match ready_rx.recv_timeout(Duration::from_secs(3)) {
             Ok(true) => {
                 output.resume();
@@ -563,6 +574,7 @@ impl EngineState {
             dsp.lock().start_fade_out(3);
         }
         self.stop_playback();
+        self.position.store(0, Ordering::SeqCst);
         self.output = None;
         self.output_inner = None;
         self.sync_output_inner();
@@ -592,7 +604,6 @@ impl EngineState {
         self.next_entry = None;
         self.consumer_stop = None;
         self.dsp = None;
-        self.position.store(0, Ordering::SeqCst);
     }
 
     // ── 事件 ──

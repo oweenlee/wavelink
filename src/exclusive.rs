@@ -43,10 +43,8 @@ pub fn acquire_exclusive_mode() -> bool {
         ) -> OSStatus;
     }
 
-    // kAudioHardwarePropertyDefaultOutputDevice = 'dOut'
-    // kAudioHardwarePropertyHogModeOwner = 'oHog' (不是标准 selector，用 'oHog')
     const K_AUDIO_HARDWARE_DEFAULT_OUTPUT: u32 = 0x644F7574; // 'dOut'
-    const K_AUDIO_HARDWARE_HOG_MODE: u32 = 0x6F486F67; // 'oHog'
+    const K_AUDIO_DEVICE_PROPERTY_HOG_MODE_OWNER: u32 = 0x694F776E; // 'iOwn'
     const K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL: u32 = 0x676C6F62; // 'glob'
 
     unsafe {
@@ -74,7 +72,7 @@ pub fn acquire_exclusive_mode() -> bool {
         // 设置 Hog Mode owner 为当前进程
         let pid = std::process::id() as i32;
         let hog_addr = AudioObjectPropertyAddress {
-            selector: K_AUDIO_HARDWARE_HOG_MODE,
+            selector: K_AUDIO_DEVICE_PROPERTY_HOG_MODE_OWNER,
             scope: K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL,
             element: 0,
         };
@@ -132,7 +130,7 @@ pub fn release_exclusive_mode() {
     }
 
     const K_AUDIO_HARDWARE_DEFAULT_OUTPUT: u32 = 0x644F7574;
-    const K_AUDIO_HARDWARE_HOG_MODE: u32 = 0x6F486F67;
+    const K_AUDIO_DEVICE_PROPERTY_HOG_MODE_OWNER: u32 = 0x694F776E;
     const K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL: u32 = 0x676C6F62;
 
     unsafe {
@@ -156,7 +154,7 @@ pub fn release_exclusive_mode() {
         // 设置 owner 为 -1 释放 Hog Mode
         let release_pid: i32 = -1;
         let hog_addr = AudioObjectPropertyAddress {
-            selector: K_AUDIO_HARDWARE_HOG_MODE,
+            selector: K_AUDIO_DEVICE_PROPERTY_HOG_MODE_OWNER,
             scope: K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL,
             element: 0,
         };

@@ -7,8 +7,6 @@
 //! 过采样使用 128-tap 窗函数 sinc 低通滤波器（Blackman-Harris 窗），
 //! 分解为 4 组 32-tap 多相滤波器，逐样本计算插值。
 
-use tracing::warn;
-
 /// 真峰值限幅器。使用 4x 过采样检测采样间峰值（ISP），防止 DAC 重建削波。
 pub struct TruePeakLimiter {
     threshold: f32,
@@ -18,6 +16,8 @@ pub struct TruePeakLimiter {
     delay: Vec<[f32; 32]>,
     delay_idx: Vec<usize>,
     release: f32,
+    /// attack 平滑系数（每样本逼近目标增益的比例，~0.1ms @44.1kHz）
+    attack: f32,
     gain: f32,
 }
 
@@ -33,6 +33,7 @@ impl TruePeakLimiter {
             delay: vec![[0.0f32; 32]; channels],
             delay_idx: vec![0; channels],
             release: 0.999,
+            attack: 0.3, // ~0.1ms attack @44.1kHz，避免瞬态 click
             gain: 1.0,
         }
     }
@@ -74,19 +75,19 @@ impl TruePeakLimiter {
             };
 
             if target_gain < self.gain {
-                if self.gain - target_gain > 0.1 {
-                    warn!(
-                        "限幅器 instant attack: gain {:.4} → {:.4} (峰值 {:.2}x 阈值)",
-                        self.gain,
-                        target_gain,
-                        peak / self.threshold
-                    );
-                }
-                self.gain = target_gain;
+                // 平滑 attack：每样本逼近目标增益，避免瞬态 click
+                // 极端过载（>6dB）加快收敛速度
+                let coeff = if peak > self.threshold * 2.0 { 1.0 } else { self.attack };
+                self.gain += (target_gain - self.gain) * coeff;
+                if self.gain < target_gain { self.gain = target_gain; }
             } else {
                 self.gain = self.gain * self.release + target_gain * (1.0 - self.release);
             }
-            *x *= self.gain;
+            let out = xv * self.gain;
+            // 安全截断：平滑 attack 期间可能有 1-2 样本过冲，硬截断保护
+            *x = if out > self.threshold { self.threshold }
+                 else if out < -self.threshold { -self.threshold }
+                 else { out };
             pos = rpos;
         }
 
