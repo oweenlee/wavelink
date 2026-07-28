@@ -20,10 +20,16 @@ Future<void> main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+
+  final playback = PlaybackProvider();
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => PlaybackProvider()),
+        ChangeNotifierProvider.value(value: playback),
+        ChangeNotifierProvider.value(value: playback.queueProvider),
+        ChangeNotifierProvider.value(value: playback.audioPlayer),
+        ChangeNotifierProvider.value(value: playback.library),
+        ChangeNotifierProvider.value(value: playback.dsp),
         ChangeNotifierProvider(create: (_) => LocaleProvider()),
       ],
       child: const WaveLinkApp(),

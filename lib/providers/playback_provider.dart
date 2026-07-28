@@ -1,527 +1,212 @@
 export '../models/playback_types.dart';
 
-import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
 import '../models/lyric_line.dart';
 import '../models/playback_types.dart';
-import '../services/native_audio_service.dart';
-import '../services/rust_service.dart' as rs;
 import '../services/preferences_service.dart';
-import 'dsp_mixin.dart';
-import 'library_mixin.dart';
+import '../services/rust_service.dart' as rs;
+import 'audio_player_provider.dart';
+import 'queue_provider.dart';
+import 'library_provider.dart';
+import 'dsp_provider.dart';
 
-class PlaybackProvider extends ChangeNotifier with DspMixin, LibraryMixin {
-  final NativeAudioService _nativeAudio = NativeAudioService();
-  StreamSubscription<AudioEvent>? _eventSub;
-  Timer? _progressTimer;
-  bool _nativeReady = false;
-
-  List<Song> _queue = [];
-  int _currentIndex = 0;
-  bool _isPlaying = false;
-  double _position = 0.0;
-  LoopMode _loopMode = LoopMode.list;
-  double _volume = 0.8;
-  bool _shuffle = false;
-  bool _replayGain = true;
-  bool _dynamicColor = true;
-  double _coverBlur = 0.7;
-  bool _showSpectrum = true;
-
-  /// 解码器启动钩子（默认走引擎；测试可替换以注入延迟/记录）
-  Future<void> Function(Song) startDecoderHook = (_) async {};
-
-  /// setQueue 后是否自动开始播放（默认 true；测试可置 false 避免副作用）
-  bool autoPlayOnQueueSet = true;
-
-  final Map<String, rs.AnalyzeResult> _analysisCache = {};
+class PlaybackProvider extends ChangeNotifier {
+  final AudioPlayerProvider audioPlayer = AudioPlayerProvider();
+  final QueueProvider queueProvider = QueueProvider();
+  final LibraryProvider library = LibraryProvider();
+  final DspProvider dsp = DspProvider();
 
   PlaybackProvider() {
+    _wire();
     _loadPreferences();
-    _initNative();
-    scanImported();
+    audioPlayer.init();
+    library.scanImported();
+  }
+
+  void _wire() {
+    library.queueSupplier = () => queueProvider.queue;
+    library.currentSongSupplier = () => queueProvider.currentSong;
+    library.onSongsLoaded = () => _onLibrarySongsLoaded();
+    library.onSongsAdded = () => _onLibrarySongsAdded();
+    library.onSongsRescanned = () => _onLibrarySongsRescanned();
+
+    audioPlayer.onTrackEnd = () {
+      next();
+    };
+  }
+
+  void _onLibrarySongsLoaded() {
+    final songs = library.importedSongs;
+    queueProvider.onImportedSongsLoaded(songs);
+    audioPlayer.setCurrentSong(queueProvider.currentSong);
+    library.batchExtractCovers(songs);
+  }
+
+  void _onLibrarySongsAdded() {
+    queueProvider.onImportAdded(library.importedSongs);
+  }
+
+  void _onLibrarySongsRescanned() {
+    queueProvider.onRescan(library.importedSongs);
   }
 
   void _loadPreferences() {
     final prefs = PreferencesService.instance;
-    _volume = prefs.volume;
-    _shuffle = prefs.shuffle;
-    _loopMode = LoopMode.values.firstWhere(
+    audioPlayer.setVolume(prefs.volume);
+    if (prefs.shuffle) queueProvider.toggleShuffle();
+    queueProvider.setLoopMode(LoopMode.values.firstWhere(
       (m) => m.name == prefs.loopMode,
       orElse: () => LoopMode.list,
-    );
-    _replayGain = prefs.replayGain;
-    _dynamicColor = prefs.dynamicColor;
-    _coverBlur = prefs.coverBlur;
-    _showSpectrum = prefs.showSpectrum;
-    loadDspPrefs();
-    loadFavoritesPrefs();
-  }
-
-  //── LibraryMixin 抽象方法实现 ──
-
-  @override
-  Song? currentSongForFav() => currentSong;
-
-  @override
-  List<Song> queueSongsForLib() => _queue;
-
-  @override
-  void onImportedSongsLoaded(List<Song> songs) {
-    _queue = List.from(songs);
-    _currentIndex = 0;
-    batchExtractCovers(songs);
-  }
-
-  @override
-  void onImportAdded(List<Song> songs) {
-    _queue.addAll(songs);
-    if (_queue.length == songs.length) _currentIndex = 0;
-  }
-
-  @override
-  void onRescan(List<Song> songs) {
-    for (final s in songs) {
-      final idx = _queue.indexWhere((q) => q.path == s.path);
-      if (idx >= 0) _queue[idx] = s;
-    }
-  }
-
-  //── 分析缓存 ──
-
-  rs.AnalyzeResult? getAnalysis(String songId) => _analysisCache[songId];
-
-  Future<void> _analyzeCurrent() async {
-    final song = currentSong;
-    if (song == null || !rs.rustAvailable) return;
-    if (_analysisCache.containsKey(song.id)) return;
-    try {
-      final result = await rs.analyzeAudioFile(song.path!);
-      _analysisCache[song.id] = result;
-      notifyListeners();
-    } catch (e) {
-      debugPrint('[Playback] 分析音频失败: $e');
-    }
-  }
-
-  Future<void> _initNative() async {
-    try {
-      await _nativeAudio.init();
-      _nativeReady = true;
-      _eventSub = _nativeAudio.events.listen((event) {
-        if (event is RemoteCommand) {
-          _handleRemoteCommand(event);
-        }
-      });
-      if (rs.rustAvailable) {
-        await rs.initEngine();
-        await applyDsp();
-      }
-    } catch (e) {
-      debugPrint('[Playback] 初始化原生音频失败: $e');
-    }
+    ));
+    dsp.loadDspPrefs();
+    library.loadFavoritesPrefs();
   }
 
   @override
   void dispose() {
-    _progressTimer?.cancel();
-    _eventSub?.cancel();
-    rs.deinitEngine();
-    _nativeAudio.dispose();
+    audioPlayer.dispose();
     super.dispose();
   }
 
-  //── getters ──
+  // ── 向后兼容 getter（委托到子 Provider） ──
 
-  bool get hasSong => _queue.isNotEmpty;
-  Song? get currentSong => _queue.isNotEmpty ? _queue[_currentIndex] : null;
-  int get currentIndex => _currentIndex;
-  bool get isPlaying => _isPlaying;
-  double get position => _position;
-  LoopMode get loopMode => _loopMode;
-  List<Song> get queue => _queue;
-  double get volume => _volume;
-  bool get shuffle => _shuffle;
-  bool get replayGain => _replayGain;
-  bool get dynamicColor => _dynamicColor;
-  double get coverBlur => _coverBlur;
-  bool get showSpectrum => _showSpectrum;
+  List<Song> get queue => queueProvider.queue;
+  int get currentIndex => queueProvider.currentIndex;
+  Song? get currentSong => queueProvider.currentSong;
+  bool get hasSong => queueProvider.hasSong;
+  bool get isPlaying => audioPlayer.isPlaying;
+  double get position => audioPlayer.position;
+  double get volume => audioPlayer.volume;
+  LoopMode get loopMode => queueProvider.loopMode;
+  bool get shuffle => queueProvider.shuffle;
 
-  double get progress {
-    final song = currentSong;
-    if (song == null) return 0.0;
-    return _position / song.duration.inMilliseconds;
+  double get progress => audioPlayer.progress;
+  List<LyricLine>? get currentLyrics => audioPlayer.currentLyrics;
+  int get currentLyricLine => audioPlayer.currentLyricLine;
+
+  List<Song> get allSongs => library.allSongs;
+  List<Song> get importedSongs => library.importedSongs;
+  bool get scanDone => library.scanDone;
+  List<Song> get favoriteSongs => library.favoriteSongs;
+  bool get isFavorite => library.isFavorite;
+  bool isSongFavorite(String songId) => library.isSongFavorite(songId);
+  Map<String, List<String>> get playlists => library.playlists;
+  List<Song> get allKnownSongs => library.allKnownSongs;
+
+  DspSettings get dspSettings => dsp.dspSettings;
+  bool get dspAvailable => dsp.dspAvailable;
+
+  rs.AnalyzeResult? getAnalysis(String songId) =>
+      audioPlayer.getAnalysis(songId);
+
+  // ── 外观偏好 ──
+
+  bool get replayGain => true;
+  bool get dynamicColor => true;
+  double get coverBlur => 0.7;
+  bool get showSpectrum => true;
+
+  void setReplayGain(bool v) {}
+  void setDynamicColor(bool v) {}
+  void setCoverBlur(double v) {}
+  void setShowSpectrum(bool v) {}
+
+  // ── 向后兼容方法（委托） ──
+
+  bool autoPlayOnQueueSet = true;
+
+  Future<void> Function(Song) get startDecoderHook => audioPlayer.startDecoderHook;
+  set startDecoderHook(Future<void> Function(Song) hook) {
+    audioPlayer.startDecoderHook = hook;
   }
 
-  List<LyricLine>? get currentLyrics => null;
-  int get currentLyricLine => -1;
-
-  //── transport ──
-
-  void play() {
-    if (!hasSong) return;
-    _playCurrent();
-  }
-
-  void pause() {
-    _isPlaying = false;
-    _progressTimer?.cancel();
-    rs.enginePause();
-    _nativeAudio.pause();
-    notifyListeners();
-  }
-
-  void togglePlay() {
-    if (!hasSong) return;
-    if (_isPlaying) {
-      pause();
-    } else {
-      _isPlaying = true;
-      _startProgressTimer();
-      rs.engineResume();
-      _nativeAudio.resume();
-      notifyListeners();
-    }
-  }
-
-  void startPlayback() {
-    _isPlaying = true;
-    _startProgressTimer();
-    _nativeAudio.play();
-    _updateLockScreenMetadata();
-    notifyListeners();
-  }
+  void play() => audioPlayer.play();
+  void pause() => audioPlayer.pause();
+  void togglePlay() => audioPlayer.togglePlay();
+  void startPlayback() => audioPlayer.startPlayback();
+  void seek(double value, {bool immediate = false}) =>
+      audioPlayer.seek(value, immediate: immediate);
+  void skipForward() => audioPlayer.skipForward();
+  void skipBackward() => audioPlayer.skipBackward();
+  set volume(double v) => audioPlayer.setVolume(v);
 
   void next() {
     if (!hasSong) return;
-    if (_loopMode == LoopMode.single) {
-      rs.engineSeek(0);
+    if (queueProvider.loopMode == LoopMode.single) {
+      audioPlayer.seekToStart();
       return;
     }
-    if (_shuffle && _queue.length > 1) {
-      _currentIndex = (_currentIndex + 1 +
-          _random.nextInt(_queue.length - 1)) %
-          _queue.length;
-    } else {
-      _currentIndex = (_currentIndex + 1) % _queue.length;
-    }
-    _playCurrent();
+    final nextIdx = queueProvider.findNextIndex();
+    queueProvider.advanceTo(nextIdx);
+    audioPlayer.playSong(queueProvider.currentSong!);
   }
 
   void previous() {
     if (!hasSong) return;
-    if (_position > 3000) {
-      rs.engineSeek(0);
+    if (audioPlayer.position > 3000) {
+      audioPlayer.seekToStart();
     } else {
-      _currentIndex = (_currentIndex - 1 + _queue.length) % _queue.length;
-      _playCurrent();
+      final prevIdx =
+          (queueProvider.currentIndex - 1 + queueProvider.queue.length) % queueProvider.queue.length;
+      queueProvider.advanceTo(prevIdx);
+      audioPlayer.playSong(queueProvider.currentSong!);
     }
   }
 
-  int _playToken = 0;
+  void toggleLoopMode() => queueProvider.toggleLoopMode();
+  void toggleShuffle() => queueProvider.toggleShuffle();
 
-  Future<void> _playCurrent() async {
-    final song = currentSong;
-    if (song == null) return;
-    final token = ++_playToken;
-
-    _progressTimer?.cancel();
-    _position = 0;
-
-    await _nativeAudio.stop();
-    if (token != _playToken) return;
-
-    if (song.path != null && rs.rustAvailable) {
-      debugPrint('[Playback] engine play: ${song.title}');
-      await rs.enginePlay(song.path!);
-    }
-    if (token != _playToken) return;
-
-    if (token == _playToken) {
-      _isPlaying = true;
-      _startProgressTimer();
-      _nativeAudio.play();
-      _updateLockScreenMetadata();
-      _analyzeCurrent();
-      notifyListeners();
-    }
-  }
-
-  void _startProgressTimer() {
-    _progressTimer?.cancel();
-    _progressTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
-      _tick();
-    });
-  }
-
-  Future<void> _tick() async {
-    if (!_isPlaying) return;
-    try {
-      final event = await rs.enginePollEvents();
-      if (event == 'stopped') {
-        _progressTimer?.cancel();
-        _isPlaying = false;
-        notifyListeners();
-        next();
-        return;
-      } else if (event == 'error') {
-        final err = await rs.engineLastError();
-        debugPrint('[Playback] 引擎错误: $err');
-      }
-    } catch (e) {
-      debugPrint('[Playback] 事件轮询失败: $e');
-    }
-
-    try {
-      final secs = await rs.enginePositionSecs();
-      _position = secs * 1000;
-    } catch (e) {
-      _position += 250;
-    }
-
-    final song = currentSong;
-    if (song != null && _position >= song.duration.inMilliseconds) {
-      _progressTimer?.cancel();
-      _isPlaying = false;
-      notifyListeners();
-      next();
-      return;
-    }
-
-    _nativeAudio.updatePosition(_position);
-    notifyListeners();
-  }
-
-  //── seek ──
-
-  void seek(double value, {bool immediate = false}) {
-    final song = currentSong;
-    if (song == null) return;
-    final posMs = value * song.duration.inMilliseconds;
-    _position = posMs.clamp(0, song.duration.inMilliseconds.toDouble());
-    notifyListeners();
-    if (immediate) _seekToPosition(_position);
-  }
-
-  void _seekToPosition(double posMs) {
-    final song = currentSong;
-    if (song == null) return;
-    _position = posMs.clamp(0, song.duration.inMilliseconds.toDouble());
-    notifyListeners();
-    if (!_nativeReady || !rs.rustAvailable) return;
-    rs.engineSeek(_position / 1000.0);
-  }
-
-  void skipForward() {
-    final song = currentSong;
-    if (song == null) return;
-    _seekToPosition(
-      (_position + 10000).clamp(0, song.duration.inMilliseconds.toDouble()),
-    );
-  }
-
-  void skipBackward() {
-    final song = currentSong;
-    if (song == null) return;
-    _seekToPosition(
-      (_position - 10000).clamp(0, song.duration.inMilliseconds.toDouble()),
-    );
-  }
-
-  //── mode toggles ──
-
-  void toggleLoopMode() {
-    const modes = [LoopMode.list, LoopMode.single, LoopMode.shuffle];
-    final idx = modes.indexOf(_loopMode);
-    _loopMode = modes[(idx + 1) % modes.length];
-    final modeCode = _loopMode == LoopMode.list ? 0
-        : _loopMode == LoopMode.single ? 1 : 3;
-    rs.engineSetPlayMode(mode: modeCode);
-    PreferencesService.instance.setLoopMode(_loopMode.name);
-    notifyListeners();
-  }
-
-  void toggleShuffle() {
-    _shuffle = !_shuffle;
-    PreferencesService.instance.setShuffle(_shuffle);
-    notifyListeners();
-  }
-
-  void setVolume(double v) {
-    _volume = v.clamp(0.0, 1.0);
-    rs.engineSetVolume(vol: _volume);
-    PreferencesService.instance.setVolume(_volume);
-    notifyListeners();
-  }
-
-  //── playlist ──
+  void setVolume(double v) => audioPlayer.setVolume(v);
 
   void playSong(Song song) {
-    final idx = _queue.indexWhere((s) => s.id == song.id);
-    if (idx >= 0) {
-      _currentIndex = idx;
-      _playCurrent();
-    }
+    queueProvider.playSongById(song);
+    audioPlayer.playSong(song);
   }
 
   void playAlbum(List<Song> songs, {int startIndex = 0}) {
-    _queue = List.from(songs);
-    _currentIndex = startIndex.clamp(0, _queue.length - 1);
-    _playCurrent();
+    queueProvider.setQueue(songs, startIndex: startIndex);
+    audioPlayer.playSong(queueProvider.currentSong!);
   }
 
-  void addToQueue(Song song) {
-    _queue.add(song);
-    notifyListeners();
-  }
-
-  void playNext(Song song) {
-    _queue.insert(_currentIndex + 1, song);
-    notifyListeners();
-  }
-
-  void removeFromQueue(int index) {
-    if (index < 0 || index >= _queue.length) return;
-    if (index == _currentIndex) {
-      next();
-      _queue.removeAt(index);
-      if (_currentIndex >= _queue.length) _currentIndex = 0;
-    } else {
-      if (index < _currentIndex) _currentIndex--;
-      _queue.removeAt(index);
-    }
-    notifyListeners();
-  }
-
-  void reorderQueue(int oldIndex, int newIndex) {
-    if (newIndex > oldIndex) newIndex--;
-    final item = _queue.removeAt(oldIndex);
-    _queue.insert(newIndex, item);
-    if (_currentIndex == oldIndex) {
-      _currentIndex = newIndex;
-    } else if (oldIndex < _currentIndex && newIndex >= _currentIndex) {
-      _currentIndex--;
-    } else if (oldIndex > _currentIndex && newIndex <= _currentIndex) {
-      _currentIndex++;
-    }
-    notifyListeners();
-  }
-
+  void addToQueue(Song song) => queueProvider.addToQueue(song);
+  void playNext(Song song) => queueProvider.playNext(song);
+  void removeFromQueue(int index) => queueProvider.removeFromQueue(index);
+  void reorderQueue(int oldIndex, int newIndex) =>
+      queueProvider.reorderQueue(oldIndex, newIndex);
   void setQueue(List<Song> songs) {
-    _queue = songs;
-    _currentIndex = 0;
-    if (_queue.isNotEmpty && autoPlayOnQueueSet) _playCurrent();
-  }
-
-  //── helpers ──
-
-  static final _random = _SimpleRandom();
-
-  int findNextIndex() {
-    if (_queue.isEmpty) return 0;
-    if (_shuffle && _queue.length > 1) {
-      return (_currentIndex + 1 + _random.nextInt(_queue.length - 1)) %
-          _queue.length;
-    }
-    return (_currentIndex + 1) % _queue.length;
-  }
-
-  // ── 外观设置 ──
-
-  void setReplayGain(bool v) {
-    _replayGain = v;
-    PreferencesService.instance.setReplayGain(v);
-    notifyListeners();
-  }
-
-  void setDynamicColor(bool v) {
-    _dynamicColor = v;
-    PreferencesService.instance.setDynamicColor(v);
-    notifyListeners();
-  }
-
-  void setCoverBlur(double v) {
-    _coverBlur = v.clamp(0.0, 1.0);
-    PreferencesService.instance.setCoverBlur(_coverBlur);
-    notifyListeners();
-  }
-
-  void setShowSpectrum(bool v) {
-    _showSpectrum = v;
-    PreferencesService.instance.setShowSpectrum(v);
-    notifyListeners();
-  }
-
-  // ── 锁屏控制 ──
-
-  void _handleRemoteCommand(RemoteCommand cmd) {
-    switch (cmd.command) {
-      case 'play':
-      case 'togglePlayPause':
-        togglePlay();
-      case 'pause':
-        pause();
-      case 'next':
-        next();
-      case 'previous':
-        previous();
-      case 'seek':
-        if (cmd.seekPosition != null) {
-          final song = currentSong;
-          if (song != null) {
-            final posMs = cmd.seekPosition! * 1000;
-            seek(posMs / song.duration.inMilliseconds);
-          }
-        }
+    queueProvider.setQueue(songs);
+    audioPlayer.setCurrentSong(queueProvider.currentSong);
+    if (songs.isNotEmpty && autoPlayOnQueueSet) {
+      audioPlayer.playSong(queueProvider.currentSong!);
     }
   }
 
-  Future<void> _updateLockScreenMetadata() async {
-    if (!_nativeReady) return;
-    final song = currentSong;
-    if (song == null) return;
-    await _ensureCoverCached(song);
-    await _nativeAudio.updateMetadata(
-      title: song.title,
-      artist: song.artist,
-      album: song.album,
-      duration: song.duration.inMilliseconds / 1000.0,
-      filePath: song.path,
-    );
-  }
+  int findNextIndex() => queueProvider.findNextIndex();
 
-  Future<void> _ensureCoverCached(Song song) async {
-    if (!song.hasCover || song.path == null) return;
-    if (song.coverUrl != null) return;
-    final appDir = await getApplicationDocumentsDirectory();
-    final cacheFile = File('${appDir.path}/.covers/${song.path!.hashCode}.jpg');
-    if (await cacheFile.exists()) {
-      song.coverUrl = cacheFile.path;
-      notifyListeners();
-      return;
-    }
-    try {
-      final bytes = await rs.getCoverBytes(song.path!);
-      final cacheDir = Directory('${appDir.path}/.covers');
-      if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
-      await cacheFile.writeAsBytes(bytes);
-      song.coverUrl = cacheFile.path;
-      notifyListeners();
-    } catch (e) {
-      debugPrint('[Playback] 缓存封面失败: $e');
-    }
-  }
-}
+  // ── 频谱 ──
+  Future<List<double>> getSpectrum() => dsp.getSpectrum();
 
-class _SimpleRandom {
-  int _seed = DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF;
+  // ── DSP ──
+  void toggleDspEnabled() => dsp.toggleDspEnabled();
+  void toggleCrossfeed() => dsp.toggleCrossfeed();
+  void toggleWidener() => dsp.toggleWidener();
+  void toggleLimiter() => dsp.toggleLimiter();
+  void toggleDither() => dsp.toggleDither();
+  void applyEqPreset(EqPresetKind kind) => dsp.applyEqPreset(kind);
 
-  int nextInt(int max) {
-    if (max <= 0) return 0;
-    _seed = (_seed * 1103515245 + 12345) & 0x7FFFFFFF;
-    return _seed % max;
-  }
+  // ── 库操作 ──
+  Future<bool> scanMediaStore() => library.scanMediaStore();
+  Future<void> scanImported() => library.scanImported();
+  Future<void> scanAllSources() => library.scanAllSources();
+  Future<int> importFromPicker() => library.importFromPicker();
+  Future<void> rescanImported() => library.rescanImported();
+  void toggleFavorite() => library.toggleFavorite();
+  void setFavorite(String songId, bool favorite) =>
+      library.setFavorite(songId, favorite);
+  Future<void> saveCurrentQueueAsPlaylist(String name) =>
+      library.saveCurrentQueueAsPlaylist(name);
+  Future<void> savePlaylist(String name, List<String> songIds) =>
+      library.savePlaylist(name, songIds);
+  List<Song> playlistSongs(String name) => library.playlistSongs(name);
 }
