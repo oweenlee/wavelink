@@ -1,6 +1,6 @@
 # wavelink-audio-core API Reference
 
-> Source hash: `8e7a193bce3b` | Generated: 2026-07-27 22:57
+> Source hash: `669a216a8042` | Generated: 2026-07-28 10:38
 > AI 助手优先读此文件，而非读 `src/` 源码。若 AI 返回的代码与当前签名不匹配，请重新运行 `bash doc-api.sh`。
 
 ## Table of Contents
@@ -271,11 +271,6 @@ pub clip: bool,
 pub struct EngineHandle { ...
 ```
 
-当前播放位置（样本数），外部可读  
-```rust
-pub position: Arc<AtomicU64>,
-```
-
 共享输出内部状态（替代全局 static，供 FFI 层读取音频数据）  
 ```rust
 pub output_inner: Arc<RwLock<Option<Arc<AudioOutputInner>>>>,
@@ -434,6 +429,11 @@ pub fn is_playing(&self) -> bool { ...
 设置播放速度（0.25 ~ 4.0），1.0 = 正常  
 ```rust
 pub fn set_speed(&self, speed: f32) { ...
+```
+
+动态调整输出缓冲时长（毫秒），实时生效。仅在 Oboe 后端受支持。  
+```rust
+pub fn set_buffer_ms(&self, ms: u32) { ...
 ```
 
 查询 underrun 计数  
@@ -821,6 +821,11 @@ pub unsafe extern "C" fn ac_engine_position(engine: *const c_void) -> c_double {
 pub unsafe extern "C" fn ac_engine_duration(engine: *const c_void) -> c_double { ...
 ```
 
+动态调整输出缓冲时长（毫秒），实时生效。仅 Oboe 后端支持。返回 AcError。  
+```rust
+pub unsafe extern "C" fn ac_engine_set_buffer_ms(engine: *mut c_void, ms: c_int) -> c_int { ...
+```
+
 设置播放速度（0.25 ~ 4.0），1.0 = 正常。返回 AcError。  
 ```rust
 pub unsafe extern "C" fn ac_engine_set_speed(engine: *mut c_void, speed: c_float) -> c_int { ...
@@ -1116,7 +1121,9 @@ pub struct CaptureInner { ...
 pub consumer: Mutex<HeapCons<f32>>,
 ```
 
-开始捕获。返回 Ok(true) 表示成功。  
+开始捕获。返回 Ok(()) 表示成功。  
+cpal::Stream 是 !Send，无法跨线程传递。改为在专用线程内创建并持有 stream，  
+通过 channel 信号控制生命周期，避免裸指针。  
 ```rust
 pub fn start_global_capture(sample_rate: u32, channels: u32) -> Result<(), String> { ...
 ```
@@ -1304,11 +1311,6 @@ pub fn process(&mut self, buf: &mut [f32], ch: usize) { ...
 
 ### True-Peak Limiter (`dsp/limiter.rs`)
 
-真峰值限幅器。使用 4x 过采样检测采样间峰值（ISP），防止 DAC 重建削波。  
-```rust
-pub struct TruePeakLimiter { ...
-```
-
 创建限幅器。  
 - `channels`: 声道数  
 - `threshold_db`: 阈值（dBFS, 0 = 0dBFS, 负值更激进）  
@@ -1388,7 +1390,7 @@ pub fn set_peq_band(&mut self, index: usize, band: &PeqBand, sample_rate: f32) {
 pub fn set_replaygain_db(&mut self, gain_db: f32) { ...
 ```
 
-运行时调整音量 (0.0 ~ 1.5)，限幅器之后应用  
+运行时调整音量 (0.0 ~ 2.0)，限幅器之后应用  
 ```rust
 pub fn set_volume(&mut self, volume: f32) { ...
 ```
@@ -2170,10 +2172,12 @@ Windows WASAPI Exclusive 模式输出后端
 ## C Header Cross-Reference
 
 `include/wavelink_audio_core.h` declares 43 functions and 6 types;
-`src/ffi.rs` defines 43 exported functions and 7 types.
+`src/ffi.rs` defines 44 exported functions and 7 types.
 
-FFI layer and C header are fully in sync.
+### Functions in Rust but missing from C header
+
+- `ac_engine_set_buffer_ms`
 
 ---
 
-> 367 pub items (43 FFI exports). Run `bash doc-api.sh` to refresh.
+> 367 pub items (44 FFI exports). Run `bash doc-api.sh` to refresh.
