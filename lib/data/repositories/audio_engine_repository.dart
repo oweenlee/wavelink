@@ -48,11 +48,11 @@ class AudioEngineRepository {
 
   // ── 分析缓存 ──
 
-  Future<rs.AnalyzeResult> analyzeFile(String path) async {
-    final cached = _analysisCache[path];
+  Future<rs.AnalyzeResult> analyzeFile(String songId, String path) async {
+    final cached = _analysisCache[songId];
     if (cached != null) return cached;
     final result = await rs.analyzeAudioFile(path);
-    _analysisCache[path] = result;
+    _analysisCache[songId] = result;
     return result;
   }
 

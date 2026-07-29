@@ -74,7 +74,12 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   void play() {
     if (_currentSong == null) return;
-    _playCurrent();
+    if (_position > 0 && !_isPlaying) {
+      // 恢复播放（不从头开始）
+      togglePlay();
+    } else {
+      _playCurrent();
+    }
   }
 
   void playSong(Song song) {
@@ -232,7 +237,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (song == null || !_engineRepo.rustAvailable) return;
     if (_engineRepo.hasAnalysis(song.id)) return;
     try {
-      await _engineRepo.analyzeFile(song.path!);
+      await _engineRepo.analyzeFile(song.id, song.path!);
       notifyListeners();
     } catch (e) {
       debugPrint('[Audio] 分析音频失败: $e');

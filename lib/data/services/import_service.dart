@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
@@ -187,7 +188,7 @@ class ImportService {
           }
 
           song = Song(
-            id: 'imp_${file.path.hashCode}',
+            id: 'imp_${_stableHash(file.path)}',
             title: title,
             artist: artist,
             album: albumName,
@@ -213,6 +214,16 @@ class ImportService {
     return name.replaceAll(RegExp(r'\.[^.]+$'), '');
   }
 
+  /// FNV-1a 64-bit hash，比 Dart hashCode 碰撞概率低得多
+  static String _stableHash(String input) {
+    var hash = 0xcbf29ce484222325;
+    for (final byte in utf8.encode(input)) {
+      hash ^= byte;
+      hash = (hash * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF;
+    }
+    return hash.toRadixString(16).padLeft(16, '0');
+  }
+
   static Duration _estimateDuration(File file) {
     final sizeMb = (file.statSync().size / (1024 * 1024)).clamp(0.1, 9999);
     final estMin = (sizeMb / 1.2).ceil().clamp(1, 999);
@@ -236,7 +247,7 @@ class ImportService {
     final name = file.path.split('/').last;
     final title = name.replaceAll(RegExp(r'\.[^.]+$'), '');
     return Song(
-      id: 'imp_${file.path.hashCode}',
+      id: 'imp_${_stableHash(file.path)}',
       title: title,
       artist: '未知艺术家',
       album: '导入的音乐',

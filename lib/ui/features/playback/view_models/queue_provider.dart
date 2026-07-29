@@ -79,7 +79,8 @@ class QueueProvider extends ChangeNotifier {
 
   int findNextIndex() {
     if (_queue.isEmpty) return 0;
-    if (_shuffle && _queue.length > 1) {
+    final shouldShuffle = _shuffle || _loopMode == LoopMode.shuffle;
+    if (shouldShuffle && _queue.length > 1) {
       return (_currentIndex + 1 + _random.nextInt(_queue.length - 1)) %
           _queue.length;
     }
@@ -110,8 +111,11 @@ class QueueProvider extends ChangeNotifier {
   }
 
   void onImportAdded(List<Song> songs) {
-    _queue.addAll(songs);
-    if (_queue.length == songs.length) _currentIndex = 0;
+    final existingPaths = _queue.map((s) => s.path).whereType<String>().toSet();
+    final newSongs = songs.where((s) => s.path != null && !existingPaths.contains(s.path)).toList();
+    if (newSongs.isEmpty) return;
+    _queue.addAll(newSongs);
+    notifyListeners();
   }
 
   void onRescan(List<Song> songs) {

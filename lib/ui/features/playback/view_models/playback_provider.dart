@@ -49,6 +49,9 @@ class PlaybackProvider extends ChangeNotifier {
     audioPlayer.onTrackEnd = () {
       next();
     };
+
+    audioPlayer.addListener(_onAudioPlayerChange);
+    library.addListener(_onLibraryChange);
   }
 
   void _onLibrarySongsLoaded() {
@@ -79,8 +82,18 @@ class PlaybackProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    audioPlayer.removeListener(_onAudioPlayerChange);
+    library.removeListener(_onLibraryChange);
     audioPlayer.dispose();
     super.dispose();
+  }
+
+  void _onAudioPlayerChange() {
+    notifyListeners();
+  }
+
+  void _onLibraryChange() {
+    notifyListeners();
   }
 
   // ── 向后兼容 getter ──
@@ -116,15 +129,15 @@ class PlaybackProvider extends ChangeNotifier {
 
   // ── 外观偏好 ──
 
-  bool get replayGain => true;
-  bool get dynamicColor => true;
-  double get coverBlur => 0.7;
-  bool get showSpectrum => true;
+  bool get replayGain => _prefsRepo.replayGain;
+  bool get dynamicColor => _prefsRepo.dynamicColor;
+  double get coverBlur => _prefsRepo.coverBlur;
+  bool get showSpectrum => _prefsRepo.showSpectrum;
 
-  void setReplayGain(bool v) {}
-  void setDynamicColor(bool v) {}
-  void setCoverBlur(double v) {}
-  void setShowSpectrum(bool v) {}
+  void setReplayGain(bool v) => _prefsRepo.setReplayGain(v);
+  void setDynamicColor(bool v) => _prefsRepo.setDynamicColor(v);
+  void setCoverBlur(double v) => _prefsRepo.setCoverBlur(v);
+  void setShowSpectrum(bool v) => _prefsRepo.setShowSpectrum(v);
 
   // ── 向后兼容方法 ──
 
@@ -148,7 +161,7 @@ class PlaybackProvider extends ChangeNotifier {
   void next() {
     if (!hasSong) return;
     if (queueProvider.loopMode == LoopMode.single) {
-      audioPlayer.seekToStart();
+      audioPlayer.playSong(queueProvider.currentSong!);
       return;
     }
     final nextIdx = queueProvider.findNextIndex();
@@ -186,7 +199,18 @@ class PlaybackProvider extends ChangeNotifier {
 
   void addToQueue(Song song) => queueProvider.addToQueue(song);
   void playNext(Song song) => queueProvider.playNext(song);
-  void removeFromQueue(int index) => queueProvider.removeFromQueue(index);
+  void removeFromQueue(int index) {
+    final wasCurrent = index == queueProvider.currentIndex;
+    queueProvider.removeFromQueue(index);
+    if (wasCurrent) {
+      if (queueProvider.hasSong) {
+        audioPlayer.playSong(queueProvider.currentSong!);
+      } else {
+        audioPlayer.pause();
+        audioPlayer.setCurrentSong(null);
+      }
+    }
+  }
   void reorderQueue(int oldIndex, int newIndex) =>
       queueProvider.reorderQueue(oldIndex, newIndex);
   void setQueue(List<Song> songs) {

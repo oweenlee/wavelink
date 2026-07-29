@@ -143,8 +143,8 @@ class PreferencesService {
 
 // 简单的扁平 Map 编解码，避免引入额外依赖
 String _encodeMap(Map<String, List<String>> data) {
-  final parts = data.entries
-      .map((e) => '${Uri.encodeComponent(e.key)}:${e.value.join(',')}');
+  final parts = data.entries.map((e) =>
+      '${Uri.encodeComponent(e.key)}:${e.value.map(Uri.encodeComponent).join(',')}');
   return parts.join('|');
 }
 
@@ -156,7 +156,9 @@ Map<String, List<String>> _decodeMap(String raw) {
     if (idx < 0) continue;
     final key = Uri.decodeComponent(seg.substring(0, idx));
     final vals = seg.substring(idx + 1);
-    result[key] = vals.isEmpty ? [] : vals.split(',');
+    result[key] = vals.isEmpty
+        ? []
+        : vals.split(',').map(Uri.decodeComponent).toList();
   }
   return result;
 }
