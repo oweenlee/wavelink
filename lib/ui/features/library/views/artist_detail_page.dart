@@ -186,7 +186,7 @@ class _TrackTile extends StatelessWidget {
                       fontSize: 15,
                       fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
                       color: isCurrent
-                          ? AppTheme.accentBlue
+                          ? AppTheme.brand
                           : AppTheme.textPrimary,
                     ),
                     maxLines: 1,
@@ -245,22 +245,22 @@ class _ActionButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: AppTheme.accentPurple.withValues(alpha: 0.15),
+          color: AppTheme.brand.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: AppTheme.accentPurple.withValues(alpha: 0.3),
+            color: AppTheme.brand.withValues(alpha: 0.3),
           ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: AppTheme.accentPurple, size: 20),
+            Icon(icon, color: AppTheme.brand, size: 20),
             const SizedBox(width: 6),
             Text(
               label,
               style: const TextStyle(
                 fontSize: 14,
-                color: AppTheme.accentPurple,
+                color: AppTheme.brand,
                 fontWeight: FontWeight.w500,
               ),
             ),

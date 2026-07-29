@@ -23,16 +23,17 @@ class ProgressSliderWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = AccentScope.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         SliderTheme(
           data: SliderThemeData(
             trackHeight: 4,
-            thumbShape: _ThumbShape(),
-            activeTrackColor: AppTheme.accentBlue,
+            thumbShape: _ThumbShape(accent),
+            activeTrackColor: accent,
             inactiveTrackColor: AppTheme.textTertiary.withValues(alpha: 0.3),
-            overlayColor: AppTheme.accentBlue.withValues(alpha: 0.1),
+            overlayColor: accent.withValues(alpha: 0.1),
           ),
           child: Slider(
             value: progress.clamp(0.0, 1.0),
@@ -75,6 +76,9 @@ class ProgressSliderWidget extends StatelessWidget {
 }
 
 class _ThumbShape extends SliderComponentShape {
+  final Color color;
+  _ThumbShape(this.color);
+
   @override
   Size getPreferredSize(bool isEnabled, bool isDiscrete) {
     return const Size(16, 16);
@@ -100,14 +104,14 @@ class _ThumbShape extends SliderComponentShape {
 
     // Glow
     final glowPaint = Paint()
-      ..color = AppTheme.accentBlue.withValues(
+      ..color = color.withValues(
         alpha: 0.2 * activationAnimation.value,
       )
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
     canvas.drawCircle(center, radius + 4, glowPaint);
 
     // Thumb
-    final thumbPaint = Paint()..color = AppTheme.accentBlue;
+    final thumbPaint = Paint()..color = color;
     canvas.drawCircle(center, radius, thumbPaint);
 
     // Inner highlight

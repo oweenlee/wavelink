@@ -42,7 +42,7 @@ class _NowPlayingIndicatorState extends State<NowPlayingIndicator>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _ac,
-      builder: (_, _) => Row(
+      builder: (context, _) => Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: List.generate(3, (i) {
           final h = widget.baseHeight + (_ac.value + i * 0.3) % 1.0 * widget.barScale;
@@ -52,7 +52,7 @@ class _NowPlayingIndicatorState extends State<NowPlayingIndicator>
               width: 2,
               height: h.clamp(widget.minHeight, widget.maxHeight),
               decoration: BoxDecoration(
-                color: AppTheme.accentBlue,
+                color: AccentScope.of(context),
                 borderRadius: BorderRadius.circular(1),
               ),
             ),

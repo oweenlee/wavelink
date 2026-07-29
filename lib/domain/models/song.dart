@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 
 class Song {
-  final String id;
+  String id;
   String title;
   String artist;
   String album;
@@ -45,15 +45,7 @@ class Album {
   final List<Song> songs;
   final Color dominantColor;
 
-  Duration get totalDuration =>
-      songs.fold(Duration.zero, (sum, s) => sum + s.duration);
-
-  String formattedDurationOf(AppLocalizations l10n) {
-    final m = totalDuration.inMinutes;
-    return l10n.minuteFormat(m);
-  }
-
-  const Album({
+  Album({
     required this.id,
     required this.title,
     required this.artist,
@@ -61,4 +53,12 @@ class Album {
     required this.songs,
     required this.dominantColor,
   });
+
+  Duration get totalDuration =>
+      songs.fold(Duration.zero, (sum, s) => sum + s.duration);
+
+  String formattedDurationOf(AppLocalizations l10n) {
+    final m = totalDuration.inMinutes;
+    return l10n.minuteFormat(m);
+  }
 }

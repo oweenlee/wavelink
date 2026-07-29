@@ -136,7 +136,7 @@ class _LyricsOverlayState extends State<LyricsOverlay> {
                                 height: 18,
                                 margin: const EdgeInsets.only(right: 8),
                                 decoration: BoxDecoration(
-                                  color: AppTheme.accentBlue,
+                                  color: AccentScope.of(ctx),
                                   borderRadius: BorderRadius.circular(2),
                                 ),
                               ),

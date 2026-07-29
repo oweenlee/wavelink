@@ -47,7 +47,7 @@ class _SpectrumBarState extends State<SpectrumBar> {
 
   @override
   Widget build(BuildContext context) {
-    const barColor = AppTheme.accentBlue;
+    final barColor = AccentScope.of(context);
     return SizedBox(
       height: widget.height,
       child: Row(

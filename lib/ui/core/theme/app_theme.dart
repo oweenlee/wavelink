@@ -2,35 +2,44 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+/// WaveLink 设计令牌
+///
+/// 色彩哲学：「琥珀为体，随内容为用」
+/// - 结构色（brand 琥珀金）：你在操作 app —— Tab、导航、开关、按钮骨架
+/// - 动态色（accent）：你在听音乐 —— 播放按钮/进度/频谱跟随当前歌曲封面主色
+/// - 语义色（danger/success）：状态反馈
 class AppTheme {
-  static const Color background = Color(0xFF0D0D1A);
-  static const Color surfaceDark = Color(0xFF1A1A2E);
-  static const Color accentBlue = Color(0xFF0A84FF);
-  static const Color accentPurple = Color(0xFFB388FF);
+  // ── 基底（中性偏暖炭灰，替代原冷靛蓝）──
+  static const Color background = Color(0xFF121110);
+  static const Color surfaceDark = Color(0xFF1C1A18);
+  static const Color surfaceHigh = Color(0xFF262320);
+
+  // ── 品牌（琥珀金，胆机暖光 / VU 表头）──
+  static const Color brand = Color(0xFFF0B450);
+
+  // ── 文字 ──
   static const Color textPrimary = Color(0xDDFFFFFF);
   static const Color textSecondary = Color(0x8CFFFFFF);
   static const Color textTertiary = Color(0x4DFFFFFF);
-  static const Color danger = Color(0xFFFF453A);
-  static const Color success = Color(0xFF30D158);
+
+  // ── 语义 ──
+  static const Color danger = Color(0xFFF2554A);
+  static const Color success = Color(0xFF4CC38A);
   static const Color edgeHighlight = Color(0x1AFFFFFF);
 
-  /// 专辑/歌手占位色盘（确定性，按 path hash 取模）
-  static const List<Color> palette = [
-    Color(0xFF6C5CE7), Color(0xFF00B894), Color(0xFFFD79A8),
-    Color(0xFF0984E3), Color(0xFFE17055), Color(0xFF00CEC9),
-    Color(0xFFFDCB6E), Color(0xFFA29BFE), Color(0xFF55EFC4),
-    Color(0xFFFAB1A0), Color(0xFF74B9FF), Color(0xFFDFE6E9),
-    Color(0xFFE84393), Color(0xFF6C5CE7), Color(0xFFFDCB6E),
-    Color(0xFFE17055), Color(0xFF00CEC9), Color(0xFFFD79A8),
-    Color(0xFF0984E3), Color(0xFF00B894),
-  ];
+  /// 专辑/歌手占位色盘：13 色，等色相环分布 + 统一 S/L 区间，保证彼此协调。
+  /// 用 HSL 生成而非手调，避免高饱和糖果色与暖底色冲突。
+  static final List<Color> palette = List.generate(13, (i) {
+    final hue = (i * 360.0 / 13 + 18) % 360;
+    return HSLColor.fromAHSL(1, hue, 0.56, 0.60).toColor();
+  });
 
   static ThemeData get darkTheme => ThemeData(
     brightness: Brightness.dark,
     scaffoldBackgroundColor: background,
     colorScheme: const ColorScheme.dark(
-      primary: accentBlue,
-      secondary: accentPurple,
+      primary: brand,
+      secondary: brand,
       surface: surfaceDark,
       error: danger,
     ),
@@ -47,7 +56,7 @@ class AppTheme {
     bottomNavigationBarTheme: const BottomNavigationBarThemeData(
       backgroundColor: Colors.transparent,
       elevation: 0,
-      selectedItemColor: accentBlue,
+      selectedItemColor: brand,
       unselectedItemColor: textTertiary,
       type: BottomNavigationBarType.fixed,
       selectedLabelStyle: TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
@@ -142,4 +151,44 @@ class AppTheme {
       ),
     );
   }
+}
+
+// ── 动态强调色机制 ──
+
+/// 把任意封面主色规整为可安全用作控件色的强调色。
+/// 钳制饱和度与亮度，避免太暗（按钮看不清）或太艳（刺眼）。
+extension AccentNormalize on Color {
+  Color toAccent() {
+    final hsl = HSLColor.fromColor(this);
+    return hsl
+        .withSaturation(hsl.saturation.clamp(0.45, 0.85))
+        .withLightness(hsl.lightness.clamp(0.55, 0.72))
+        .toColor();
+  }
+
+  /// 以本色为背景时应使用的文字/图标色（深底白字，浅底深字）。
+  Color get onAccent =>
+      computeLuminance() > 0.45 ? AppTheme.background : Colors.white;
+}
+
+/// 向子树注入「当前强调色」。
+///
+/// 播放域（NowPlayingPage / MiniPlayerBar）注入当前歌曲主色，
+/// 其余位置 [of] 自动回退到品牌金 [AppTheme.brand]。
+class AccentScope extends InheritedWidget {
+  final Color accent;
+
+  const AccentScope({
+    super.key,
+    required this.accent,
+    required super.child,
+  });
+
+  static Color of(BuildContext context) {
+    final scope = context.dependOnInheritedWidgetOfExactType<AccentScope>();
+    return scope?.accent ?? AppTheme.brand;
+  }
+
+  @override
+  bool updateShouldNotify(AccentScope oldWidget) => accent != oldWidget.accent;
 }

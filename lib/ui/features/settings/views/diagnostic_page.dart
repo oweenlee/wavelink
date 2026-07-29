@@ -69,7 +69,7 @@ class _DiagnosticPageState extends State<DiagnosticPage> {
             _card(
               l10n.diagnosticRecentUnderrun,
               '$_underrunDelta (500ms)',
-              color: _underrunDelta > 0 ? Colors.red : Colors.green,
+              color: _underrunDelta > 0 ? AppTheme.danger : AppTheme.success,
             ),
             const SizedBox(height: 20),
             Text(

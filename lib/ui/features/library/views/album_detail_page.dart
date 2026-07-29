@@ -222,10 +222,10 @@ class _ActionButtons extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 13),
                 decoration: BoxDecoration(
-                  color: AppTheme.accentBlue.withValues(alpha: 0.15),
+                  color: AppTheme.brand.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: AppTheme.accentBlue.withValues(alpha: 0.3),
+                    color: AppTheme.brand.withValues(alpha: 0.3),
                   ),
                 ),
                 child: Row(
@@ -233,7 +233,7 @@ class _ActionButtons extends StatelessWidget {
                   children: [
                     const Icon(
                       Icons.play_arrow_rounded,
-                      color: AppTheme.accentBlue,
+                      color: AppTheme.brand,
                       size: 20,
                     ),
                     const SizedBox(width: 6),
@@ -241,7 +241,7 @@ class _ActionButtons extends StatelessWidget {
                       l10n.playAll,
                       style: const TextStyle(
                         fontSize: 14,
-                        color: AppTheme.accentBlue,
+                        color: AppTheme.brand,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -257,10 +257,10 @@ class _ActionButtons extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 13),
                 decoration: BoxDecoration(
-                  color: AppTheme.accentPurple.withValues(alpha: 0.15),
+                  color: AppTheme.brand.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: AppTheme.accentPurple.withValues(alpha: 0.3),
+                    color: AppTheme.brand.withValues(alpha: 0.3),
                   ),
                 ),
                 child: Row(
@@ -268,7 +268,7 @@ class _ActionButtons extends StatelessWidget {
                   children: [
                     const Icon(
                       Icons.shuffle_rounded,
-                      color: AppTheme.accentPurple,
+                      color: AppTheme.brand,
                       size: 20,
                     ),
                     const SizedBox(width: 6),
@@ -276,7 +276,7 @@ class _ActionButtons extends StatelessWidget {
                       l10n.shufflePlay,
                       style: const TextStyle(
                         fontSize: 14,
-                        color: AppTheme.accentPurple,
+                        color: AppTheme.brand,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -337,7 +337,7 @@ class _TrackTile extends StatelessWidget {
                       fontSize: 15,
                       fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
                       color: isCurrent
-                          ? AppTheme.accentBlue
+                          ? AppTheme.brand
                           : AppTheme.textPrimary,
                     ),
                     maxLines: 1,

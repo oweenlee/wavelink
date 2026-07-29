@@ -41,7 +41,7 @@ class SongTile extends StatelessWidget {
                       fontSize: 15,
                       fontWeight: isPlaying ? FontWeight.w600 : FontWeight.w400,
                       color: isPlaying
-                          ? AppTheme.accentBlue
+                          ? AppTheme.brand
                           : AppTheme.textPrimary,
                     ),
                     maxLines: 1,
@@ -186,7 +186,7 @@ class _EqualizerBarsState extends State<_EqualizerBars>
                 width: 2,
                 height: h.clamp(4.0, 16.0),
                 decoration: BoxDecoration(
-                  color: AppTheme.accentBlue,
+                  color: AccentScope.of(context),
                   borderRadius: BorderRadius.circular(1),
                 ),
               ),

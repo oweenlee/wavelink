@@ -91,7 +91,7 @@ class _SearchPageState extends State<SearchPage> {
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
-            color: AppTheme.surfaceDark.withValues(alpha: 0.6),
+            color: AppTheme.surfaceHigh.withValues(alpha: 0.6),
             borderRadius: BorderRadius.circular(12),
           ),
           child: TextField(

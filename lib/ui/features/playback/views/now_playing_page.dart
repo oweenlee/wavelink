@@ -115,8 +115,11 @@ class _NowPlayingPageState extends State<NowPlayingPage>
     }
 
     final bg = song.dominantColor;
+    final accent = player.dynamicColor ? bg.toAccent() : AppTheme.brand;
 
-    return Scaffold(
+    return AccentScope(
+      accent: accent,
+      child: Scaffold(
       backgroundColor: bg.withValues(alpha: 0.95),
       body: GestureDetector(
         onVerticalDragEnd: (d) {
@@ -198,6 +201,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
               ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -435,24 +439,25 @@ class _PlayBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = AccentScope.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 60,
         height: 60,
         decoration: BoxDecoration(
-          color: AppTheme.accentBlue,
+          color: accent,
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: AppTheme.accentBlue.withValues(alpha: 0.3),
-              blurRadius: 12,
+              color: accent.withValues(alpha: 0.35),
+              blurRadius: 14,
             ),
           ],
         ),
         child: Icon(
           isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-          color: Colors.white,
+          color: accent.onAccent,
           size: 30,
         ),
       ),
@@ -582,8 +587,9 @@ class _BarItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = AccentScope.of(context);
     final color = active
-        ? (activeColor ?? AppTheme.accentBlue)
+        ? (activeColor ?? accent)
         : AppTheme.textSecondary;
     return GestureDetector(
       onTap: onTap,
@@ -607,7 +613,7 @@ class _BarItem extends StatelessWidget {
                         vertical: 1,
                       ),
                       decoration: BoxDecoration(
-                        color: AppTheme.accentBlue,
+                        color: accent,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(

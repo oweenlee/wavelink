@@ -39,18 +39,18 @@ class _LibraryPageState extends State<LibraryPage>
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
-            color: AppTheme.surfaceDark.withValues(alpha: 0.6),
+            color: AppTheme.surfaceHigh.withValues(alpha: 0.6),
             borderRadius: BorderRadius.circular(12),
           ),
           child: TabBar(
             controller: _tabController,
             indicator: BoxDecoration(
-              color: AppTheme.accentBlue.withValues(alpha: 0.2),
+              color: AppTheme.brand.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(10),
             ),
             indicatorSize: TabBarIndicatorSize.tab,
             dividerColor: Colors.transparent,
-            labelColor: AppTheme.accentBlue,
+            labelColor: AppTheme.brand,
             unselectedLabelColor: AppTheme.textTertiary,
             labelStyle: const TextStyle(
               fontSize: 13,
@@ -175,7 +175,7 @@ class _ImportHeader extends StatelessWidget {
       child: Row(
         children: [
           const Icon(Icons.folder_open_rounded,
-              size: 18, color: AppTheme.accentBlue),
+              size: 18, color: AppTheme.brand),
           const SizedBox(width: 8),
           Text(
             importCount > 0 ? l10n.importN(importCount) : l10n.importMusic,
@@ -191,20 +191,20 @@ class _ImportHeader extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: AppTheme.accentBlue.withValues(alpha: 0.15),
+                color: AppTheme.brand.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.add_rounded, size: 16, color: AppTheme.accentBlue),
+                  Icon(Icons.add_rounded, size: 16, color: AppTheme.brand),
                   SizedBox(width: 4),
                   Text(
                     l10n.import,
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
-                      color: AppTheme.accentBlue,
+                      color: AppTheme.brand,
                     ),
                   ),
                 ],
@@ -415,7 +415,7 @@ class _PlaylistsTab extends StatelessWidget {
       ...saved.entries.map((e) => _PlaylistEntry(
             name: e.key,
             count: e.value.length,
-            color: AppTheme.accentPurple,
+            color: AppTheme.brand,
             songs: player.playlistSongs(e.key),
           )),
     ];
@@ -432,10 +432,10 @@ class _PlaylistsTab extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppTheme.accentBlue.withValues(alpha: 0.1),
+                  color: AppTheme.brand.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: AppTheme.accentBlue.withValues(alpha: 0.3),
+                    color: AppTheme.brand.withValues(alpha: 0.3),
                     width: 1,
                   ),
                 ),
@@ -444,7 +444,7 @@ class _PlaylistsTab extends StatelessWidget {
                   children: [
                     Icon(
                       Icons.add_rounded,
-                      color: AppTheme.accentBlue,
+                      color: AppTheme.brand,
                       size: 20,
                     ),
                     SizedBox(width: 8),
@@ -452,7 +452,7 @@ class _PlaylistsTab extends StatelessWidget {
                       l10n.newPlaylistFromQueue,
                       style: TextStyle(
                         fontSize: 15,
-                        color: AppTheme.accentBlue,
+                        color: AppTheme.brand,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -548,7 +548,7 @@ class _PlaylistsTab extends StatelessWidget {
               borderSide: BorderSide(color: AppTheme.textTertiary),
             ),
             focusedBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: AppTheme.accentBlue),
+              borderSide: BorderSide(color: AppTheme.brand),
             ),
           ),
         ),
@@ -565,7 +565,7 @@ class _PlaylistsTab extends StatelessWidget {
               }
               if (ctx.mounted) Navigator.pop(ctx);
             },
-            child: Text(l10n.save, style: const TextStyle(color: AppTheme.accentBlue)),
+            child: Text(l10n.save, style: const TextStyle(color: AppTheme.brand)),
           ),
         ],
       ),
@@ -769,7 +769,7 @@ void _showAddToPlaylist(
             ),
           ...saved.entries.map((e) => ListTile(
                 leading: const Icon(Icons.playlist_play_rounded,
-                    color: AppTheme.accentPurple),
+                    color: AppTheme.brand),
                 title: Text(e.key,
                     style: const TextStyle(color: AppTheme.textPrimary)),
                 onTap: () async {

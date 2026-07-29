@@ -17,7 +17,7 @@ class SongListPage extends StatelessWidget {
     super.key,
     required this.title,
     required this.songs,
-    this.accentColor = AppTheme.accentBlue,
+    this.accentColor = AppTheme.brand,
     this.isFavoriteList = false,
   });
 
@@ -250,18 +250,18 @@ class _RoundBtn extends StatelessWidget {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: filled ? AppTheme.accentBlue : Colors.transparent,
+              color: filled ? AppTheme.brand : Colors.transparent,
               shape: BoxShape.circle,
               border: Border.all(
                 color: filled
-                    ? AppTheme.accentBlue
+                    ? AppTheme.brand
                     : AppTheme.textTertiary.withValues(alpha: 0.5),
                 width: 1.5,
               ),
             ),
             child: Icon(
               icon,
-              color: filled ? Colors.white : AppTheme.textPrimary,
+              color: filled ? AppTheme.brand.onAccent : AppTheme.textPrimary,
               size: 26,
             ),
           ),

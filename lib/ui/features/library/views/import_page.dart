@@ -35,7 +35,7 @@ class ImportPage extends StatelessWidget {
         children: [
           _ImportOption(
             icon: Icons.library_music_rounded,
-            color: AppTheme.accentPurple,
+            color: AppTheme.brand,
             title: l10n.scanMusicLibrary,
             subtitle: l10n.importSystemMusicHint,
             onTap: () async {
@@ -46,7 +46,7 @@ class ImportPage extends StatelessWidget {
           ),
           _ImportOption(
             icon: Icons.folder_open_rounded,
-            color: AppTheme.accentBlue,
+            color: AppTheme.brand,
             title: l10n.scanDir,
             subtitle: l10n.importPickerHint,
             onTap: () async {
@@ -56,7 +56,7 @@ class ImportPage extends StatelessWidget {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(l10n.importN(count)),
-                    backgroundColor: AppTheme.accentBlue,
+                    backgroundColor: AppTheme.brand,
                   ),
                 );
               }
@@ -74,7 +74,7 @@ class ImportPage extends StatelessWidget {
           ),
           _ImportOption(
             icon: Icons.search_rounded,
-            color: AppTheme.accentBlue,
+            color: AppTheme.brand,
             title: l10n.scanAllSources,
             subtitle: l10n.scanAllHint,
             onTap: () async {
@@ -83,7 +83,7 @@ class ImportPage extends StatelessWidget {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(l10n.scanComplete),
-                  backgroundColor: AppTheme.accentBlue,
+                  backgroundColor: AppTheme.brand,
                 ),
               );
             },
@@ -98,7 +98,7 @@ class ImportPage extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(ok ? l10n.scanComplete : l10n.scanNoPermission),
-        backgroundColor: ok ? AppTheme.accentBlue : AppTheme.danger,
+        backgroundColor: ok ? AppTheme.brand : AppTheme.danger,
       ),
     );
   }

@@ -156,7 +156,7 @@ class _Toggle extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             color: value
-                ? AppTheme.accentBlue
+                ? AppTheme.brand
                 : AppTheme.textTertiary.withValues(alpha: 0.3),
           ),
           padding: const EdgeInsets.all(2),

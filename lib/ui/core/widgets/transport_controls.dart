@@ -27,13 +27,13 @@ class TransportControls extends StatelessWidget {
         _ControlButton(
           icon: Icons.skip_previous_rounded,
           size: 44,
-          onTap: onSkipBack,
+          onTap: onPrevious,
         ),
         const SizedBox(width: 8),
         _ControlButton(
           icon: Icons.fast_rewind_rounded,
           size: 44,
-          onTap: onPrevious,
+          onTap: onSkipBack,
         ),
         const SizedBox(width: 16),
         _PlayButton(isPlaying: isPlaying, onTap: onPlayPause),
@@ -41,13 +41,13 @@ class TransportControls extends StatelessWidget {
         _ControlButton(
           icon: Icons.fast_forward_rounded,
           size: 44,
-          onTap: onNext,
+          onTap: onSkipForward,
         ),
         const SizedBox(width: 8),
         _ControlButton(
           icon: Icons.skip_next_rounded,
           size: 44,
-          onTap: onSkipForward,
+          onTap: onNext,
         ),
       ],
     );
@@ -62,17 +62,18 @@ class _PlayButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = AccentScope.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 64,
         height: 64,
         decoration: BoxDecoration(
-          color: AppTheme.accentBlue,
+          color: accent,
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: AppTheme.accentBlue.withValues(alpha: 0.3),
+              color: accent.withValues(alpha: 0.3),
               blurRadius: 12,
               spreadRadius: 0,
             ),
@@ -80,7 +81,7 @@ class _PlayButton extends StatelessWidget {
         ),
         child: Icon(
           isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-          color: Colors.white,
+          color: accent.onAccent,
           size: 32,
         ),
       ),

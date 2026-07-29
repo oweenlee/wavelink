@@ -88,7 +88,7 @@ class QueueSheet extends StatelessWidget {
                                   ? FontWeight.w600
                                   : FontWeight.w400,
                               color: isCurrent
-                                  ? AppTheme.accentBlue
+                                  ? AppTheme.brand
                                   : AppTheme.textPrimary,
                             ),
                             maxLines: 1,

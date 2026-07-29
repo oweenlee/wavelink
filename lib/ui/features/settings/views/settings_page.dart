@@ -109,7 +109,7 @@ class SettingsPage extends StatelessWidget {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(ok ? l10n.scanComplete : l10n.scanNoPermission),
-                      backgroundColor: ok ? AppTheme.accentBlue : AppTheme.danger,
+                      backgroundColor: ok ? AppTheme.brand : AppTheme.danger,
                     ),
                   );
                 }
@@ -202,9 +202,9 @@ class _LanguageSelector extends StatelessWidget {
             label: Text(label),
             selected: selected,
             onSelected: (_) => locale.setMode(opt.$1),
-            selectedColor: AppTheme.accentBlue.withValues(alpha: 0.2),
+            selectedColor: AppTheme.brand.withValues(alpha: 0.2),
             labelStyle: TextStyle(
-              color: selected ? AppTheme.accentBlue : AppTheme.textSecondary,
+              color: selected ? AppTheme.brand : AppTheme.textSecondary,
               fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
             ),
             backgroundColor: AppTheme.surfaceDark,
@@ -212,7 +212,7 @@ class _LanguageSelector extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
               side: BorderSide(
                 color: selected
-                    ? AppTheme.accentBlue
+                    ? AppTheme.brand
                     : AppTheme.textTertiary.withValues(alpha: 0.2),
               ),
             ),
@@ -277,9 +277,9 @@ class _EqPresetSelector extends StatelessWidget {
                 label: Text(_label(l10n, kind)),
                 selected: selected,
                 onSelected: (_) => player.applyEqPreset(kind),
-                selectedColor: AppTheme.accentBlue.withValues(alpha: 0.2),
+                selectedColor: AppTheme.brand.withValues(alpha: 0.2),
                 labelStyle: TextStyle(
-                  color: selected ? AppTheme.accentBlue : AppTheme.textSecondary,
+                  color: selected ? AppTheme.brand : AppTheme.textSecondary,
                   fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                 ),
                 backgroundColor: AppTheme.surfaceDark,
@@ -287,7 +287,7 @@ class _EqPresetSelector extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                   side: BorderSide(
                     color: selected
-                        ? AppTheme.accentBlue
+                        ? AppTheme.brand
                         : AppTheme.textTertiary.withValues(alpha: 0.2),
                   ),
                 ),
@@ -411,7 +411,7 @@ class _SwitchItem extends StatelessWidget {
       trailing: Switch(
         value: value,
         onChanged: onChanged,
-        activeThumbColor: AppTheme.accentBlue,
+        activeThumbColor: AppTheme.brand,
       ),
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -454,12 +454,12 @@ class _SliderItem extends StatelessWidget {
                 ),
                 SliderTheme(
                   data: SliderThemeData(
-                    activeTrackColor: AppTheme.accentBlue,
+                    activeTrackColor: AppTheme.brand,
                     inactiveTrackColor: AppTheme.textTertiary.withValues(
                       alpha: 0.3,
                     ),
-                    thumbColor: AppTheme.accentBlue,
-                    overlayColor: AppTheme.accentBlue.withValues(alpha: 0.1),
+                    thumbColor: AppTheme.brand,
+                    overlayColor: AppTheme.brand.withValues(alpha: 0.1),
                   ),
                   child: Slider(value: value, onChanged: onChanged),
                 ),
@@ -486,10 +486,10 @@ class _ActionItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: AppTheme.accentBlue, size: 22),
+      leading: Icon(icon, color: AppTheme.brand, size: 22),
       title: Text(
         label,
-        style: const TextStyle(fontSize: 15, color: AppTheme.accentBlue),
+        style: const TextStyle(fontSize: 15, color: AppTheme.brand),
       ),
       onTap: onTap,
       dense: true,

@@ -17,7 +17,12 @@ class MiniPlayerBar extends StatelessWidget {
         final song = player.currentSong;
         if (song == null) return const SizedBox.shrink();
 
-        return GestureDetector(
+        final accent = player.dynamicColor
+            ? song.dominantColor.toAccent()
+            : AppTheme.brand;
+        return AccentScope(
+          accent: accent,
+          child: GestureDetector(
           onTap: onTap,
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -33,7 +38,7 @@ class MiniPlayerBar extends StatelessWidget {
                       heightFactor: 1,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: AppTheme.accentBlue,
+                          color: accent,
                           borderRadius: BorderRadius.circular(1),
                         ),
                       ),
@@ -121,6 +126,7 @@ class MiniPlayerBar extends StatelessWidget {
                 ),
               ),
             ],
+          ),
           ),
         );
       },

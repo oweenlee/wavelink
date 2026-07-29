@@ -180,7 +180,7 @@ class _NavItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         decoration: BoxDecoration(
           color: isSelected
-              ? AppTheme.accentBlue.withValues(alpha: 0.15)
+              ? AppTheme.brand.withValues(alpha: 0.15)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
         ),
@@ -190,7 +190,7 @@ class _NavItem extends StatelessWidget {
             Icon(
               icon,
               size: 22,
-              color: isSelected ? AppTheme.accentBlue : AppTheme.textTertiary,
+              color: isSelected ? AppTheme.brand : AppTheme.textTertiary,
             ),
             const SizedBox(height: 2),
             Text(
@@ -198,7 +198,7 @@ class _NavItem extends StatelessWidget {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                color: isSelected ? AppTheme.accentBlue : AppTheme.textTertiary,
+                color: isSelected ? AppTheme.brand : AppTheme.textTertiary,
               ),
             ),
           ],
