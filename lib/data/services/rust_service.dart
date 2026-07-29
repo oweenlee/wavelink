@@ -129,6 +129,8 @@ Future<void> engineSetVolume({required double vol}) =>
     engine.engineSetVolume(vol: vol);
 Future<void> engineSetSpeed({required double speed}) =>
     engine.engineSetSpeed(speed: speed);
+Future<void> engineSetOutputSampleRate({required int rate}) =>
+    engine.engineSetOutputSampleRate(rate: rate);
 Future<void> engineSetCrossfeed({required bool enabled}) =>
     engine.engineSetCrossfeed(enabled: enabled);
 Future<void> engineSetStereoWidener({required bool enabled, required double width}) =>

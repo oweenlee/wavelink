@@ -63,6 +63,11 @@ class PreferencesService {
   bool get replayGain => _prefs.getBool(_kReplayGain) ?? true;
   Future<void> setReplayGain(bool v) => _prefs.setBool(_kReplayGain, v);
 
+  // ── Bit-perfect / 采样率跟随 ──
+  static const _kBitPerfect = 'bit_perfect';
+  bool get bitPerfect => _prefs.getBool(_kBitPerfect) ?? false;
+  Future<void> setBitPerfect(bool v) => _prefs.setBool(_kBitPerfect, v);
+
   // ── 动态取色 ──
   static const _kDynamicColor = 'dynamic_color';
   bool get dynamicColor => _prefs.getBool(_kDynamicColor) ?? true;

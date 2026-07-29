@@ -23,6 +23,10 @@ class AudioPlayerProvider extends ChangeNotifier {
   double _volume = 0.8;
   int _playToken = 0;
 
+  /// bit-perfect / 采样率跟随（由 PlaybackProvider 从偏好同步）。
+  /// 开启后切歌时把输出速率对齐到文件速率（iOS 经 AVAudioSession），相等时不重采样。
+  bool bitPerfect = false;
+
   Future<void> Function(Song) startDecoderHook = (_) async {};
   VoidCallback? onTrackEnd;
 
@@ -98,6 +102,20 @@ class AudioPlayerProvider extends ChangeNotifier {
 
     await _nativeAudio.stop();
     if (token != _playToken) return;
+
+    // bit-perfect 协调：探测文件速率 → iOS 设 AVAudioSession 读回实际速率 → 引擎设输出速率。
+    // 实际速率 == 文件速率时解码器不重采样（bit-perfect）；iOS 未满足时引擎按实际速率重采样保证播放正确。
+    if (bitPerfect && song.path != null && _engineRepo.rustAvailable) {
+      final fileRate = await _engineRepo.probeSampleRate(song.path!);
+      if (token != _playToken) return;
+      if (fileRate > 0) {
+        final actualRate = await _nativeAudio.setOutputRate(fileRate.toDouble());
+        if (token != _playToken) return;
+        if (actualRate > 0) {
+          await _engineRepo.setOutputSampleRate(actualRate.round());
+        }
+      }
+    }
 
     if (song.path != null && _engineRepo.rustAvailable) {
       await _engineRepo.play(song.path!);

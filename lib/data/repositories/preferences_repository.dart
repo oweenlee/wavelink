@@ -60,6 +60,10 @@ class PreferencesRepository {
   Future<void> setReplayGain(bool v) =>
       PreferencesService.instance.setReplayGain(v);
 
+  bool get bitPerfect => PreferencesService.instance.bitPerfect;
+  Future<void> setBitPerfect(bool v) =>
+      PreferencesService.instance.setBitPerfect(v);
+
   bool get dynamicColor => PreferencesService.instance.dynamicColor;
   Future<void> setDynamicColor(bool v) =>
       PreferencesService.instance.setDynamicColor(v);

@@ -73,6 +73,19 @@ class NativeAudioService {
         'positionMs': positionMs,
       }));
 
+  /// 切换 iOS 输出采样率（bit-perfect 协调）。
+  /// 返回实际生效的采样率（setPreferredSampleRate 是请求非保证，内置输出常固定、外接 DAC 才会切）。
+  /// 非 iOS 平台（无原生实现）返回 0。
+  Future<double> setOutputRate(double rate) async {
+    try {
+      final result =
+          await _methodChannel.invokeMethod<double>('setOutputRate', {'rate': rate});
+      return result ?? 0.0;
+    } on MissingPluginException {
+      return 0.0;
+    }
+  }
+
   Future<void> _safeCall(Future<void> call) async {
     try {
       await call;

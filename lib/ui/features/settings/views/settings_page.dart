@@ -57,6 +57,12 @@ class SettingsPage extends StatelessWidget {
               value: player.replayGain,
               onChanged: (_) => player.setReplayGain(!player.replayGain),
             ),
+            _SwitchItem(
+              icon: Icons.high_quality_rounded,
+              label: l10n.bitPerfect,
+              value: player.bitPerfect,
+              onChanged: (_) => player.setBitPerfect(!player.bitPerfect),
+            ),
             _EqPresetSelector(),
             _SettingItem(
               icon: Icons.volume_up_rounded,

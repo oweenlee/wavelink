@@ -71,6 +71,7 @@ class PlaybackProvider extends ChangeNotifier {
 
   void _loadPreferences() {
     audioPlayer.setVolume(_prefsRepo.volume);
+    audioPlayer.bitPerfect = _prefsRepo.bitPerfect;
     if (_prefsRepo.shuffle) queueProvider.toggleShuffle();
     queueProvider.setLoopMode(LoopMode.values.firstWhere(
       (m) => m.name == _prefsRepo.loopMode,
@@ -133,11 +134,16 @@ class PlaybackProvider extends ChangeNotifier {
   bool get dynamicColor => _prefsRepo.dynamicColor;
   double get coverBlur => _prefsRepo.coverBlur;
   bool get showSpectrum => _prefsRepo.showSpectrum;
+  bool get bitPerfect => _prefsRepo.bitPerfect;
 
   void setReplayGain(bool v) => _prefsRepo.setReplayGain(v);
   void setDynamicColor(bool v) => _prefsRepo.setDynamicColor(v);
   void setCoverBlur(double v) => _prefsRepo.setCoverBlur(v);
   void setShowSpectrum(bool v) => _prefsRepo.setShowSpectrum(v);
+  void setBitPerfect(bool v) {
+    _prefsRepo.setBitPerfect(v);
+    audioPlayer.bitPerfect = v;
+  }
 
   // ── 向后兼容方法 ──
 

@@ -27,6 +27,13 @@ class AudioEngineRepository {
   Future<void> stop() => rs.engineStop();
   Future<void> seek(double posSecs) => rs.engineSeek(posSecs);
 
+  /// 设置引擎输出采样率（下次播放生效，iOS bit-perfect 协调用）
+  Future<void> setOutputSampleRate(int rate) =>
+      rs.engineSetOutputSampleRate(rate: rate);
+
+  /// 探测音频文件采样率（失败返回 0）
+  Future<int> probeSampleRate(String path) => rs.probeSampleRate(path);
+
   // ── 音量 ──
 
   Future<void> setVolume(double vol) => rs.engineSetVolume(vol: vol);

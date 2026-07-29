@@ -65,6 +65,7 @@
   "dspPipeline": "DSP 管线配置",
   "dspCrossfeed": "Crossfeed",
   "replayGain": "ReplayGain",
+  "bitPerfect": "Bit-perfect（采样率跟随）",
   "versionValue": "v0.1.0",
   "outputDevice": "输出设备",
   "settingsAppearance": "外观",

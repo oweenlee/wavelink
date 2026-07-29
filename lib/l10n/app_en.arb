@@ -65,6 +65,7 @@
   "dspPipeline": "DSP Pipeline",
   "dspCrossfeed": "Crossfeed",
   "replayGain": "ReplayGain",
+  "bitPerfect": "Bit-perfect (sample rate follow)",
   "versionValue": "v0.1.0",
   "outputDevice": "Output Device",
   "settingsAppearance": "Appearance",
