@@ -71,10 +71,7 @@ pub(crate) fn run_engine(
                             }
                         }
                         Ok(EngineCommand::PlayStream { format_hint, content_length, ack, stream_handle_out }) => {
-                            state.play_stream(format_hint, content_length, stream_handle_out);
-                            if let Some(tx) = ack {
-                                let _ = tx.send(Ok(()));
-                            }
+                            state.play_stream(format_hint, content_length, ack, stream_handle_out);
                         }
                         Ok(EngineCommand::PlayQueue(paths)) => state.set_queue(paths),
                         Ok(EngineCommand::NextTrack) => state.next_track(),
@@ -112,6 +109,7 @@ pub(crate) fn run_engine(
                             state.config.buffer_ms = ms;
                         },
                         Ok(EngineCommand::SetSpeed(speed)) => state.set_speed(speed),
+                        Ok(EngineCommand::SetNoiseShaping(enabled)) => state.set_noise_shaping(enabled),
                         Ok(EngineCommand::SetPlayMode(mode)) => state.set_play_mode(mode),
                         Ok(EngineCommand::SetOutputDevice(dev, ack)) => {
                             if state.config.output_device.as_deref() != Some(&dev) {

@@ -14,6 +14,7 @@ use crate::dsp::PeqBand;
 use crate::error::EngineError;
 use crate::capture::CaptureInner;
 use crate::output::AudioOutputInner;
+use crate::stream::StreamHandle;
 use crate::EngineConfig;
 
 /// 对外的句柄（Send + Sync）
@@ -84,16 +85,28 @@ impl EngineHandle {
         ack_rx.recv_timeout(Duration::from_secs(5))
             .unwrap_or(Err(EngineError::InvalidState("应答超时".into())))
     }
-    /// 开始流式播放（网络流媒体用，异步）
-    pub fn play_stream(&self, format_hint: Option<String>, content_length: Option<u64>) {
-        let _ = self.tx.send(EngineCommand::PlayStream { format_hint, content_length, ack: None, stream_handle_out: None });
+    /// 开始流式播放（网络流媒体用），返回 StreamHandle 供写入数据
+    pub fn play_stream(&self, format_hint: Option<String>, content_length: Option<u64>) -> Result<StreamHandle, EngineError> {
+        self.play_stream_impl(format_hint, content_length, Duration::from_secs(5))
     }
-    /// 同步流式播放（等待引擎确认启动成功）
-    pub fn play_stream_sync(&self, format_hint: Option<String>, content_length: Option<u64>) -> Result<(), EngineError> {
+    /// 同步流式播放（等待引擎确认启动成功），返回 StreamHandle
+    pub fn play_stream_sync(&self, format_hint: Option<String>, content_length: Option<u64>) -> Result<StreamHandle, EngineError> {
+        self.play_stream_impl(format_hint, content_length, Duration::from_secs(15))
+    }
+    /// 流式播放通用实现
+    fn play_stream_impl(&self, format_hint: Option<String>, content_length: Option<u64>, timeout: Duration) -> Result<StreamHandle, EngineError> {
         let (ack_tx, ack_rx) = bounded(1);
-        let _ = self.tx.send(EngineCommand::PlayStream { format_hint, content_length, ack: Some(ack_tx), stream_handle_out: None });
-        ack_rx.recv_timeout(Duration::from_secs(5))
-            .unwrap_or(Err(EngineError::InvalidState("应答超时".into())))
+        let (handle_tx, handle_rx) = bounded(1);
+        let shared_tx = std::sync::Arc::new(handle_tx);
+        let _ = self.tx.send(EngineCommand::PlayStream {
+            format_hint, content_length,
+            ack: Some(ack_tx),
+            stream_handle_out: Some(shared_tx),
+        });
+        ack_rx.recv_timeout(timeout)
+            .unwrap_or(Err(EngineError::InvalidState("引擎无响应".into())))?;
+        handle_rx.recv_timeout(Duration::from_secs(1))
+            .map_err(|_| EngineError::InvalidState("引擎未返回流句柄".into()))
     }
     /// 设置播放队列并从第一首开始播放
     pub fn play_queue(&self, paths: Vec<String>) { let _ = self.tx.send(EngineCommand::PlayQueue(paths)); }
@@ -176,6 +189,10 @@ impl EngineHandle {
     /// 设置播放速度（0.25 ~ 4.0），1.0 = 正常
     pub fn set_speed(&self, speed: f32) {
         let _ = self.tx.send(EngineCommand::SetSpeed(speed));
+    }
+    /// 启用/禁用 ATH 噪声整形
+    pub fn set_noise_shaping(&self, enabled: bool) {
+        let _ = self.tx.send(EngineCommand::SetNoiseShaping(enabled));
     }
     /// 动态调整输出缓冲时长（毫秒），实时生效。仅在 Oboe 后端受支持。
     pub fn set_buffer_ms(&self, ms: u32) {

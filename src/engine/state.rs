@@ -10,7 +10,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use parking_lot::Mutex;
 use tracing::{debug, error, info, warn};
 
-use super::command::{EngineEvent, Levels, PlayMode};
+use super::command::{CmdAck, EngineEvent, Levels, PlayMode};
 use super::queue::{resolve_entries, QueueEntry};
 use super::worker::spawn_consumer;
 use crate::decoder::{Decoder, DecodedFrame};
@@ -18,6 +18,7 @@ use crate::dsp::{DspPipeline, PeqBand};
 use crate::output::{AudioOutput, AudioOutputInner};
 use crate::stream::StreamHandle;
 use crate::EngineConfig;
+use crate::error::EngineError;
 
 /// 引擎内部运行状态（只存在于引擎线程）
 pub struct EngineState {
@@ -255,6 +256,7 @@ impl EngineState {
         &mut self,
         format_hint: Option<String>,
         content_length: Option<u64>,
+        ack: CmdAck,
         stream_handle_out: Option<std::sync::Arc<crossbeam_channel::Sender<StreamHandle>>>,
     ) {
         self.stop_playback();
@@ -271,10 +273,10 @@ impl EngineState {
             (output.swap_consumer(self.config.buffer_ms, out_sr, out_ch), out_sr, out_ch)
         } else {
             if self.config.exclusive_mode {
-                crate::exclusive::acquire_exclusive_mode();
+                crate::exclusive::acquire_exclusive_mode(self.config.output_device.as_deref());
                 self.exclusive_mode_acquired = true;
             }
-            match crate::output::open(ch, sr, self.config.buffer_ms, self.config.output_device.as_deref(), 0) {
+            match crate::output::open(ch, sr, self.config.buffer_ms, self.config.output_device.as_deref(), 0, self.config.exclusive_mode) {
                 Ok((output, prod, inner, actual_rate)) => {
                     self.output_inner = Some(inner);
                     self.output = Some(output);
@@ -286,6 +288,7 @@ impl EngineState {
                 Err(e) => {
                     error!("流式: 打开音频输出失败: {e}");
                     self.emit(EngineEvent::Error(format!("打开音频输出失败: {e}")));
+                    self.fail_stream(ack, EngineError::OutputOpenFailed(e.to_string()));
                     return;
                 }
             }
@@ -302,6 +305,7 @@ impl EngineState {
             Err(e) => {
                 error!("流式: 启动解码失败: {e}");
                 self.emit(EngineEvent::Error(format!("流式解码失败: {e}")));
+                self.fail_stream(ack, EngineError::DecodeFailed(e.to_string()));
                 return;
             }
         };
@@ -321,7 +325,7 @@ impl EngineState {
 
         let output = match self.output.as_ref() {
             Some(o) => o,
-            None => { error!("流式播放时输出设备未初始化"); self.stop_playback(); return; }
+            None => { error!("流式播放时输出设备未初始化"); self.stop_playback(); self.fail_stream(ack, EngineError::InvalidState("未初始化输出设备".into())); return; }
         };
         match ready_rx.recv_timeout(Duration::from_secs(3)) {
             Ok(true) => {
@@ -335,6 +339,7 @@ impl EngineState {
                 error!("流式: 解码失败（无有效音频帧）");
                 self.emit(EngineEvent::Error("流式解码失败: 无有效音频数据".into()));
                 self.stop_playback();
+                self.fail_stream(ack, EngineError::DecodeFailed("无有效音频帧".into()));
                 return;
             }
         }
@@ -346,9 +351,24 @@ impl EngineState {
         self.stream_handle = Some(handle.clone());
         self.apply_pending_replaygain();
 
+        // 发送 ack 成功
+        if let Some(tx) = ack {
+            let _ = tx.send(Ok(()));
+        }
+
         // 将 StreamHandle 克隆一份发送给 FFI 层
         if let Some(tx) = stream_handle_out {
             let _ = tx.send(handle);
+        }
+    }
+
+    fn fail_stream(&mut self, ack: CmdAck, err: EngineError) {
+        if self.exclusive_mode_acquired {
+            crate::exclusive::release_exclusive_mode(self.config.output_device.as_deref());
+            self.exclusive_mode_acquired = false;
+        }
+        if let Some(tx) = ack {
+            let _ = tx.send(Err(err));
         }
     }
 
@@ -552,6 +572,12 @@ impl EngineState {
         }
     }
 
+    pub(crate) fn set_noise_shaping(&mut self, enabled: bool) {
+        if let Some(dsp) = &self.dsp {
+            dsp.lock().set_noise_shaping(enabled);
+        }
+    }
+
     pub(crate) fn set_volume(&mut self, vol: f32) {
         self.current_volume = vol;
         if let Some(dsp) = &self.dsp {
@@ -608,7 +634,7 @@ impl EngineState {
         self.sync_output_inner();
         // 释放独占模式（使用实际获取时的状态，而非当前 config）
         if self.exclusive_mode_acquired {
-            crate::exclusive::release_exclusive_mode();
+            crate::exclusive::release_exclusive_mode(self.config.output_device.as_deref());
             self.exclusive_mode_acquired = false;
         }
     }

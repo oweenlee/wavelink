@@ -1,6 +1,6 @@
 # wavelink-audio-core API Reference
 
-> Source hash: `4084d45fbb6e` | Generated: 2026-07-28 22:18
+> Source hash: `657dbd4a33b0` | Generated: 2026-07-29 22:38
 > AI 助手优先读此文件，而非读 `src/` 源码。若 AI 返回的代码与当前签名不匹配，请重新运行 `bash doc-api.sh`。
 
 ## Table of Contents
@@ -301,14 +301,14 @@ pub fn play(&self, path: String) { ...
 pub fn play_sync(&self, path: String) -> Result<(), EngineError> { ...
 ```
 
-开始流式播放（网络流媒体用，异步）  
+开始流式播放（网络流媒体用），返回 StreamHandle 供写入数据  
 ```rust
-pub fn play_stream(&self, format_hint: Option<String>, content_length: Option<u64>) { ...
+pub fn play_stream(&self, format_hint: Option<String>, content_length: Option<u64>) -> Result<StreamHandle, EngineError> { ...
 ```
 
-同步流式播放（等待引擎确认启动成功）  
+同步流式播放（等待引擎确认启动成功），返回 StreamHandle  
 ```rust
-pub fn play_stream_sync(&self, format_hint: Option<String>, content_length: Option<u64>) -> Result<(), EngineError> { ...
+pub fn play_stream_sync(&self, format_hint: Option<String>, content_length: Option<u64>) -> Result<StreamHandle, EngineError> { ...
 ```
 
 设置播放队列并从第一首开始播放  
@@ -434,6 +434,11 @@ pub fn is_playing(&self) -> bool { ...
 设置播放速度（0.25 ~ 4.0），1.0 = 正常  
 ```rust
 pub fn set_speed(&self, speed: f32) { ...
+```
+
+启用/禁用 ATH 噪声整形  
+```rust
+pub fn set_noise_shaping(&self, enabled: bool) { ...
 ```
 
 动态调整输出缓冲时长（毫秒），实时生效。仅在 Oboe 后端受支持。  
@@ -2167,37 +2172,37 @@ pub enum EngineError { ...
 
 ### 独占模式支持 (`exclusive.rs`)
 
-macOS: 获取 Hog Mode（独占音频设备）  
+macOS: 获取 Hog Mode（独占指定/默认音频设备）  
 设置后其他应用无法使用该设备，直到本进程释放或退出。  
 ```rust
-pub fn acquire_exclusive_mode() -> bool { ...
+pub fn acquire_exclusive_mode(device_name: Option<&str>) -> bool { ...
 ```
 
 macOS: 释放 Hog Mode  
 ```rust
-pub fn release_exclusive_mode() { ...
+pub fn release_exclusive_mode(device_name: Option<&str>) { ...
 ```
 
-Windows: WASAPI Exclusive 模式初始化 COM  
-注意：实际独占模式获取发生在 IAudioClient::Initialize 中，  
-此处仅初始化 COM，确保 WASAPI FFI 可以正常工作。  
+Windows: 独占模式由 WASAPI 后端在打开音频流时按流获取  
+（IAudioClient::Initialize + AUDCLNT_SHAREMODE_EXCLUSIVE，失败自动降级共享）。  
+此处仅报告能力，不做 COM 初始化——COM 生命周期由后端自行管理，避免引用计数失衡。  
 ```rust
-pub fn acquire_exclusive_mode() -> bool { ...
+pub fn acquire_exclusive_mode(_device_name: Option<&str>) -> bool { ...
 ```
 
-Windows: 释放 COM  
+Windows: 独占随音频流关闭自动释放，此处无操作  
 ```rust
-pub fn release_exclusive_mode() { ...
+pub fn release_exclusive_mode(_device_name: Option<&str>) { ...
 ```
 
 其他平台：独占模式暂不支持  
 ```rust
-pub fn acquire_exclusive_mode() -> bool { ...
+pub fn acquire_exclusive_mode(_device_name: Option<&str>) -> bool { ...
 ```
 
 其他平台：释放独占模式（无操作）  
 ```rust
-pub fn release_exclusive_mode() { ...
+pub fn release_exclusive_mode(_device_name: Option<&str>) { ...
 ```
 
 ---
@@ -2232,4 +2237,4 @@ Windows WASAPI Exclusive 模式输出后端
 
 ---
 
-> 378 pub items (44 FFI exports). Run `bash doc-api.sh` to refresh.
+> 379 pub items (44 FFI exports). Run `bash doc-api.sh` to refresh.

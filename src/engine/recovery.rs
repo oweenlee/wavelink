@@ -58,7 +58,7 @@ impl EngineState {
         let ch = self.config.channels;
         let mut open_result = None;
         for attempt in 0..4u32 {
-            match crate::output::open(ch, sr, self.config.buffer_ms, self.config.output_device.as_deref(), 0) {
+            match crate::output::open(ch, sr, self.config.buffer_ms, self.config.output_device.as_deref(), 0, self.config.exclusive_mode) {
                 Ok(v) => { open_result = Some(v); break; }
                 Err(e) => {
                     if attempt < 3 {

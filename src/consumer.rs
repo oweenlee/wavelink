@@ -246,6 +246,8 @@ pub fn run_consumer_loop(
                 on_samples_output(count);
             }
             Err(RecvTimeoutError::Timeout) => {
+                // 暂停/空闲时防止 CPU 空转
+                std::thread::sleep(Duration::from_millis(10));
                 continue;
             }
             Err(RecvTimeoutError::Disconnected) => {

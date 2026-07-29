@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 /// CUE 音轨
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CueTrack {
     /// 轨号（如 "01", "02"）
     pub num: String,
@@ -20,7 +20,7 @@ pub struct CueTrack {
 }
 
 /// CUE 文件条目（对应一个物理音频文件）
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CueFile {
     /// 音频文件路径（CUE 中声明的相对/绝对路径）
     pub path: String,
@@ -29,7 +29,7 @@ pub struct CueFile {
 }
 
 /// CUE 分轨表顶层结构
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CueSheet {
     /// 整碟标题
     pub title: Option<String>,

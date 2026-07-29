@@ -26,7 +26,7 @@ pub struct AudioOutputInner {
 }
 
 /// 样本格式
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SampleFormat {
     /// 16-bit 有符号整数 PCM
     I16,
@@ -39,7 +39,7 @@ pub enum SampleFormat {
 }
 
 /// 设备支持的单个配置（采样率/位深/声道/独占组合）
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DeviceConfig {
     /// 采样率 Hz
     pub sample_rate: u32,
@@ -54,7 +54,7 @@ pub struct DeviceConfig {
 }
 
 /// 输出设备详细信息
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OutputDeviceInfo {
     /// 设备唯一 ID（系统级）
     pub id: String,
@@ -69,7 +69,7 @@ pub struct OutputDeviceInfo {
 }
 
 /// 源音频格式（来自当前播放文件）
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SourceFormat {
     /// 原文件采样率 Hz
     pub sample_rate: u32,
@@ -84,7 +84,7 @@ pub struct SourceFormat {
 }
 
 /// 输出决策结果
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OutputDecision {
     /// 目标设备 ID
     pub device_id: String,
@@ -220,11 +220,12 @@ pub fn open(
     buffer_ms: u32,
     device_name: Option<&str>,
     _bit_depth: u16,
+    _exclusive: bool,
 ) -> Result<(Box<dyn AudioOutput>, PcmProducer, Arc<AudioOutputInner>, u32), String> {
     // WASAPI Exclusive 后端 (仅 Windows)
     #[cfg(all(feature = "wasapi-backend", target_os = "windows"))]
     {
-        if let Ok(result) = output_wasapi::open_inner(channels, sample_rate, buffer_ms, device_name, _bit_depth)
+        if let Ok(result) = output_wasapi::open_inner(channels, sample_rate, buffer_ms, device_name, _bit_depth, _exclusive)
         {
             return Ok((Box::new(result.0) as Box<dyn AudioOutput>, result.1, result.2, result.3));
         }

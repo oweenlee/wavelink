@@ -50,7 +50,11 @@ pub struct Decoder {
 impl Drop for Decoder {
     fn drop(&mut self) {
         self.stop();
-        if let Some(h) = self.handle.take() { let _ = h.join(); }
+        if let Some(h) = self.handle.take() {
+            if h.thread().id() != std::thread::current().id() {
+                let _ = h.join();
+            }
+        }
     }
 }
 

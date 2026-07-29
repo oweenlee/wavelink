@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 /// 播放列表条目
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlaylistEntry {
     /// 音频文件路径（已解析为绝对路径或原样保留）
     pub path: String,

@@ -95,7 +95,7 @@ pub(crate) fn setup_output_for_entry(
     } else {
         // ── 首次打开 output ──
         if state.config.exclusive_mode {
-            crate::exclusive::acquire_exclusive_mode();
+            crate::exclusive::acquire_exclusive_mode(state.config.output_device.as_deref());
             state.exclusive_mode_acquired = true;
         }
         match crate::output::open(
@@ -104,6 +104,7 @@ pub(crate) fn setup_output_for_entry(
             state.config.buffer_ms,
             state.config.output_device.as_deref(),
             source_bit_depth,
+            state.config.exclusive_mode,
         ) {
             Ok((output, prod, inner, actual_rate)) => {
                 state.output_inner = Some(inner);
