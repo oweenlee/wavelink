@@ -181,6 +181,25 @@ impl AudioOutput for HeadlessOutput {
     }
     fn sample_rate(&self) -> u32 { self.sample_rate }
     fn channels(&self) -> u32 { self.channels }
+
+    /// 切换输出采样率（Headless：更新内部速率标记）。
+    ///
+    /// 移动端真正的设备速率由平台层控制（iOS `AVAudioSession.setPreferredSampleRate`）：
+    /// 平台层须先把设备设到目标速率，再调用本方法，使引擎产出速率与设备拉取速率一致。
+    /// 当目标速率 == 源文件速率时，解码器跳过重采样（create_resampler 返回 None），即 bit-perfect。
+    fn set_sample_rate(&mut self, rate: u32) -> Result<u32, crate::error::EngineError> {
+        self.sample_rate = rate;
+        Ok(rate)
+    }
+
+    /// Headless 输出「支持」的采样率：返回常见 HiFi 速率，
+    /// 使 bit-perfect / auto_sample_rate 模式能协商到源文件速率。
+    /// 设备能否实际运行于某速率由平台层保证（协商结果须与设备实际速率对齐）。
+    fn supported_sample_rates(&self) -> Vec<u32> {
+        vec![
+            22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000,
+        ]
+    }
 }
 
 // ─── cpal 后端 ───────────────────────────────────────────────
@@ -532,4 +551,66 @@ pub fn decide_output(
             target.sample_rate, target.bit_depth,
         ),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 构造一个 HeadlessOutput（测试用）
+    fn headless(rate: u32) -> HeadlessOutput {
+        let rb = HeapRb::<f32>::new(64);
+        let (_prod, cons) = rb.split();
+        let inner = Arc::new(AudioOutputInner {
+            consumer: Mutex::new(cons),
+            underrun_count: AtomicU64::new(0),
+            stream_failed: AtomicBool::new(false),
+        });
+        HeadlessOutput {
+            inner,
+            playing: AtomicBool::new(true),
+            sample_rate: rate,
+            channels: 2,
+        }
+    }
+
+    #[test]
+    fn headless_set_sample_rate_takes_effect() {
+        let mut out = headless(48000);
+        assert_eq!(out.sample_rate(), 48000);
+        // bit-perfect 基础：set_sample_rate 真正改变输出速率（原为 no-op）
+        assert_eq!(out.set_sample_rate(96000).unwrap(), 96000);
+        assert_eq!(out.sample_rate(), 96000);
+        // 切到文件原生速率（如 176.4k / 384k）同样生效
+        assert_eq!(out.set_sample_rate(176400).unwrap(), 176400);
+        assert_eq!(out.sample_rate(), 176400);
+        assert_eq!(out.set_sample_rate(384000).unwrap(), 384000);
+        assert_eq!(out.sample_rate(), 384000);
+    }
+
+    #[test]
+    fn headless_supported_rates_cover_hifi_rates() {
+        let out = headless(48000);
+        let supported = out.supported_sample_rates();
+        // 常见 HiFi 速率都应支持，使 bit-perfect 能协商到源文件速率
+        for rate in [44100u32, 48000, 88200, 96000, 176400, 192000, 352800, 384000] {
+            assert!(supported.contains(&rate), "应支持 {rate}Hz");
+        }
+    }
+
+    #[test]
+    fn headless_bitperfect_negotiation_picks_file_rate() {
+        use crate::engine::output_setup::negotiate_sample_rate;
+        let out = headless(48000);
+        let supported = out.supported_sample_rates();
+        // 文件速率在支持列表中时，协商应精确选中文件速率
+        // → Decoder::start(path, file_sr) 时 create_resampler 返回 None → 不重采样 = bit-perfect
+        for file_sr in [44100u32, 96000, 192000, 384000] {
+            assert_eq!(
+                negotiate_sample_rate(file_sr, &supported),
+                file_sr,
+                "{file_sr}Hz 文件应协商到自身速率"
+            );
+        }
+    }
 }
