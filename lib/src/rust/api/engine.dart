@@ -7,9 +7,31 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `with_engine`
+// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `engine_read_samples`
 
 /// 初始化引擎，使用 HW_SAMPLE_RATE（由 Swift 设 set_hw_sample_rate 传入）
 Future<void> engineInit() => RustLib.instance.api.crateApiEngineEngineInit();
+
+/// 完整参数初始化引擎
+Future<void> engineInitEx({
+  required int sr,
+  required int channels,
+  required int bufferMs,
+  required int crossfadeMs,
+  required bool bitPerfect,
+  required bool autoSampleRate,
+  required bool exclusiveMode,
+  String? outputDevice,
+}) => RustLib.instance.api.crateApiEngineEngineInitEx(
+  sr: sr,
+  channels: channels,
+  bufferMs: bufferMs,
+  crossfadeMs: crossfadeMs,
+  bitPerfect: bitPerfect,
+  autoSampleRate: autoSampleRate,
+  exclusiveMode: exclusiveMode,
+  outputDevice: outputDevice,
+);
 
 Future<void> engineDeinit() =>
     RustLib.instance.api.crateApiEngineEngineDeinit();
@@ -71,6 +93,14 @@ Future<void> engineSetStereoWidener({
 
 Future<void> engineSetSpeed({required double speed}) =>
     RustLib.instance.api.crateApiEngineEngineSetSpeed(speed: speed);
+
+/// 设置引擎输出采样率（下次播放生效）。
+///
+/// iOS bit-perfect 协调：Swift 先把 `AVAudioSession` 设到目标速率并读回实际速率，
+/// Dart 再调用本方法使引擎输出速率与设备一致。命令走 FIFO 通道，
+/// 在同一首播放之前发送即可保证先于 play 生效。若速率 == 文件速率则不重采样（bit-perfect）。
+Future<void> engineSetOutputSampleRate({required int rate}) =>
+    RustLib.instance.api.crateApiEngineEngineSetOutputSampleRate(rate: rate);
 
 Future<void> engineSetCrossfeed({required bool enabled}) =>
     RustLib.instance.api.crateApiEngineEngineSetCrossfeed(enabled: enabled);

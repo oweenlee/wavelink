@@ -6,6 +6,7 @@
 use audio_core::dsp::PeqBand;
 use audio_core::engine::{EngineEvent, EngineHandle, PlayMode};
 use audio_core::EngineConfig;
+use flutter_rust_bridge::frb;
 use once_cell::sync::OnceCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -78,6 +79,9 @@ pub fn engine_init_ex(
 }
 
 /// 从引擎 ringbuf 读取交错 PCM 样本（供 iOS 音频回调使用）
+///
+/// 仅由 C FFI（audio_output_fill_buffer_stereo）调用，不暴露给 Dart。
+#[frb(ignore)]
 pub fn engine_read_samples(buf: &mut [f32]) -> usize {
     with_engine(|h| h.read_samples(buf)).unwrap_or(0)
 }
@@ -221,6 +225,15 @@ pub fn engine_set_stereo_widener(enabled: bool, width: f32) {
 
 pub fn engine_set_speed(speed: f32) {
     with_engine(|h| h.set_speed(speed.clamp(0.25, 4.0)));
+}
+
+/// 设置引擎输出采样率（下次播放生效）。
+///
+/// iOS bit-perfect 协调：Swift 先把 `AVAudioSession` 设到目标速率并读回实际速率，
+/// Dart 再调用本方法使引擎输出速率与设备一致。命令走 FIFO 通道，
+/// 在同一首播放之前发送即可保证先于 play 生效。若速率 == 文件速率则不重采样（bit-perfect）。
+pub fn engine_set_output_sample_rate(rate: u32) {
+    with_engine(|h| h.set_output_sample_rate(rate));
 }
 
 pub fn engine_set_crossfeed(enabled: bool) {
