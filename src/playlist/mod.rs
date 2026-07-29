@@ -20,8 +20,8 @@ pub fn parse_playlist(path: &Path) -> Result<Vec<PlaylistEntry>, String> {
     let file = File::open(path).map_err(|e| format!("无法打开播放列表: {e}"))?;
     let reader = BufReader::new(file);
     let lines: Vec<String> = reader.lines()
-        .filter_map(|l| l.ok())
-        .collect();
+        .collect::<Result<_, std::io::Error>>()
+        .map_err(|e| format!("读取播放列表失败: {e}"))?;
 
     if lines.is_empty() {
         return Err("播放列表为空".into());

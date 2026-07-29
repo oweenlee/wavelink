@@ -16,8 +16,6 @@ pub(crate) struct OutputSetup {
     pub pcm: PcmProducer,
     pub actual_sr: u32,
     pub actual_ch: u32,
-    /// 实际输出位深（dither 用）
-    pub actual_bits: u32,
 }
 
 /// 协商最优输出采样率：文件原始率 > 设备支持列表中最近的
@@ -34,11 +32,12 @@ pub(crate) fn negotiate_sample_rate(file_sr: u32, supported: &[u32]) -> u32 {
 /// 为 entry 播放准备音频输出。
 ///
 /// 如果已有 output：
-/// - bit-perfect/auto_sample_rate 按源采样率尝试切换
-/// - 始终 swap consumer
+///   - bit-perfect/auto_sample_rate 按源采样率尝试切换
+///   - 始终 swap consumer
+///
 /// 否则：
-/// - 获取独占模式（如需）
-/// - 打开新 output
+///   - 获取独占模式（如需）
+///   - 打开新 output
 pub(crate) fn setup_output_for_entry(
     state: &mut EngineState,
     path_buf: &Path,
@@ -90,7 +89,6 @@ pub(crate) fn setup_output_for_entry(
             pcm: output.swap_consumer(state.config.buffer_ms, out_sr, out_ch),
             actual_sr: out_sr,
             actual_ch: out_ch,
-            actual_bits: out_bits,
         })
     } else {
         // ── 首次打开 output ──
@@ -121,7 +119,6 @@ pub(crate) fn setup_output_for_entry(
                     pcm: prod,
                     actual_sr: actual_rate,
                     actual_ch: channels,
-                    actual_bits,
                 })
             }
             Err(e) => {

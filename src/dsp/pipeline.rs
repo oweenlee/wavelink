@@ -16,8 +16,10 @@ use crate::dsp::limiter::TruePeakLimiter;
 use crate::dsp::widener::StereoWidener;
 
 /// 淡入淡出状态
+#[derive(Default)]
 enum FadeState {
     /// 无淡入淡出
+    #[default]
     Idle,
     /// 淡入中
     FadeIn { remaining: u32, total: u32 },
@@ -25,9 +27,6 @@ enum FadeState {
     FadeOut { remaining: u32, total: u32 },
 }
 
-impl Default for FadeState {
-    fn default() -> Self { FadeState::Idle }
-}
 
 /// DSP 管线，按顺序串联：DC HPF → ReplayGain → 卷积 EQ → PEQ → Crossfeed → 展宽 → 限幅 → 音量 → 淡入淡出 → 抖动
 pub struct DspPipeline {

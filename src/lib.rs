@@ -1,4 +1,11 @@
 #![warn(missing_docs)]
+// DSP / 音频数值代码中，索引循环、多参数函数与复杂类型是清晰且惯用的写法，
+// 这几个 clippy 风格 lint 在本场景下意义不大，统一放行。
+#![allow(
+    clippy::needless_range_loop,
+    clippy::too_many_arguments,
+    clippy::type_complexity
+)]
 
 //! 纯 Rust 跨端音频引擎：解码 / DSP 管线 / 频谱分析 / BPM 调性检测。
 //! 被 wavelink-app（桌面端）和 wavelink_mobile（移动端）通过 path 依赖引用。

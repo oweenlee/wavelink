@@ -124,7 +124,7 @@ pub(crate) fn enumerate_devices() -> Vec<OutputDeviceInfo> {
                 );
                 ranges.iter().filter_map(|r| {
                     let rate = r.minimum as u32;
-                    if rate >= 8000 && rate <= 768000 && (r.minimum - r.maximum).abs() < 0.5 {
+                    if (8000..=768000).contains(&rate) && (r.minimum - r.maximum).abs() < 0.5 {
                         Some(DeviceConfig {
                             sample_rate: rate,
                             bit_depth: 24,

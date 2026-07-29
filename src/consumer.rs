@@ -114,7 +114,7 @@ pub fn run_consumer_loop(
     }
 
     // 峰值跟踪状态
-    let mut band_peaks = vec![0.001f32; SPECTRUM_BANDS];
+    let mut band_peaks = [0.001f32; SPECTRUM_BANDS];
     let mut frame_count: u64 = 0;
     let mut first_frame = true;
     let ch = config.channels as usize;
@@ -156,7 +156,7 @@ pub fn run_consumer_loop(
                 process_dsp(&mut buf);
 
                 // 2) 实时频谱
-                if frame_count % config.fft_interval as u64 == 0 && buf.len() >= fft_size * ch {
+                if frame_count.is_multiple_of(config.fft_interval as u64) && buf.len() >= fft_size * ch {
                     for i in 0..fft_size {
                         let l = buf[i * ch];
                         let r = if ch >= 2 { buf[i * ch + 1] } else { l };

@@ -92,11 +92,11 @@ fn extract_first_value(args: &str) -> Result<String, String> {
     if s.is_empty() {
         return Err("缺少值".into());
     }
-    if s.starts_with('"') {
-        let end = s[1..]
+    if let Some(rest) = s.strip_prefix('"') {
+        let end = rest
             .find('"')
             .ok_or_else(|| "未闭合的引号".to_string())?;
-        Ok(s[1..=end].to_string())
+        Ok(rest[..end].to_string())
     } else {
         Ok(s.split_whitespace()
             .next()

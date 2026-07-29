@@ -1,4 +1,8 @@
-//! C 语言 FFI 绑定。通过 `extern "C"` 导出函数供移动端（Kotlin/Swift）调用。
+//! C 语言 FFI 绑定（实验性）。通过 `extern "C"` 导出引擎功能，供 C / 其他语言宿主调用。
+//!
+//! > ⚠️ **实验性 / 非 1.0 稳定 API**：本模块是早期移动端集成方案的历史遗留，
+//! > 当前移动端已改用 flutter_rust_bridge，此 C API 暂无消费者、未做运行时验证。
+//! > 保留作为未来 C API（如其他语言绑定）的起点；接口可能变动，使用前需自行测试。
 //!
 //! # 约定
 //! - 引擎句柄通过不透明指针 `*mut AcEngine` 传递
@@ -7,17 +11,27 @@
 //! - 事件通过轮询或回调获取，非阻塞
 //! - 调用方负责分配 C 结构体内存，FFI 填充内容
 
+// 实验性 C API：结构体字段名自解释，暂不逐字段写文档；
+// 所有函数均为 unsafe extern "C"，安全约定见模块顶部说明，不逐个写 # Safety。
+#![allow(missing_docs, clippy::missing_safety_doc)]
+
 use std::collections::VecDeque;
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_double, c_float, c_int, c_uint, c_void};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::analysis;
 use crate::decoder;
-use crate::engine::{EngineHandle, EngineEvent, PlayMode};
+use crate::engine::{EngineCommand, EngineHandle, EngineEvent, PlayMode};
 use crate::dsp::PeqBand;
+
+/// 裸指针包装，使其可跨线程传递（FFI 回调的 user_data 上下文指针）。
+/// 安全性由 FFI 调用方约定保证（user_data 在回调存活期间有效）。
+struct SendPtr(*mut c_void);
+unsafe impl Send for SendPtr {}
 use crossbeam_channel::Receiver;
 use ringbuf::traits::{Consumer, Observer};
 
@@ -210,8 +224,6 @@ pub type AcEventCallback = extern "C" fn(event: *const AcEvent, user_data: *mut 
 
 /// 回调状态（内部使用）
 struct CallbackState {
-    callback: AcEventCallback,
-    user_data: *mut c_void,
     /// 用于停止监听线程
     stop: Arc<AtomicBool>,
     /// 监听线程句柄
@@ -831,7 +843,11 @@ pub unsafe extern "C" fn ac_engine_set_event_callback(
         // 注意：设置回调后轮询仍可用，但事件会被监听线程消费
         let rx = e.events.lock().rx.clone();
 
+        // user_data 是调用方的上下文指针，需跨线程传递给回调；用 SendPtr 包装满足 Send。
+        let ud = SendPtr(user_data);
+
         let thread = std::thread::spawn(move || {
+            let ud = ud; // 整体捕获 SendPtr，避免 Rust2021 分离捕获直接抓裸指针字段
             let mut str_buf = vec![0i8; 4096];
             loop {
                 if stop_clone.load(Ordering::Acquire) {
@@ -848,7 +864,7 @@ pub unsafe extern "C" fn ac_engine_set_event_callback(
                             spectrum: [0.0; 16],
                         };
                         fill_ac_event(&ev, &mut ac_ev);
-                        cb_fn(&ac_ev as *const AcEvent, user_data);
+                        cb_fn(&ac_ev as *const AcEvent, ud.0);
                     }
                     Err(crossbeam_channel::RecvTimeoutError::Timeout) => continue,
                     Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
@@ -857,8 +873,6 @@ pub unsafe extern "C" fn ac_engine_set_event_callback(
         });
 
         *cb_guard = Some(CallbackState {
-            callback: cb_fn,
-            user_data,
             stop,
             thread: Some(thread),
         });

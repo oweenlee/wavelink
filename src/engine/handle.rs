@@ -73,7 +73,7 @@ impl EngineHandle {
 
     /// 获取当前音频电平（RMS / 峰值 / 削波标志）
     pub fn levels(&self) -> Levels {
-        self.levels.lock().clone()
+        *self.levels.lock()
     }
 
     /// 开始播放指定路径的音频文件（异步，fire-and-forget）

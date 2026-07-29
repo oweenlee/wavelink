@@ -306,7 +306,7 @@ pub(crate) fn open_inner(
             let n = guard.pop_slice(data);
             if n < data.len() {
                 let cnt = inner_clone.underrun_count.fetch_add(1, Ordering::Relaxed) + 1;
-                if cnt <= 10 || cnt % 100 == 0 {
+                if cnt <= 10 || cnt.is_multiple_of(100) {
                     warn!("音频 underrun #{cnt}: 回调需要 {} 样本但仅读到 {}", data.len(), n);
                 }
                 data[n..].fill(0.0);
@@ -377,7 +377,7 @@ pub(crate) fn open_inner(
                         let n = guard.pop_slice(data);
                         if n < data.len() {
                             let cnt = fb_inner_clone.underrun_count.fetch_add(1, Ordering::Relaxed) + 1;
-                            if cnt <= 10 || cnt % 100 == 0 {
+                            if cnt <= 10 || cnt.is_multiple_of(100) {
                                 warn!("音频 underrun #{} (fallback): 回调需要 {} 样本但仅读到 {}", cnt, data.len(), n);
                             }
                             data[n..].fill(0.0);

@@ -129,7 +129,7 @@ fn try_send_or_stop(tx: &Sender<DecodedFrame>, frame: DecodedFrame, stop_rx: &Re
             Ok(()) => return,
             Err(SendTimeoutError::Timeout(f)) => {
                 frame = f;
-                if stop_rx.len() > 0 { return; }
+                if !stop_rx.is_empty() { return; }
             }
             Err(SendTimeoutError::Disconnected(_)) => return,
         }
@@ -534,15 +534,14 @@ pub fn read_cover(path: &Path) -> Result<Vec<u8>, String> {
             if let Ok(mkv) = matroska::open(path) {
                 for att in &mkv.attachments {
                     let name = att.name.to_lowercase();
-                    if name.starts_with("cover") || name.contains("cover") {
-                        if !att.data.is_empty()
+                    if (name.starts_with("cover") || name.contains("cover"))
+                        && !att.data.is_empty()
                             && (att.mime_type == "image/jpeg"
                                 || att.mime_type == "image/png"
                                 || att.mime_type == "image/webp")
                         {
                             return Ok(att.data.clone());
                         }
-                    }
                 }
                 // 没有命名规范匹配的，按魔数返回第一个图片附件
                 for att in &mkv.attachments {

@@ -289,7 +289,7 @@ pub fn list_device_names() -> Vec<String> {
 
     #[cfg(feature = "cpal-backend")]
     {
-        return output_cpal::list_device_names();
+        output_cpal::list_device_names()
     }
 
     #[cfg(not(feature = "cpal-backend"))]
@@ -324,7 +324,7 @@ pub fn enumerate_devices() -> Vec<OutputDeviceInfo> {
 
     #[cfg(feature = "cpal-backend")]
     {
-        return output_cpal::enumerate_devices();
+        output_cpal::enumerate_devices()
     }
 
     // macOS 无 cpal 时 fallback 到空（CoreAudio 本身已处理）
@@ -394,19 +394,17 @@ pub fn start_device_monitor() -> DeviceMonitor {
                 }
 
                 for device in &cur {
-                    if !prev.iter().any(|d| d.id == device.id) {
-                        if tx.send(DeviceEvent::DeviceAdded(device.name.clone())).is_err() {
+                    if !prev.iter().any(|d| d.id == device.id)
+                        && tx.send(DeviceEvent::DeviceAdded(device.name.clone())).is_err() {
                             return;
                         }
-                    }
                 }
 
                 for device in &prev {
-                    if !cur.iter().any(|d| d.id == device.id) {
-                        if tx.send(DeviceEvent::DeviceRemoved(device.name.clone())).is_err() {
+                    if !cur.iter().any(|d| d.id == device.id)
+                        && tx.send(DeviceEvent::DeviceRemoved(device.name.clone())).is_err() {
                             return;
                         }
-                    }
                 }
 
                 let prev_default = prev.iter().find(|d| d.is_default);

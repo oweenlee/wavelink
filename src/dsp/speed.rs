@@ -19,6 +19,12 @@ pub struct SpeedChanger {
     output: Vec<f32>,
 }
 
+impl Default for SpeedChanger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SpeedChanger {
     /// 新建变速器，初始速度 1.0（正常）
     pub fn new() -> Self {
