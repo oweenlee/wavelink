@@ -19,25 +19,29 @@ class AudioOutputManager {
     private var nowPosition: Double = 0
 
     init() {
-        setupSourceNode()
+        rebuildSourceNode(sampleRate: AVAudioSession.sharedInstance().sampleRate)
         setupRemoteCommands()
     }
 
-    private func setupSourceNode() {
-        let hwRate = AVAudioSession.sharedInstance().sampleRate
+    /// 创建（或重建）source node 并连接到混音器。
+    /// AVAudioSourceNode 的输出格式在连接时固定，故切换采样率需 detach 旧节点再以新格式重建。
+    private func rebuildSourceNode(sampleRate: Double) {
+        if let old = sourceNode {
+            engine.detach(old)
+        }
         let fmt = AVAudioFormat(commonFormat: .pcmFormatFloat32,
-                                sampleRate: hwRate,
+                                sampleRate: sampleRate,
                                 channels: 2,
                                 interleaved: false)!
 
-        sourceNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
+        let node = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
             let abl = UnsafeMutableAudioBufferListPointer(audioBufferList)
             guard abl.count >= 2,
                   let leftBuf = abl[0].mData?.assumingMemoryBound(to: Float.self),
                   let rightBuf = abl[1].mData?.assumingMemoryBound(to: Float.self)
             else { return noErr }
 
-            if !self.isPlayingFlag {
+            guard let self = self, self.isPlayingFlag else {
                 let n = Int(frameCount)
                 for i in 0..<n { leftBuf[i] = 0; rightBuf[i] = 0 }
                 return noErr
@@ -47,10 +51,29 @@ class AudioOutputManager {
             return noErr
         }
 
-        if let source = sourceNode {
-            engine.attach(source)
-            engine.connect(source, to: engine.mainMixerNode, format: fmt)
+        sourceNode = node
+        engine.attach(node)
+        engine.connect(node, to: engine.mainMixerNode, format: fmt)
+    }
+
+    /// 切换输出采样率（bit-perfect 协调）。
+    /// 设置 AVAudioSession 偏好采样率并读回实际值，重建 source node 到该速率。
+    /// 返回实际生效的采样率：请求未必被满足（内置输出常固定，外接 DAC 才会真切）。
+    func setOutputRate(_ rate: Double) -> Double {
+        let shouldRun = engine.isRunning || isPlayingFlag
+        engine.stop()
+
+        let session = AVAudioSession.sharedInstance()
+        try? session.setPreferredSampleRate(rate)
+        let actual = session.sampleRate
+
+        rebuildSourceNode(sampleRate: actual)
+
+        if shouldRun {
+            try? session.setActive(true)
+            try? engine.start()
         }
+        return actual
     }
 
     // ── 锁屏 / 控制中心 ──
@@ -265,6 +288,11 @@ class AudioOutputManager {
                 audio.updatePosition(positionMs)
             }
             result(nil)
+        case "setOutputRate":
+            guard let args = call.arguments as? [String: Any],
+                  let rateNum = args["rate"] as? NSNumber
+            else { result(FlutterError(code: "INVALID_ARGS", message: nil, details: nil)); return }
+            result(audio.setOutputRate(rateNum.doubleValue))
         default:
             result(FlutterMethodNotImplemented)
         }
