@@ -197,7 +197,12 @@ void main() {
   });
 
   group('PlaybackProvider 解码/播放时序（刺啦修复回归）', () {
-    test('play 必须等解码器启动完成后再调用，避免空 ringbuf 爆音', () async {
+    // 注：audio-core 迁移（b26c796）后，旧的显式防爆音流程（stopDecoder/startDecoder/
+    // _waitFirstFrame/_bufferRingbuf + startDecoderHook）已移除，改由引擎内部管理解码。
+    // 当前架构保留的时序保证是：native play 必在 native stop 完成之后（_playCurrent 中
+    // await stop() → await engine.play() → native.play()）。以下用例验证该时序；
+    // 真正的空 ringbuf 防爆音效果需 iOS 真机验证（依赖 audio-core 内部缓冲）。
+    test('native play 必须等 stop 完成后再调用，避免空 ringbuf 爆音', () async {
       final audioCalls = <String>[];
       var stopResolved = false;
       final stopCompleter = Completer<void>();
@@ -211,7 +216,7 @@ void main() {
           ) async {
             audioCalls.add(call.method);
             if (call.method == 'stop') {
-              // 模拟旧解码器停止有延迟
+              // 模拟 stop 有延迟
               await stopCompleter.future;
               stopResolved = true;
               return null;
@@ -219,27 +224,18 @@ void main() {
             return null;
           });
 
-      // 注入一个“慢解码器”钩子：必须在 stop 完成后才 resolve
-      final decoderStarted = Completer<void>();
-      p.startDecoderHook = (_) async {
-        // 等 stop 真正完成
-        await stopCompleter.future;
-        decoderStarted.complete();
-      };
-
       // 触发播放（内部 _playCurrent 会 fire-and-forget）
       p.play();
 
       // 给 Flutter 事件循环一点时间去执行 _playCurrent 的同步部分
       await Future.delayed(const Duration(milliseconds: 50));
 
-      // 此时 stop 已被调用但还没 resolve，play 绝不应先于解码器启动
+      // 此时 stop 已被调用但还没 resolve，play 绝不应先于 stop 完成
       check(audioCalls.contains('play')).isFalse();
 
-      // 让 stop / 解码器依次完成
+      // 让 stop 完成
       stopCompleter.complete();
-      await decoderStarted.future;
-      // 等待 _playCurrent 的 .then 链跑完（play 在解码器就绪后才调用）
+      // 等待 _playCurrent 的 .then 链跑完（play 在 stop 就绪后才调用）
       await Future.delayed(const Duration(milliseconds: 50));
 
       check(stopResolved).isTrue();
@@ -272,10 +268,14 @@ void main() {
 
       // 序列应以 stop 开头、以 play 结尾，且最后一个 play 之后不应再出现 stop
       //（即不会在播放中突然清空 ringbuf 造成爆音）
-      check(audioCalls.first).equals('stop');
-      check(audioCalls.last).equals('play');
-      final lastPlay = audioCalls.lastIndexOf('play');
-      final stopsAfterPlay = audioCalls
+      // 只考察影响 ringbuf 的 stop/play，忽略 updatePosition/updateMetadata 等无害调用
+      final sp = audioCalls
+          .where((m) => m == 'stop' || m == 'play')
+          .toList();
+      check(sp.first).equals('stop');
+      check(sp.last).equals('play');
+      final lastPlay = sp.lastIndexOf('play');
+      final stopsAfterPlay = sp
           .sublist(lastPlay + 1)
           .where((m) => m == 'stop')
           .length;
