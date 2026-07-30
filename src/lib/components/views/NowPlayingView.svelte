@@ -6,6 +6,7 @@
 	import { getUiState } from '$lib/stores/ui.svelte';
 	import { getPlaylistState } from '$lib/stores/playlist.svelte';
 	import { getLyricsState, loadForTrack } from '$lib/stores/lyrics.svelte';
+	import { getSettingsState } from '$lib/stores/settings.svelte';
 	import VolumeSlider from '$lib/components/controls/VolumeSlider.svelte';
 	import ProgressBar from '$lib/components/controls/ProgressBar.svelte';
 	import SpectrumAnalyzer from '$lib/components/controls/SpectrumAnalyzer.svelte';
@@ -18,6 +19,7 @@
 	const ui = getUiState();
 	const playlist = getPlaylistState();
 	const lyrics = getLyricsState();
+	const settings = getSettingsState();
 
 	let coverDataUrl = $state('');
 	let coverColor = $state('');
@@ -163,6 +165,33 @@
 					<h1 class="np-title">{playback.currentTrack?.title || t('nowplaying.no_track')}</h1>
 					<p class="np-artist">{playback.currentTrack?.artist || t('nowplaying.unknown_artist')}</p>
 				</div>
+
+				<!-- HiFi 规格读数条：硬件仪表面板风格，等宽字体 + 琥珀色 -->
+				<div class="np-spec">
+					<div class="spec-item">
+						<span class="spec-v">{(playback.currentTrack?.format || '—').toUpperCase()}</span>
+						<span class="spec-k">{t('nowplaying.format')}</span>
+					</div>
+					<div class="spec-sep"></div>
+					<div class="spec-item">
+						<span class="spec-v">{playback.currentTrack?.sample_rate ? `${(playback.currentTrack.sample_rate / 1000).toFixed(1)} kHz` : '—'}</span>
+						<span class="spec-k">{t('nowplaying.sample_rate')}</span>
+					</div>
+					<div class="spec-sep"></div>
+					<div class="spec-item">
+						<span class="spec-v">{playback.currentTrack?.channels ? (playback.currentTrack.channels === 1 ? 'Mono' : 'Stereo') : '—'}</span>
+						<span class="spec-k">{t('nowplaying.channels')}</span>
+					</div>
+					<div class="spec-sep"></div>
+					<div class="spec-item">
+						<span class="spec-v">{bitrate ? `${bitrate} kbps` : '—'}</span>
+						<span class="spec-k">{t('nowplaying.bitrate')}</span>
+					</div>
+					<div class="spec-lamp" class:on={settings.bitPerfect}>
+						<span class="lamp-dot"></span>
+						<span class="lamp-text">BIT-PERFECT</span>
+					</div>
+				</div>
 			{/key}
 
 			<!-- Lyrics -->
@@ -232,18 +261,7 @@
 				{#if showInfo}
 				<div class="np-info-panel" transition:fly={{ y: -8, duration: 200 }}>
 					<div class="np-info-grid">
-						{#if playback.currentTrack?.format}
-							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.format')}</span><span class="np-info-v">{playback.currentTrack!.format!.toUpperCase()}</span></div>
-						{/if}
-						{#if playback.currentTrack?.sample_rate}
-							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.sample_rate')}</span><span class="np-info-v">{(playback.currentTrack!.sample_rate! / 1000).toFixed(1)} kHz</span></div>
-						{/if}
-						{#if playback.currentTrack?.channels}
-							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.channels')}</span><span class="np-info-v">{playback.currentTrack!.channels === 1 ? 'Mono' : 'Stereo'}</span></div>
-						{/if}
-						{#if bitrate}
-							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.bitrate')}</span><span class="np-info-v">{bitrate} kbps</span></div>
-						{/if}
+						<!-- 格式/采样率/声道/码率已移至常驻规格读数条，此处仅留文件元数据 -->
 						{#if fileSize}
 							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.file_size')}</span><span class="np-info-v">{fileSize}</span></div>
 						{/if}
@@ -427,6 +445,40 @@
 	@keyframes npMetaIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 	.np-title { font-family: var(--font-display); font-size: 22px; font-weight: 600; color: var(--fg-primary); margin: 0; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.2px; }
 	.np-artist { font-size: 14px; color: var(--fg-secondary); margin: 4px 0 0; }
+
+	/* ── HiFi 规格读数条（硬件仪表面板）── */
+	.np-spec {
+		display: flex; align-items: center; gap: 16px;
+		margin-top: 16px; padding: 10px 16px;
+		background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012));
+		border: 1px solid rgba(255,255,255,0.07);
+		border-radius: var(--radius-md);
+		box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+	}
+	.spec-item { display: flex; flex-direction: column; gap: 3px; }
+	.spec-v {
+		font-family: var(--font-mono); font-size: 13px; font-weight: 500;
+		color: var(--accent); letter-spacing: 0.3px; font-variant-numeric: tabular-nums;
+		text-shadow: 0 0 12px var(--accent-glow);
+	}
+	.spec-k { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--fg-tertiary); }
+	.spec-sep { width: 1px; align-self: stretch; margin: 2px 0; background: rgba(255,255,255,0.08); }
+	/* BIT-PERFECT 指示灯：开启时琥珀点亮 + 呼吸 */
+	.spec-lamp {
+		display: flex; align-items: center; gap: 7px; margin-left: auto;
+		padding: 5px 12px; border-radius: 20px;
+		border: 1px solid rgba(255,255,255,0.08);
+		transition: border-color 0.3s, background 0.3s;
+	}
+	.lamp-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.12); transition: background 0.3s, box-shadow 0.3s; }
+	.lamp-text { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.4px; color: var(--fg-tertiary); transition: color 0.3s; }
+	.spec-lamp.on { border-color: rgba(226,166,61,0.35); background: var(--accent-dim); }
+	.spec-lamp.on .lamp-dot { background: var(--accent); animation: lampPulse 2.4s ease-in-out infinite; }
+	.spec-lamp.on .lamp-text { color: var(--accent); }
+	@keyframes lampPulse {
+		0%, 100% { box-shadow: 0 0 5px var(--accent); opacity: 1; }
+		50% { box-shadow: 0 0 12px var(--accent); opacity: 0.7; }
+	}
 
 	/* ── Lyrics ── */
 	.np-lyrics { flex: 1; overflow-y: auto; min-height: 0; }
