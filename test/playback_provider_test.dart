@@ -5,8 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wavelink_mobile/domain/models/song.dart';
 import 'package:wavelink_mobile/ui/features/playback/view_models/playback_provider.dart';
 import 'package:wavelink_mobile/data/services/preferences_service.dart';
-import 'package:wavelink_mobile/data/repositories/audio_engine_repository.dart';
-import 'package:wavelink_mobile/data/repositories/song_repository.dart';
+import 'helpers/mock_repositories.dart';
 import 'package:wavelink_mobile/data/repositories/preferences_repository.dart';
 import 'package:checks/checks.dart';
 
@@ -35,8 +34,8 @@ void main() {
 
   PlaybackProvider buildProvider({bool autoPlay = false}) {
     final p = PlaybackProvider(
-      engineRepo: AudioEngineRepository(),
-      songRepo: SongRepository(),
+      engineRepo: MockAudioEngineRepository(),
+      songRepo: MockSongRepository(),
       prefsRepo: PreferencesRepository(),
     );
     p.autoPlayOnQueueSet = autoPlay;
@@ -127,10 +126,11 @@ void main() {
 
     test('removeFromQueue 当前项后自动前进', () {
       final p = buildProvider();
-      p.next(); // index=1
-      p.removeFromQueue(1);
+      p.next(); // index=1 (s2)
+      p.removeFromQueue(1); // 移除当前项 s2，队列变 [s1,s3]，自动前进到 s3
       check(p.queue.length).equals(2);
-      check(p.currentIndex).equals(0);
+      check(p.currentIndex).equals(1); // 前进到 s3（新 index 1），而非倒退到 s1
+      check(p.currentSong?.id).equals('s3');
     });
 
     test('reorderQueue 移动元素', () {
