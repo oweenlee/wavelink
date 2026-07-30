@@ -97,6 +97,6 @@
 	.nav-item:active { transform: scale(0.97); }
 	.nav-item.active { background: var(--bg-active); color: var(--fg-primary); font-weight: 500; }
 
-	.nav-item svg { flex-shrink: 0; opacity: 0.6; }
-	.nav-item.active svg { opacity: 1; color: var(--accent); }
+	.nav-item :global(svg) { flex-shrink: 0; opacity: 0.6; }
+	.nav-item.active :global(svg) { opacity: 1; color: var(--accent); }
 </style>

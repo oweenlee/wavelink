@@ -228,10 +228,6 @@
 	.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--accent, #e2a63d); cursor: pointer; }
 	.slider-val { font-size: 11px; color: var(--fg-tertiary); min-width: 50px; text-align: right; }
 
-	.color-row { display: flex; gap: 10px; }
-	.color-dot { width: 28px; height: 28px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: all 0.2s; outline: none; }
-	.color-dot:hover { transform: scale(1.2); }
-	.color-dot.active { border-color: rgba(255, 255, 255, 0.6); box-shadow: 0 0 12px rgba(255, 255, 255, 0.1); }
 
 	.toggle { display: inline-flex; align-items: center; padding: 4px; border: none; background: var(--bg-hover); border-radius: 20px; cursor: pointer; transition: all 0.2s; width: 52px; height: 26px; position: relative; }
 	.toggle.active { background: var(--accent, #e2a63d); }

@@ -259,7 +259,7 @@
 
 	<!-- Queue panel — slides in from right -->
 	{#if showQueue && upcomingTracks.length > 0}
-		<div class="np-queue-overlay" onclick={() => showQueue = false}></div>
+		<div class="np-queue-overlay" role="button" tabindex="0" onclick={() => showQueue = false} onkeydown={(e) => e.key === 'Escape' && (showQueue = false)}></div>
 		<div class="np-queue-panel" transition:fly={{ x: 420, duration: 250, easing: cubicOut }}>
 			<div class="np-queue-header">
 				<span>{t('nowplaying.playlist')} ({upcomingTracks.length})</span>
@@ -355,7 +355,7 @@
 	}
 	.np-art.spinning { animation: npSpin 6s linear infinite; }
 	@keyframes npSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-	.np-no-cover { width: 80px; height: 80px; color: rgba(255,255,255,0.08); }
+	:global(.np-no-cover) { width: 80px; height: 80px; color: rgba(255,255,255,0.08); }
 	.np-vinyl-label {
 		position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
 		width: 24px; height: 24px; border-radius: 50%;
@@ -496,8 +496,8 @@
 		transition: color 0.15s;
 	}
 	.np-info-toggle:hover { color: var(--fg-secondary); }
-	.np-info-toggle svg { transition: transform 0.2s; }
-	.np-info-toggle svg.rotated { transform: rotate(180deg); }
+	.np-info-toggle :global(svg) { transition: transform 0.2s; }
+	.np-info-toggle :global(svg.rotated) { transform: rotate(180deg); }
 
 	.np-info-panel {
 		margin-top: 8px; padding: 12px 14px;

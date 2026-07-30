@@ -165,7 +165,7 @@
 	/* ── Left ── */
 	.bar-left { display: flex; align-items: center; gap: var(--space-3); min-width: 180px; flex: 1; }
 	.bar-cover { width: 44px; height: 44px; border-radius: var(--radius-md); flex-shrink: 0; background-size: cover; background-position: center; position: relative; overflow: hidden; transition: background-image 0.4s var(--ease-spring); box-shadow: 0 2px 12px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; }
-	.disc-icon { flex-shrink: 0; color: var(--fg-quaternary); }
+	:global(.disc-icon) { flex-shrink: 0; color: var(--fg-quaternary); }
 	.eq-anim { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); display: flex; gap: 2.5px; height: 14px; align-items: flex-end; }
 	.eq-anim span { width: 2.5px; background: var(--accent); border-radius: 2px 2px 0 0; animation: eq 0.45s ease-in-out infinite alternate; }
 	.eq-anim span:nth-child(1) { height: 5px; animation-delay: 0s; animation-duration: 0.3s; }

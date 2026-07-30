@@ -135,8 +135,8 @@
 
 <!-- 添加弹窗 -->
 {#if showAddDialog}
-	<div class="overlay" onclick={() => (showAddDialog = false)}>
-		<div class="dialog" onclick={(e) => e.stopPropagation()}>
+	<div class="overlay" role="button" tabindex="0" onclick={() => (showAddDialog = false)} onkeydown={(e) => e.key === 'Escape' && (showAddDialog = false)}>
+		<div class="dialog" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()}>
 			<div class="dialog-header">
 				<h2>{t('nas.dialog_title')}</h2>
 				<button class="btn-icon" onclick={() => (showAddDialog = false)}><X size={18} /></button>
@@ -284,6 +284,6 @@
 	.checkbox { display: flex; align-items: center; gap: var(--space-2); font-size: 13px; color: var(--fg-secondary); cursor: pointer; }
 	.checkbox input { accent-color: var(--accent); }
 
-	.spin { animation: spin 1s linear infinite; }
+	:global(.spin) { animation: spin 1s linear infinite; }
 	@keyframes spin { to { transform: rotate(360deg); } }
 </style>
