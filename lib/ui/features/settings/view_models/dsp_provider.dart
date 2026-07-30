@@ -53,22 +53,10 @@ class DspProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void applyEqPreset(EqPresetKind kind) {
-    _dspSettings = _dspSettings.copyWith(preset: kind);
-    applyDsp();
-    notifyListeners();
-  }
-
-  String _presetName(EqPresetKind kind) => kind.name;
 
   Future<void> applyDsp() async {
     if (!_engineRepo.rustAvailable) return;
     try {
-      if (_dspSettings.enabled) {
-        await _engineRepo.applyPreset(_presetName(_dspSettings.preset));
-      } else {
-        await _engineRepo.applyPreset('flat');
-      }
       await _engineRepo.setCrossfeed(_dspSettings.crossfeed);
       await _engineRepo.setStereoWidener(_dspSettings.widener, 0.5);
     } catch (e) {

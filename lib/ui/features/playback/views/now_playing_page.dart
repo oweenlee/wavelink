@@ -6,7 +6,6 @@ import '../../../../domain/models/song.dart';
 import '../view_models/playback_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/progress_slider_widget.dart';
-import '../../../core/widgets/spectrum_bar.dart';
 import '../../../core/widgets/album_cover.dart';
 import '../../../core/widgets/lyrics_overlay.dart';
 import '../../../core/widgets/queue_sheet.dart';
@@ -171,11 +170,6 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                       onTap: _openLyrics,
                     ),
                     const SizedBox(height: 12),
-                    if (player.showSpectrum)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 24),
-                        child: SpectrumBar(),
-                      ),
                     const SizedBox(height: 8),
                     _BottomToolbar(
                       player: player,

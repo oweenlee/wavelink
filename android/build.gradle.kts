@@ -18,7 +18,13 @@ subprojects {
 subprojects {
     project.evaluationDependsOn(":app")
 }
-
+subprojects.apply {
+    plugins.withId("org.jetbrains.kotlin.android") {
+        tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+            compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
+}
 // AGP 8+/9 强制要求 `namespace`，但部分老旧 Flutter 插件（如 on_audio_query_android）
 // 仍只在 AndroidManifest.xml 声明 package。在 android library 插件应用时自动注入 namespace。
 subprojects {

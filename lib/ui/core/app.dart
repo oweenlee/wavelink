@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
 import '../../l10n/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -21,7 +22,12 @@ class WaveLinkApp extends StatelessWidget {
     return MaterialApp.router(
       title: 'WaveLink Mobile',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.darkTheme.copyWith(
+        splashFactory: Platform.isIOS
+            ? NoSplash.splashFactory
+            : InkSparkle.splashFactory,
+        highlightColor: Platform.isIOS ? Color(0x08FFFFFF) : null,
+      ),
       locale: locale,
       localizationsDelegates: const [
         AppLocalizations.delegate,

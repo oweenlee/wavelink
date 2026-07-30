@@ -8,17 +8,21 @@ import 'file_picker_service.dart';
 import '../../ui/core/theme/app_theme.dart';
 import 'media_store_service.dart';
 import 'media_store_channel.dart';
+import 'subsonic_service.dart';
+import 'smb_service.dart';
 
 /// 音乐文件导入服务
 ///
-/// 整合三种导入渠道：
+/// 整合五种导入渠道：
 /// 1. 系统音乐库扫描（Android MediaStore / iOS MPMediaQuery）→ 优先
 /// 2. 文件选择器导入 → 复制到 Documents/Imported/
 /// 3. Documents/ 目录扫描 → 已有文件恢复
+/// 4. Subsonic / Navidrome / Jellyfin / Emby 服务器扫描 → HTTP(S)
+/// 5. SMB 直挂 NAS 共享 → SMB/CIFS
 class ImportService {
-  static const _extensions = [
+  static const extensions = [
     'mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a',
-    'wma', 'alac', 'aiff', 'dsf', 'dff', 'opus',
+    'wma', 'alac', 'aiff', 'dsf', 'dff', 'opus', 'lrc',
   ];
 
   /// 系统音乐库是否可用
@@ -46,29 +50,52 @@ class ImportService {
     return songs;
   }
 
-  /// 从 app Documents/ 扫描已有音频文件
+  /// 从 app Documents/ 扫描已有音频文件和歌词文件
   static Future<List<Song>> scanDocuments() async {
     final dir = await getApplicationDocumentsDirectory();
-    final files = await _listAudioFiles(dir);
-    if (files.isEmpty) return [];
-
-    return await _filesToSongs(files);
-  }
-
-  static Future<List<File>> _listAudioFiles(Directory dir) async {
-    final files = <File>[];
-    if (!await dir.exists()) return files;
+    final audioFiles = <File>[];
+    final lyricFiles = <File>[];
+    if (!await dir.exists()) return [];
     await for (final entity in dir.list(recursive: true)) {
-      if (entity is File && _isAudio(entity.path)) {
-        files.add(entity);
+      if (entity is File) {
+        final ext = entity.path.split('.').last.toLowerCase();
+        if (ext == 'lrc') {
+          lyricFiles.add(entity);
+        } else if (extensions.contains(ext)) {
+          audioFiles.add(entity);
+        }
       }
     }
-    return files;
+    if (audioFiles.isEmpty) return [];
+
+    // 匹配歌词文件到音频文件（按文件名（不含扩展名）匹配）
+    final audioByBase = <String, File>{};
+    for (final f in audioFiles) {
+      audioByBase[_fileBaseName(f.path)] = f;
+    }
+    final lyricByBase = <String, String>{};
+    for (final lf in lyricFiles) {
+      lyricByBase[_fileBaseName(lf.path)] = lf.path;
+    }
+
+    final matchedAudioBases = audioByBase.keys.toSet().intersection(lyricByBase.keys.toSet());
+
+    final songs = await _filesToSongs(audioFiles);
+    for (final song in songs) {
+      if (song.path != null) {
+        final base = _fileBaseName(song.path!);
+        if (matchedAudioBases.contains(base)) {
+          song.lyricsPath = lyricByBase[base];
+          song.hasLyrics = true;
+        }
+      }
+    }
+    return songs;
   }
 
-  static bool _isAudio(String path) {
-    final ext = path.split('.').last.toLowerCase();
-    return _extensions.contains(ext);
+  static String _fileBaseName(String path) {
+    final name = path.split('/').last;
+    return name.replaceAll(RegExp(r'\.[^.]+$'), '');
   }
 
   /// 打开文件选择器 → 复制到 Documents/Imported/
@@ -83,22 +110,35 @@ class ImportService {
     final files = <File>[];
     for (final srcPath in paths) {
       final file = File(srcPath);
+      final name = srcPath.split('/').last;
+      final ext = name.split('.').last.toLowerCase();
       // 如果文件已在 App 目录内，不再复制
       if (srcPath.startsWith(appDir.path)) {
         files.add(file);
         continue;
       }
-      final name = srcPath.split('/').last;
       final dest = File('${importDir.path}/$name');
       if (!await dest.exists()) {
         await file.copy(dest.path);
       }
       files.add(dest);
+
+      // 如果是音频文件，也复制对应的 .lrc 歌词文件
+      if (ext != 'lrc') {
+        final baseName = name.replaceAll(RegExp(r'\.[^.]+$'), '');
+        final lrcSrc = File('${srcPath.substring(0, srcPath.lastIndexOf('/'))}/$baseName.lrc');
+        if (await lrcSrc.exists()) {
+          final lrcDest = File('${importDir.path}/$baseName.lrc');
+          if (!await lrcDest.exists()) {
+            await lrcSrc.copy(lrcDest.path);
+          }
+        }
+      }
     }
     return await _filesToSongs(files);
   }
 
-  /// 合并系统库扫描 + Documents 扫描，去重
+  /// 合并系统库扫描 + Documents 扫描 + 网络扫描，去重
   static Future<List<Song>> scanAll() async {
     final mediaSongs = await scanMediaStore();
     final docSongs = await scanDocuments();
@@ -112,6 +152,18 @@ class ImportService {
       }
     }
     return merged;
+  }
+
+  /// 从 Subsonic / Navidrome / Jellyfin / Emby 服务器扫描音乐库
+  static Future<List<Song>> scanSubsonic() async {
+    if (!SubsonicService.isConfigured) return [];
+    return await SubsonicService.scanLibrary();
+  }
+
+  /// 从 SMB 共享扫描音频文件
+  static Future<List<Song>> scanSmb(String sharePath) async {
+    if (!SmbService.isConnected) return [];
+    return await SmbService.scanSmbLibrary(sharePath);
   }
 
   // ── 内部方法 ──
@@ -172,7 +224,7 @@ class ImportService {
           final albumName = meta.album ?? 'Imported Music';
           final duration = meta.durationSecs > 0
               ? Duration(milliseconds: (meta.durationSecs * 1000).round())
-              : _estimateDuration(file);
+              : estimateDuration(file.statSync().size);
 
           String? coverUrl;
           if (meta.hasCover && meta.coverBytes.isNotEmpty) {
@@ -204,6 +256,16 @@ class ImportService {
       }
 
       song ??= _fileToSong(file);
+      // Check for matching .lrc lyrics file in same directory
+      if (song.path != null) {
+        final dir = File(song.path!).parent.path;
+        final base = _fileBaseName(song.path!);
+        final lrcFile = File('$dir/$base.lrc');
+        if (await lrcFile.exists()) {
+          song.lyricsPath = lrcFile.path;
+          song.hasLyrics = true;
+        }
+      }
       songs.add(song);
     }
     return songs;
@@ -224,8 +286,8 @@ class ImportService {
     return hash.toRadixString(16).padLeft(16, '0');
   }
 
-  static Duration _estimateDuration(File file) {
-    final sizeMb = (file.statSync().size / (1024 * 1024)).clamp(0.1, 9999);
+  static Duration estimateDuration(int fileSizeBytes) {
+    final sizeMb = (fileSizeBytes / (1024 * 1024)).clamp(0.1, 9999);
     final estMin = (sizeMb / 1.2).ceil().clamp(1, 999);
     return Duration(minutes: estMin);
   }
@@ -251,7 +313,7 @@ class ImportService {
       title: title,
       artist: '未知艺术家',
       album: '导入的音乐',
-      duration: _estimateDuration(file),
+      duration: ImportService.estimateDuration(file.statSync().size),
       dominantColor: _colorFromPath(file.path),
       path: file.path,
     );
@@ -287,10 +349,10 @@ class ImportService {
 
   /// iOS 平台通道封面缓存
   static Future<void> _cacheIOSCover(Song song, Directory cacheDir) async {
-    final pid = MediaStoreIOSChannel.parsePersistentId(song.id);
+    final pid = MediaStoreChannel.parsePersistentId(song.id);
     if (pid == null) return;
     try {
-      final bytes = await MediaStoreIOSChannel.getArtwork(pid);
+      final bytes = await MediaStoreChannel.getArtwork(pid);
       if (bytes != null && bytes.isNotEmpty) {
         final cacheFile = File(
           '${cacheDir.path}/${song.path!.hashCode}.jpg',

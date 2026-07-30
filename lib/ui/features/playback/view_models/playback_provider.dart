@@ -133,13 +133,11 @@ class PlaybackProvider extends ChangeNotifier {
   bool get replayGain => _prefsRepo.replayGain;
   bool get dynamicColor => _prefsRepo.dynamicColor;
   double get coverBlur => _prefsRepo.coverBlur;
-  bool get showSpectrum => _prefsRepo.showSpectrum;
   bool get bitPerfect => _prefsRepo.bitPerfect;
 
   void setReplayGain(bool v) => _prefsRepo.setReplayGain(v);
   void setDynamicColor(bool v) => _prefsRepo.setDynamicColor(v);
   void setCoverBlur(double v) => _prefsRepo.setCoverBlur(v);
-  void setShowSpectrum(bool v) => _prefsRepo.setShowSpectrum(v);
   void setBitPerfect(bool v) {
     _prefsRepo.setBitPerfect(v);
     audioPlayer.bitPerfect = v;
@@ -238,7 +236,6 @@ class PlaybackProvider extends ChangeNotifier {
   void toggleWidener() => dsp.toggleWidener();
   void toggleLimiter() => dsp.toggleLimiter();
   void toggleDither() => dsp.toggleDither();
-  void applyEqPreset(EqPresetKind kind) => dsp.applyEqPreset(kind);
 
   // ── 库操作 ──
   Future<bool> scanMediaStore() => library.scanMediaStore();
@@ -246,6 +243,8 @@ class PlaybackProvider extends ChangeNotifier {
   Future<void> scanAllSources() => library.scanAllSources();
   Future<int> importFromPicker() => library.importFromPicker();
   Future<void> rescanImported() => library.rescanImported();
+  Future<bool> scanSubsonic() => library.scanSubsonic();
+  Future<bool> scanSmb(String sharePath) => library.scanSmb(sharePath);
   void toggleFavorite() => library.toggleFavorite();
   void setFavorite(String songId, bool favorite) =>
       library.setFavorite(songId, favorite);

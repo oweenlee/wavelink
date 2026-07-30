@@ -135,9 +135,47 @@ class PreferencesService {
   }
 
   // ── 频谱可视化 ──
-  static const _kShowSpectrum = 'show_spectrum';
-  bool get showSpectrum => _prefs.getBool(_kShowSpectrum) ?? true;
-  Future<void> setShowSpectrum(bool v) => _prefs.setBool(_kShowSpectrum, v);
+
+  // ── NAS 配置 ──
+
+  static const _kNasType = 'nas_type';
+  static const _kNasHost = 'nas_host';
+  static const _kNasShare = 'nas_share';
+  static const _kNasUsername = 'nas_username';
+  static const _kNasPassword = 'nas_password';
+  static const _kNasEnabled = 'nas_enabled';
+
+  String? get nasType => _prefs.getString(_kNasType);
+  String? get nasHost => _prefs.getString(_kNasHost);
+  String? get nasShare => _prefs.getString(_kNasShare);
+  String? get nasUsername => _prefs.getString(_kNasUsername);
+  String get nasPassword => _prefs.getString(_kNasPassword) ?? '';
+  bool get nasEnabled => _prefs.getBool(_kNasEnabled) ?? false;
+
+  Future<void> setNasConfig({
+    String? type,
+    String? host,
+    String? share,
+    String? username,
+    String? password,
+    bool? enabled,
+  }) async {
+    if (type != null) await _prefs.setString(_kNasType, type);
+    if (host != null) await _prefs.setString(_kNasHost, host);
+    if (share != null) await _prefs.setString(_kNasShare, share);
+    if (username != null) await _prefs.setString(_kNasUsername, username);
+    if (password != null) await _prefs.setString(_kNasPassword, password);
+    if (enabled != null) await _prefs.setBool(_kNasEnabled, enabled);
+  }
+
+  Future<void> clearNasConfig() async {
+    await _prefs.remove(_kNasType);
+    await _prefs.remove(_kNasHost);
+    await _prefs.remove(_kNasShare);
+    await _prefs.remove(_kNasUsername);
+    await _prefs.remove(_kNasPassword);
+    await _prefs.remove(_kNasEnabled);
+  }
 
   // ── 语言偏好 ──
   // 取值：'system' | 'zh' | 'en'；'system' 表示跟随系统

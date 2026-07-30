@@ -13,6 +13,7 @@ class Song {
   String? key;
   String? coverUrl;
   final String? path;
+  String? lyricsPath;
   bool hasCover;
 
   Song({
@@ -27,6 +28,7 @@ class Song {
     this.key,
     this.coverUrl,
     this.path,
+    this.lyricsPath,
     this.hasCover = false,
   });
 

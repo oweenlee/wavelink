@@ -20,16 +20,7 @@ class EffectsSheet extends StatelessWidget {
           controller: scroll,
           padding: EdgeInsets.zero,
           children: [
-            _EffectItem(
-              icon: Icons.tune_rounded,
-              label: l10n.eq10Band,
-              subtitle: dsp.enabled ? l10n.enabled : l10n.disabled,
-              trailing: _Toggle(
-                value: dsp.enabled,
-                onChanged: player.toggleDspEnabled,
-              ),
-            ),
-            const _Divider(),
+
             _EffectItem(
               icon: Icons.vibration_rounded,
               label: l10n.bauerCrossfeed,

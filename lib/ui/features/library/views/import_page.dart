@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../data/services/preferences_service.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../playback/view_models/playback_provider.dart';
 import '../../../core/theme/app_theme.dart';
+import 'nas_settings_sheet.dart';
 
 class ImportPage extends StatelessWidget {
   const ImportPage({super.key});
@@ -63,6 +65,34 @@ class ImportPage extends StatelessWidget {
             },
           ),
           _ImportOption(
+            icon: Icons.cloud_rounded,
+            color: AppTheme.brand,
+            title: l10n.scanSubsonic,
+            subtitle: l10n.importSubsonicHint,
+            onTap: () async {
+              final ok = await player.scanSubsonic();
+              if (!context.mounted) return;
+              _showResult(context, ok);
+            },
+          ),
+          _ImportOption(
+            icon: Icons.network_wifi_rounded,
+            color: AppTheme.brand,
+            title: l10n.scanSmb,
+            subtitle: l10n.importSmbHint,
+            onTap: () async {
+              await _showNasSettings(context);
+              if (!context.mounted) return;
+              final prefs = PreferencesService.instance;
+              if (!prefs.nasEnabled) return;
+              final share = prefs.nasShare;
+              if (share == null || share.isEmpty) return;
+              final ok = await player.scanSmb(share);
+              if (!context.mounted) return;
+              _showResult(context, ok);
+            },
+          ),
+          _ImportOption(
             icon: Icons.refresh_rounded,
             color: AppTheme.success,
             title: l10n.rescanLibrary,
@@ -90,6 +120,14 @@ class ImportPage extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _showNasSettings(BuildContext context) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const NasSettingsSheet(),
     );
   }
 

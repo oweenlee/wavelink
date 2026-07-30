@@ -5,11 +5,11 @@ import 'package:flutter/services.dart';
 import '../../domain/models/song.dart';
 import '../../ui/core/theme/app_theme.dart';
 
-/// iOS 端系统音乐库扫描通道（封装 MPMediaQuery 原生调用）
-class MediaStoreIOSChannel {
+/// 系统音乐库扫描通道（封装 Android MediaStore / iOS MPMediaQuery 原生调用）
+class MediaStoreChannel {
   static const _channel = MethodChannel('wavelink/media_store');
 
-  static bool get isAvailable => Platform.isIOS;
+  static bool get isAvailable => Platform.isAndroid || Platform.isIOS;
 
   /// 检查音乐库权限状态
   static Future<bool> checkPermission() async {
@@ -42,20 +42,8 @@ class MediaStoreIOSChannel {
           .cast<Song>()
           .toList();
     } catch (e) {
-      debugPrint('[MediaStoreIOS] scanAll failed: $e');
+      debugPrint('[MediaStoreChannel] scanAll failed: $e');
       return [];
-    }
-  }
-
-  /// 获取封面（persistentId 从歌曲 id 中提取，格式 ios_{pid}）
-  static Future<Uint8List?> getArtwork(String persistentId) async {
-    try {
-      final result = await _channel.invokeMethod('getArtwork', {
-        'persistentId': persistentId,
-      });
-      return result as Uint8List?;
-    } catch (e) {
-      return null;
     }
   }
 
@@ -75,7 +63,19 @@ class MediaStoreIOSChannel {
     );
   }
 
-  /// 从歌曲 id 中提取 iOS persistent ID
+  /// 获取封面（Android 走 FFI，该方法仅用于 iOS）
+  static Future<Uint8List?> getArtwork(String persistentId) async {
+    try {
+      final result = await _channel.invokeMethod('getArtwork', {
+        'persistentId': persistentId,
+      });
+      return result as Uint8List?;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// 从歌曲 id 中提取 iOS persistent ID（格式 ios_{pid}）
   static String? parsePersistentId(String songId) {
     if (!songId.startsWith('ios_')) return null;
     return songId.substring(4);

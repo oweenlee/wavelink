@@ -125,6 +125,38 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> scanSubsonic() async {
+    final songs = await _songRepo.scanSubsonic();
+    if (songs.isEmpty) return false;
+    final newPaths =
+        songs.where((s) => s.path != null).map((s) => s.path!).toSet();
+    _importedSongs = [
+      ...songs,
+      ..._importedSongs
+          .where((s) => s.path == null || !newPaths.contains(s.path)),
+    ];
+    _songRepo.setCachedSongs(_importedSongs);
+    onImportedSongsLoaded(_importedSongs);
+    notifyListeners();
+    return true;
+  }
+
+  Future<bool> scanSmb(String sharePath) async {
+    final songs = await _songRepo.scanSmb(sharePath);
+    if (songs.isEmpty) return false;
+    final newPaths =
+        songs.where((s) => s.path != null).map((s) => s.path!).toSet();
+    _importedSongs = [
+      ...songs,
+      ..._importedSongs
+          .where((s) => s.path == null || !newPaths.contains(s.path)),
+    ];
+    _songRepo.setCachedSongs(_importedSongs);
+    onImportedSongsLoaded(_importedSongs);
+    notifyListeners();
+    return true;
+  }
+
   void onImportedSongsLoaded(List<Song> songs) {
     onSongsLoaded?.call();
   }

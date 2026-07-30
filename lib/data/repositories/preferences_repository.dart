@@ -72,7 +72,33 @@ class PreferencesRepository {
   Future<void> setCoverBlur(double v) =>
       PreferencesService.instance.setCoverBlur(v);
 
-  bool get showSpectrum => PreferencesService.instance.showSpectrum;
-  Future<void> setShowSpectrum(bool v) =>
-      PreferencesService.instance.setShowSpectrum(v);
+
+  // ── NAS 配置 ──
+
+  String? get nasType => PreferencesService.instance.nasType;
+  String? get nasHost => PreferencesService.instance.nasHost;
+  String? get nasShare => PreferencesService.instance.nasShare;
+  String? get nasUsername => PreferencesService.instance.nasUsername;
+  String get nasPassword => PreferencesService.instance.nasPassword;
+  bool get nasEnabled => PreferencesService.instance.nasEnabled;
+
+  Future<void> setNasConfig({
+    String? type,
+    String? host,
+    String? share,
+    String? username,
+    String? password,
+    bool? enabled,
+  }) =>
+      PreferencesService.instance.setNasConfig(
+        type: type,
+        host: host,
+        share: share,
+        username: username,
+        password: password,
+        enabled: enabled,
+      );
+
+  Future<void> clearNasConfig() =>
+      PreferencesService.instance.clearNasConfig();
 }
