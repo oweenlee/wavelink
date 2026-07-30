@@ -59,7 +59,7 @@ void main() {
       final prefs = PreferencesService.instance;
       check(prefs.favorites).isEmpty();
       await prefs.setFavorites({'a', 'b'});
-      check(prefs.favorites).equals({'a', 'b'});
+      check(prefs.favorites).deepEquals({'a', 'b'});
     });
 
     test('搜索历史：添加去重并限制长度', () async {
@@ -77,7 +77,7 @@ void main() {
       await prefs.addSearchHistory('a');
       await prefs.addSearchHistory('b');
       await prefs.removeSearchHistory('a');
-      check(prefs.searchHistory).equals(['b']);
+      check(prefs.searchHistory).deepEquals(['b']);
       await prefs.clearSearchHistory();
       check(prefs.searchHistory).isEmpty();
     });
@@ -86,7 +86,7 @@ void main() {
       final prefs = PreferencesService.instance;
       await prefs.savePlaylist('我的列表', ['s1', 's2']);
       final data = prefs.playlists;
-      check(data['我的列表']).equals(['s1', 's2']);
+      check(data['我的列表']!).deepEquals(['s1', 's2']);
     });
 
     test('搜索历史超过 20 条自动截断', () async {

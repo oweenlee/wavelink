@@ -9,9 +9,9 @@ import 'package:wavelink_mobile/domain/models/song.dart';
 import 'package:wavelink_mobile/domain/models/lyric_line.dart';
 import 'package:wavelink_mobile/ui/features/playback/view_models/playback_provider.dart';
 import 'package:wavelink_mobile/data/services/preferences_service.dart';
-import 'package:wavelink_mobile/data/repositories/audio_engine_repository.dart';
-import 'package:wavelink_mobile/data/repositories/song_repository.dart';
 import 'package:wavelink_mobile/data/repositories/preferences_repository.dart';
+import 'package:wavelink_mobile/ui/features/settings/view_models/locale_provider.dart';
+import 'helpers/mock_repositories.dart';
 
 void main() {
   setUp(() async {
@@ -25,14 +25,27 @@ void main() {
         );
   });
 
-  Widget buildApp() => ChangeNotifierProvider(
-    create: (_) => PlaybackProvider(
-      engineRepo: AudioEngineRepository(),
-      songRepo: SongRepository(),
+  Widget buildApp() {
+    final playback = PlaybackProvider(
+      engineRepo: MockAudioEngineRepository(),
+      songRepo: MockSongRepository(),
       prefsRepo: PreferencesRepository(),
-    ),
-    child: const WaveLinkApp(),
-  );
+    );
+    // 测试环境设备语言为 en，强制中文以匹配断言文案
+    final localeProvider = LocaleProvider()..setMode('zh');
+    // 镜像 main.dart 的 Provider 树（WaveLinkApp 需要 playback 及其子 provider + LocaleProvider）
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: playback),
+        ChangeNotifierProvider.value(value: playback.queueProvider),
+        ChangeNotifierProvider.value(value: playback.audioPlayer),
+        ChangeNotifierProvider.value(value: playback.library),
+        ChangeNotifierProvider.value(value: playback.dsp),
+        ChangeNotifierProvider.value(value: localeProvider),
+      ],
+      child: const WaveLinkApp(),
+    );
+  }
 
   group('模型', () {
     test('Song.formattedDuration 格式化', () {
