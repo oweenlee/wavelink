@@ -129,26 +129,26 @@ class SongListPage extends StatelessWidget {
               child: Center(
                 child: Text(
                   l10n.noSongs,
-                  style: const TextStyle(fontSize: 15, color: AppTheme.textTertiary),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    color: AppTheme.textTertiary,
+                  ),
                 ),
               ),
             )
           else
             SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (ctx, i) {
-                  final song = songs[i];
-                  final isPlaying =
-                      player.isPlaying && player.currentSong?.id == song.id;
-                  return SongTile(
-                    song: song,
-                    isPlaying: isPlaying,
-                    onTap: () => player.playSong(song),
-                    onMore: () => _showContextMenu(ctx, song, player),
-                  );
-                },
-                childCount: songs.length,
-              ),
+              delegate: SliverChildBuilderDelegate((ctx, i) {
+                final song = songs[i];
+                final isPlaying =
+                    player.isPlaying && player.currentSong?.id == song.id;
+                return SongTile(
+                  song: song,
+                  isPlaying: isPlaying,
+                  onTap: () => player.playSong(song),
+                  onMore: () => _showContextMenu(ctx, song, player),
+                );
+              }, childCount: songs.length),
             ),
           const SliverToBoxAdapter(child: SizedBox(height: 80)),
         ],
@@ -175,30 +175,42 @@ class SongListPage extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.play_arrow_rounded,
-                  color: AppTheme.textPrimary),
-              title: Text(l10n.play,
-                  style: const TextStyle(color: AppTheme.textPrimary)),
+              leading: const Icon(
+                Icons.play_arrow_rounded,
+                color: AppTheme.textPrimary,
+              ),
+              title: Text(
+                l10n.play,
+                style: const TextStyle(color: AppTheme.textPrimary),
+              ),
               onTap: () {
                 player.playSong(song);
                 Navigator.pop(ctx);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.skip_next_rounded,
-                  color: AppTheme.textPrimary),
-              title: Text(l10n.playNext,
-                  style: const TextStyle(color: AppTheme.textPrimary)),
+              leading: const Icon(
+                Icons.skip_next_rounded,
+                color: AppTheme.textPrimary,
+              ),
+              title: Text(
+                l10n.playNext,
+                style: const TextStyle(color: AppTheme.textPrimary),
+              ),
               onTap: () {
                 player.playNext(song);
                 Navigator.pop(ctx);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.queue_music_rounded,
-                  color: AppTheme.textPrimary),
-              title: Text(l10n.addToQueue,
-                  style: const TextStyle(color: AppTheme.textPrimary)),
+              leading: const Icon(
+                Icons.queue_music_rounded,
+                color: AppTheme.textPrimary,
+              ),
+              title: Text(
+                l10n.addToQueue,
+                style: const TextStyle(color: AppTheme.textPrimary),
+              ),
               onTap: () {
                 player.addToQueue(song);
                 Navigator.pop(ctx);
@@ -212,7 +224,9 @@ class SongListPage extends StatelessWidget {
                 color: AppTheme.danger,
               ),
               title: Text(
-                player.isSongFavorite(song.id) ? l10n.unfavorite : l10n.favorite,
+                player.isSongFavorite(song.id)
+                    ? l10n.unfavorite
+                    : l10n.favorite,
                 style: const TextStyle(color: AppTheme.textPrimary),
               ),
               onTap: () {
@@ -268,10 +282,7 @@ class _RoundBtn extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             label,
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppTheme.textSecondary,
-            ),
+            style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
           ),
         ],
       ),

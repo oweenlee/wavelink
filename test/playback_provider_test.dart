@@ -2,8 +2,8 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../lib/domain/models/song.dart';
-import '../lib/ui/features/playback/view_models/playback_provider.dart';
+import 'package:wavelink_mobile/domain/models/song.dart';
+import 'package:wavelink_mobile/ui/features/playback/view_models/playback_provider.dart';
 import 'package:wavelink_mobile/data/services/preferences_service.dart';
 import 'package:wavelink_mobile/data/repositories/audio_engine_repository.dart';
 import 'package:wavelink_mobile/data/repositories/song_repository.dart';
@@ -11,14 +11,14 @@ import 'package:wavelink_mobile/data/repositories/preferences_repository.dart';
 import 'package:checks/checks.dart';
 
 Song _song(String id, {String title = '', String artist = ''}) => Song(
-      id: id,
-      title: title.isEmpty ? id : title,
-      artist: artist,
-      album: 'album',
-      duration: const Duration(seconds: 100),
-      dominantColor: const Color(0xFF000000),
-      path: '/tmp/$id.flac',
-    );
+  id: id,
+  title: title.isEmpty ? id : title,
+  artist: artist,
+  album: 'album',
+  duration: const Duration(seconds: 100),
+  dominantColor: const Color(0xFF000000),
+  path: '/tmp/$id.flac',
+);
 
 void main() {
   setUp(() async {
@@ -28,9 +28,9 @@ void main() {
     // 屏蔽 path_provider / MethodChannel 的原生调用
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (call) async => '/tmp',
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (call) async => '/tmp',
+        );
   });
 
   PlaybackProvider buildProvider({bool autoPlay = false}) {
@@ -206,19 +206,18 @@ void main() {
       final p = buildProvider(autoPlay: false);
 
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel('wavelink/audio'),
-        (call) async {
-          audioCalls.add(call.method);
-          if (call.method == 'stop') {
-            // 模拟旧解码器停止有延迟
-            await stopCompleter.future;
-            stopResolved = true;
+          .setMockMethodCallHandler(const MethodChannel('wavelink/audio'), (
+            call,
+          ) async {
+            audioCalls.add(call.method);
+            if (call.method == 'stop') {
+              // 模拟旧解码器停止有延迟
+              await stopCompleter.future;
+              stopResolved = true;
+              return null;
+            }
             return null;
-          }
-          return null;
-        },
-      );
+          });
 
       // 注入一个“慢解码器”钩子：必须在 stop 完成后才 resolve
       final decoderStarted = Completer<void>();
@@ -257,13 +256,12 @@ void main() {
       final p = buildProvider(autoPlay: false);
 
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel('wavelink/audio'),
-        (call) async {
-          audioCalls.add(call.method);
-          return null;
-        },
-      );
+          .setMockMethodCallHandler(const MethodChannel('wavelink/audio'), (
+            call,
+          ) async {
+            audioCalls.add(call.method);
+            return null;
+          });
 
       // 第一首
       p.play();

@@ -8,10 +8,12 @@ import '../../src/rust/api/cue.dart' as cue;
 import '../../src/rust/api/playlist.dart' as playlist;
 import '../../src/rust/api/engine.dart' as engine;
 
-export '../../src/rust/api/decode.dart' show DecodeResult, DecodeChunk, StreamDecoder;
+export '../../src/rust/api/decode.dart'
+    show DecodeResult, DecodeChunk, StreamDecoder;
 export '../../src/rust/api/analyze.dart' show AnalyzeResult;
 export '../../src/rust/api/metadata.dart' show MetadataResult, ReplayGainResult;
-export '../../src/rust/api/cue.dart' show CueSheetResult, CueFileResult, CueTrackResult;
+export '../../src/rust/api/cue.dart'
+    show CueSheetResult, CueFileResult, CueTrackResult;
 export '../../src/rust/api/playlist.dart' show PlaylistEntryResult;
 export '../../src/rust/api/engine.dart' show LevelsDto;
 
@@ -84,13 +86,17 @@ Future<meta.ReplayGainResult> readReplaygain(String path) {
 // ── 流式解码 ──
 
 /// 创建流式解码器（可选 seek_secs：从指定秒数开始解码）
-Future<decode.StreamDecoder> streamDecoderCreate(String path, {double? seekSecs}) {
+Future<decode.StreamDecoder> streamDecoderCreate(
+  String path, {
+  double? seekSecs,
+}) {
   return decode.streamDecoderCreate(path: path, seekSecs: seekSecs);
 }
 
 /// 获取下一块解码数据
 Future<decode.DecodeChunk?> streamDecoderNextChunk(
-    decode.StreamDecoder decoder) {
+  decode.StreamDecoder decoder,
+) {
   return decode.streamDecoderNextChunk(decoder: decoder);
 }
 
@@ -121,8 +127,12 @@ Future<void> deinitEngine() => engine.engineDeinit();
 Future<void> enginePlay(String path) => engine.enginePlay(path: path);
 Future<void> enginePlayQueue(List<String> paths) =>
     engine.enginePlayQueue(paths: paths);
-Future<void> engineSetPeqBand({required int index, required double freq, required double gainDb, required double q}) =>
-    engine.engineSetPeqBand(index: index, freq: freq, gainDb: gainDb, q: q);
+Future<void> engineSetPeqBand({
+  required int index,
+  required double freq,
+  required double gainDb,
+  required double q,
+}) => engine.engineSetPeqBand(index: index, freq: freq, gainDb: gainDb, q: q);
 Future<void> engineApplyPreset({required String presetName}) =>
     engine.engineApplyPreset(presetName: presetName);
 Future<void> engineSetVolume({required double vol}) =>
@@ -133,15 +143,16 @@ Future<void> engineSetOutputSampleRate({required int rate}) =>
     engine.engineSetOutputSampleRate(rate: rate);
 Future<void> engineSetCrossfeed({required bool enabled}) =>
     engine.engineSetCrossfeed(enabled: enabled);
-Future<void> engineSetStereoWidener({required bool enabled, required double width}) =>
-    engine.engineSetStereoWidener(enabled: enabled, width: width);
+Future<void> engineSetStereoWidener({
+  required bool enabled,
+  required double width,
+}) => engine.engineSetStereoWidener(enabled: enabled, width: width);
 Future<void> engineSetPlayMode({required int mode}) =>
     engine.engineSetPlayMode(mode: mode);
 Future<void> enginePause() => engine.enginePause();
 Future<void> engineResume() => engine.engineResume();
 Future<void> engineStop() => engine.engineStop();
-Future<void> engineSeek(double posSecs) =>
-    engine.engineSeek(posSecs: posSecs);
+Future<void> engineSeek(double posSecs) => engine.engineSeek(posSecs: posSecs);
 Future<void> engineNext() => engine.engineNext();
 Future<void> enginePrev() => engine.enginePrev();
 

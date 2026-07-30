@@ -40,9 +40,7 @@ class SongTile extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: isPlaying ? FontWeight.w600 : FontWeight.w400,
-                      color: isPlaying
-                          ? AppTheme.brand
-                          : AppTheme.textPrimary,
+                      color: isPlaying ? AppTheme.brand : AppTheme.textPrimary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -71,10 +69,7 @@ class SongTile extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             // 自定义 trailing（如收藏图标）
-            if (trailing != null) ...[
-              trailing!,
-              const SizedBox(width: 4),
-            ],
+            if (trailing != null) ...[trailing!, const SizedBox(width: 4)],
             // More button
             GestureDetector(
               onTap: onMore,

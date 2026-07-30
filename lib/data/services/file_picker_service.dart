@@ -6,8 +6,21 @@ class FilePickerService {
 
   /// 打开系统文件选择器，返回选中文件路径列表
   static Future<List<String>> pickFiles({
-    List<String> extensions = const ['mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a',
-      'wma', 'alac', 'aiff', 'dsf', 'dff', 'opus', 'lrc'],
+    List<String> extensions = const [
+      'mp3',
+      'flac',
+      'wav',
+      'aac',
+      'ogg',
+      'm4a',
+      'wma',
+      'alac',
+      'aiff',
+      'dsf',
+      'dff',
+      'opus',
+      'lrc',
+    ],
     bool multiple = true,
   }) async {
     try {

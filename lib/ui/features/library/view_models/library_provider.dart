@@ -8,12 +8,10 @@ import '../../../../data/repositories/preferences_repository.dart';
 
 class LibraryProvider extends ChangeNotifier {
   LibraryProvider({
-    required SongRepository songRepo,
-    required AudioEngineRepository engineRepo,
-    required PreferencesRepository prefsRepo,
-  })  : _songRepo = songRepo,
-        _engineRepo = engineRepo,
-        _prefsRepo = prefsRepo;
+    required this._songRepo,
+    required this._engineRepo,
+    required this._prefsRepo,
+  });
 
   final SongRepository _songRepo;
   final AudioEngineRepository _engineRepo;
@@ -87,53 +85,37 @@ class LibraryProvider extends ChangeNotifier {
 
   // ── 导入与扫描 ──
 
-  Future<bool> scanMediaStore() async {
-    final songs = await _songRepo.scanMediaStore();
-    if (songs.isEmpty) return false;
-    final newPaths =
-        songs.where((s) => s.path != null).map((s) => s.path!).toSet();
-    _importedSongs = [
-      ...songs,
-      ..._importedSongs
-          .where((s) => s.path == null || !newPaths.contains(s.path)),
-    ];
-    _songRepo.setCachedSongs(_importedSongs);
-    onImportedSongsLoaded(_importedSongs);
+  Future<bool> discoverSongs() async {
+    List<Song> allSongs;
+    final mediaSongs = await _songRepo.scanMediaStore();
+    final docSongs = await _songRepo.scanDocuments();
+    allSongs = [...mediaSongs, ...docSongs];
+    final seen = <String>{};
+    allSongs.retainWhere((s) {
+      if (s.path == null) return true;
+      return seen.add(s.path!);
+    });
+    if (allSongs.isEmpty) return false;
+    _importedSongs = allSongs;
+    _songRepo.setCachedSongs(allSongs);
+    onImportedSongsLoaded(allSongs);
+    _scanDone = true;
     notifyListeners();
     return true;
-  }
-
-  Future<void> scanImported() async {
-    final songs = await _songRepo.scanDocuments();
-    if (songs.isNotEmpty) {
-      _importedSongs = songs;
-      _songRepo.setCachedSongs(songs);
-      onImportedSongsLoaded(songs);
-    }
-    _scanDone = true;
-    notifyListeners();
-  }
-
-  Future<void> scanAllSources() async {
-    final songs = await _songRepo.scanAll();
-    if (songs.isNotEmpty) {
-      _importedSongs = songs;
-      _songRepo.setCachedSongs(songs);
-      onImportedSongsLoaded(songs);
-    }
-    _scanDone = true;
-    notifyListeners();
   }
 
   Future<bool> scanSubsonic() async {
     final songs = await _songRepo.scanSubsonic();
     if (songs.isEmpty) return false;
-    final newPaths =
-        songs.where((s) => s.path != null).map((s) => s.path!).toSet();
+    final newPaths = songs
+        .where((s) => s.path != null)
+        .map((s) => s.path!)
+        .toSet();
     _importedSongs = [
       ...songs,
-      ..._importedSongs
-          .where((s) => s.path == null || !newPaths.contains(s.path)),
+      ..._importedSongs.where(
+        (s) => s.path == null || !newPaths.contains(s.path),
+      ),
     ];
     _songRepo.setCachedSongs(_importedSongs);
     onImportedSongsLoaded(_importedSongs);
@@ -144,12 +126,15 @@ class LibraryProvider extends ChangeNotifier {
   Future<bool> scanSmb(String sharePath) async {
     final songs = await _songRepo.scanSmb(sharePath);
     if (songs.isEmpty) return false;
-    final newPaths =
-        songs.where((s) => s.path != null).map((s) => s.path!).toSet();
+    final newPaths = songs
+        .where((s) => s.path != null)
+        .map((s) => s.path!)
+        .toSet();
     _importedSongs = [
       ...songs,
-      ..._importedSongs
-          .where((s) => s.path == null || !newPaths.contains(s.path)),
+      ..._importedSongs.where(
+        (s) => s.path == null || !newPaths.contains(s.path),
+      ),
     ];
     _songRepo.setCachedSongs(_importedSongs);
     onImportedSongsLoaded(_importedSongs);
@@ -169,7 +154,8 @@ class LibraryProvider extends ChangeNotifier {
 
     var changed = false;
     for (final song in songs) {
-      if (!song.hasCover || song.path == null || song.coverUrl != null) continue;
+      if (!song.hasCover || song.path == null || song.coverUrl != null)
+        continue;
       final cacheFile = File('${cacheDir.path}/${song.path!.hashCode}.jpg');
       if (await cacheFile.exists()) {
         song.coverUrl = cacheFile.path;
@@ -191,8 +177,10 @@ class LibraryProvider extends ChangeNotifier {
   Future<int> importFromPicker() async {
     final songs = await _songRepo.pickAndImport();
     if (songs.isEmpty) return 0;
-    final existingPaths =
-        _importedSongs.where((s) => s.path != null).map((s) => s.path!).toSet();
+    final existingPaths = _importedSongs
+        .where((s) => s.path != null)
+        .map((s) => s.path!)
+        .toSet();
     final newSongs = songs
         .where((s) => s.path == null || !existingPaths.contains(s.path))
         .toList();
@@ -206,18 +194,6 @@ class LibraryProvider extends ChangeNotifier {
 
   void onImportAdded(List<Song> songs) {
     onSongsAdded?.call();
-  }
-
-  Future<void> rescanImported() async {
-    final songs = await _songRepo.scanDocuments();
-    _importedSongs = songs;
-    _songRepo.setCachedSongs(songs);
-    onRescan(songs);
-    notifyListeners();
-  }
-
-  void onRescan(List<Song> songs) {
-    onSongsRescanned?.call();
   }
 
   // ── 播放列表 ──
@@ -238,6 +214,9 @@ class LibraryProvider extends ChangeNotifier {
   List<Song> playlistSongs(String name) {
     final ids = playlists[name] ?? [];
     final byId = {for (final s in allKnownSongs) s.id: s};
-    return ids.where((id) => byId.containsKey(id)).map((id) => byId[id]!).toList();
+    return ids
+        .where((id) => byId.containsKey(id))
+        .map((id) => byId[id]!)
+        .toList();
   }
 }

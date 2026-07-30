@@ -146,7 +146,10 @@ class AppShell extends StatelessWidget {
   }
 
   void _goTab(int index) {
-    navigationShell.goBranch(index, initialLocation: index == navigationShell.currentIndex);
+    navigationShell.goBranch(
+      index,
+      initialLocation: index == navigationShell.currentIndex,
+    );
   }
 
   String _getTitle(int tab, AppLocalizations l10n) {

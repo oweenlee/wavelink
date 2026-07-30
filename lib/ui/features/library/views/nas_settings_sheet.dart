@@ -157,7 +157,10 @@ class _NasSettingsSheetState extends State<NasSettingsSheet> {
               ),
               const Spacer(),
               IconButton(
-                icon: const Icon(Icons.close_rounded, color: AppTheme.textSecondary),
+                icon: const Icon(
+                  Icons.close_rounded,
+                  color: AppTheme.textSecondary,
+                ),
                 onPressed: () => Navigator.pop(context),
               ),
             ],
@@ -170,7 +173,10 @@ class _NasSettingsSheetState extends State<NasSettingsSheet> {
               'Enable NAS',
               style: TextStyle(color: AppTheme.textPrimary),
             ),
-            secondary: const Icon(Icons.cloud_off_rounded, color: AppTheme.textSecondary),
+            secondary: const Icon(
+              Icons.cloud_off_rounded,
+              color: AppTheme.textSecondary,
+            ),
             activeThumbColor: AppTheme.brand,
           ),
           if (_enabled) ...[
@@ -278,8 +284,8 @@ class _NasSettingsSheetState extends State<NasSettingsSheet> {
                 _connectionStatus == 'connected'
                     ? 'Connected'
                     : _connectionStatus == 'host_empty'
-                        ? 'Enter host address'
-                        : 'Connection failed',
+                    ? 'Enter host address'
+                    : 'Connection failed',
                 style: TextStyle(
                   color: _connectionStatus == 'connected'
                       ? AppTheme.success

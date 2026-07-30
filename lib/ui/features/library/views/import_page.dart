@@ -20,7 +20,10 @@ class ImportPage extends StatelessWidget {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.textPrimary),
+          icon: const Icon(
+            Icons.arrow_back_rounded,
+            color: AppTheme.textPrimary,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -35,17 +38,6 @@ class ImportPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
         children: [
-          _ImportOption(
-            icon: Icons.library_music_rounded,
-            color: AppTheme.brand,
-            title: l10n.scanMusicLibrary,
-            subtitle: l10n.importSystemMusicHint,
-            onTap: () async {
-              final ok = await player.scanMediaStore();
-              if (!context.mounted) return;
-              _showResult(context, ok);
-            },
-          ),
           _ImportOption(
             icon: Icons.folder_open_rounded,
             color: AppTheme.brand,
@@ -65,18 +57,18 @@ class ImportPage extends StatelessWidget {
             },
           ),
           _ImportOption(
-            icon: Icons.cloud_rounded,
+            icon: Icons.library_music_rounded,
             color: AppTheme.brand,
-            title: l10n.scanSubsonic,
-            subtitle: l10n.importSubsonicHint,
+            title: l10n.discoverSongs,
+            subtitle: l10n.discoverSongsHint,
             onTap: () async {
-              final ok = await player.scanSubsonic();
+              final ok = await player.discoverSongs();
               if (!context.mounted) return;
               _showResult(context, ok);
             },
           ),
           _ImportOption(
-            icon: Icons.network_wifi_rounded,
+            icon: Icons.near_me_rounded,
             color: AppTheme.brand,
             title: l10n.scanSmb,
             subtitle: l10n.importSmbHint,
@@ -93,29 +85,14 @@ class ImportPage extends StatelessWidget {
             },
           ),
           _ImportOption(
-            icon: Icons.refresh_rounded,
-            color: AppTheme.success,
-            title: l10n.rescanLibrary,
-            subtitle: l10n.rescanHint,
-            onTap: () {
-              player.rescanImported();
-              Navigator.pop(context);
-            },
-          ),
-          _ImportOption(
-            icon: Icons.search_rounded,
+            icon: Icons.cloud_rounded,
             color: AppTheme.brand,
-            title: l10n.scanAllSources,
-            subtitle: l10n.scanAllHint,
+            title: l10n.scanSubsonic,
+            subtitle: l10n.importSubsonicHint,
             onTap: () async {
-              await player.scanAllSources();
+              final ok = await player.scanSubsonic();
               if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(l10n.scanComplete),
-                  backgroundColor: AppTheme.brand,
-                ),
-              );
+              _showResult(context, ok);
             },
           ),
         ],
@@ -135,7 +112,7 @@ class ImportPage extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ok ? l10n.scanComplete : l10n.scanNoPermission),
+        content: Text(ok ? l10n.scanNoPermission : l10n.scanNoPermission),
         backgroundColor: ok ? AppTheme.brand : AppTheme.danger,
       ),
     );

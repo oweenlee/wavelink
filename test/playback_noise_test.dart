@@ -1,11 +1,12 @@
 /// 播放杂音排查测试
 /// 检测引擎播放连续性和 underrun
+library;
 
 import 'dart:io';
 import 'package:checks/checks.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wavelink_mobile/data/services/rust_service.dart' as rs;
-import '../lib/src/rust/api/audio_output.dart' as audio_out;
+import 'package:wavelink_mobile/src/rust/api/audio_output.dart' as audio_out;
 
 void main() {
   setUpAll(() async {
@@ -35,7 +36,9 @@ void main() {
     final files = Directory(mediaDir!).listSync().whereType<File>();
     File? testFile;
     for (final f in files) {
-      if (f.path.endsWith('.m4a') || f.path.endsWith('.mp3') || f.path.endsWith('.flac')) {
+      if (f.path.endsWith('.m4a') ||
+          f.path.endsWith('.mp3') ||
+          f.path.endsWith('.flac')) {
         testFile = f;
         break;
       }
@@ -64,7 +67,9 @@ void main() {
     final underrunAfter = await audio_out.getUnderrunCount();
     final underrunsDuring = underrunAfter - underrunBefore;
 
-    print('After 5s total: position=$posAfter secs, underruns delta=$underrunsDuring');
+    print(
+      'After 5s total: position=$posAfter secs, underruns delta=$underrunsDuring',
+    );
 
     // 位置应持续推进
     check(posAfter).isGreaterThan(pos);

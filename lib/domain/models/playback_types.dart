@@ -37,13 +37,12 @@ class DspSettings {
     bool? limiter,
     bool? dither,
     EqPresetKind? preset,
-  }) =>
-      DspSettings(
-        enabled: enabled ?? this.enabled,
-        crossfeed: crossfeed ?? this.crossfeed,
-        widener: widener ?? this.widener,
-        limiter: limiter ?? this.limiter,
-        dither: dither ?? this.dither,
-        preset: preset ?? this.preset,
-      );
+  }) => DspSettings(
+    enabled: enabled ?? this.enabled,
+    crossfeed: crossfeed ?? this.crossfeed,
+    widener: widener ?? this.widener,
+    limiter: limiter ?? this.limiter,
+    dither: dither ?? this.dither,
+    preset: preset ?? this.preset,
+  );
 }

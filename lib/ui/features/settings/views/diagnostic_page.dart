@@ -74,7 +74,10 @@ class _DiagnosticPageState extends State<DiagnosticPage> {
             const SizedBox(height: 20),
             Text(
               l10n.diagnosticHint,
-              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 13,
+              ),
             ),
           ],
         ),
@@ -94,12 +97,18 @@ class _DiagnosticPageState extends State<DiagnosticPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 15)),
-          Text(value, style: TextStyle(
-            color: color ?? AppTheme.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          )),
+          Text(
+            label,
+            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 15),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: color ?? AppTheme.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ],
       ),
     );

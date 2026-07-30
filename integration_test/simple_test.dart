@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import '../lib/ui/core/app.dart';
-import '../lib/ui/features/playback/view_models/playback_provider.dart';
+import 'package:wavelink_mobile/ui/core/app.dart';
+import 'package:wavelink_mobile/ui/features/playback/view_models/playback_provider.dart';
 import 'package:wavelink_mobile/data/repositories/audio_engine_repository.dart';
 import 'package:wavelink_mobile/data/repositories/song_repository.dart';
 import 'package:wavelink_mobile/data/repositories/preferences_repository.dart';

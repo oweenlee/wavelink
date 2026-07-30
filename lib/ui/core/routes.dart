@@ -23,9 +23,8 @@ final goRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/library',
-              pageBuilder: (context, state) => const NoTransitionPage(
-                child: LibraryPage(),
-              ),
+              pageBuilder: (context, state) =>
+                  const NoTransitionPage(child: LibraryPage()),
             ),
           ],
         ),
@@ -33,9 +32,8 @@ final goRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/search',
-              pageBuilder: (context, state) => const NoTransitionPage(
-                child: SearchPage(),
-              ),
+              pageBuilder: (context, state) =>
+                  const NoTransitionPage(child: SearchPage()),
             ),
           ],
         ),
@@ -43,9 +41,8 @@ final goRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/settings',
-              pageBuilder: (context, state) => const NoTransitionPage(
-                child: SettingsPage(),
-              ),
+              pageBuilder: (context, state) =>
+                  const NoTransitionPage(child: SettingsPage()),
             ),
           ],
         ),
@@ -95,9 +92,6 @@ final goRouter = GoRouter(
       path: '/diagnostic',
       builder: (context, state) => const DiagnosticPage(),
     ),
-    GoRoute(
-      path: '/import',
-      builder: (context, state) => const ImportPage(),
-    ),
+    GoRoute(path: '/import', builder: (context, state) => const ImportPage()),
   ],
 );

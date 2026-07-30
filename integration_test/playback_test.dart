@@ -1,5 +1,6 @@
 /// 播放稳定性集成测试 — 在真机上跑
 /// flutter test integration_test/playback_test.dart
+library;
 
 import 'dart:io';
 import 'package:checks/checks.dart';
@@ -15,11 +16,11 @@ void main() {
 
   setUpAll(() async {
     await rs.initRust();
-    check(rs.rustAvailable).equals(isTrue, reason: 'Rust 未加载');
+    check(rs.rustAvailable).isTrue();
 
     // 找 test-media
     mediaDir = _findTestMedia();
-    check(mediaDir).equals(isNotEmpty, reason: 'test-media/ 未找到');
+    check(mediaDir).isNotEmpty();
   });
 
   /// 测试：单曲稳态播放无 underrun
@@ -28,7 +29,7 @@ void main() {
 
     // 选取一个典型的 44.1kHz 文件
     final file = _pickFile(mediaDir, ext: 'm4a');
-    check(file).equals(isNotNull, reason: '没有 m4a 文件');
+    check(file).isNotNull();
     print('文件: $file');
 
     // 播放
@@ -107,7 +108,11 @@ void main() {
   test('快速切歌 3 次 should be stable', () async {
     await rs.initEngine();
 
-    final files = [_pickFile(mediaDir, ext: 'm4a')!, _pickFile(mediaDir, ext: 'mp3')!, _pickFile(mediaDir, ext: 'flac')!];
+    final files = [
+      _pickFile(mediaDir, ext: 'm4a')!,
+      _pickFile(mediaDir, ext: 'mp3')!,
+      _pickFile(mediaDir, ext: 'flac')!,
+    ];
     print('测试文件: $files');
 
     final underrunBefore = await audio_out.getUnderrunCount();
@@ -137,7 +142,7 @@ void main() {
         break;
       }
     }
-    check(file48k).equals(isNotNull, reason: '未找到 48kHz 测试文件');
+    check(file48k).isNotNull();
     print('48kHz 文件: ${file48k!.path}');
 
     await rs.enginePlay(file48k.path);

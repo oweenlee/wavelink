@@ -45,7 +45,8 @@ class _NowPlayingIndicatorState extends State<NowPlayingIndicator>
       builder: (context, _) => Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: List.generate(3, (i) {
-          final h = widget.baseHeight + (_ac.value + i * 0.3) % 1.0 * widget.barScale;
+          final h =
+              widget.baseHeight + (_ac.value + i * 0.3) % 1.0 * widget.barScale;
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 1),
             child: Container(

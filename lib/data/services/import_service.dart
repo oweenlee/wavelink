@@ -21,8 +21,19 @@ import 'smb_service.dart';
 /// 5. SMB 直挂 NAS 共享 → SMB/CIFS
 class ImportService {
   static const extensions = [
-    'mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a',
-    'wma', 'alac', 'aiff', 'dsf', 'dff', 'opus', 'lrc',
+    'mp3',
+    'flac',
+    'wav',
+    'aac',
+    'ogg',
+    'm4a',
+    'wma',
+    'alac',
+    'aiff',
+    'dsf',
+    'dff',
+    'opus',
+    'lrc',
   ];
 
   /// 系统音乐库是否可用
@@ -78,7 +89,9 @@ class ImportService {
       lyricByBase[_fileBaseName(lf.path)] = lf.path;
     }
 
-    final matchedAudioBases = audioByBase.keys.toSet().intersection(lyricByBase.keys.toSet());
+    final matchedAudioBases = audioByBase.keys.toSet().intersection(
+      lyricByBase.keys.toSet(),
+    );
 
     final songs = await _filesToSongs(audioFiles);
     for (final song in songs) {
@@ -126,7 +139,9 @@ class ImportService {
       // 如果是音频文件，也复制对应的 .lrc 歌词文件
       if (ext != 'lrc') {
         final baseName = name.replaceAll(RegExp(r'\.[^.]+$'), '');
-        final lrcSrc = File('${srcPath.substring(0, srcPath.lastIndexOf('/'))}/$baseName.lrc');
+        final lrcSrc = File(
+          '${srcPath.substring(0, srcPath.lastIndexOf('/'))}/$baseName.lrc',
+        );
         if (await lrcSrc.exists()) {
           final lrcDest = File('${importDir.path}/$baseName.lrc');
           if (!await lrcDest.exists()) {
@@ -336,9 +351,7 @@ class ImportService {
       try {
         final bytes = await rs.getCoverBytes(song.path!);
         if (bytes.isNotEmpty) {
-          final cacheFile = File(
-            '${cacheDir.path}/${song.path!.hashCode}.jpg',
-          );
+          final cacheFile = File('${cacheDir.path}/${song.path!.hashCode}.jpg');
           await cacheFile.writeAsBytes(bytes);
           song.coverUrl = cacheFile.path;
           song.hasCover = true;
@@ -354,9 +367,7 @@ class ImportService {
     try {
       final bytes = await MediaStoreChannel.getArtwork(pid);
       if (bytes != null && bytes.isNotEmpty) {
-        final cacheFile = File(
-          '${cacheDir.path}/${song.path!.hashCode}.jpg',
-        );
+        final cacheFile = File('${cacheDir.path}/${song.path!.hashCode}.jpg');
         await cacheFile.writeAsBytes(bytes);
         song.coverUrl = cacheFile.path;
         song.hasCover = true;

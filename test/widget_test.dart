@@ -4,10 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../lib/ui/core/app.dart';
-import '../lib/domain/models/song.dart';
-import '../lib/domain/models/lyric_line.dart';
-import '../lib/ui/features/playback/view_models/playback_provider.dart';
+import 'package:wavelink_mobile/ui/core/app.dart';
+import 'package:wavelink_mobile/domain/models/song.dart';
+import 'package:wavelink_mobile/domain/models/lyric_line.dart';
+import 'package:wavelink_mobile/ui/features/playback/view_models/playback_provider.dart';
 import 'package:wavelink_mobile/data/services/preferences_service.dart';
 import 'package:wavelink_mobile/data/repositories/audio_engine_repository.dart';
 import 'package:wavelink_mobile/data/repositories/song_repository.dart';
@@ -20,19 +20,19 @@ void main() {
     await PreferencesService.init();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (call) async => '/tmp',
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (call) async => '/tmp',
+        );
   });
 
   Widget buildApp() => ChangeNotifierProvider(
-        create: (_) => PlaybackProvider(
-          engineRepo: AudioEngineRepository(),
-          songRepo: SongRepository(),
-          prefsRepo: PreferencesRepository(),
-        ),
-        child: const WaveLinkApp(),
-      );
+    create: (_) => PlaybackProvider(
+      engineRepo: AudioEngineRepository(),
+      songRepo: SongRepository(),
+      prefsRepo: PreferencesRepository(),
+    ),
+    child: const WaveLinkApp(),
+  );
 
   group('模型', () {
     test('Song.formattedDuration 格式化', () {

@@ -170,7 +170,9 @@ class _TrackTile extends StatelessWidget {
               child: isCurrent
                   ? const Center(
                       child: NowPlayingIndicator(
-                        baseHeight: 4, barScale: 8, maxHeight: 12,
+                        baseHeight: 4,
+                        barScale: 8,
+                        maxHeight: 12,
                       ),
                     )
                   : null,
@@ -185,9 +187,7 @@ class _TrackTile extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
-                      color: isCurrent
-                          ? AppTheme.brand
-                          : AppTheme.textPrimary,
+                      color: isCurrent ? AppTheme.brand : AppTheme.textPrimary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -247,9 +247,7 @@ class _ActionButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppTheme.brand.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: AppTheme.brand.withValues(alpha: 0.3),
-          ),
+          border: Border.all(color: AppTheme.brand.withValues(alpha: 0.3)),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -270,5 +268,3 @@ class _ActionButton extends StatelessWidget {
     );
   }
 }
-
-

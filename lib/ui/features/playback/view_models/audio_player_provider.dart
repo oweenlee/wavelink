@@ -9,8 +9,7 @@ import '../../../../data/repositories/audio_engine_repository.dart';
 import '../../../../data/services/rust_service.dart' show AnalyzeResult;
 
 class AudioPlayerProvider extends ChangeNotifier {
-  AudioPlayerProvider({required AudioEngineRepository engineRepo})
-      : _engineRepo = engineRepo;
+  AudioPlayerProvider({required this._engineRepo});
 
   final AudioEngineRepository _engineRepo;
   final NativeAudioService _nativeAudio = NativeAudioService();
@@ -109,7 +108,9 @@ class AudioPlayerProvider extends ChangeNotifier {
       final fileRate = await _engineRepo.probeSampleRate(song.path!);
       if (token != _playToken) return;
       if (fileRate > 0) {
-        final actualRate = await _nativeAudio.setOutputRate(fileRate.toDouble());
+        final actualRate = await _nativeAudio.setOutputRate(
+          fileRate.toDouble(),
+        );
         if (token != _playToken) return;
         if (actualRate > 0) {
           await _engineRepo.setOutputSampleRate(actualRate.round());

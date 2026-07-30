@@ -20,7 +20,6 @@ class EffectsSheet extends StatelessWidget {
           controller: scroll,
           padding: EdgeInsets.zero,
           children: [
-
             _EffectItem(
               icon: Icons.vibration_rounded,
               label: l10n.bauerCrossfeed,

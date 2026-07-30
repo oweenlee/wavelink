@@ -132,9 +132,7 @@ class _SongsTab extends StatelessWidget {
         _ImportHeader(importCount: songs.length),
         Expanded(
           child: songs.isEmpty
-              ? _EmptyLibrary(
-                  message: l10n.noMusicHint,
-                )
+              ? _EmptyLibrary(message: l10n.noMusicHint)
               : ListView.builder(
                   padding: const EdgeInsets.only(bottom: 80),
                   itemCount: songs.length,
@@ -174,8 +172,11 @@ class _ImportHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Row(
         children: [
-          const Icon(Icons.folder_open_rounded,
-              size: 18, color: AppTheme.brand),
+          const Icon(
+            Icons.folder_open_rounded,
+            size: 18,
+            color: AppTheme.brand,
+          ),
           const SizedBox(width: 8),
           Text(
             importCount > 0 ? l10n.importN(importCount) : l10n.importMusic,
@@ -243,14 +244,17 @@ class _AlbumsTab extends StatelessWidget {
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           child: GestureDetector(
-            onTap: () => context.push('/album', extra: Album(
-              id: name,
-              title: name,
-              artist: albumSongs.first.artist,
-              year: 0,
-              songs: albumSongs,
-              dominantColor: color,
-            )),
+            onTap: () => context.push(
+              '/album',
+              extra: Album(
+                id: name,
+                title: name,
+                artist: albumSongs.first.artist,
+                year: 0,
+                songs: albumSongs,
+                dominantColor: color,
+              ),
+            ),
             child: Row(
               children: [
                 Container(
@@ -283,7 +287,10 @@ class _AlbumsTab extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        l10n.albumArtistCount(albumSongs.first.artist, albumSongs.length),
+                        l10n.albumArtistCount(
+                          albumSongs.first.artist,
+                          albumSongs.length,
+                        ),
                         style: const TextStyle(
                           fontSize: 13,
                           color: AppTheme.textSecondary,
@@ -326,13 +333,15 @@ class _ArtistsTab extends StatelessWidget {
       itemBuilder: (context, index) {
         final name = artistNames[index];
         final count = songs.where((s) => s.artist == name).length;
-        final artistColor = songs.firstWhere((s) => s.artist == name).dominantColor;
+        final artistColor = songs
+            .firstWhere((s) => s.artist == name)
+            .dominantColor;
 
         return GestureDetector(
-          onTap: () => context.push('/artist', extra: {
-            'name': name,
-            'color': artistColor,
-          }),
+          onTap: () => context.push(
+            '/artist',
+            extra: {'name': name, 'color': artistColor},
+          ),
           child: Container(
             margin: const EdgeInsets.only(bottom: 12),
             child: Row(
@@ -412,12 +421,14 @@ class _PlaylistsTab extends StatelessWidget {
         songs: favorites,
         builtIn: true,
       ),
-      ...saved.entries.map((e) => _PlaylistEntry(
-            name: e.key,
-            count: e.value.length,
-            color: AppTheme.brand,
-            songs: player.playlistSongs(e.key),
-          )),
+      ...saved.entries.map(
+        (e) => _PlaylistEntry(
+          name: e.key,
+          count: e.value.length,
+          color: AppTheme.brand,
+          songs: player.playlistSongs(e.key),
+        ),
+      ),
     ];
 
     return ListView.builder(
@@ -442,11 +453,7 @@ class _PlaylistsTab extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      Icons.add_rounded,
-                      color: AppTheme.brand,
-                      size: 20,
-                    ),
+                    Icon(Icons.add_rounded, color: AppTheme.brand, size: 20),
                     SizedBox(width: 8),
                     Text(
                       l10n.newPlaylistFromQueue,
@@ -465,12 +472,15 @@ class _PlaylistsTab extends StatelessWidget {
 
         final pl = entries[index - 1];
         return GestureDetector(
-          onTap: () => context.push('/song-list', extra: {
-            'title': pl.name,
-            'songs': pl.songs,
-            'accentColor': pl.color,
-            'isFavoriteList': pl.builtIn,
-          }),
+          onTap: () => context.push(
+            '/song-list',
+            extra: {
+              'title': pl.name,
+              'songs': pl.songs,
+              'accentColor': pl.color,
+              'isFavoriteList': pl.builtIn,
+            },
+          ),
           child: Container(
             margin: const EdgeInsets.only(bottom: 12),
             child: Row(
@@ -536,7 +546,10 @@ class _PlaylistsTab extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.surfaceDark,
-        title: Text(l10n.newPlaylist, style: const TextStyle(color: AppTheme.textPrimary)),
+        title: Text(
+          l10n.newPlaylist,
+          style: const TextStyle(color: AppTheme.textPrimary),
+        ),
         content: TextField(
           controller: ctrl,
           autofocus: true,
@@ -555,7 +568,10 @@ class _PlaylistsTab extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text(l10n.cancel, style: const TextStyle(color: AppTheme.textSecondary)),
+            child: Text(
+              l10n.cancel,
+              style: const TextStyle(color: AppTheme.textSecondary),
+            ),
           ),
           TextButton(
             onPressed: () async {
@@ -565,7 +581,10 @@ class _PlaylistsTab extends StatelessWidget {
               }
               if (ctx.mounted) Navigator.pop(ctx);
             },
-            child: Text(l10n.save, style: const TextStyle(color: AppTheme.brand)),
+            child: Text(
+              l10n.save,
+              style: const TextStyle(color: AppTheme.brand),
+            ),
           ),
         ],
       ),
@@ -673,7 +692,9 @@ void _showContextMenu(
             icon: player.isSongFavorite(song.id)
                 ? Icons.favorite_rounded
                 : Icons.favorite_border_rounded,
-            label: player.isSongFavorite(song.id) ? l10n.unfavorite : l10n.favorite,
+            label: player.isSongFavorite(song.id)
+                ? l10n.unfavorite
+                : l10n.favorite,
             onTap: () {
               player.setFavorite(song.id, !player.isSongFavorite(song.id));
               Navigator.pop(ctx);
@@ -760,24 +781,35 @@ void _showAddToPlaylist(
           const Divider(height: 1),
           if (saved.isEmpty)
             ListTile(
-              leading: const Icon(Icons.info_outline_rounded,
-                  color: AppTheme.textTertiary),
+              leading: const Icon(
+                Icons.info_outline_rounded,
+                color: AppTheme.textTertiary,
+              ),
               title: Text(
                 l10n.noPlaylists,
-                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 14),
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 14,
+                ),
               ),
             ),
-          ...saved.entries.map((e) => ListTile(
-                leading: const Icon(Icons.playlist_play_rounded,
-                    color: AppTheme.brand),
-                title: Text(e.key,
-                    style: const TextStyle(color: AppTheme.textPrimary)),
-                onTap: () async {
-                  final ids = [...e.value, song.id];
-                  await player.savePlaylist(e.key, ids);
-                  if (ctx.mounted) Navigator.pop(ctx);
-                },
-              )),
+          ...saved.entries.map(
+            (e) => ListTile(
+              leading: const Icon(
+                Icons.playlist_play_rounded,
+                color: AppTheme.brand,
+              ),
+              title: Text(
+                e.key,
+                style: const TextStyle(color: AppTheme.textPrimary),
+              ),
+              onTap: () async {
+                final ids = [...e.value, song.id];
+                await player.savePlaylist(e.key, ids);
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+            ),
+          ),
         ],
       ),
     ),

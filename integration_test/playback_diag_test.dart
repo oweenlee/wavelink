@@ -1,5 +1,6 @@
 /// 播放诊断集成测试 — 在真机上跑，检测引擎 underrun
 /// flutter test integration_test/playback_diag_test.dart
+library;
 
 import 'dart:io';
 import 'package:checks/checks.dart';
@@ -11,15 +12,15 @@ void main() {
   testWidgets('诊断：播放和 seek 时的引擎 underrun', (tester) async {
     // 初始化 Rust
     await rs.initRust();
-    check(rs.rustAvailable).equals(isTrue, reason: 'Rust 未加载');
+    check(rs.rustAvailable).isTrue();
 
     // 找 test-media 目录
     final mediaDir = _findTestMedia();
-    check(mediaDir).equals(isNotNull, reason: 'test-media/ 未找到');
+    check(mediaDir).isNotNull();
 
     // 选一个测试文件
     final testFile = _pickFile(mediaDir!);
-    check(testFile).equals(isNotNull, reason: 'test-media 中没有音频文件');
+    check(testFile).isNotNull();
     print('══════ 测试文件: $testFile ══════');
 
     await rs.initEngine();
@@ -33,7 +34,7 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 100));
       final pos = await rs.enginePositionSecs();
       final underrun = await audio_out.getUnderrunCount();
-      print('  t=${(i+1)*100}ms position=$pos underrun=$underrun');
+      print('  t=${(i + 1) * 100}ms position=$pos underrun=$underrun');
     }
 
     // ── 2. 持续播放 3 秒 ──
@@ -44,7 +45,7 @@ void main() {
       final pos = await rs.enginePositionSecs();
       // 每 1 秒报告一次
       if (i % 10 == 9) {
-        print('  t=${i+1}00ms position=$pos');
+        print('  t=${i + 1}00ms position=$pos');
       }
     }
     final underrunAfter = await audio_out.getUnderrunCount();
@@ -65,7 +66,9 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 200));
       final uAfter = await audio_out.getUnderrunCount();
       final pos = await rs.enginePositionSecs();
-      print('  seek #$i: underrun delta=${(uAfter-uBefore).toInt()} position=$pos');
+      print(
+        '  seek #$i: underrun delta=${(uAfter - uBefore).toInt()} position=$pos',
+      );
     }
 
     await rs.engineStop();
@@ -82,7 +85,9 @@ void main() {
         await rs.engineStop();
         final uAfter = await audio_out.getUnderrunCount();
         final pos = await rs.enginePositionSecs();
-        print('  切歌 #$i: underrun delta=${(uAfter-uBefore).toInt()} position=$pos');
+        print(
+          '  切歌 #$i: underrun delta=${(uAfter - uBefore).toInt()} position=$pos',
+        );
       }
     }
 
@@ -91,7 +96,12 @@ void main() {
 }
 
 String? _findTestMedia() {
-  for (final path in ['test-media', '../test-media', '../../test-media', '../../../test-media']) {
+  for (final path in [
+    'test-media',
+    '../test-media',
+    '../../test-media',
+    '../../../test-media',
+  ]) {
     if (Directory(path).existsSync()) return Directory(path).path;
   }
   var dir = Directory.current;

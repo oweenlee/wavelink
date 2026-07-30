@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../domain/models/song.dart';
@@ -41,11 +40,11 @@ class SubsonicService {
   static String _url(String path) => '$_baseUrl/rest$path';
 
   static Map<String, String> _authParams() => {
-        'u': _username!,
-        'p': _password!,
-        'v': '1.16.0',
-        'c': 'wavelink',
-      };
+    'u': _username!,
+    'p': _password!,
+    'v': '1.16.0',
+    'c': 'wavelink',
+  };
 
   static Future<http.Response> _get(
     String path, [
@@ -128,11 +127,14 @@ class SubsonicService {
           json['subsonic-response']?['searchResult3']?['song'] as List?;
       if (result == null) return [];
 
-      return result.map((t) {
-        final artist = t['artist'] as String?;
-        final album = t['album'] as String?;
-        return _toSong(t, artist, album);
-      }).whereType<Song>().toList();
+      return result
+          .map((t) {
+            final artist = t['artist'] as String?;
+            final album = t['album'] as String?;
+            return _toSong(t, artist, album);
+          })
+          .whereType<Song>()
+          .toList();
     } catch (e) {
       debugPrint('[Subsonic] searchSongs failed: $e');
       return [];
@@ -164,9 +166,7 @@ class SubsonicService {
 
     return Song(
       id: 'sub_${songId ?? path.hashCode}',
-      title: title.isNotEmpty
-          ? title
-          : _titleFromPath(path ?? songId ?? ''),
+      title: title.isNotEmpty ? title : _titleFromPath(path ?? songId ?? ''),
       artist: artist,
       album: albumName,
       duration: Duration(milliseconds: durationMs),

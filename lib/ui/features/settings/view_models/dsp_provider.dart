@@ -4,11 +4,7 @@ import '../../../../data/repositories/audio_engine_repository.dart';
 import '../../../../data/repositories/preferences_repository.dart';
 
 class DspProvider extends ChangeNotifier {
-  DspProvider({
-    required AudioEngineRepository engineRepo,
-    required PreferencesRepository prefsRepo,
-  })  : _engineRepo = engineRepo,
-        _prefsRepo = prefsRepo;
+  DspProvider({required this._engineRepo, required this._prefsRepo});
 
   final AudioEngineRepository _engineRepo;
   final PreferencesRepository _prefsRepo;
@@ -52,7 +48,6 @@ class DspProvider extends ChangeNotifier {
     _prefsRepo.setDspDither(_dspSettings.dither);
     notifyListeners();
   }
-
 
   Future<void> applyDsp() async {
     if (!_engineRepo.rustAvailable) return;

@@ -315,7 +315,9 @@ class _TrackTile extends StatelessWidget {
               width: 24,
               child: isCurrent
                   ? const NowPlayingIndicator(
-                      baseHeight: 4, barScale: 8, maxHeight: 12,
+                      baseHeight: 4,
+                      barScale: 8,
+                      maxHeight: 12,
                     )
                   : Text(
                       '$index',
@@ -336,9 +338,7 @@ class _TrackTile extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
-                      color: isCurrent
-                          ? AppTheme.brand
-                          : AppTheme.textPrimary,
+                      color: isCurrent ? AppTheme.brand : AppTheme.textPrimary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -367,5 +367,3 @@ class _TrackTile extends StatelessWidget {
     );
   }
 }
-
-

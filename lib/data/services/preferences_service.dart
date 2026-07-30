@@ -186,8 +186,10 @@ class PreferencesService {
 
 // 简单的扁平 Map 编解码，避免引入额外依赖
 String _encodeMap(Map<String, List<String>> data) {
-  final parts = data.entries.map((e) =>
-      '${Uri.encodeComponent(e.key)}:${e.value.map(Uri.encodeComponent).join(',')}');
+  final parts = data.entries.map(
+    (e) =>
+        '${Uri.encodeComponent(e.key)}:${e.value.map(Uri.encodeComponent).join(',')}',
+  );
   return parts.join('|');
 }
 

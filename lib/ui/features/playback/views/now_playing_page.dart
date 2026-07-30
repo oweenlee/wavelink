@@ -119,83 +119,87 @@ class _NowPlayingPageState extends State<NowPlayingPage>
     return AccentScope(
       accent: accent,
       child: Scaffold(
-      backgroundColor: bg.withValues(alpha: 0.95),
-      body: GestureDetector(
-        onVerticalDragEnd: (d) {
-          if (!_lyricsOverlay &&
-              d.primaryVelocity != null &&
-              d.primaryVelocity! > 500) {
-            Navigator.of(context).pop();
-          }
-        },
-        child: Stack(
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [bg, bg.withValues(alpha: 0.5), AppTheme.background],
-                  stops: const [0.0, 0.3, 1.0],
+        backgroundColor: bg.withValues(alpha: 0.95),
+        body: GestureDetector(
+          onVerticalDragEnd: (d) {
+            if (!_lyricsOverlay &&
+                d.primaryVelocity != null &&
+                d.primaryVelocity! > 500) {
+              Navigator.of(context).pop();
+            }
+          },
+          child: Stack(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      bg,
+                      bg.withValues(alpha: 0.5),
+                      AppTheme.background,
+                    ],
+                    stops: const [0.0, 0.3, 1.0],
+                  ),
                 ),
-              ),
-              child: SafeArea(
-                child: Column(
-                  children: [
-                    _TopBar(onClose: () => Navigator.of(context).pop()),
-                    Expanded(
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            AlbumCover(color: song.dominantColor),
-                            const SizedBox(height: 20),
-                            _SongInfo(song: song),
-                            const SizedBox(height: 12),
-                            _Tags(player: player, song: song),
-                          ],
+                child: SafeArea(
+                  child: Column(
+                    children: [
+                      _TopBar(onClose: () => Navigator.of(context).pop()),
+                      Expanded(
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              AlbumCover(color: song.dominantColor),
+                              const SizedBox(height: 20),
+                              _SongInfo(song: song),
+                              const SizedBox(height: 12),
+                              _Tags(player: player, song: song),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: _ProgressRow(player: player, song: song),
-                    ),
-                    const SizedBox(height: 4),
-                    _TransportRow(player: player),
-                    const SizedBox(height: 12),
-                    _LyricsPreview(
-                      lyrics: player.currentLyrics ?? [],
-                      line: player.currentLyricLine,
-                      onTap: _openLyrics,
-                    ),
-                    const SizedBox(height: 12),
-                    const SizedBox(height: 8),
-                    _BottomToolbar(
-                      player: player,
-                      lyricsActive: _lyricsOverlay,
-                      onQueue: () => _openQueue(context),
-                      onEffects: () => _openEffects(context),
-                      onLyrics: _openLyrics,
-                    ),
-                    const SizedBox(height: 8),
-                  ],
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: _ProgressRow(player: player, song: song),
+                      ),
+                      const SizedBox(height: 4),
+                      _TransportRow(player: player),
+                      const SizedBox(height: 12),
+                      _LyricsPreview(
+                        lyrics: player.currentLyrics ?? [],
+                        line: player.currentLyricLine,
+                        onTap: _openLyrics,
+                      ),
+                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
+                      _BottomToolbar(
+                        player: player,
+                        lyricsActive: _lyricsOverlay,
+                        onQueue: () => _openQueue(context),
+                        onEffects: () => _openEffects(context),
+                        onLyrics: _openLyrics,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            if (_lyricsOverlay)
-              SlideTransition(
-                position: _lyricsSlide,
-                child: LyricsOverlay(
-                  lyrics: player.currentLyrics ?? [],
-                  line: player.currentLyricLine,
-                  dominantColor: song.dominantColor,
-                  onClose: _closeLyrics,
+              if (_lyricsOverlay)
+                SlideTransition(
+                  position: _lyricsSlide,
+                  child: LyricsOverlay(
+                    lyrics: player.currentLyrics ?? [],
+                    line: player.currentLyricLine,
+                    dominantColor: song.dominantColor,
+                    onClose: _closeLyrics,
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -303,8 +307,7 @@ class _Tags extends StatelessWidget {
       children: [
         if (bpm != null)
           _Tag(icon: Icons.speed_rounded, label: '${bpm.round()} BPM'),
-        if (key != null)
-          _Tag(icon: Icons.music_note_rounded, label: key),
+        if (key != null) _Tag(icon: Icons.music_note_rounded, label: key),
         if (player.isSongFavorite(song.id))
           _Tag(icon: Icons.favorite_rounded, label: l10n.favorited),
       ],
@@ -443,10 +446,7 @@ class _PlayBtn extends StatelessWidget {
           color: accent,
           shape: BoxShape.circle,
           boxShadow: [
-            BoxShadow(
-              color: accent.withValues(alpha: 0.35),
-              blurRadius: 14,
-            ),
+            BoxShadow(color: accent.withValues(alpha: 0.35), blurRadius: 14),
           ],
         ),
         child: Icon(
@@ -541,7 +541,11 @@ class _BottomToolbar extends StatelessWidget {
             onTap: onQueue,
             badge: '${player.queue.length}',
           ),
-          _BarItem(icon: Icons.tune_rounded, label: l10n.sound, onTap: onEffects),
+          _BarItem(
+            icon: Icons.tune_rounded,
+            label: l10n.sound,
+            onTap: onEffects,
+          ),
           _BarItem(
             icon: lyricsActive ? Icons.lyrics_rounded : Icons.lyrics_outlined,
             label: l10n.lyrics,
@@ -582,9 +586,7 @@ class _BarItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
-    final color = active
-        ? (activeColor ?? accent)
-        : AppTheme.textSecondary;
+    final color = active ? (activeColor ?? accent) : AppTheme.textSecondary;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,

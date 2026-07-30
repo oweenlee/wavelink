@@ -104,9 +104,7 @@ class _ThumbShape extends SliderComponentShape {
 
     // Glow
     final glowPaint = Paint()
-      ..color = color.withValues(
-        alpha: 0.2 * activationAnimation.value,
-      )
+      ..color = color.withValues(alpha: 0.2 * activationAnimation.value)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
     canvas.drawCircle(center, radius + 4, glowPaint);
 

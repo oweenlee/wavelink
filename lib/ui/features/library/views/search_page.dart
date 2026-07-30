@@ -38,34 +38,42 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
-  List<( _ResultKind, List<Song>)> get _results {
+  List<(_ResultKind, List<Song>)> get _results {
     if (_query.isEmpty) return [];
     final q = _query.toLowerCase();
     final player = context.read<PlaybackProvider>();
     final songs = player.allSongs;
 
-    final matched = songs.where((s) =>
-        s.title.toLowerCase().contains(q) ||
-        s.artist.toLowerCase().contains(q) ||
-        s.album.toLowerCase().contains(q)).toList();
+    final matched = songs
+        .where(
+          (s) =>
+              s.title.toLowerCase().contains(q) ||
+              s.artist.toLowerCase().contains(q) ||
+              s.album.toLowerCase().contains(q),
+        )
+        .toList();
 
     final albumNames = matched.map((s) => s.album).toSet();
     final artistNames = matched.map((s) => s.artist).toSet();
 
-    final result = <( _ResultKind, List<Song>)>[];
+    final result = <(_ResultKind, List<Song>)>[];
     if (matched.isNotEmpty) {
       result.add((_ResultKind.songs, matched));
     }
     if (albumNames.isNotEmpty) {
       result.add((
         _ResultKind.albums,
-        albumNames.map((name) => matched.firstWhere((s) => s.album == name)).toList(),
+        albumNames
+            .map((name) => matched.firstWhere((s) => s.album == name))
+            .toList(),
       ));
     }
     if (artistNames.isNotEmpty) {
       result.add((
         _ResultKind.artists,
-        artistNames.map((name) => matched.firstWhere((s) => s.artist == name)).toList(),
+        artistNames
+            .map((name) => matched.firstWhere((s) => s.artist == name))
+            .toList(),
       ));
     }
     return result;
@@ -158,7 +166,10 @@ class _SearchPageState extends State<SearchPage> {
             const SizedBox(height: 12),
             Text(
               hasSongs ? l10n.searchYourMusic : l10n.importThenSearch,
-              style: const TextStyle(fontSize: 15, color: AppTheme.textTertiary),
+              style: const TextStyle(
+                fontSize: 15,
+                color: AppTheme.textTertiary,
+              ),
             ),
           ],
         ),
@@ -265,7 +276,10 @@ class _SearchPageState extends State<SearchPage> {
             const SizedBox(height: 12),
             Text(
               l10n.noResults,
-              style: const TextStyle(fontSize: 15, color: AppTheme.textTertiary),
+              style: const TextStyle(
+                fontSize: 15,
+                color: AppTheme.textTertiary,
+              ),
             ),
           ],
         ),
@@ -305,7 +319,9 @@ class _SearchPageState extends State<SearchPage> {
           }
         } else if (kind == _ResultKind.albums) {
           for (final s in value) {
-            final albumSongs = player.allSongs.where((x) => x.album == s.album).toList();
+            final albumSongs = player.allSongs
+                .where((x) => x.album == s.album)
+                .toList();
             items.add(
               ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -331,20 +347,25 @@ class _SearchPageState extends State<SearchPage> {
                     color: AppTheme.textSecondary,
                   ),
                 ),
-                onTap: () => context.push('/album', extra: Album(
-                  id: s.album,
-                  title: s.album,
-                  artist: s.artist,
-                  year: 0,
-                  songs: albumSongs,
-                  dominantColor: s.dominantColor,
-                )),
+                onTap: () => context.push(
+                  '/album',
+                  extra: Album(
+                    id: s.album,
+                    title: s.album,
+                    artist: s.artist,
+                    year: 0,
+                    songs: albumSongs,
+                    dominantColor: s.dominantColor,
+                  ),
+                ),
               ),
             );
           }
         } else {
           for (final s in value) {
-            final count = player.allSongs.where((x) => x.artist == s.artist).length;
+            final count = player.allSongs
+                .where((x) => x.artist == s.artist)
+                .length;
             items.add(
               ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -370,10 +391,10 @@ class _SearchPageState extends State<SearchPage> {
                     color: AppTheme.textSecondary,
                   ),
                 ),
-                onTap: () => context.push('/artist', extra: {
-                  'name': s.artist,
-                  'color': s.dominantColor,
-                }),
+                onTap: () => context.push(
+                  '/artist',
+                  extra: {'name': s.artist, 'color': s.dominantColor},
+                ),
               ),
             );
           }

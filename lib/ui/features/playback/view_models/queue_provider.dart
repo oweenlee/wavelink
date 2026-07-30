@@ -5,8 +5,7 @@ import '../../../../domain/models/playback_types.dart';
 import '../../../../data/repositories/preferences_repository.dart';
 
 class QueueProvider extends ChangeNotifier {
-  QueueProvider({required PreferencesRepository prefsRepo})
-      : _prefsRepo = prefsRepo;
+  QueueProvider({required this._prefsRepo});
 
   final PreferencesRepository _prefsRepo;
   List<Song> _queue = [];
@@ -115,7 +114,9 @@ class QueueProvider extends ChangeNotifier {
 
   void onImportAdded(List<Song> songs) {
     final existingPaths = _queue.map((s) => s.path).whereType<String>().toSet();
-    final newSongs = songs.where((s) => s.path != null && !existingPaths.contains(s.path)).toList();
+    final newSongs = songs
+        .where((s) => s.path != null && !existingPaths.contains(s.path))
+        .toList();
     if (newSongs.isEmpty) return;
     _queue.addAll(newSongs);
     notifyListeners();

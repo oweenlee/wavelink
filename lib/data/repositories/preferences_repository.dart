@@ -19,8 +19,7 @@ class PreferencesRepository {
   // ── 随机 ──
 
   bool get shuffle => PreferencesService.instance.shuffle;
-  Future<void> setShuffle(bool v) =>
-      PreferencesService.instance.setShuffle(v);
+  Future<void> setShuffle(bool v) => PreferencesService.instance.setShuffle(v);
 
   // ── DSP 设置 ──
 
@@ -72,7 +71,6 @@ class PreferencesRepository {
   Future<void> setCoverBlur(double v) =>
       PreferencesService.instance.setCoverBlur(v);
 
-
   // ── NAS 配置 ──
 
   String? get nasType => PreferencesService.instance.nasType;
@@ -89,16 +87,14 @@ class PreferencesRepository {
     String? username,
     String? password,
     bool? enabled,
-  }) =>
-      PreferencesService.instance.setNasConfig(
-        type: type,
-        host: host,
-        share: share,
-        username: username,
-        password: password,
-        enabled: enabled,
-      );
+  }) => PreferencesService.instance.setNasConfig(
+    type: type,
+    host: host,
+    share: share,
+    username: username,
+    password: password,
+    enabled: enabled,
+  );
 
-  Future<void> clearNasConfig() =>
-      PreferencesService.instance.clearNasConfig();
+  Future<void> clearNasConfig() => PreferencesService.instance.clearNasConfig();
 }

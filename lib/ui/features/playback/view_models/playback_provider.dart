@@ -24,19 +24,19 @@ class PlaybackProvider extends ChangeNotifier {
     required AudioEngineRepository engineRepo,
     required SongRepository songRepo,
     required PreferencesRepository prefsRepo,
-  })  : audioPlayer = AudioPlayerProvider(engineRepo: engineRepo),
-        queueProvider = QueueProvider(prefsRepo: prefsRepo),
-        library = LibraryProvider(
-          songRepo: songRepo,
-          engineRepo: engineRepo,
-          prefsRepo: prefsRepo,
-        ),
-        dsp = DspProvider(engineRepo: engineRepo, prefsRepo: prefsRepo),
-        _prefsRepo = prefsRepo {
+  }) : audioPlayer = AudioPlayerProvider(engineRepo: engineRepo),
+       queueProvider = QueueProvider(prefsRepo: prefsRepo),
+       library = LibraryProvider(
+         songRepo: songRepo,
+         engineRepo: engineRepo,
+         prefsRepo: prefsRepo,
+       ),
+       dsp = DspProvider(engineRepo: engineRepo, prefsRepo: prefsRepo),
+       _prefsRepo = prefsRepo {
     _wire();
     _loadPreferences();
     audioPlayer.init();
-    library.scanImported();
+    library.discoverSongs();
   }
 
   void _wire() {
@@ -73,10 +73,12 @@ class PlaybackProvider extends ChangeNotifier {
     audioPlayer.setVolume(_prefsRepo.volume);
     audioPlayer.bitPerfect = _prefsRepo.bitPerfect;
     if (_prefsRepo.shuffle) queueProvider.toggleShuffle();
-    queueProvider.setLoopMode(LoopMode.values.firstWhere(
-      (m) => m.name == _prefsRepo.loopMode,
-      orElse: () => LoopMode.list,
-    ));
+    queueProvider.setLoopMode(
+      LoopMode.values.firstWhere(
+        (m) => m.name == _prefsRepo.loopMode,
+        orElse: () => LoopMode.list,
+      ),
+    );
     dsp.loadDspPrefs();
     library.loadFavoritesPrefs();
   }
@@ -125,8 +127,7 @@ class PlaybackProvider extends ChangeNotifier {
   DspSettings get dspSettings => dsp.dspSettings;
   bool get dspAvailable => dsp.dspAvailable;
 
-  AnalyzeResult? getAnalysis(String songId) =>
-      audioPlayer.getAnalysis(songId);
+  AnalyzeResult? getAnalysis(String songId) => audioPlayer.getAnalysis(songId);
 
   // ── 外观偏好 ──
 
@@ -147,7 +148,8 @@ class PlaybackProvider extends ChangeNotifier {
 
   bool autoPlayOnQueueSet = true;
 
-  Future<void> Function(Song) get startDecoderHook => audioPlayer.startDecoderHook;
+  Future<void> Function(Song) get startDecoderHook =>
+      audioPlayer.startDecoderHook;
   set startDecoderHook(Future<void> Function(Song) hook) {
     audioPlayer.startDecoderHook = hook;
   }
@@ -180,7 +182,7 @@ class PlaybackProvider extends ChangeNotifier {
     } else {
       final prevIdx =
           (queueProvider.currentIndex - 1 + queueProvider.queue.length) %
-              queueProvider.queue.length;
+          queueProvider.queue.length;
       queueProvider.advanceTo(prevIdx);
       audioPlayer.playSong(queueProvider.currentSong!);
     }
@@ -215,6 +217,7 @@ class PlaybackProvider extends ChangeNotifier {
       }
     }
   }
+
   void reorderQueue(int oldIndex, int newIndex) =>
       queueProvider.reorderQueue(oldIndex, newIndex);
   void setQueue(List<Song> songs) {
@@ -238,11 +241,8 @@ class PlaybackProvider extends ChangeNotifier {
   void toggleDither() => dsp.toggleDither();
 
   // ── 库操作 ──
-  Future<bool> scanMediaStore() => library.scanMediaStore();
-  Future<void> scanImported() => library.scanImported();
-  Future<void> scanAllSources() => library.scanAllSources();
+  Future<bool> discoverSongs() => library.discoverSongs();
   Future<int> importFromPicker() => library.importFromPicker();
-  Future<void> rescanImported() => library.rescanImported();
   Future<bool> scanSubsonic() => library.scanSubsonic();
   Future<bool> scanSmb(String sharePath) => library.scanSmb(sharePath);
   void toggleFavorite() => library.toggleFavorite();

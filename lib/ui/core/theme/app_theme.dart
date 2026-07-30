@@ -178,11 +178,7 @@ extension AccentNormalize on Color {
 class AccentScope extends InheritedWidget {
   final Color accent;
 
-  const AccentScope({
-    super.key,
-    required this.accent,
-    required super.child,
-  });
+  const AccentScope({super.key, required this.accent, required super.child});
 
   static Color of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<AccentScope>();

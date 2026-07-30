@@ -44,11 +44,7 @@ class TransportControls extends StatelessWidget {
           onTap: onSkipForward,
         ),
         const SizedBox(width: 8),
-        _ControlButton(
-          icon: Icons.skip_next_rounded,
-          size: 44,
-          onTap: onNext,
-        ),
+        _ControlButton(icon: Icons.skip_next_rounded, size: 44, onTap: onNext),
       ],
     );
   }

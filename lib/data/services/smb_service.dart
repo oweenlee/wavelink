@@ -80,10 +80,7 @@ class SmbService {
     return songs;
   }
 
-  static Future<void> _scanDirectory(
-    String path,
-    List<Song> songs,
-  ) async {
+  static Future<void> _scanDirectory(String path, List<Song> songs) async {
     if (_connection == null) return;
 
     try {
@@ -143,9 +140,9 @@ class SmbService {
 
       if (await dest.exists()) return dest.path;
 
-       final raf = await _connection!.open(smbFile);
-       final fileSize = await raf.length();
-       final bytes = await raf.read(fileSize);
+      final raf = await _connection!.open(smbFile);
+      final fileSize = await raf.length();
+      final bytes = await raf.read(fileSize);
       await raf.close();
 
       await dest.writeAsBytes(bytes);

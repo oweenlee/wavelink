@@ -100,14 +100,17 @@ class SettingsPage extends StatelessWidget {
           children: [
             _ActionItem(
               icon: Icons.library_music_rounded,
-              label: l10n.scanMusicLibrary,
+              label: l10n.discoverSongs,
               onTap: () async {
                 final player = context.read<PlaybackProvider>();
-                final ok = await player.scanMediaStore();
+                final ok = await player.discoverSongs();
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(ok ? l10n.scanComplete : l10n.scanNoPermission),
+                      content: Text(
+                        ok ? l10n.scanNoPermission : l10n.scanNoPermission,
+                        // 无结果也提示检查权限
+                      ),
                       backgroundColor: ok ? AppTheme.brand : AppTheme.danger,
                     ),
                   );
@@ -122,11 +125,6 @@ class SettingsPage extends StatelessWidget {
                 await player.importFromPicker();
               },
             ),
-            _ActionItem(
-              icon: Icons.refresh_rounded,
-              label: l10n.rescanLibrary,
-              onTap: () => context.read<PlaybackProvider>().rescanImported(),
-            ),
             _SettingItem(
               icon: Icons.file_upload_outlined,
               label: l10n.importExportPlaylist,
@@ -135,12 +133,7 @@ class SettingsPage extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 24),
-        _Section(
-          title: l10n.language,
-          children: [
-            _LanguageSelector(),
-          ],
-        ),
+        _Section(title: l10n.language, children: [_LanguageSelector()]),
         const SizedBox(height: 24),
         _Section(
           title: l10n.settingsAbout,
@@ -151,7 +144,11 @@ class SettingsPage extends StatelessWidget {
               trailing: l10n.versionValue,
               onTap: () {},
             ),
-            _SettingItem(icon: Icons.code_rounded, label: l10n.licenses, onTap: () {}),
+            _SettingItem(
+              icon: Icons.code_rounded,
+              label: l10n.licenses,
+              onTap: () {},
+            ),
             _SettingItem(
               icon: Icons.bug_report_rounded,
               label: l10n.audioDiagnostic,
@@ -167,11 +164,7 @@ class SettingsPage extends StatelessWidget {
 class _LanguageSelector extends StatelessWidget {
   const _LanguageSelector();
 
-  static const _options = [
-    ('system', ''),
-    ('zh', ''),
-    ('en', ''),
-  ];
+  static const _options = [('system', ''), ('zh', ''), ('en', '')];
 
   @override
   Widget build(BuildContext context) {
