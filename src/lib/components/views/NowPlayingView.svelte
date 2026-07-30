@@ -10,6 +10,7 @@
 	import ProgressBar from '$lib/components/controls/ProgressBar.svelte';
 	import SpectrumAnalyzer from '$lib/components/controls/SpectrumAnalyzer.svelte';
 	import WaveformVisualizer from '$lib/components/controls/WaveformVisualizer.svelte';
+	import { extractColorFromDataUrl } from '$lib/utils/colorExtractor';
 
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { X, Disc3, Shuffle, Repeat1, Repeat, List, SkipBack, SkipForward, Play, Pause, ChevronDown, Waves } from 'lucide-svelte';
@@ -19,6 +20,7 @@
 	const lyrics = getLyricsState();
 
 	let coverDataUrl = $state('');
+	let coverColor = $state('');
 	let coverCancelled = $state(false);
 	let showInfo = $state(false);
 	let showQueue = $state(false);
@@ -86,6 +88,17 @@
 		return () => { cancelled = true; };
 	});
 
+	// ── 封面主色提取 → 驱动氛围光晕（无封面时回落默认琥珀色）──
+	$effect(() => {
+		const url = coverDataUrl;
+		if (!url || !browser) { coverColor = ''; return; }
+		let cancelled = false;
+		extractColorFromDataUrl(url)
+			.then((hex) => { if (!cancelled) coverColor = hex; })
+			.catch(() => { /* 提取失败用默认色 */ });
+		return () => { cancelled = true; };
+	});
+
 	// ── Lyrics scroll ──
 	$effect(() => {
 		if (!ui.showNowPlaying || !lyricsScrollEl || lyrics.lines.length === 0) return;
@@ -110,7 +123,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="np" class:np-playing={playback.isPlaying} style={coverDataUrl ? `--cover: url(${coverDataUrl})` : ''} onkeydown={handleKeydown} onclick={(e) => { if (e.target === e.currentTarget) close(); }}>
+<div class="np" class:np-playing={playback.isPlaying} style={`--np-glow: ${coverColor || '#e2a63d'};${coverDataUrl ? ` --cover: url(${coverDataUrl})` : ''}`} onkeydown={handleKeydown} onclick={(e) => { if (e.target === e.currentTarget) close(); }}>
 	<!-- Close button -->
 	<button class="np-close" onclick={close} aria-label={t('nowplaying.close')}>
 		<X size={16} stroke-width={2.5} />
@@ -291,13 +304,35 @@
 
 <style>
 	/* ── Root ── */
+	/* 封面主色氛围光：注册为 <color> 使其可平滑过渡（切歌时光晕随之变色） */
+	@property --np-glow {
+		syntax: '<color>';
+		inherits: true;
+		initial-value: #e2a63d;
+	}
+
 	.np {
 		position: fixed; inset: 0; z-index: 999;
 		overflow: hidden;
 		background: #080808;
 		display: flex; align-items: center; justify-content: center;
 		animation: npFadeIn 0.25s ease-out;
+		transition: --np-glow 1.6s ease;
 	}
+	/* 主光晕：从黑胶/封面后方泛开；辅光晕：右上增加层次；底部压暗聚焦 */
+	.np::after {
+		content: '';
+		position: absolute; inset: 0;
+		pointer-events: none;
+		background:
+			radial-gradient(ellipse 65% 55% at 28% 46%, color-mix(in srgb, var(--np-glow) 26%, transparent), transparent 72%),
+			radial-gradient(ellipse 45% 38% at 80% 14%, color-mix(in srgb, var(--np-glow) 10%, transparent), transparent 70%),
+			radial-gradient(ellipse 130% 95% at 50% 115%, rgba(0,0,0,0.55), transparent 62%);
+		opacity: 0.7;
+		transition: opacity 0.9s ease;
+	}
+	/* 播放时光晕呼吸增亮 */
+	.np.np-playing::after { opacity: 1; }
 	.np::before {
 		content: '';
 		position: absolute; inset: 0;
