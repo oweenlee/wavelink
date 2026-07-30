@@ -191,7 +191,11 @@ class PlaybackProvider extends ChangeNotifier {
   void toggleLoopMode() => queueProvider.toggleLoopMode();
   void toggleShuffle() => queueProvider.toggleShuffle();
 
-  void setVolume(double v) => audioPlayer.setVolume(v);
+  void setVolume(double v) {
+    audioPlayer.setVolume(v);
+    // 持久化夹紧后的音量（之前只设内存值，重启后丢失；其它设置均有持久化）
+    _prefsRepo.setVolume(audioPlayer.volume);
+  }
 
   void playSong(Song song) {
     queueProvider.playSongById(song);
