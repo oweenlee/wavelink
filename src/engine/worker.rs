@@ -108,6 +108,18 @@ pub(crate) fn run_engine(
                             }
                             state.config.buffer_ms = ms;
                         },
+                        Ok(EngineCommand::SetOutputSampleRate(rate)) => {
+                            state.config.sample_rate = rate;
+                            if let Some(ref mut output) = state.output {
+                                let _ = output.set_sample_rate(rate);
+                            }
+                            state.output_sample_rate = rate;
+                            state.sync_output_sample_rate();
+                            if let Ok(mut shared) = config_shared.write() {
+                                shared.sample_rate = rate;
+                            }
+                            info!("输出采样率设置: {rate}Hz（下次播放生效）");
+                        },
                         Ok(EngineCommand::SetSpeed(speed)) => state.set_speed(speed),
                         Ok(EngineCommand::SetNoiseShaping(enabled)) => state.set_noise_shaping(enabled),
                         Ok(EngineCommand::SetPlayMode(mode)) => state.set_play_mode(mode),

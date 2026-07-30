@@ -95,6 +95,10 @@ pub enum EngineCommand {
     SetNoiseShaping(bool),
     /// 动态调整输出缓冲时长（毫秒），实时生效
     SetBufferMs(u32),
+    /// 设置输出采样率（下次播放生效）。
+    /// 移动端 bit-perfect 协调：平台层先把设备设到目标速率（iOS AVAudioSession）并读回实际速率，
+    /// 再发本命令使引擎输出速率与设备一致；若等于源文件速率则解码器不重采样（bit-perfect）。
+    SetOutputSampleRate(u32),
     /// 查询 underrun 计数（通过 oneshot channel 返回）
     QueryUnderrunCount(Sender<u64>),
     /// 开始音频输入捕获

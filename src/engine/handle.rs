@@ -170,6 +170,14 @@ impl EngineHandle {
         ack_rx.recv_timeout(Duration::from_secs(5))
             .unwrap_or(Err(EngineError::InvalidState("应答超时".into())))
     }
+    /// 设置输出采样率（下次播放生效）。
+    ///
+    /// 移动端 bit-perfect 协调：平台层先把设备设到目标速率（iOS `AVAudioSession.setPreferredSampleRate`）
+    /// 并读回实际速率，再调用本方法使引擎输出速率与设备一致。命令走 FIFO 通道，
+    /// 只要在同一播放之前发送，必在 play 之前生效。
+    pub fn set_output_sample_rate(&self, rate: u32) {
+        let _ = self.tx.send(EngineCommand::SetOutputSampleRate(rate));
+    }
     /// 获取当前播放位置（秒）
     pub fn position_secs(&self) -> f64 {
         let samples = self.position.load(Ordering::Acquire);
