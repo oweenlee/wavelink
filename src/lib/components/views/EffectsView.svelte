@@ -13,6 +13,8 @@
 	let irLoaded = $state(false);
 	let stereoWidener = $state(false);
 	let stereoWidth = $state(0.5);
+	let crossfeedEnabled = $state(false);
+	let noiseShapingEnabled = $state(false);
 	let _invoke: ((cmd: string, args?: any) => Promise<any>) | null = null;
 
 	// ── Load settings ──
@@ -35,6 +37,8 @@
 				if (typeof saved.irLoaded === 'boolean') irLoaded = saved.irLoaded;
 				if (typeof saved.stereoWidener === 'boolean') stereoWidener = saved.stereoWidener;
 				if (typeof saved.stereoWidth === 'number') stereoWidth = saved.stereoWidth;
+				if (typeof saved.crossfeedEnabled === 'boolean') crossfeedEnabled = saved.crossfeedEnabled;
+				if (typeof saved.noiseShapingEnabled === 'boolean') noiseShapingEnabled = saved.noiseShapingEnabled;
 				if (Array.isArray(saved.eqBands) && (saved.eqBands.length === 31 || saved.eqBands.length === 10)) {
 					eqBands = saved.eqBands;
 					for (let i = 0; i < saved.eqBands.length; i++) {
@@ -50,6 +54,16 @@
 		});
 	});
 
+	async function toggleCrossfeed() {
+		crossfeedEnabled = !crossfeedEnabled;
+		if (_invoke) { await _invoke('set_crossfeed', { enabled: crossfeedEnabled }); saveAll(); }
+	}
+
+	async function toggleNoiseShaping() {
+		noiseShapingEnabled = !noiseShapingEnabled;
+		if (_invoke) { await _invoke('set_noise_shaping', { enabled: noiseShapingEnabled }); saveAll(); }
+	}
+
 	async function saveAll() {
 		if (!_invoke) return;
 		try {
@@ -59,6 +73,7 @@
 					volume: playback.volume,
 					eqBands: eqBands.map(b => ({ freq: b.freq, gain_db: b.gain_db, q: b.q })),
 					irLoaded, stereoWidener, stereoWidth,
+					crossfeedEnabled, noiseShapingEnabled,
 					replaygainEnabled: settings.replaygainEnabled,
 					eqPreset: _activePreset,
 				},
@@ -81,14 +96,16 @@
 
 	function getEq10(): number[] {
 		if (eqBands.length === 31) {
-			// 31 段模式（引擎默认）：提取 10 个可见节点的值
 			return EQ_BAND_INDICES.map(i => eqBands[i]?.gain_db ?? 0);
 		}
-		// 10 段模式（预设后）：直接对应
 		return eqBands.map(b => b.gain_db);
 	}
 
-	let eq10 = $derived(getEq10());
+	let eq10 = $state<number[]>([]);
+
+	$effect(() => {
+		eq10 = getEq10();
+	});
 
 	// ── IR ──
 	async function handleLoadIr() {
@@ -463,8 +480,8 @@
 			grad.addColorStop(0.5, `rgba(${accentRgba.r},${accentRgba.g},${accentRgba.b},0.07)`);
 			grad.addColorStop(1, `rgba(${accentRgba.r},${accentRgba.g},${accentRgba.b},0.02)`);
 		} else {
-			grad.addColorStop(0, 'rgba(136,136,204,0.20)');
-			grad.addColorStop(1, 'rgba(136,136,204,0.02)');
+			grad.addColorStop(0, 'rgba(226,166,61,0.20)');
+			grad.addColorStop(1, 'rgba(226,166,61,0.02)');
 		}
 		ctx.fillStyle = grad;
 		ctx.fill();
@@ -593,6 +610,28 @@
 				<button class="toggle" class:active={settings.replaygainEnabled} onclick={() => settings.setReplaygain(!settings.replaygainEnabled)}>
 					<span class="toggle-knob"></span>
 					<span class="toggle-label">{settings.replaygainEnabled ? t('effects.on') : t('effects.off')}</span>
+				</button>
+			</div>
+		</div>
+
+		<div class="effect-card small">
+			<h3 class="card-title">{t('effects.crossfeed')}</h3>
+			<p class="card-desc">{t('effects.crossfeed_desc')}</p>
+			<div class="card-body">
+				<button class="toggle" class:active={crossfeedEnabled} onclick={toggleCrossfeed}>
+					<span class="toggle-knob"></span>
+					<span class="toggle-label">{crossfeedEnabled ? t('effects.on') : t('effects.off')}</span>
+				</button>
+			</div>
+		</div>
+
+		<div class="effect-card small">
+			<h3 class="card-title">{t('effects.noise_shaping')}</h3>
+			<p class="card-desc">{t('effects.noise_shaping_desc')}</p>
+			<div class="card-body">
+				<button class="toggle" class:active={noiseShapingEnabled} onclick={toggleNoiseShaping}>
+					<span class="toggle-knob"></span>
+					<span class="toggle-label">{noiseShapingEnabled ? t('effects.on') : t('effects.off')}</span>
 				</button>
 			</div>
 		</div>

@@ -1,18 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render } from '@testing-library/svelte';
 import VolumeSlider from '$lib/components/controls/VolumeSlider.svelte';
 
 describe('VolumeSlider', () => {
-	it('renders with default max and step', () => {
+	it('renders volume slider with default max', () => {
 		const { container } = render(VolumeSlider, {
 			value: 0.5,
 			oninput: vi.fn(),
 		});
-		const input = container.querySelector('input[type="range"]') as HTMLInputElement;
-		expect(input).toBeInTheDocument();
-		expect(input.value).toBe('0.5');
-		expect(parseFloat(input.max)).toBeCloseTo(1.5);
-		expect(parseFloat(input.step)).toBeCloseTo(0.01);
+		const slider = container.querySelector('[role="slider"]');
+		expect(slider).toBeInTheDocument();
+		expect(slider?.getAttribute('aria-valuenow')).toBe('0.5');
+		expect(slider?.getAttribute('aria-valuemax')).toBe('1.5');
 	});
 
 	it('renders with custom max', () => {
@@ -21,18 +20,28 @@ describe('VolumeSlider', () => {
 			max: 2,
 			oninput: vi.fn(),
 		});
-		const input = container.querySelector('input') as HTMLInputElement;
-		expect(parseFloat(input.max)).toBe(2);
+		const slider = container.querySelector('[role="slider"]');
+		expect(slider?.getAttribute('aria-valuemax')).toBe('2');
 	});
 
-	it('fires oninput on change', async () => {
+	it('calls oninput on wheel event', async () => {
 		const oninput = vi.fn();
 		const { container } = render(VolumeSlider, {
 			value: 0.5,
 			oninput,
 		});
-		const input = container.querySelector('input') as HTMLInputElement;
-		await fireEvent.input(input, { target: { value: '0.75' } });
-		expect(oninput).toHaveBeenCalledWith(0.75);
+		const vol = container.querySelector('.vol') as HTMLElement;
+		vol.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true }));
+		expect(oninput).toHaveBeenCalled();
+		const val = oninput.mock.calls[0][0] as number;
+		expect(val).toBeGreaterThan(0.5);
+	});
+
+	it('shows VolumeX icon when value is 0', () => {
+		const { container } = render(VolumeSlider, {
+			value: 0,
+			oninput: vi.fn(),
+		});
+		expect(container.innerHTML).toContain('volume-x');
 	});
 });

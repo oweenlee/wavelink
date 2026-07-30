@@ -150,7 +150,7 @@
 <style>
 	.bar {
 		position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
-		background: rgba(10, 10, 10, 0.92);
+		background: rgba(18, 18, 20, 0.95);
 		backdrop-filter: blur(20px);
 		-webkit-backdrop-filter: blur(20px);
 		border-top: 1px solid rgba(255, 255, 255, 0.06);
@@ -159,12 +159,12 @@
 	.bar-body {
 		display: flex; align-items: center; gap: var(--space-4);
 		padding: var(--space-2) var(--space-6);
-		height: 66px;
+		height: 58px;
 	}
 
 	/* ── Left ── */
 	.bar-left { display: flex; align-items: center; gap: var(--space-3); min-width: 180px; flex: 1; }
-	.bar-cover { width: 44px; height: 44px; border-radius: var(--radius-md); flex-shrink: 0; background-size: cover; background-position: center; position: relative; overflow: hidden; transition: background-image 0.4s var(--ease-spring); box-shadow: 0 2px 12px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; }
+	.bar-cover { width: 40px; height: 40px; border-radius: var(--radius-md); flex-shrink: 0; background-size: cover; background-position: center; position: relative; overflow: hidden; transition: background-image 0.4s var(--ease-spring); box-shadow: 0 2px 12px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; }
 	:global(.disc-icon) { flex-shrink: 0; color: var(--fg-quaternary); }
 	.eq-anim { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); display: flex; gap: 2.5px; height: 14px; align-items: flex-end; }
 	.eq-anim span { width: 2.5px; background: var(--accent); border-radius: 2px 2px 0 0; animation: eq 0.45s ease-in-out infinite alternate; }
@@ -193,7 +193,7 @@
 
 	.ctrl-play {
 		width: 36px; height: 36px; border-radius: 50%; border: none; outline: none;
-		background: linear-gradient(135deg, var(--accent-dim) 0%, rgba(129, 140, 248, 0.18) 100%);
+		background: linear-gradient(135deg, var(--accent-dim) 0%, rgba(226, 166, 61, 0.18) 100%);
 		color: var(--accent);
 		cursor: pointer; display: flex; align-items: center; justify-content: center;
 		transition: all 0.15s var(--ease-spring);

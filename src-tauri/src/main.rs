@@ -11,11 +11,18 @@ mod setup;
 mod state;
 mod tray;
 
+use std::collections::HashSet;
+use std::path::Path;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::Manager;
 
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+
 use sdk::dsp::default_peq_bands;
-use sdk::library::LibraryDb;
+use sdk::library::{LibraryDb, Scanner};
 use sdk::{EngineHandle, PlayMode};
 
 use nas::NasManager;
@@ -33,19 +40,95 @@ fn main() {
             let db_path = data_dir.join("library.db");
             tracing::info!("db path: {}", db_path.display());
 
-            // Background cleanup thread (separate connection)
-            let clean_path = db_path.clone();
+            // 文件夹监控：文件系统事件监听（替代定时轮询）
+            let watch_path = db_path.clone();
             std::thread::spawn(move || {
-                let Ok(db) = LibraryDb::open(&clean_path) else { return };
-                let tracks = db.all_tracks(i64::MAX, 0).unwrap_or_default();
-                let mut removed = 0u32;
-                for t in &tracks {
-                    if !std::path::Path::new(&t.path).exists() && db.remove_track(t.id).is_ok() {
-                        removed += 1;
+                let Ok(db) = LibraryDb::open(&watch_path) else { return };
+                let (tx, rx) = crossbeam_channel::unbounded();
+
+                let mut watcher: RecommendedWatcher = Watcher::new(
+                    move |res: Result<notify::Event, notify::Error>| {
+                        if let Ok(event) = res {
+                            let _ = tx.send(event);
+                        }
+                    },
+                    notify::Config::default(),
+                )
+                .expect("创建文件监听器失败");
+
+                let folders = db.list_folders().unwrap_or_default();
+                for folder in &folders {
+                    if let Err(e) = watcher.watch(Path::new(folder), RecursiveMode::Recursive) {
+                        tracing::warn!("无法监听 [{folder}]: {e}");
                     }
                 }
-                if removed > 0 {
-                    tracing::info!("cleaned {removed} missing file records");
+                tracing::info!("文件监听启动 ({} 个目录)", folders.len());
+
+                let mut pending: HashSet<String> = HashSet::new();
+                let mut last_scan = Instant::now();
+                let mut last_refresh = Instant::now();
+                let mut current_folders = folders;
+
+                loop {
+                    // 每 60s 检查扫描目录列表是否有增减
+                    if last_refresh.elapsed() >= Duration::from_secs(60) {
+                        if let Ok(updated) = db.list_folders() {
+                            for f in &current_folders {
+                                if !updated.contains(f) {
+                                    let _ = watcher.unwatch(Path::new(f));
+                                }
+                            }
+                            for f in &updated {
+                                if !current_folders.contains(f) {
+                                    if let Err(e) = watcher.watch(Path::new(f), RecursiveMode::Recursive) {
+                                        tracing::warn!("无法监听 [{f}]: {e}");
+                                    }
+                                }
+                            }
+                            current_folders = updated;
+                        }
+                        last_refresh = Instant::now();
+                    }
+
+                    // 收集文件系统事件
+                    while let Ok(event) = rx.try_recv() {
+                        if matches!(event.kind,
+                            EventKind::Create(_) | EventKind::Modify(_)
+                            | EventKind::Remove(_) | EventKind::Any
+                        ) {
+                            if let Some(path) = event.paths.first() {
+                                for folder in &current_folders {
+                                    if path.starts_with(folder) {
+                                        pending.insert(folder.clone());
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 防抖 2 秒后扫描有变更的目录
+                    if !pending.is_empty() && last_scan.elapsed() >= Duration::from_secs(2) {
+                        let to_scan: Vec<_> = pending.drain().collect();
+                        for folder in &to_scan {
+                            let path = Path::new(folder);
+                            if !path.is_dir() {
+                                continue;
+                            }
+                            match Scanner::scan_directory(&db, path) {
+                                Ok(r) => {
+                                    if r.scanned > 0 || r.removed > 0 {
+                                        tracing::info!("自动扫描 [{folder}]: +{} -{} e{}",
+                                            r.scanned, r.removed, r.errors);
+                                    }
+                                }
+                                Err(e) => tracing::warn!("自动扫描 [{folder}] 失败: {e}"),
+                            }
+                        }
+                        last_scan = Instant::now();
+                    }
+
+                    std::thread::sleep(Duration::from_millis(200));
                 }
             });
 
@@ -69,6 +152,9 @@ fn main() {
                 current_track: Mutex::new(None),
                 media_bridge,
                 nas_manager,
+                device_monitor: Mutex::new(None),
+                device_monitor_stop: Arc::new(AtomicBool::new(false)),
+                stream_handle: Mutex::new(None),
             });
 
             if let Some(window) = app.get_webview_window("main") {
@@ -121,9 +207,29 @@ fn main() {
             commands::playback::set_engine_config,
             commands::playback::set_speed,
             commands::playback::get_levels,
+            commands::playback::session_interruption_began,
+            commands::playback::session_interruption_ended,
             commands::playback::start_capture,
             commands::playback::stop_capture,
             commands::playback::is_capturing,
+            commands::playback::set_crossfeed,
+            commands::playback::set_noise_shaping,
+            commands::playback::set_buffer_ms,
+            commands::playback::set_replaygain_peak,
+            commands::playback::read_audio_samples,
+            commands::playback::enumerate_audio_devices,
+            commands::playback::start_device_monitor,
+            commands::playback::stop_device_monitor,
+            commands::playback::set_audio_device_sync,
+            commands::cue::parse_cue_file,
+            commands::cue::parse_cue_text,
+            commands::playlist_cmds::parse_playlist_file,
+            commands::playlist_cmds::export_playlist_m3u,
+            commands::playlist_cmds::export_playlist_pls,
+            commands::playlist_cmds::export_playlist_auto,
+            commands::stream_cmds::play_stream,
+            commands::stream_cmds::stream_write,
+            commands::stream_cmds::stream_eof,
             commands::library::scan_dir,
             commands::library::get_scan_folders,
             commands::library::remove_scan_folder,
@@ -137,6 +243,7 @@ fn main() {
             commands::library::get_track_count,
             commands::library::get_cover,
             commands::library::get_file_cover_cmd,
+            commands::library::import_playlist,
             commands::editor::edit_tags,
             commands::editor::delete_track,
             commands::editor::batch_edit_tags,
@@ -149,6 +256,10 @@ fn main() {
             commands::analysis::analyze_track,
             commands::analysis::get_track_analyses,
             commands::analysis::analyze_all_tracks,
+            commands::probe::probe_sample_rate_cmd,
+            commands::probe::probe_bit_depth_cmd,
+            commands::probe::read_replaygain_tags,
+            commands::probe::decide_output_cmd,
             commands::utils::read_text_file,
             commands::utils::save_text_file,
             commands::nas_cmds::nas_list,

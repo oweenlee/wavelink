@@ -99,60 +99,61 @@ unsafe fn mac_now_playing_center() -> *mut objc2::runtime::AnyObject {
 
 #[cfg(target_os = "macos")]
 unsafe fn mac_set_now_playing(title: &str, artist: &str, album: &str, duration_secs: f64) {
-    let center = mac_now_playing_center();
-    if center.is_null() { return; }
+    objc2::rc::autoreleasepool(|_| {
+        let center = mac_now_playing_center();
+        if center.is_null() { return; }
 
-    // Build key-value array for nowPlayingInfo
-    let keys: [*mut objc2::runtime::AnyObject; 6] = [
-        mac_ns_string("MPMediaItemPropertyTitle"),
-        mac_ns_string("MPMediaItemPropertyArtist"),
-        mac_ns_string("MPMediaItemPropertyAlbumTitle"),
-        mac_ns_string("MPMediaItemPropertyPlaybackDuration"),
-        mac_ns_string("MPNowPlayingInfoPropertyPlaybackRate"),
-        mac_ns_string("MPNowPlayingInfoPropertyElapsedPlaybackTime"),
-    ];
-    let vals: [*mut objc2::runtime::AnyObject; 6] = [
-        mac_ns_string(title),
-        mac_ns_string(artist),
-        mac_ns_string(album),
-        mac_ns_number_f64(duration_secs),
-        mac_ns_number_f64(1.0),
-        mac_ns_number_f64(0.0),
-    ];
+        let keys: [*mut objc2::runtime::AnyObject; 6] = [
+            mac_ns_string("MPMediaItemPropertyTitle"),
+            mac_ns_string("MPMediaItemPropertyArtist"),
+            mac_ns_string("MPMediaItemPropertyAlbumTitle"),
+            mac_ns_string("MPMediaItemPropertyPlaybackDuration"),
+            mac_ns_string("MPNowPlayingInfoPropertyPlaybackRate"),
+            mac_ns_string("MPNowPlayingInfoPropertyElapsedPlaybackTime"),
+        ];
+        let vals: [*mut objc2::runtime::AnyObject; 6] = [
+            mac_ns_string(title),
+            mac_ns_string(artist),
+            mac_ns_string(album),
+            mac_ns_number_f64(duration_secs),
+            mac_ns_number_f64(1.0),
+            mac_ns_number_f64(0.0),
+        ];
 
-    // NSArray *keysArr = [NSArray arrayWithObjects:keys count:6];
-    let cls_arr = objc2::class!(NSArray);
-    let keys_arr: *mut objc2::runtime::AnyObject = objc2::msg_send![
-        cls_arr, arrayWithObjects: keys.as_ptr(), count: keys.len()
-    ];
-    let vals_arr: *mut objc2::runtime::AnyObject = objc2::msg_send![
-        cls_arr, arrayWithObjects: vals.as_ptr(), count: vals.len()
-    ];
+        let cls_arr = objc2::class!(NSArray);
+        let keys_arr: *mut objc2::runtime::AnyObject = objc2::msg_send![
+            cls_arr, arrayWithObjects: keys.as_ptr(), count: keys.len()
+        ];
+        let vals_arr: *mut objc2::runtime::AnyObject = objc2::msg_send![
+            cls_arr, arrayWithObjects: vals.as_ptr(), count: vals.len()
+        ];
 
-    // NSDictionary *info = [NSDictionary dictionaryWithObjects:valsArr forKeys:keysArr];
-    let cls_dict = objc2::class!(NSDictionary);
-    let info: *mut objc2::runtime::AnyObject = objc2::msg_send![
-        cls_dict, dictionaryWithObjects: vals_arr, forKeys: keys_arr
-    ];
+        let cls_dict = objc2::class!(NSDictionary);
+        let info: *mut objc2::runtime::AnyObject = objc2::msg_send![
+            cls_dict, dictionaryWithObjects: vals_arr, forKeys: keys_arr
+        ];
 
-    // [center setNowPlayingInfo:info];
-    let _: () = objc2::msg_send![center, setNowPlayingInfo: info];
+        let _: () = objc2::msg_send![center, setNowPlayingInfo: info];
+    });
 }
 
 #[cfg(target_os = "macos")]
 unsafe fn mac_set_playback_state(is_playing: bool) {
-    let center = mac_now_playing_center();
-    if center.is_null() { return; }
-    // 1=playing, 2=paused, 3=stopped
-    let state: i64 = if is_playing { 1 } else { 2 };
-    let _: () = objc2::msg_send![center, setPlaybackState: state];
+    objc2::rc::autoreleasepool(|_| {
+        let center = mac_now_playing_center();
+        if center.is_null() { return; }
+        let state: i64 = if is_playing { 1 } else { 2 };
+        let _: () = objc2::msg_send![center, setPlaybackState: state];
+    });
 }
 
 #[cfg(target_os = "macos")]
 unsafe fn mac_clear_now_playing() {
-    let center = mac_now_playing_center();
-    if center.is_null() { return; }
-    let null_ptr: *mut objc2::runtime::AnyObject = std::ptr::null_mut();
-    let _: () = objc2::msg_send![center, setNowPlayingInfo: null_ptr];
-    let _: () = objc2::msg_send![center, setPlaybackState: 3i64]; // stopped
+    objc2::rc::autoreleasepool(|_| {
+        let center = mac_now_playing_center();
+        if center.is_null() { return; }
+        let null_ptr: *mut objc2::runtime::AnyObject = std::ptr::null_mut();
+        let _: () = objc2::msg_send![center, setNowPlayingInfo: null_ptr];
+        let _: () = objc2::msg_send![center, setPlaybackState: 3i64]; // stopped
+    });
 }

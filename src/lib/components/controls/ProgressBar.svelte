@@ -18,6 +18,13 @@
 		if (isDragging) ondrag(ratio);
 	}
 
+	function updateHover(clientX: number) {
+		if (!trackEl || isDragging) return;
+		const r = trackEl.getBoundingClientRect();
+		hoverRatio = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+		showTooltip = true;
+	}
+
 	function onDown(e: MouseEvent) { isDragging = true; updatePosition(e.clientX); window.addEventListener('mousemove', onMouseMove); window.addEventListener('mouseup', onUp); }
 	function onMouseMove(e: MouseEvent) { updatePosition(e.clientX); }
 	function onUp() { isDragging = false; showTooltip = false; window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onUp); }
@@ -30,7 +37,7 @@
 </script>
 
 <div class="progress">
-	<div class="track" bind:this={trackEl} onmousedown={onDown} onmouseenter={() => { if (!isDragging) showTooltip = true; }} onmouseleave={() => { if (!isDragging) showTooltip = false; }} onmousemove={onMouseMove} ontouchstart={onTouchDown} ontouchmove={onTouchMove} ontouchend={onTouchUp} role="slider" tabindex="0" aria-valuemin={0} aria-valuemax={max} aria-valuenow={currentTime}>
+	<div class="track" bind:this={trackEl} onmousedown={onDown} onmouseenter={() => { if (!isDragging) showTooltip = true; }} onmouseleave={() => { if (!isDragging) showTooltip = false; }} onmousemove={(e) => updateHover(e.clientX)} ontouchstart={onTouchDown} ontouchmove={onTouchMove} ontouchend={onTouchUp} role="slider" tabindex="0" aria-valuemin={0} aria-valuemax={max} aria-valuenow={currentTime}>
 		<div class="track-bg" class:dragging={isDragging}>
 			<div class="track-fill" style="width: {fillPct}%; background: {color};"></div>
 			<div class="track-knob" style="left: {fillPct}%; background: {color}; box-shadow: 0 0 8px {color}80;"></div>

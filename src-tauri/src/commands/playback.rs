@@ -1,5 +1,6 @@
-use tauri::State;
+use tauri::{Emitter, State};
 use sdk::{Levels, PlayMode};
+use sdk::output::{DeviceEvent, OutputDeviceInfo};
 use crate::state::AppState;
 use super::{apply_track_settings, lock_or_die};
 
@@ -99,9 +100,62 @@ pub fn list_audio_devices() -> Vec<String> {
     sdk::output::list_device_names()
 }
 
+/// 枚举所有音频输出设备（含详细配置信息）
+#[tauri::command]
+pub fn enumerate_audio_devices() -> Vec<OutputDeviceInfo> {
+    sdk::output::enumerate_devices()
+}
+
+/// 启动设备热插拔监视器
+#[tauri::command]
+pub fn start_device_monitor(app: tauri::AppHandle, state: State<AppState>) {
+    let monitor = sdk::output::start_device_monitor();
+    let rx = monitor.receiver().clone();
+    *lock_or_die(&state.device_monitor) = Some(monitor);
+    let stop = state.device_monitor_stop.clone();
+    stop.store(false, std::sync::atomic::Ordering::Relaxed);
+    // 转发事件到前端
+    std::thread::spawn(move || {
+        loop {
+            if stop.load(std::sync::atomic::Ordering::Relaxed) { break; }
+            match rx.recv_timeout(std::time::Duration::from_millis(500)) {
+                Ok(event) => {
+                    let _ = app.emit(
+                        "device:event",
+                        serde_json::json!({
+                            "type": match &event {
+                                DeviceEvent::DeviceAdded(_) => "added",
+                                DeviceEvent::DeviceRemoved(_) => "removed",
+                                DeviceEvent::DefaultDeviceChanged => "default_changed",
+                            },
+                            "name": match &event {
+                                DeviceEvent::DeviceAdded(n) | DeviceEvent::DeviceRemoved(n) => n.clone(),
+                                DeviceEvent::DefaultDeviceChanged => String::new(),
+                            },
+                        }),
+                    );
+                }
+                Err(_) => continue,
+            }
+        }
+    });
+}
+
+/// 停止设备热插拔监视器
+#[tauri::command]
+pub fn stop_device_monitor(state: State<AppState>) {
+    state.device_monitor_stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    *lock_or_die(&state.device_monitor) = None;
+}
+
 #[tauri::command]
 pub fn set_audio_device(name: String, state: State<AppState>) {
     state.engine.set_output_device(name);
+}
+
+#[tauri::command]
+pub fn set_audio_device_sync(name: String, state: State<AppState>) -> Result<(), String> {
+    state.engine.set_output_device_sync(name).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -122,6 +176,7 @@ pub fn set_engine_config(
     crossfade_ms: u32,
     auto_sample_rate: Option<bool>,
     exclusive_mode: Option<bool>,
+    bit_perfect: Option<bool>,
     state: State<AppState>,
 ) {
     let cfg = sdk::EngineConfig {
@@ -132,6 +187,7 @@ pub fn set_engine_config(
         output_device: None,
         auto_sample_rate: auto_sample_rate.unwrap_or(false),
         exclusive_mode: exclusive_mode.unwrap_or(false),
+        bit_perfect: bit_perfect.unwrap_or(false),
     };
     state.engine.set_config(cfg);
 }
@@ -144,6 +200,50 @@ pub fn set_speed(speed: f32, state: State<AppState>) {
 #[tauri::command]
 pub fn get_levels(state: State<AppState>) -> Levels {
     state.engine.levels()
+}
+
+/// 启用/禁用 Crossfeed（串音补偿）
+#[tauri::command]
+pub fn set_crossfeed(enabled: bool, state: State<AppState>) {
+    state.engine.set_crossfeed(enabled);
+}
+
+/// 启用/禁用 ATH 噪声整形
+#[tauri::command]
+pub fn set_noise_shaping(enabled: bool, state: State<AppState>) {
+    state.engine.set_noise_shaping(enabled);
+}
+
+/// 动态调整输出缓冲时长（毫秒），实时生效（仅 Oboe 后端支持）
+#[tauri::command]
+pub fn set_buffer_ms(ms: u32, state: State<AppState>) {
+    state.engine.set_buffer_ms(ms);
+}
+
+/// 设置 ReplayGain 真峰值限制，None = 不限制
+#[tauri::command]
+pub fn set_replaygain_peak(peak: Option<f32>, state: State<AppState>) {
+    state.engine.set_replaygain_peak(peak);
+}
+
+/// 从引擎 ringbuf 读取 PCM 样本（用于可视化）
+#[tauri::command]
+pub fn read_audio_samples(max_samples: u32, state: State<AppState>) -> Vec<f32> {
+    let cap = max_samples.min(8192) as usize;
+    let mut buf = vec![0.0f32; cap];
+    let n = state.engine.read_samples(&mut buf);
+    buf.truncate(n);
+    buf
+}
+
+#[tauri::command]
+pub fn session_interruption_began(state: State<AppState>) {
+    state.engine.session_interruption_began();
+}
+
+#[tauri::command]
+pub fn session_interruption_ended(state: State<AppState>) {
+    state.engine.session_interruption_ended();
 }
 
 #[tauri::command]

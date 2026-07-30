@@ -1,11 +1,15 @@
 //! Tauri command 分发。按领域拆分子模块。
 
 pub mod analysis;
+pub mod cue;
 pub mod dsp;
 pub mod editor;
 pub mod library;
 pub mod nas_cmds;
 pub mod playback;
+pub mod playlist_cmds;
+pub mod probe;
+pub mod stream_cmds;
 pub mod utils;
 
 // 不 re-export，main.rs 通过 commands::playback::play 等路径引用

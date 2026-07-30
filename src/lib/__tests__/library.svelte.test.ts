@@ -27,9 +27,13 @@ const mockInvoke = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mockInvoke }));
 
 // mock $lib/audio/loader — scanDirectory imports it dynamically
-vi.mock('$lib/audio/loader', () => ({
+const mockLoader = vi.hoisted(() => ({
 	scanDirectory: vi.fn(),
+	importPlaylist: vi.fn(),
+	getScanFolders: vi.fn(),
+	removeScanFolder: vi.fn(),
 }));
+vi.mock('$lib/audio/loader', () => mockLoader);
 
 // ---- tests ----
 describe('getLibraryState', () => {
@@ -171,5 +175,34 @@ describe('getLibraryState', () => {
 		await state.loadTracks();
 		state.clearTracks();
 		expect(state.trackCount).toBe(0);
+	});
+
+	it('scanDirectory delegates to loader and reloads tracks', async () => {
+		mockInvoke.mockResolvedValueOnce([mockTrack]);
+		mockLoader.scanDirectory.mockResolvedValueOnce(undefined);
+		await state.scanDirectory();
+		expect(mockLoader.scanDirectory).toHaveBeenCalledOnce();
+		expect(mockInvoke).toHaveBeenCalledWith('get_tracks', { limit: 50000, offset: 0 });
+	});
+
+	it('importPlaylist delegates to loader', async () => {
+		mockLoader.importPlaylist.mockResolvedValueOnce(['/music/playlist.m3u']);
+		const result = await state.importPlaylist();
+		expect(mockLoader.importPlaylist).toHaveBeenCalledOnce();
+		expect(result).toEqual(['/music/playlist.m3u']);
+	});
+
+	it('getScanFolders delegates to loader', async () => {
+		mockLoader.getScanFolders.mockResolvedValueOnce(['/music', '/audio']);
+		const result = await state.getScanFolders();
+		expect(mockLoader.getScanFolders).toHaveBeenCalledOnce();
+		expect(result).toEqual(['/music', '/audio']);
+	});
+
+	it('removeScanFolder delegates to loader', async () => {
+		mockLoader.removeScanFolder.mockResolvedValueOnce(1);
+		const result = await state.removeScanFolder('/music');
+		expect(mockLoader.removeScanFolder).toHaveBeenCalledWith('/music');
+		expect(result).toBe(1);
 	});
 });

@@ -9,9 +9,10 @@
 	import VolumeSlider from '$lib/components/controls/VolumeSlider.svelte';
 	import ProgressBar from '$lib/components/controls/ProgressBar.svelte';
 	import SpectrumAnalyzer from '$lib/components/controls/SpectrumAnalyzer.svelte';
+	import WaveformVisualizer from '$lib/components/controls/WaveformVisualizer.svelte';
 
 	import { t } from '$lib/i18n/i18n.svelte';
-	import { X, Disc3, Shuffle, Repeat1, Repeat, List, SkipBack, SkipForward, Play, Pause, ChevronDown } from 'lucide-svelte';
+	import { X, Disc3, Shuffle, Repeat1, Repeat, List, SkipBack, SkipForward, Play, Pause, ChevronDown, Waves } from 'lucide-svelte';
 	const playback = getPlaybackState();
 	const ui = getUiState();
 	const playlist = getPlaylistState();
@@ -21,6 +22,7 @@
 	let coverCancelled = $state(false);
 	let showInfo = $state(false);
 	let showQueue = $state(false);
+	let showWaveform = $state(false);
 	let lyricsScrollEl: HTMLDivElement | undefined = $state();
 
 	// ── Derived ──
@@ -129,7 +131,14 @@
 				</div>
 			</div>
 			<div class="np-spectrum-wrap">
-				<SpectrumAnalyzer width={320} height={56} />
+				{#if showWaveform}
+					<WaveformVisualizer width={320} height={56} />
+				{:else}
+					<SpectrumAnalyzer width={320} height={56} />
+				{/if}
+				<button class="np-viz-toggle" onclick={() => showWaveform = !showWaveform} aria-label="Toggle visualization">
+					<Waves size={12} />
+				</button>
 			</div>
 		</div>
 
@@ -181,7 +190,7 @@
 					<List size={18} />
 				{/if}
 			</button>
-				<button class="np-btn" onclick={() => playback.previous()} aria-label={t('nowplaying.prev')}>
+				<button class="np-btn" onclick={() => playback.prev()} aria-label={t('nowplaying.prev')}>
 					<SkipBack size={22} fill="currentColor" />
 				</button>
 				<button class="np-btn np-btn-play" onclick={() => playback.togglePlay()} aria-label={playback.isPlaying ? t('nowplaying.pause') : t('nowplaying.play')}>
@@ -367,7 +376,16 @@
 
 	/* ── Main content ── */
 	.np-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; max-height: 80vh; }
-	.np-spectrum-wrap { width: 100%; opacity: 0.85; }
+	.np-spectrum-wrap { width: 100%; opacity: 0.85; position: relative; }
+	.np-viz-toggle {
+		position: absolute; top: 4px; right: 4px;
+		width: 24px; height: 24px; border-radius: 50%;
+		border: 1px solid rgba(255,255,255,0.08);
+		background: rgba(0,0,0,0.3); color: var(--fg-tertiary);
+		cursor: pointer; display: flex; align-items: center; justify-content: center;
+		transition: all 0.15s; z-index: 2;
+	}
+	.np-viz-toggle:hover { background: rgba(255,255,255,0.1); color: var(--fg-primary); }
 
 	/* ── Track meta ── */
 	.np-meta { animation: npMetaIn 0.3s ease-out; }
@@ -478,7 +496,7 @@
 	.np-btn-play {
 		width: 52px; height: 52px;
 		background: var(--accent); color: #fff; border-radius: 50%;
-		box-shadow: 0 4px 20px rgba(var(--accent-rgb, 99, 102, 241), 0.3);
+		box-shadow: 0 4px 20px rgba(var(--accent-rgb, 226, 166, 61), 0.3);
 	}
 	.np-btn-play:hover { transform: scale(1.06); color: #fff; }
 	.np-btn-play:active { transform: scale(0.95); }

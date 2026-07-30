@@ -9,6 +9,7 @@ let _replaygainEnabled = $state(false);
 let _audioDevice = $state('');
 let _autoSampleRate = $state(false);
 let _exclusiveMode = $state(false);
+let _bitPerfect = $state(false);
 let _loaded = $state(false);
 
 export function getSettingsState() {
@@ -41,6 +42,9 @@ export function getSettingsState() {
 		get exclusiveMode() { return _exclusiveMode; },
 		set exclusiveMode(v: boolean) { _exclusiveMode = v; },
 
+		get bitPerfect() { return _bitPerfect; },
+		set bitPerfect(v: boolean) { _bitPerfect = v; },
+
 		get loaded() { return _loaded; },
 
 		// ── Persistence ──
@@ -58,6 +62,7 @@ export function getSettingsState() {
 				if (typeof saved.audioDevice === 'string') _audioDevice = saved.audioDevice;
 				if (typeof saved.autoSampleRate === 'boolean') _autoSampleRate = saved.autoSampleRate;
 				if (typeof saved.exclusiveMode === 'boolean') _exclusiveMode = saved.exclusiveMode;
+				if (typeof saved.bitPerfect === 'boolean') _bitPerfect = saved.bitPerfect;
 				_loaded = true;
 				return saved;
 			} catch (err) {
@@ -82,6 +87,7 @@ export function getSettingsState() {
 						audioDevice: _audioDevice,
 						autoSampleRate: _autoSampleRate,
 						exclusiveMode: _exclusiveMode,
+						bitPerfect: _bitPerfect,
 						...extra,
 					},
 				});
@@ -101,6 +107,7 @@ export function getSettingsState() {
 					crossfadeMs: _crossfadeMs,
 					autoSampleRate: _autoSampleRate,
 					exclusiveMode: _exclusiveMode,
+					bitPerfect: _bitPerfect,
 				});
 				await this.save();
 			} catch (err) {

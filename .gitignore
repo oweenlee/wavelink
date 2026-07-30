@@ -36,3 +36,10 @@ Thumbs.db
 
 # 类型
 *.tsbuildinfo
+
+# Agent / 工具本地目录
+.pi/
+.opencode/
+.claude/
+.workbuddy/
+.agents/

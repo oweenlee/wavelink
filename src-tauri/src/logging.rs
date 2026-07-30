@@ -11,7 +11,7 @@ use tracing_subscriber::EnvFilter;
 /// 初始化 tracing：控制台 + 文件
 pub fn init() {
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,wavelink=debug"));
+        .unwrap_or_else(|_| EnvFilter::new("info,wavelink=debug,lofty=error"));
 
     let file = open_log_file();
 

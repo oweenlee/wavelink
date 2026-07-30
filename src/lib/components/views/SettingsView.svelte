@@ -2,17 +2,25 @@
 	import { browser } from '$app/environment';
 	import { getSettingsState } from '$lib/stores/settings.svelte';
 	import { getPlaybackState, type PlayMode } from '$lib/stores/playback.svelte';
-	import { Trash2 } from 'lucide-svelte';
-	import { open } from '@tauri-apps/plugin-dialog';
+	import { getPlaylistState } from '$lib/stores/playlist.svelte';
+	import { Trash2, Activity, Monitor, ListMusic, Radio } from 'lucide-svelte';
+	import { open, save } from '@tauri-apps/plugin-dialog';
 	import { t } from '$lib/i18n/i18n.svelte';
 
 	const settings = getSettingsState();
 	const playback = getPlaybackState();
+	const playlist = getPlaylistState();
 
 	let _invoke: ((cmd: string, args?: any) => Promise<any>) | null = null;
 	let folders = $state<string[]>([]);
 	let devices = $state<string[]>([]);
 	let showAdvanced = $state(false);
+
+	// 设备热插拔
+	let monitorActive = $state(false);
+	let deviceEvents = $state<{ type: string; name: string; time: number }[]>([]);
+	let underrunCount = $state(0);
+	let _underrunTimer: ReturnType<typeof setInterval> | undefined;
 
 	$effect(() => {
 		if (!browser) return;
@@ -68,6 +76,60 @@
 			folders = folders.filter(f => f !== path);
 			console.log(`已删除 ${count} 首曲目`);
 		} catch (e) { console.error('删除失败:', e); }
+	}
+
+	// ── 设备热插拔 ──
+	let _unsubDeviceEvent: (() => void) | null = null;
+
+	$effect(() => {
+		return () => {
+			if (_unsubDeviceEvent) _unsubDeviceEvent();
+			if (_underrunTimer) clearInterval(_underrunTimer);
+		};
+	});
+
+	async function toggleMonitor() {
+		if (!_invoke) return;
+		if (monitorActive) {
+			await _invoke('stop_device_monitor');
+			monitorActive = false;
+			if (_unsubDeviceEvent) { _unsubDeviceEvent(); _unsubDeviceEvent = null; }
+			if (_underrunTimer) { clearInterval(_underrunTimer); _underrunTimer = undefined; }
+		} else {
+			await _invoke('start_device_monitor');
+			monitorActive = true;
+			const { listen } = await import('@tauri-apps/api/event');
+			_unsubDeviceEvent = await listen<{ type: string; name: string }>('device:event', (event) => {
+				deviceEvents = [{ type: event.payload.type, name: event.payload.name, time: Date.now() }, ...deviceEvents].slice(0, 20);
+			});
+			_underrunTimer = setInterval(async () => {
+				try { underrunCount = await _invoke!('get_underrun_count'); } catch {}
+			}, 2000);
+		}
+	}
+
+	// ── 导出播放列表 ──
+	async function exportPlaylist(format: 'm3u' | 'pls' | 'auto') {
+		if (!_invoke || playlist.queue.length === 0) return;
+		const ext = format === 'm3u' ? 'm3u' : format === 'pls' ? 'pls' : 'm3u';
+		const path = await save({
+			filters: [{ name: 'Playlist', extensions: [ext] }],
+			defaultPath: `playlist.${ext}`,
+			title: t('settings.export_playlist'),
+		});
+		if (!path) return;
+		const entries = playlist.queue.map((t, i) => ({
+			path: t.path,
+			title: t.title || '',
+			artist: t.artist || '',
+			album: t.album || '',
+			duration: t.duration || 0,
+		}));
+		const cmd = format === 'm3u' ? 'export_playlist_m3u' : format === 'pls' ? 'export_playlist_pls' : 'export_playlist_auto';
+		try {
+			await _invoke(cmd, { path, entries });
+			console.log(`Playlist exported to ${path}`);
+		} catch (e) { console.error('Export failed:', e); }
 	}
 </script>
 
@@ -171,6 +233,63 @@
 		</div>
 	</div>
 
+	<!-- ── 设备监视器 ── -->
+	<div class="card">
+		<div class="card-header">
+			<h3 class="card-title"><Radio size={14} style="margin-right: 6px;" /> {t('settings.device_monitor')}</h3>
+			<button class="btn-add" class:active={monitorActive} onclick={toggleMonitor}>
+				{monitorActive ? t('settings.stop_monitor') : t('settings.start_monitor')}
+			</button>
+		</div>
+		<div class="card-body">
+			<div class="setting-row">
+				<div class="setting-label">
+					<span class="label-text">{t('settings.underrun')}</span>
+					<span class="label-desc">{t('settings.underrun_desc')}</span>
+				</div>
+				<span class="badge" class:badge-warn={underrunCount > 10}>{underrunCount}</span>
+			</div>
+			<div class="setting-label">
+				<span class="label-text">{t('settings.device_events')}</span>
+			</div>
+			<div class="events-list">
+				{#if deviceEvents.length === 0}
+					<p class="empty-hint">{t('settings.no_events')}</p>
+				{:else}
+					{#each deviceEvents as ev (ev.time + ev.name)}
+						<div class="event-row" class:event-added={ev.type === 'added'} class:event-removed={ev.type === 'removed'}>
+							<span class="event-dot" class:dot-added={ev.type === 'added'} class:dot-removed={ev.type === 'removed'}></span>
+							<span class="event-type">{ev.type === 'added' ? '+' : ev.type === 'removed' ? '−' : '⟳'}</span>
+							<span class="event-name">{ev.name || '(default changed)'}</span>
+							<span class="event-time">{new Date(ev.time).toLocaleTimeString()}</span>
+						</div>
+					{/each}
+				{/if}
+			</div>
+		</div>
+	</div>
+
+	<!-- ── 导出播放列表 ── -->
+	<div class="card">
+		<div class="card-header">
+			<h3 class="card-title"><ListMusic size={14} style="margin-right: 6px;" /> {t('settings.export_playlist')}</h3>
+		</div>
+		<div class="card-body">
+			<p class="label-desc" style="margin-bottom: 8px;">{t('settings.export_hint')} ({playlist.queue.length} tracks)</p>
+			<div class="btn-row">
+				<button class="btn" onclick={() => exportPlaylist('m3u')} disabled={playlist.queue.length === 0}>
+					<Activity size={12} /> {t('settings.export_m3u')}
+				</button>
+				<button class="btn" onclick={() => exportPlaylist('pls')} disabled={playlist.queue.length === 0}>
+					<Activity size={12} /> {t('settings.export_pls')}
+				</button>
+				<button class="btn" onclick={() => exportPlaylist('auto')} disabled={playlist.queue.length === 0}>
+					<Activity size={12} /> {t('settings.export_auto')}
+				</button>
+			</div>
+		</div>
+	</div>
+
 	<!-- ── 文件夹管理 ── -->
 	<div class="card">
 		<div class="card-header">
@@ -249,6 +368,24 @@
 	.btn-remove { width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: var(--fg-tertiary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; }
 	.btn-remove:hover { background: rgba(239,68,68,0.15); color: #ef4444; }
 	.empty-hint { font-size: 12px; color: var(--fg-tertiary); text-align: center; padding: 8px 0; }
+
+	.events-list { display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow-y: auto; background: rgba(0,0,0,0.1); border-radius: 8px; padding: 6px 8px; }
+	.event-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 4px; font-size: 11px; }
+	.event-row.event-added { color: #44cc88; }
+	.event-row.event-removed { color: #ef4444; }
+	.event-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+	.dot-added { background: #44cc88; }
+	.dot-removed { background: #ef4444; }
+	.event-type { font-variant-numeric: tabular-nums; min-width: 12px; font-weight: 600; }
+	.event-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.event-time { color: var(--fg-quaternary); flex-shrink: 0; }
+	.badge { padding: 2px 10px; border-radius: 10px; font-size: 12px; font-variant-numeric: tabular-nums; background: rgba(255,255,255,0.06); color: var(--fg-secondary); }
+	.badge.badge-warn { background: rgba(239,68,68,0.15); color: #ef4444; }
+	.btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--separator); background: var(--bg-surface); color: var(--fg-secondary); font-size: 12px; font-family: inherit; cursor: pointer; transition: all 0.15s; }
+	.btn:hover { background: var(--bg-hover); color: var(--fg-primary); }
+	.btn:disabled { opacity: 0.4; cursor: default; }
+	.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+	.btn-add.active { background: rgba(239,68,68,0.15); color: #ef4444; border-color: rgba(239,68,68,0.2); }
 
 	.advanced-toggle {
 		display: flex; align-items: center; gap: 6px; padding: 6px 0; border: none;

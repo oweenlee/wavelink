@@ -42,6 +42,9 @@ const mockEngineFn = vi.hoisted(() => ({
 	togglePlay: vi.fn(() => { mockEngine.isPlaying = !mockEngine.isPlaying; }),
 	seek: vi.fn((t: number) => { mockEngine.currentTime = t; }),
 	setVolume: vi.fn((v: number) => { mockEngine.volume = v; }),
+	setSpeed: vi.fn(),
+	startCapture: vi.fn(),
+	stopCapture: vi.fn(),
 	stop: vi.fn(() => { mockEngine.isPlaying = false; mockEngine.currentTrack = null; }),
 	nextTrack: vi.fn(),
 	prevTrack: vi.fn(),
@@ -59,6 +62,9 @@ vi.mock('$lib/audio/engine.svelte', () => ({
 	togglePlay: mockEngineFn.togglePlay,
 	seek: mockEngineFn.seek,
 	setVolume: mockEngineFn.setVolume,
+	setSpeed: mockEngineFn.setSpeed,
+	startCapture: mockEngineFn.startCapture,
+	stopCapture: mockEngineFn.stopCapture,
 	stop: mockEngineFn.stop,
 	nextTrack: mockEngineFn.nextTrack,
 	prevTrack: mockEngineFn.prevTrack,
@@ -207,5 +213,10 @@ describe('getPlaybackState', () => {
 	it('currentTime setter calls seek', () => {
 		state.currentTime = 42;
 		expect(mockEngineFn.seek).toHaveBeenCalledWith(42);
+	});
+
+	it('setSpeed calls engine setSpeed', async () => {
+		await state.setSpeed(1.5);
+		expect(mockEngineFn.setSpeed).toHaveBeenCalledWith(1.5);
 	});
 });

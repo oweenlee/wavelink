@@ -1,8 +1,12 @@
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::sync::Mutex;
 
 use sdk::dsp::PeqBand;
 use sdk::library::LibraryDb;
+use sdk::output::DeviceMonitor;
+use sdk::stream::StreamHandle;
 use sdk::{EngineHandle, PlayMode};
 
 use crate::media_bridge::MediaBridge;
@@ -20,4 +24,10 @@ pub struct AppState {
     pub current_track: Mutex<Option<String>>,
     pub media_bridge: MediaBridge,
     pub nas_manager: NasManager,
+    /// 设备热插拔监视器
+    pub device_monitor: Mutex<Option<DeviceMonitor>>,
+    /// 监视器线程停止标志
+    pub device_monitor_stop: Arc<AtomicBool>,
+    /// 流式播放写入句柄
+    pub stream_handle: Mutex<Option<StreamHandle>>,
 }

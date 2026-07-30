@@ -50,10 +50,10 @@
 
 <style>
 	.sidebar {
-		width: 220px; min-width: 220px; height: 100%;
+		width: 200px; min-width: 200px; height: 100%;
 		display: flex; flex-direction: column;
 		padding: var(--space-6) var(--space-3);
-		background: rgba(0, 0, 0, 0.25);
+		background: #0a0a0c;
 		border-right: 0.5px solid rgba(255, 255, 255, 0.04);
 	}
 

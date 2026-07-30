@@ -4,11 +4,11 @@
    ══════════════════════════════════════════════ */
 
 :root {
-  /* ── Background — true black, no gradients ── */
-  --bg: #0a0a0a;
+  /* ── Background — near-black with subtle layering ── */
+  --bg: #0f0f11;
   --bg-gradient: none;
-  --bg-surface: #141414;
-  --bg-elevated: #1c1c1c;
+  --bg-surface: #111113;
+  --bg-elevated: #141417;
   --bg-hover: rgba(255, 255, 255, 0.05);
   --bg-active: rgba(255, 255, 255, 0.08);
 

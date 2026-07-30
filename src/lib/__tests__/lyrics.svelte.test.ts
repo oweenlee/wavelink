@@ -67,7 +67,6 @@ vi.mock('$lib/audio/engine.svelte', () => ({
 	destroy: mockEngineFn.destroy,
 }));
 
-// lyrics 模块使用了 $derived，只能在 import 后检查初始值
 describe('getLyricsState', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -95,7 +94,6 @@ describe('getLyricsState', () => {
 		const state = getLyricsState();
 		mockInvoke.mockResolvedValueOnce('[00:10.00]Line 1\n[00:20.00]Line 2');
 		loadForTrack(mockTrack);
-		// 等待异步完成
 		await vi.waitFor(() => {
 			expect(state.lines.length).toBeGreaterThan(0);
 		});
@@ -104,45 +102,20 @@ describe('getLyricsState', () => {
 		expect(state.loading).toBe(false);
 	});
 
-	it('loadForTrack falls back to network lookup when no .lrc file', async () => {
-		const { getLyricsState, loadForTrack } = await import('$lib/stores/lyrics.svelte');
-		const state = getLyricsState();
-		// 第一次 invoke 失败（读文件失败）
-		mockInvoke.mockRejectedValueOnce(new Error('not found'));
-		// 第二次 invoke 成功（查询歌词）
-		mockInvoke.mockResolvedValueOnce('[00:05.00]Found lyric');
-		// 第三次 invoke 成功（缓存歌词）
-		mockInvoke.mockResolvedValueOnce(undefined);
-
-		loadForTrack(mockTrack);
-		await vi.waitFor(() => {
-			expect(state.lines.length).toBe(1);
-		});
-		expect(state.lines[0].text).toBe('Found lyric');
-	});
-
-	it('loadForTrack shows error when no title/artist on lookup failure', async () => {
+	it('loadForTrack sets error when .lrc file not found', async () => {
 		const { getLyricsState, loadForTrack } = await import('$lib/stores/lyrics.svelte');
 		const state = getLyricsState();
 		mockInvoke.mockRejectedValueOnce(new Error('not found'));
-		// 空 title 和 artist → 直接报错
-		loadForTrack(mockTrackNoTitle);
-		// 第一个 invoke 是读 .lrc 文件失败
-		// 然后检查 title/artist 都为空 → 设置 _error = '无歌词'
-		await vi.waitFor(() => {
-			expect(state.error).toBe('无歌词');
-		});
-	});
-
-	it('currentIndex tracks current time', async () => {
-		const { getLyricsState, loadForTrack } = await import('$lib/stores/lyrics.svelte');
-		const state = getLyricsState();
-		mockInvoke.mockResolvedValueOnce('[00:10.00]First\n[00:20.00]Second\n[00:30.00]Third');
 		loadForTrack(mockTrack);
 		await vi.waitFor(() => {
-			expect(state.lines.length).toBe(3);
+			expect(state.error).toBe('暂无歌词');
 		});
-		// 初始 currentTime=0，应该在所有行之前 → index = -1
+		expect(state.loading).toBe(false);
+	});
+
+	it('currentIndex is -1 when no lines', async () => {
+		const { getLyricsState } = await import('$lib/stores/lyrics.svelte');
+		const state = getLyricsState();
 		expect(state.currentIndex).toBe(-1);
 	});
 

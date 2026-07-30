@@ -238,6 +238,200 @@ export async function stopCapture() {
 	_capturing = false;
 }
 
+// ── DSP 控制 ──
+
+export async function setCrossfeed(enabled: boolean) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('set_crossfeed', { enabled });
+	} catch (err) {
+		console.error('Set crossfeed failed:', err);
+	}
+}
+
+export async function setNoiseShaping(enabled: boolean) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('set_noise_shaping', { enabled });
+	} catch (err) {
+		console.error('Set noise shaping failed:', err);
+	}
+}
+
+export async function setBufferMs(ms: number) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('set_buffer_ms', { ms });
+	} catch (err) {
+		console.error('Set buffer ms failed:', err);
+	}
+}
+
+export async function setReplaygainPeak(peak: number | null) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('set_replaygain_peak', { peak });
+	} catch (err) {
+		console.error('Set replaygain peak failed:', err);
+	}
+}
+
+export async function readAudioSamples(maxSamples = 1024): Promise<number[]> {
+	try {
+		const invoke = await lazyInvoke();
+		return await invoke('read_audio_samples', { maxSamples });
+	} catch (err) {
+		console.error('Read audio samples failed:', err);
+		return [];
+	}
+}
+
+export async function getUnderrunCount(): Promise<number> {
+	try {
+		const invoke = await lazyInvoke();
+		return await invoke('get_underrun_count');
+	} catch (err) {
+		console.error('Get underrun count failed:', err);
+		return 0;
+	}
+}
+
+// ── 设备枚举与热插拔 ──
+
+export async function enumerateAudioDevices(): Promise<any[]> {
+	try {
+		const invoke = await lazyInvoke();
+		return await invoke('enumerate_audio_devices');
+	} catch (err) {
+		console.error('Enumerate audio devices failed:', err);
+		return [];
+	}
+}
+
+export async function startDeviceMonitor() {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('start_device_monitor');
+	} catch (err) {
+		console.error('Start device monitor failed:', err);
+	}
+}
+
+export async function stopDeviceMonitor() {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('stop_device_monitor');
+	} catch (err) {
+		console.error('Stop device monitor failed:', err);
+	}
+}
+
+export async function setAudioDeviceSync(name: string) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('set_audio_device_sync', { name });
+	} catch (err) {
+		console.error('Set audio device sync failed:', err);
+	}
+}
+
+// ── 文件探测 ──
+
+export async function probeSampleRate(path: string): Promise<number> {
+	try {
+		const invoke = await lazyInvoke();
+		return await invoke('probe_sample_rate_cmd', { path });
+	} catch (err) {
+		console.error('Probe sample rate failed:', err);
+		return 0;
+	}
+}
+
+export async function probeBitDepth(path: string): Promise<number> {
+	try {
+		const invoke = await lazyInvoke();
+		return await invoke('probe_bit_depth_cmd', { path });
+	} catch (err) {
+		console.error('Probe bit depth failed:', err);
+		return 0;
+	}
+}
+
+export async function readReplaygainTags(path: string): Promise<any | null> {
+	try {
+		const invoke = await lazyInvoke();
+		return await invoke('read_replaygain_tags', { path });
+	} catch (err) {
+		console.error('Read replaygain tags failed:', err);
+		return null;
+	}
+}
+
+export async function decideOutput(
+	deviceId: string,
+	sourceSampleRate: number,
+	sourceBitDepth: number,
+	sourceChannels: number,
+	isDsd: boolean,
+	dsdRate: number | null,
+	preferExclusive = false
+): Promise<any | null> {
+	try {
+		const invoke = await lazyInvoke();
+		return await invoke('decide_output_cmd', {
+			deviceId,
+			sourceSampleRate,
+			sourceBitDepth,
+			sourceChannels,
+			isDsd,
+			dsdRate,
+			preferExclusive,
+		});
+	} catch (err) {
+		console.error('Decide output failed:', err);
+		return null;
+	}
+}
+
+// ── 播放列表导出 ──
+
+export async function parsePlaylistFile(path: string): Promise<any[]> {
+	try {
+		const invoke = await lazyInvoke();
+		return await invoke('parse_playlist_file', { path });
+	} catch (err) {
+		console.error('Parse playlist failed:', err);
+		return [];
+	}
+}
+
+export async function exportPlaylistM3u(path: string, entries: any[]) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('export_playlist_m3u', { path, entries });
+	} catch (err) {
+		console.error('Export m3u failed:', err);
+	}
+}
+
+export async function exportPlaylistPls(path: string, entries: any[]) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('export_playlist_pls', { path, entries });
+	} catch (err) {
+		console.error('Export pls failed:', err);
+	}
+}
+
+export async function exportPlaylistAuto(path: string, entries: any[]) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('export_playlist_auto', { path, entries });
+	} catch (err) {
+		console.error('Export playlist failed:', err);
+	}
+}
+
 export function destroy() {
 	stop();
 	_currentTrack = null;

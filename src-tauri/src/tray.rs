@@ -16,11 +16,16 @@ pub fn create_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 
     let menu = Menu::with_items(app, &[&toggle, &play_pause, &next, &prev, &quit])?;
 
-    TrayIconBuilder::new()
-        .icon(app.default_window_icon().expect("default_window_icon 未配置在 tauri.conf.json 中").clone())
+    let tray_base = TrayIconBuilder::new()
         .tooltip("WaveLink")
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(false);
+    let tray_base = if let Some(icon) = app.default_window_icon() {
+        tray_base.icon(icon.clone())
+    } else {
+        tray_base
+    };
+    tray_base
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,

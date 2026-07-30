@@ -33,12 +33,14 @@
 		const c = settings.accentColor;
 		return `${parseInt(c.slice(1, 3), 16)}, ${parseInt(c.slice(3, 5), 16)}, ${parseInt(c.slice(5, 7), 16)}`;
 	});
+	let accentDim = $derived(`rgba(${accentRgb}, 0.15)`);
+	let accentGlow = $derived(`rgba(${accentRgb}, 0.10)`);
 
 </script>
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="app" style="--accent: {settings.accentColor}; --accent-rgb: {accentRgb};">
+<div class="app" style="--accent: {settings.accentColor}; --accent-rgb: {accentRgb}; --accent-dim: {accentDim}; --accent-glow: {accentGlow};">
 	<div class="app-layout">
 		<Sidebar />
 		<main class="main-panel">
@@ -82,7 +84,7 @@
 		display: flex;
 		height: 100vh;
 		width: 100vw;
-		padding-bottom: 82px;
+		padding-bottom: 74px;
 	}
 
 	.main-panel {

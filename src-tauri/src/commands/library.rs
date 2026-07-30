@@ -98,3 +98,10 @@ pub fn reset_database(state: State<AppState>) -> Result<(), String> {
     let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
     db.reset_database().map_err(|e| format!("reset database failed: {e}"))
 }
+
+/// 导入 M3U/PLS 播放列表，返回解析出的文件路径列表
+#[tauri::command]
+pub fn import_playlist(path: String) -> Result<Vec<String>, String> {
+    let p = std::path::PathBuf::from(&path);
+    sdk::library::import_playlist(&p)
+}

@@ -123,6 +123,24 @@ export function getLibraryState() {
 	clearTracks() {
 		_tracks = [];
 	},
+
+		async importPlaylist(): Promise<string[]> {
+			if (!browser) return [];
+			const { importPlaylist: doImport } = await import('$lib/audio/loader');
+			return await doImport();
+		},
+
+		async getScanFolders(): Promise<string[]> {
+			if (!browser) return [];
+			const { getScanFolders: getFolders } = await import('$lib/audio/loader');
+			return await getFolders();
+		},
+
+		async removeScanFolder(path: string): Promise<number> {
+			if (!browser) return 0;
+			const { removeScanFolder: doRemove } = await import('$lib/audio/loader');
+			return await doRemove(path);
+		},
 	};
 }
 

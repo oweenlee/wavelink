@@ -26,6 +26,70 @@
 	let editTrack = $state<Track | null>(null);
 	let deleteTarget = $state<Track | null>(null);
 
+	// ── Scan folder management ──
+	let scanFolders = $state<string[]>([]);
+	let showFolderManager = $state(false);
+	let rescanning = $state(false);
+	let importMsg = $state('');
+
+	async function loadScanFolders() {
+		scanFolders = await library.getScanFolders();
+	}
+
+	async function handleAddFolder() {
+		try {
+			await library.scanDirectory();
+			await loadScanFolders();
+			await library.loadTracks();
+		} catch { /* cancelled */ }
+	}
+
+	async function handleRemoveFolder(path: string) {
+		await library.removeScanFolder(path);
+		await loadScanFolders();
+		await library.loadTracks();
+	}
+
+	async function handleRescan() {
+		rescanning = true;
+		try {
+			for (const folder of scanFolders) {
+				const { scanDirectory } = await import('$lib/audio/loader');
+				const { open } = await import('@tauri-apps/plugin-dialog');
+				// re-use existing scan_dir call without dialog
+				if (!browser) continue;
+				const { lazyInvoke } = await import('$lib/tauri');
+				const invoke = await lazyInvoke();
+				await invoke('scan_dir', { path: folder });
+			}
+			await library.loadTracks();
+		} catch (e) { console.error('Rescan failed:', e); }
+		rescanning = false;
+	}
+
+	async function handleImportPlaylist() {
+		try {
+			const paths = await library.importPlaylist();
+			if (paths.length > 0) {
+				importMsg = t('library.playlist_imported', { count: paths.length });
+				setTimeout(() => importMsg = '', 4000);
+				const fakeTracks: Track[] = paths.map((p, i) => ({
+					id: i,
+					path: p,
+					title: p.split(/[/\\]/).pop() || p,
+					artist: null, album: null, album_artist: null,
+					track_number: null, disc_number: null,
+					year: null, genre: null, duration: null,
+					sample_rate: null, channels: null, format: null,
+					file_size: null, file_modified: null,
+					date_added: 0, play_count: 0, last_played: null,
+					rating: 0, missing: false,
+				}));
+				playback.playAllAsQueue(fakeTracks, 0);
+			}
+		} catch { /* cancelled or error */ }
+	}
+
 	// ── Virtual scroll (tracks mode) ──
 	const ROW_HEIGHT = 40;
 	const OVERSCAN = 15;
@@ -190,10 +254,26 @@
 		</h2>
 		<div class="lib-actions">
 			{#if mode === 'tracks' && library.trackCount > 0}
-				<button class="action-btn action-play-all" onclick={() => playback.playAllAsQueue(library.tracks)}>
-					<Play size={16} fill="currentColor" />
+				<button class="action-btn" onclick={handleRescan} disabled={rescanning}>
+					{#if rescanning}
+						<span class="spinner"></span>
+					{/if}
+					<span>{rescanning ? t('library.scanning') : t('library.rescan')}</span>
+				</button>
+				<button class="action-btn" onclick={handleImportPlaylist}>
+					<Upload size={14} />
+					<span>{t('library.import_playlist')}</span>
+				</button>
+				<button class="action-btn" onclick={() => { showFolderManager = !showFolderManager; if (showFolderManager) loadScanFolders(); }}>
+					<span>{t('library.manage_folders')}</span>
+				</button>
+				<button class="action-btn" onclick={() => playback.playAllAsQueue(library.tracks)}>
+					<Play size={14} fill="currentColor" />
 					<span>{t('library.play_all')}</span>
 				</button>
+			{/if}
+			{#if importMsg}
+				<span class="import-msg">{importMsg}</span>
 			{/if}
 		</div>
 	</div>
@@ -204,6 +284,19 @@
 		<button class="browse-tab" class:active={mode === 'albums_grid'} onclick={enterAlbumGrid}>{t('library.albums')}</button>
 		<button class="browse-tab" class:active={mode === 'artists' || mode === 'albums' || mode === 'album_tracks'} onclick={enterArtists}>{t('library.artists')}</button>
 	</div>
+
+	{#if showFolderManager && scanFolders.length > 0}
+		<div class="folder-manager">
+			<div class="folder-list">
+				{#each scanFolders as folder (folder)}
+					<div class="folder-row">
+						<span class="folder-path">{folder}</span>
+						<button class="folder-remove" onclick={() => handleRemoveFolder(folder)}>{t('library.remove_folder')}</button>
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/if}
 
 	{#if browsingLoading}
 		<div class="loading">
@@ -533,4 +626,18 @@
 	.btn-cancel:hover { background: var(--bg-hover); }
 	.btn-danger { padding: 8px 18px; border-radius: var(--radius-md); border: none; background: rgba(255, 80, 80, 0.15); color: rgba(255, 80, 80, 0.8); font-size: 13px; font-family: inherit; cursor: pointer; }
 	.btn-danger:hover { background: rgba(255, 80, 80, 0.25); }
+
+	.import-msg { font-size: 11px; color: var(--accent); margin-left: var(--space-2); white-space: nowrap; }
+	.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--fg-tertiary); border-top-color: var(--fg-primary); border-radius: 50%; animation: spin 0.6s linear infinite; }
+	@keyframes spin { to { transform: rotate(360deg); } }
+
+	.folder-manager {
+		background: var(--bg-hover); border-radius: var(--radius-md);
+		padding: var(--space-3); margin-bottom: var(--space-3); flex-shrink: 0;
+	}
+	.folder-list { display: flex; flex-direction: column; gap: 4px; }
+	.folder-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+	.folder-path { font-size: 12px; color: var(--fg-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+	.folder-remove { font-size: 11px; padding: 2px 8px; border: none; border-radius: var(--radius-sm); background: rgba(255,80,80,0.1); color: rgba(255,80,80,0.7); font-family: inherit; cursor: pointer; flex-shrink: 0; }
+	.folder-remove:hover { background: rgba(255,80,80,0.2); }
 </style>
