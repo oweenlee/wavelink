@@ -57,6 +57,14 @@ void main() {
       check(p.currentSong?.id).equals('s1');
     });
 
+    test('setQueue 空队列不崩溃且索引归零（clamp 回归）', () {
+      final p = buildProvider();
+      p.setQueue([]);
+      check(p.queue.length).equals(0);
+      check(p.currentIndex).equals(0);
+      check(p.currentSong).isNull();
+    });
+
     test('next 顺序播放与循环边界', () {
       final p = buildProvider();
       p.next();

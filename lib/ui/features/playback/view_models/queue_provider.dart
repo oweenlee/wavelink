@@ -25,7 +25,10 @@ class QueueProvider extends ChangeNotifier {
 
   void setQueue(List<Song> songs, {int startIndex = 0}) {
     _queue = List.from(songs);
-    _currentIndex = startIndex.clamp(0, _queue.length - 1);
+    // 空队列时 length-1 == -1，clamp(0,-1) 会抛 ArgumentError，需先判空
+    _currentIndex =
+        _queue.isEmpty ? 0 : startIndex.clamp(0, _queue.length - 1);
+    notifyListeners();
   }
 
   void addToQueue(Song song) {
