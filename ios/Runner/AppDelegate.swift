@@ -60,10 +60,16 @@ class AudioOutputManager {
     /// 设置 AVAudioSession 偏好采样率并读回实际值，重建 source node 到该速率。
     /// 返回实际生效的采样率：请求未必被满足（内置输出常固定，外接 DAC 才会真切）。
     func setOutputRate(_ rate: Double) -> Double {
+        let session = AVAudioSession.sharedInstance()
+        // 目标速率与当前一致（容差内）时无需重建，避免无谓的 engine 停启。
+        // 同采样率曲目连续播放是常见场景（如整张专辑），跳过重建也利于 gapless。
+        if abs(session.sampleRate - rate) < 1.0 {
+            return session.sampleRate
+        }
+
         let shouldRun = engine.isRunning || isPlayingFlag
         engine.stop()
 
-        let session = AVAudioSession.sharedInstance()
         try? session.setPreferredSampleRate(rate)
         let actual = session.sampleRate
 
