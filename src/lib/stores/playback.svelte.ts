@@ -2,13 +2,14 @@ import {
 	getEngineRef,
 	setOnEnded,
 	setOnTrackChanged,
-	playTrack as enginePlay,
 	playQueue as enginePlayQueue,
 	pause,
 	resume,
 	togglePlay as engineToggle,
 	seek,
 	setVolume,
+	nextTrack as engineNext,
+	prevTrack as enginePrev,
 	setSpeed as engineSetSpeed,
 	startCapture as engineStartCapture,
 	stopCapture as engineStopCapture,
@@ -28,35 +29,10 @@ export type PlayMode = 'normal' | 'repeat_one' | 'repeat_all' | 'shuffle';
 let _playMode = $state<PlayMode>('normal');
 const _engine = getEngineRef();
 
-// Wire up engine's onended → auto-advance queue
-setOnEnded(() => {
-	const pl = getPlaylistState();
-	if (pl.queue.length === 0) return;
-
-	switch (_playMode) {
-		case 'repeat_one':
-			if (pl.currentTrack) enginePlay(pl.currentTrack);
-			break;
-		case 'shuffle':
-			pl.setIndex(Math.floor(Math.random() * pl.queue.length));
-			if (pl.currentTrack) enginePlay(pl.currentTrack);
-			break;
-		case 'repeat_all':
-			if (pl.currentIndex < pl.queue.length - 1) {
-				pl.setIndex(pl.currentIndex + 1);
-			} else {
-				pl.setIndex(0);
-			}
-			if (pl.currentTrack) enginePlay(pl.currentTrack);
-			break;
-		default:
-			if (pl.currentIndex < pl.queue.length - 1) {
-				pl.setIndex(pl.currentIndex + 1);
-				if (pl.currentTrack) enginePlay(pl.currentTrack);
-			}
-			break;
-	}
-});
+// 引擎自带队列并自行切歌（audio-core advance_queue 按 play_mode 推进），
+// player:stopped 只在队列真正播完时发出，此时无需前端再自动切歌。
+// 切歌 / 循环 / 随机全权由引擎负责，前端仅通过 track_changed 镜像索引。
+setOnEnded(() => {});
 
 // Wire up engine's track_changed → sync playlist index
 setOnTrackChanged((path: string) => {
@@ -96,64 +72,50 @@ export function getPlaybackState() {
 		togglePlay() {
 			const pl = getPlaylistState();
 			if (pl.currentIndex < 0 && pl.queue.length > 0) {
-				pl.setIndex(0);
-				if (pl.currentTrack) enginePlay(pl.currentTrack);
+				this.playFromQueue(0);
 			} else {
 				engineToggle();
 			}
 		},
 
+		// 单曲播放（搜索结果等独立上下文）：作为单条队列播放。
+		// 走 play_queue(set_queue) 路径会重置引擎队列，避免接上旧队列残留。
 		async playTrack(track: Track) {
 			const pl = getPlaylistState();
-			const idx = pl.queue.findIndex(t => t.id === track.id);
-			if (idx !== -1) {
-				pl.setIndex(idx);
-				await enginePlay(pl.queue[idx]);
-			} else {
-				pl.addToQueue(track);
-				pl.setIndex(pl.queue.length - 1);
-				await enginePlay(track);
-			}
+			pl.setQueue([track]);
+			pl.setIndex(0);
+			await enginePlayQueue([track]);
 		},
 
+		// 在当前队列内跳转：以该索引重新轮转队列后整体交给引擎。
 		async playFromQueue(index: number) {
 			const pl = getPlaylistState();
 			if (index >= 0 && index < pl.queue.length) {
-				pl.setIndex(index);
-				await enginePlay(pl.queue[index]);
+				await this.playAllAsQueue(pl.queue, index);
 			}
 		},
 
+		// 队列播放：把【完整队列轮转】后整体交给引擎，startIndex 置顶。
+		// 引擎持有完整 original_queue → RepeatAll/Shuffle 可达全部曲目（修复 slice 截断 bug）；
+		// 引擎自行切歌并预缓冲下一曲（gapless 生效）；前端队列与引擎保持一致。
 		async playAllAsQueue(tracks: Track[], startIndex = 0) {
 			const pl = getPlaylistState();
-			pl.setQueue(tracks);
-			if (tracks.length > startIndex) {
-				pl.setIndex(startIndex);
-				await enginePlayQueue(tracks.slice(startIndex));
-			}
+			if (tracks.length === 0) return;
+			const idx = Math.min(Math.max(startIndex, 0), tracks.length - 1);
+			const rotated = [...tracks.slice(idx), ...tracks.slice(0, idx)];
+			pl.setQueue(rotated);
+			pl.setIndex(0);
+			await enginePlayQueue(rotated);
 		},
 
+		// 下一首 / 上一首委托引擎：引擎按 play_mode 推进并维护播放历史
+		// （prev_track 自带“>3s 回开头否则切上一曲”逻辑）。
 		async next() {
-			const pl = getPlaylistState();
-			if (pl.currentIndex < pl.queue.length - 1) {
-				pl.setIndex(pl.currentIndex + 1);
-				await enginePlay(pl.queue[pl.currentIndex]);
-			} else {
-				const { nextTrack } = await import('$lib/audio/engine.svelte');
-				await nextTrack();
-			}
+			await engineNext();
 		},
 
 		async prev() {
-			if (_engine.currentTime > 3) { seek(0); return; }
-			const pl = getPlaylistState();
-			if (pl.currentIndex > 0) {
-				pl.setIndex(pl.currentIndex - 1);
-				await enginePlay(pl.queue[pl.currentIndex]);
-			} else {
-				const { prevTrack } = await import('$lib/audio/engine.svelte');
-				await prevTrack();
-			}
+			await enginePrev();
 		},
 
 		stop() {

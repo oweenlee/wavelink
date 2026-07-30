@@ -32,6 +32,13 @@
 		return (s / (1024 * 1024)).toFixed(1) + ' MB';
 	});
 
+	// 由 file_size 与 duration 估算码率（kbps），Track 本身不带 bitrate 字段
+	let bitrate = $derived.by(() => {
+		const tr = playback.currentTrack;
+		if (!tr?.file_size || !tr.duration) return 0;
+		return Math.round((tr.file_size * 8) / tr.duration / 1000);
+	});
+
 	let upcomingTracks = $derived.by(() => {
 		const t = playback.currentTrack;
 		const q = playlist.queue;
@@ -212,8 +219,8 @@
 						{#if playback.currentTrack?.channels}
 							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.channels')}</span><span class="np-info-v">{playback.currentTrack!.channels === 1 ? 'Mono' : 'Stereo'}</span></div>
 						{/if}
-						{#if playback.currentTrack?.bitrate}
-							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.bitrate')}</span><span class="np-info-v">{playback.currentTrack!.bitrate} kbps</span></div>
+						{#if bitrate}
+							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.bitrate')}</span><span class="np-info-v">{bitrate} kbps</span></div>
 						{/if}
 						{#if fileSize}
 							<div class="np-info-item"><span class="np-info-k">{t('nowplaying.file_size')}</span><span class="np-info-v">{fileSize}</span></div>

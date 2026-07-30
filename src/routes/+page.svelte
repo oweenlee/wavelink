@@ -9,6 +9,7 @@
 	import NowPlayingView from '$lib/components/views/NowPlayingView.svelte';
 	import LyricsPanel from '$lib/components/panels/LyricsPanel.svelte';
 
+	import { onMount } from 'svelte';
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
 	import { getUiState } from '$lib/stores/ui.svelte';
 	import { getSettingsState } from '$lib/stores/settings.svelte';
@@ -17,6 +18,14 @@
 	const playback = getPlaybackState();
 	const ui = getUiState();
 	const settings = getSettingsState();
+
+	// 启动时恢复并应用已保存的设置（之前只在打开设置页时才加载，导致重启后全部失效）
+	onMount(async () => {
+		await settings.load();
+		await settings.applyEngineConfig();
+		if (settings.audioDevice) await settings.setAudioDevice(settings.audioDevice);
+		await settings.setReplaygain(settings.replaygainEnabled);
+	});
 
 	const onKeydown = createKeyboardHandler(playback);
 

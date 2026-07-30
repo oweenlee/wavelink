@@ -21,7 +21,7 @@
 	let albumTracks = $state<Track[]>([]);
 	let browsingLoading = $state(false);
 	let albumBriefs = $state<AlbumBrief[]>([]);
-	let albumCovers = new SvelteMap<number, string>();
+	let albumCovers = $state(new SvelteMap<number, string>());
 
 	let editTrack = $state<Track | null>(null);
 	let deleteTarget = $state<Track | null>(null);
@@ -240,7 +240,7 @@
 				<div style="height: {topSpacerH}px;"></div>
 				{#each visTracks as track, vi (track.id)}
 					{@const i = visStart + vi}
-					<div class="track-row" class:active={playback.currentTrack?.id === track.id && playback.isPlaying} onclick={(e) => { if ((e.target as HTMLElement).closest('.td-actions')) return; playTrack(track, i); }} onkeydown={(e) => e.key === 'Enter' && playTrack(track, i)}>
+					<div class="track-row" role="button" tabindex="0" class:active={playback.currentTrack?.id === track.id && playback.isPlaying} onclick={(e) => { if ((e.target as HTMLElement).closest('.td-actions')) return; playTrack(track, i); }} onkeydown={(e) => e.key === 'Enter' && playTrack(track, i)}>
 						<span class="td-num">{i + 1}</span>
 						<span class="td-title">
 							<span class="td-title-text">{track.title || track.path.split(/[/\\]/).pop()}</span>
@@ -327,7 +327,7 @@
 			</div>
 			<div class="track-list">
 				{#each albumTracks as track, i (track.id)}
-					<div class="track-row" class:active={playback.currentTrack?.id === track.id && playback.isPlaying} onclick={(e) => { if ((e.target as HTMLElement).closest('.td-actions')) return; playback.playTrack(track); }} onkeydown={(e) => e.key === 'Enter' && playback.playTrack(track)}>
+					<div class="track-row" role="button" tabindex="0" class:active={playback.currentTrack?.id === track.id && playback.isPlaying} onclick={(e) => { if ((e.target as HTMLElement).closest('.td-actions')) return; playback.playAllAsQueue(albumTracks, i); }} onkeydown={(e) => e.key === 'Enter' && playback.playAllAsQueue(albumTracks, i)}>
 						<span class="td-num">{i + 1}</span>
 						<span class="td-title">
 							<span class="td-title-text">{track.title || track.path.split(/[/\\]/).pop()}</span>
@@ -354,7 +354,7 @@
 	{#if deleteTarget}
 		<div class="backdrop" onclick={() => deleteTarget = null} role="button" tabindex="0" onkeydown={(e) => e.key === 'Escape' && (deleteTarget = null)}></div>
 		<div class="confirm-dialog">
-			<p class="confirm-msg">{t('library.confirm_delete', { name: deleteTarget.title || deleteTarget.path.split(/[/\\]/).pop() })}</p>
+			<p class="confirm-msg">{t('library.confirm_delete', { name: (deleteTarget.title || deleteTarget.path.split(/[/\\]/).pop()) ?? '' })}</p>
 			<div class="confirm-actions">
 				<button class="btn-cancel" onclick={() => deleteTarget = null}>{t('library.cancel')}</button>
 				<button class="btn-danger" onclick={() => executeDelete()}>{t('library.delete')}</button>

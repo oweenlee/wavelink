@@ -44,6 +44,7 @@ const mockEngineFn = vi.hoisted(() => ({
 	setVolume: vi.fn((v: number) => { mockEngine.volume = v; }),
 	stop: vi.fn(() => { mockEngine.isPlaying = false; mockEngine.currentTrack = null; }),
 	nextTrack: vi.fn(),
+	prevTrack: vi.fn(),
 	destroy: vi.fn(),
 }));
 
@@ -60,6 +61,7 @@ vi.mock('$lib/audio/engine.svelte', () => ({
 	setVolume: mockEngineFn.setVolume,
 	stop: mockEngineFn.stop,
 	nextTrack: mockEngineFn.nextTrack,
+	prevTrack: mockEngineFn.prevTrack,
 	destroy: mockEngineFn.destroy,
 }));
 
@@ -114,7 +116,7 @@ describe('getPlaybackState', () => {
 		playlist.setQueue([mockTrack]);
 		state.togglePlay();
 		expect(playlist.currentIndex).toBe(0);
-		expect(mockEngineFn.playTrack).toHaveBeenCalledWith(mockTrack);
+		expect(mockEngineFn.playQueue).toHaveBeenCalledWith([mockTrack]);
 	});
 
 	it('togglePlay calls engine toggle when track exists', () => {
@@ -125,71 +127,54 @@ describe('getPlaybackState', () => {
 		expect(mockEngineFn.togglePlay).toHaveBeenCalledOnce();
 	});
 
-	it('playTrack plays from queue if track exists', async () => {
+	it('playTrack plays the track as a single-track queue', async () => {
 		playlist.setQueue([mockTrack, mockTrack2]);
 		await state.playTrack(mockTrack2);
-		expect(playlist.currentIndex).toBe(1);
-		expect(mockEngineFn.playTrack).toHaveBeenCalledWith(mockTrack2);
+		expect(playlist.queue).toHaveLength(1);
+		expect(playlist.currentIndex).toBe(0);
+		expect(mockEngineFn.playQueue).toHaveBeenCalledWith([mockTrack2]);
 	});
 
-	it('playTrack adds to queue if not present', async () => {
+	it('playTrack replaces any existing queue (clean isolation)', async () => {
 		playlist.setQueue([mockTrack]);
 		await state.playTrack(mockTrack2);
-		expect(playlist.queue).toHaveLength(2);
-		expect(playlist.currentIndex).toBe(1);
-		expect(mockEngineFn.playTrack).toHaveBeenCalledWith(mockTrack2);
+		expect(playlist.queue).toHaveLength(1);
+		expect(playlist.currentIndex).toBe(0);
+		expect(mockEngineFn.playQueue).toHaveBeenCalledWith([mockTrack2]);
 	});
 
-	it('playFromQueue plays at specified index', async () => {
+	it('playFromQueue re-rotates the queue to start at the index', async () => {
 		playlist.setQueue([mockTrack, mockTrack2, mockTrack3]);
 		await state.playFromQueue(2);
-		expect(playlist.currentIndex).toBe(2);
-		expect(mockEngineFn.playTrack).toHaveBeenCalledWith(mockTrack3);
+		expect(playlist.currentIndex).toBe(0);
+		expect(mockEngineFn.playQueue).toHaveBeenCalledWith([mockTrack3, mockTrack, mockTrack2]);
 	});
 
 	it('playFromQueue ignores invalid index', async () => {
 		await state.playFromQueue(-1);
-		expect(mockEngineFn.playTrack).not.toHaveBeenCalled();
+		expect(mockEngineFn.playQueue).not.toHaveBeenCalled();
 	});
 
-	it('playAllAsQueue replaces queue and plays from start index', async () => {
+	it('playAllAsQueue hands the engine the FULL rotated queue (fixes slice bug)', async () => {
 		await state.playAllAsQueue([mockTrack, mockTrack2, mockTrack3], 1);
 		expect(playlist.queue).toHaveLength(3);
-		expect(playlist.currentIndex).toBe(1);
-		expect(mockEngineFn.playQueue).toHaveBeenCalledWith([mockTrack2, mockTrack3]);
+		expect(playlist.currentIndex).toBe(0);
+		// 引擎收到全部曲目（startIndex 置顶），RepeatAll/Shuffle 才能可达整列
+		expect(mockEngineFn.playQueue).toHaveBeenCalledWith([mockTrack2, mockTrack3, mockTrack]);
 	});
 
-	it('next advances within queue', async () => {
+	it('next delegates to the engine (engine owns auto-advance)', async () => {
 		playlist.setQueue([mockTrack, mockTrack2, mockTrack3]);
-		playlist.setIndex(0);
-		await state.next();
-		expect(playlist.currentIndex).toBe(1);
-		expect(mockEngineFn.playTrack).toHaveBeenCalledWith(mockTrack2);
-	});
-
-	it('next calls nextTrack at end of queue', async () => {
-		playlist.setQueue([mockTrack]);
 		playlist.setIndex(0);
 		await state.next();
 		expect(mockEngineFn.nextTrack).toHaveBeenCalledOnce();
 	});
 
-	it('prev seeks to 0 if currentTime > 3', async () => {
-		mockEngine.currentTime = 10;
+	it('prev delegates to the engine (engine handles >3s seek vs history)', async () => {
 		playlist.setQueue([mockTrack, mockTrack2]);
 		playlist.setIndex(1);
 		await state.prev();
-		expect(mockEngineFn.seek).toHaveBeenCalledWith(0);
-		expect(playlist.currentIndex).toBe(1); // index unchanged
-	});
-
-	it('prev goes to previous track if currentTime <= 3', async () => {
-		mockEngine.currentTime = 2;
-		playlist.setQueue([mockTrack, mockTrack2]);
-		playlist.setIndex(1);
-		await state.prev();
-		expect(playlist.currentIndex).toBe(0);
-		expect(mockEngineFn.playTrack).toHaveBeenCalledWith(mockTrack);
+		expect(mockEngineFn.prevTrack).toHaveBeenCalledOnce();
 	});
 
 	it('stop calls engineStop and resets index', () => {
