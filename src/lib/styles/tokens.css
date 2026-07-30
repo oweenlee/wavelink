@@ -53,10 +53,13 @@
   --space-8: 32px;
   --space-10: 40px;
 
-  /* ── Typography ── */
+  /* ── Typography ──
+     ui:      系统字体（中文主力，CJK 可读性）
+     display: Space Grotesk（标题/logo/大数字，拉丁字符有性格）
+     mono:    JetBrains Mono（技术读数 kHz/kbps/时间，仪表面板感） */
   --font-ui: -apple-system, 'SF Pro Text', 'PingFang SC', 'Segoe UI Variable', 'Segoe UI', 'Inter', sans-serif;
-  --font-display: -apple-system, 'SF Pro Display', 'Segoe UI Variable', 'Segoe UI', 'Inter', sans-serif;
-  --font-mono: 'SF Mono', 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  --font-display: 'Space Grotesk Variable', -apple-system, 'SF Pro Display', 'PingFang SC', 'Segoe UI Variable', 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'SF Mono', 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
 
   --font-size-xs: 10px;
   --font-size-sm: 12px;

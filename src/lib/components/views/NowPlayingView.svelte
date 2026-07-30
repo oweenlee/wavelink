@@ -390,7 +390,7 @@
 	/* ── Track meta ── */
 	.np-meta { animation: npMetaIn 0.3s ease-out; }
 	@keyframes npMetaIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-	.np-title { font-size: 22px; font-weight: 600; color: var(--fg-primary); margin: 0; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.np-title { font-family: var(--font-display); font-size: 22px; font-weight: 600; color: var(--fg-primary); margin: 0; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.2px; }
 	.np-artist { font-size: 14px; color: var(--fg-secondary); margin: 4px 0 0; }
 
 	/* ── Lyrics ── */
@@ -525,7 +525,7 @@
 	.np-info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 16px; }
 	.np-info-item { display: flex; flex-direction: column; gap: 2px; }
 	.np-info-k { font-size: 10px; color: var(--fg-tertiary); text-transform: uppercase; letter-spacing: 0.3px; }
-	.np-info-v { font-size: 12px; color: var(--fg-secondary); font-variant-numeric: tabular-nums; }
+	.np-info-v { font-family: var(--font-mono); font-size: 12px; color: var(--fg-secondary); font-variant-numeric: tabular-nums; }
 
 	/* ── Responsive ── */
 	@media (max-width: 720px) {

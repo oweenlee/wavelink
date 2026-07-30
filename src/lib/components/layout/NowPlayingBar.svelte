@@ -209,6 +209,7 @@
 	.bar-right { display: flex; align-items: center; gap: var(--space-1); flex-shrink: 0; }
 
 	.speed-btn {
+		font-family: var(--font-mono);
 		height: 22px; padding: 0 6px; border-radius: var(--radius-sm); border: none; outline: none;
 		background: transparent; color: var(--fg-quaternary); cursor: pointer;
 		display: flex; align-items: center; justify-content: center;

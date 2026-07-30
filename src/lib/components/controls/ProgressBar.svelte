@@ -66,10 +66,10 @@
 		pointer-events: none;
 	}
 	.track:hover .track-knob, .dragging .track-knob { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-	.times { display: flex; justify-content: space-between; font-size: 10px; color: var(--fg-tertiary); margin-top: 2px; font-variant-numeric: tabular-nums; }
+	.times { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 10px; color: var(--fg-tertiary); margin-top: 2px; font-variant-numeric: tabular-nums; }
 	.tooltip {
 		position: absolute; top: -28px; transform: translateX(-50%);
-		font-size: 10px; color: var(--fg-secondary);
+		font-family: var(--font-mono); font-size: 10px; color: var(--fg-secondary);
 		background: rgba(10,10,20,0.9); padding: 2px 6px;
 		border-radius: 4px; border: 1px solid var(--separator);
 		pointer-events: none; white-space: nowrap;

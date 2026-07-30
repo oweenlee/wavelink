@@ -64,7 +64,7 @@
 	}
 
 	.logo-svg { flex-shrink: 0; }
-	.logo-text { font-size: 16px; font-weight: 600; color: var(--fg-primary); letter-spacing: 0.5px; }
+	.logo-text { font-family: var(--font-display); font-size: 16px; font-weight: 600; color: var(--fg-primary); letter-spacing: 0.5px; }
 
 	.nav { display: flex; flex-direction: column; gap: 1px; }
 
