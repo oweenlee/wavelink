@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use rust_lib_wavelink_mobile::decode::decode_file;
 
 #[test]
+#[ignore = "手动诊断工具：硬编码本地文件路径，默认跳过；cargo test -- --ignored 可手动运行"]
 fn measure_m4a_seek_latency() {
     let path = "/Users/qin/Desktop/demos/a_music/李荣浩-恋人.m4a";
     if !std::path::Path::new(path).exists() { eprintln!("缺失"); return; }

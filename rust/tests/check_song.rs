@@ -2,6 +2,7 @@
 use rust_lib_wavelink_mobile::decode::decode_file;
 
 #[test]
+#[ignore = "手动诊断工具：硬编码本地文件路径，默认跳过；cargo test -- --ignored 可手动运行"]
 fn check_lironghao_lianren() {
     let path = "/Users/qin/Desktop/demos/a_music/李荣浩-恋人.m4a";
     let r = match decode_file(path.to_string()) {
