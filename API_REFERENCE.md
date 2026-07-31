@@ -1,6 +1,6 @@
 # wavelink-audio-core API Reference
 
-> Source hash: `657dbd4a33b0` | Generated: 2026-07-29 22:38
+> Source hash: `81f7c93b4718` | Generated: 2026-08-01 00:33
 > AI 助手优先读此文件，而非读 `src/` 源码。若 AI 返回的代码与当前签名不匹配，请重新运行 `bash doc-api.sh`。
 
 ## Table of Contents
@@ -16,8 +16,6 @@
   - Internal State (`engine/state.rs`)
   - Thread Priority (`engine/thread_priority.rs`)
   - Worker Thread (`engine/worker.rs`)
-- **FFI (C Bindings)**
-  - C 语言 FFI 绑定。通过 `extern "C"` 导出函数供移动端（Kotlin/Swift）调用。 (`ffi.rs`)
 - **Decoder**
   - 解码器（Symphonia 流式解码 + DSD 文件直解） (`decoder.rs`)
 - **Capture**
@@ -60,7 +58,6 @@
   - 输出设备设置：复用或打开新 output (`engine/output_setup.rs`)
   - macOS CoreAudio 设备枚举 (`output/output_coreaudio.rs`)
   - Windows WASAPI Exclusive 模式输出后端 (`output/output_wasapi.rs`)
-- **C Header Cross-Reference**
 
 ---
 
@@ -106,11 +103,6 @@ pub mod error;
 独占模式（macOS Hog Mode / Windows WASAPI Exclusive）  
 ```rust
 pub mod exclusive;
-```
-
-C 语言 FFI 绑定（引擎控制 / 元数据 / 音频分析）  
-```rust
-pub mod ffi;
 ```
 
 音频引擎（桌面端 cpal / 移动端 HeadlessOutput）  
@@ -271,7 +263,7 @@ pub clip: bool,
 pub struct EngineHandle { ...
 ```
 
-共享输出内部状态（替代全局 static，供 FFI 层读取音频数据）  
+共享输出内部状态（替代全局 static，供宿主层读取音频数据）  
 ```rust
 pub output_inner: Arc<RwLock<Option<Arc<AudioOutputInner>>>>,
 ```
@@ -416,6 +408,14 @@ pub fn set_output_device(&self, name: String) { ...
 pub fn set_output_device_sync(&self, name: String) -> Result<(), EngineError> { ...
 ```
 
+设置输出采样率（下次播放生效）。  
+移动端 bit-perfect 协调：平台层先把设备设到目标速率（iOS `AVAudioSession.setPreferredSampleRate`）  
+并读回实际速率，再调用本方法使引擎输出速率与设备一致。命令走 FIFO 通道，  
+只要在同一播放之前发送，必在 play 之前生效。  
+```rust
+pub fn set_output_sample_rate(&self, rate: u32) { ...
+```
+
 获取当前播放位置（秒）  
 ```rust
 pub fn position_secs(&self) -> f64 { ...
@@ -534,402 +534,6 @@ pub fn elevate_audio_thread() { ...
 ### Worker Thread (`engine/worker.rs`)
 
 引擎线程主循环 + 消费者线程
-
----
-
-## FFI (C Bindings)
-
-### C 语言 FFI 绑定。通过 `extern "C"` 导出函数供移动端（Kotlin/Swift）调用。 (`ffi.rs`)
-
-FFI 统一错误码（所有 FFI 函数返回值）  
-```rust
-pub enum AcError { ...
-```
-
-引擎事件  
-字符串字段（path）通过调用方提供的缓冲区传出，不再固定长度。  
-调用方在调用 ac_engine_poll_event 前设置 path / path_cap，  
-函数填充后设置 path_len 为实际需要的长度（不含 null 终止符）。  
-```rust
-pub struct AcEvent { ...
-```
-
-事件类型：0=TrackChanged, 1=PlaybackStopped, 2=Position,  
-3=DurationSecs, 4=Error, 5=QueueChanged, 6=Spectrum, 7=Levels  
-```rust
-pub event_type: c_int,
-```
-
-字符串输出缓冲区（调用方分配）  
-```rust
-pub path: *mut c_char,
-```
-
-缓冲区容量（含 null 终止符位置）  
-```rust
-pub path_cap: c_int,
-```
-
-实际字符串长度（不含 null 终止符）；若 >= path_cap 表示缓冲区不足  
-```rust
-pub path_len: c_int,
-```
-
-时间值（Position / DurationSecs）  
-```rust
-pub value: c_double,
-```
-
-频谱 16 频段（Spectrum）  
-```rust
-pub spectrum: [c_float; 16],
-```
-
-音频元数据  
-字符串字段通过调用方提供的缓冲区传出。  
-调用前设置各字段的 ptr/cap，函数填充后设置 len。  
-若 len >= cap 表示缓冲区不足，字符串已被截断。  
-```rust
-pub struct AcMetadata { ...
-```
-
-曲名缓冲区（调用方分配）  
-```rust
-pub title: *mut c_char,
-```
-
-艺术家缓冲区  
-```rust
-pub artist: *mut c_char,
-```
-
-专辑名缓冲区  
-```rust
-pub album: *mut c_char,
-```
-
-流派缓冲区  
-```rust
-pub genre: *mut c_char,
-```
-
-发行年份（0=未知）  
-```rust
-pub year: c_int,
-```
-
-音轨号（0=未知）  
-```rust
-pub track_number: c_int,
-```
-
-光盘号（0=未知）  
-```rust
-pub disc_number: c_int,
-```
-
-时长（秒）  
-```rust
-pub duration_secs: c_double,
-```
-
-是否含有内嵌封面  
-```rust
-pub has_cover: c_int,
-```
-
-音频分析结果（BPM / 调性 / 能量）（BPM / 调性 / 能量）  
-```rust
-pub struct AcAnalysis { ...
-```
-
-BPM 值（0 = 未检测到）  
-```rust
-pub bpm: c_float,
-```
-
-调性字符串，如 "C"/"Gm"，空串 = 无法识别  
-```rust
-pub key: [c_char; 16],
-```
-
-能量值（0~1）  
-```rust
-pub energy: c_float,
-```
-
-实时音频电平  
-```rust
-pub struct AcLevels { ...
-```
-
-RMS 音量（归一化 0.0~1.0）  
-```rust
-pub rms: c_float,
-```
-
-峰值（归一化 0.0~1.0）  
-```rust
-pub peak: c_float,
-```
-
-是否削波（1 = 削波，0 = 正常）  
-```rust
-pub clip: c_int,
-```
-
-事件回调函数类型  
-- `event`: 指向事件数据的指针（仅在回调执行期间有效）  
-- `user_data`: 调用方自定义上下文指针  
-```rust
-pub type AcEventCallback = extern "C" fn(event: *const AcEvent, user_data: *mut c_void);
-```
-
-引擎不透明句柄（FFI 层内部使用）  
-```rust
-pub struct AcEngine { ...
-```
-
-创建引擎实例。返回不透明指针，失败返回 null。  
-output_device 传空串或 null 使用系统默认设备。  
-```rust
-pub unsafe extern "C" fn ac_engine_create(
-```
-
-销毁引擎实例  
-```rust
-pub unsafe extern "C" fn ac_engine_destroy(engine: *mut c_void) { ...
-```
-
-播放指定文件。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_play(engine: *mut c_void, path: *const c_char) -> c_int { ...
-```
-
-播放一组文件（替换当前队列）。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_play_queue(
-```
-
-暂停播放。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_pause(engine: *mut c_void) -> c_int { ...
-```
-
-恢复播放。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_resume(engine: *mut c_void) -> c_int { ...
-```
-
-停止播放。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_stop(engine: *mut c_void) -> c_int { ...
-```
-
-跳转到指定位置（秒）。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_seek(engine: *mut c_void, seconds: c_double) -> c_int { ...
-```
-
-下一首。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_next_track(engine: *mut c_void) -> c_int { ...
-```
-
-上一首（播放>3s 回开头，≤3s 切上一曲）。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_prev_track(engine: *mut c_void) -> c_int { ...
-```
-
-设置播放模式：0=Normal, 1=RepeatOne, 2=RepeatAll, 3=Shuffle。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_set_play_mode(engine: *mut c_void, mode: c_int) -> c_int { ...
-```
-
-从队列中移除指定位置（0-indexed）的曲目。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_remove_from_queue(engine: *mut c_void, index: c_int) -> c_int { ...
-```
-
-设置音量（0.0 ~ 1.0）。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_set_volume(engine: *mut c_void, volume: c_float) -> c_int { ...
-```
-
-设置 ReplayGain 增益（dB），0 = 关闭 ReplayGain。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_set_replaygain_gain(engine: *mut c_void, gain_db: c_float) -> c_int { ...
-```
-
-设置 PEQ 单段参数（31 段 ISO 频段）。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_set_peq_band(
-```
-
-设置立体声展宽（enabled=0 关闭, width=1.0 原始, >1.0 展宽）。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_set_stereo_widener(
-```
-
-加载 IR 文件（FIR 卷积 EQ）。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_load_ir(engine: *mut c_void, path: *const c_char) -> c_int { ...
-```
-
-清除已加载的 IR。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_clear_ir(engine: *mut c_void) -> c_int { ...
-```
-
-切换输出设备（移动端 Headless 模式无效）。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_set_output_device(engine: *mut c_void, name: *const c_char) -> c_int { ...
-```
-
-开始音频输入捕获。sample_rate / channels 为目标格式。  
-返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_start_capture(
-```
-
-停止音频输入捕获。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_stop_capture(engine: *mut c_void) -> c_int { ...
-```
-
-从捕获缓冲读取 PCM 样本（与 ac_audio_read 对称）。  
-返回实际读取的样本数，0 表示无数据或失败。  
-```rust
-pub unsafe extern "C" fn ac_audio_read_capture(engine: *mut c_void, buffer: *mut c_float, samples: c_int) -> c_int { ...
-```
-
-音频会话中断开始（如电话呼入、其他 App 占用了音频），引擎自动暂停播放。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_session_interruption_began(engine: *mut c_void) -> c_int { ...
-```
-
-音频会话中断结束，引擎自动恢复播放。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_session_interruption_ended(engine: *mut c_void) -> c_int { ...
-```
-
-从引擎的 ringbuf 读取 PCM 样本。  
-buffer: 调用方分配的 float 缓冲区  
-samples: 期望读取的样本数（stereo 每帧=2 样本）  
-返回: 实际读取的样本数（0 = 无数据）  
-```rust
-pub unsafe extern "C" fn ac_audio_read(
-```
-
-获取当前播放位置（秒）  
-```rust
-pub unsafe extern "C" fn ac_engine_position(engine: *const c_void) -> c_double { ...
-```
-
-获取当前曲目时长（秒）  
-```rust
-pub unsafe extern "C" fn ac_engine_duration(engine: *const c_void) -> c_double { ...
-```
-
-动态调整输出缓冲时长（毫秒），实时生效。仅 Oboe 后端支持。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_set_buffer_ms(engine: *mut c_void, ms: c_int) -> c_int { ...
-```
-
-设置播放速度（0.25 ~ 4.0），1.0 = 正常。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_set_speed(engine: *mut c_void, speed: c_float) -> c_int { ...
-```
-
-获取播放状态（1=正在播放, 0=未播放）  
-```rust
-pub unsafe extern "C" fn ac_engine_is_playing(engine: *const c_void) -> c_int { ...
-```
-
-获取 underrun 计数  
-```rust
-pub unsafe extern "C" fn ac_engine_underrun_count(engine: *const c_void) -> c_uint { ...
-```
-
-获取实时音频电平（RMS / 峰值 / 削波标志）。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_levels(
-```
-
-轮询一个引擎事件。返回 1 表示有事件写入 out，0 表示无事件。  
-```rust
-pub unsafe extern "C" fn ac_engine_poll_event(
-```
-
-设置事件回调函数。  
-设置后，引擎事件将通过回调函数推送，无需轮询。  
-传 callback = null 则禁用回调，恢复轮询模式。  
-**重要：** 回调与轮询共享同一个事件 channel，事件会被其中一个消费者取走。  
-设置回调后不应再调用 ac_engine_poll_event，否则事件会被随机分配到其中一个。  
-注意：回调在独立监听线程中调用，回调函数必须是线程安全的。  
-回调中的 event 指针仅在回调执行期间有效，不要保存或跨线程传递。  
-```rust
-pub unsafe extern "C" fn ac_engine_set_event_callback(
-```
-
-读取音频文件元数据。返回 AcError。  
-调用前需设置 meta 中各字符串字段的 ptr/cap，函数填充后设置 len。  
-```rust
-pub unsafe extern "C" fn ac_metadata_read(path: *const c_char, meta: *mut AcMetadata) -> c_int { ...
-```
-
-读取内嵌封面图像。返回原始字节（JPEG/PNG），调用方需用 ac_cover_free 释放。  
-成功时写入 out_data 和 out_len，返回 AcError_Ok。失败返回对应错误码。  
-```rust
-pub unsafe extern "C" fn ac_cover_read(
-```
-
-释放 ac_cover_read 返回的封面数据  
-```rust
-pub unsafe extern "C" fn ac_cover_free(data: *mut u8, len: c_int) { ...
-```
-
-读取 ReplayGain 标签。返回 AcError。  
-track_gain_db / album_gain_db 为 dB 值（如 -5.23），无标签时为 0.0。  
-has_track_gain / has_album_gain 指示对应值是否有效。  
-```rust
-pub unsafe extern "C" fn ac_replaygain_read(
-```
-
-分析音频文件（BPM / 调性 / 能量）。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_analyze_file(
-```
-
-快速探测音频文件采样率。返回采样率 Hz，失败返回 0。  
-```rust
-pub unsafe extern "C" fn ac_probe_sample_rate(path: *const c_char) -> c_int { ...
-```
-
-列出可用输出设备名称。返回设备数量。  
-out_buf: 连续存储缓冲区，每个设备名占 name_size 字节（含 null 终止符）。  
-max_count: 最多写入的设备数。仅 cpal 后端有效，其他平台返回 0。  
-```rust
-pub unsafe extern "C" fn ac_list_output_devices(
-```
-
-开始流式播放。平台层负责网络 I/O，通过 ac_stream_write 写入数据。  
-format_hint 为格式提示（如 "mp3", "flac", "aac"），传 null 则自动探测。  
-返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_engine_play_stream(
-```
-
-向流式播放写入音频数据。应在 ac_engine_play_stream 成功后调用。  
-返回实际写入的字节数，0 表示流已关闭或失败。  
-```rust
-pub unsafe extern "C" fn ac_stream_write(
-```
-
-通知流式播放数据已结束（EOF）。返回 AcError。  
-```rust
-pub unsafe extern "C" fn ac_stream_eof(engine: *mut c_void) -> c_int { ...
-```
 
 ---
 
@@ -1121,7 +725,7 @@ pub fn probe_bit_depth(path: &Path) -> Option<u16> { ...
 
 ### 音频输入捕获抽象层 (`capture.rs`)
 
-捕获缓冲消费者端（供 FFI 读取）  
+捕获缓冲消费者端（供宿主层读取）  
 ```rust
 pub struct CaptureInner { ...
 ```
@@ -1988,7 +1592,7 @@ pub fn finalize(&mut self) -> Vec<f32> { ...
 pub struct StreamMediaSource { ...
 ```
 
-流写入端句柄（平台层持有，通过 FFI 写入数据）  
+流写入端句柄（平台层持有，通过宿主层写入数据）  
 线程安全：可从任意线程调用 write / signal_eof。  
 可克隆：克隆后的句柄共享同一个底层 channel。  
 ```rust
@@ -2211,10 +1815,7 @@ pub fn release_exclusive_mode(_device_name: Option<&str>) { ...
 
 ### 输出设备设置：复用或打开新 output (`engine/output_setup.rs`)
 
-实际输出位深（dither 用）  
-```rust
-pub actual_bits: u32,
-```
+输出设备设置：复用或打开新 output
 
 ### macOS CoreAudio 设备枚举 (`output/output_coreaudio.rs`)
 
@@ -2226,15 +1827,4 @@ Windows WASAPI Exclusive 模式输出后端
 
 ---
 
-## C Header Cross-Reference
-
-`include/wavelink_audio_core.h` declares 43 functions and 6 types;
-`src/ffi.rs` defines 44 exported functions and 7 types.
-
-### Functions in Rust but missing from C header
-
-- `ac_engine_set_buffer_ms`
-
----
-
-> 379 pub items (44 FFI exports). Run `bash doc-api.sh` to refresh.
+> 306 pub items. Run `bash doc-api.sh` to refresh.

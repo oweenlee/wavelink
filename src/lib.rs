@@ -29,10 +29,6 @@ pub mod error;
 /// 独占模式（macOS Hog Mode / Windows WASAPI Exclusive）
 pub mod exclusive;
 
-#[cfg(feature = "ffi")]
-/// C 语言 FFI 绑定（引擎控制 / 元数据 / 音频分析）
-pub mod ffi;
-
 /// 音频引擎（桌面端 cpal / 移动端 HeadlessOutput）
 pub mod engine;
 /// 音频输出抽象（cpal / HeadlessOutput）

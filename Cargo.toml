@@ -7,7 +7,6 @@ description = "纯 Rust 音频引擎：解码 + DSP 管线"
 [features]
 default = ["cpal-backend"]
 cpal-backend = ["cpal"]
-ffi = []
 oboe-backend = ["oboe"]
 audiounit-backend = ["coreaudio-sys"]
 wasapi-backend = []
@@ -59,4 +58,5 @@ windows-sys = { version = "0.59", features = [
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [lib]
-crate-type = ["staticlib", "lib"]
+# 作为纯 Rust 库被各端 path 依赖（PC Tauri / 移动端 flutter_rust_bridge），只需 rlib
+crate-type = ["lib"]

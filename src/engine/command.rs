@@ -38,7 +38,7 @@ pub enum EngineCommand {
         content_length: Option<u64>,
         /// 应答通道
         ack: CmdAck,
-        /// 流句柄共享存储（FFI 层持有 Arc，引擎线程写入）
+        /// 流句柄共享存储（宿主层持有 Arc，引擎线程写入）
         stream_handle_out: Option<std::sync::Arc<crossbeam_channel::Sender<crate::stream::StreamHandle>>>,
     },
     /// 设置播放队列并从第一首开始播放

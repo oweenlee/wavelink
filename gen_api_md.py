@@ -9,7 +9,6 @@ import os, re, hashlib
 from datetime import datetime
 
 SRC = "src"
-HEADER = "include/wavelink_audio_core.h"
 OUT = "API_REFERENCE.md"
 
 # 层分组映射: {relpath: (layer_name, subtopic)}
@@ -24,7 +23,6 @@ LAYER_MAP = {
     "engine/state.rs": ("Engine", "Internal State"),
     "engine/worker.rs": ("Engine", "Worker Thread"),
     "engine/thread_priority.rs": ("Engine", "Thread Priority"),
-    "ffi.rs": ("FFI (C Bindings)", None),
     "capture.rs": ("Capture", None),
     "decoder.rs": ("Decoder", None),
     "dsp/mod.rs": ("DSP Pipeline", None),
@@ -56,7 +54,6 @@ LAYER_MAP = {
 LAYER_ORDER = [
     "Top-Level",
     "Engine",
-    "FFI (C Bindings)",
     "Decoder",
     "Capture",
     "Consumer (Decode→DSP→Ringbuf)",
@@ -126,47 +123,6 @@ def gather():
     return result
 
 
-def parse_header():
-    """解析 C 头文件中的函数声明和类型定义。"""
-    if not os.path.exists(HEADER):
-        return set(), set()
-    with open(HEADER) as f:
-        text = f.read()
-    funcs = set(re.findall(r'\b(ac_\w+)\s*\(', text))
-    # 匹配 typedef struct/union/enum 后的名字，以及 typedef 返回类型后的函数指针名
-    types = set()
-    for m in re.finditer(r'typedef\s+(?:struct|union|enum)?\s*\{?[^;]*?\}\s*(\w+)', text, re.DOTALL):
-        name = m.group(1)
-        if name.startswith("Ac"):
-            types.add(name)
-    # also match standalone struct/union/enum names used as parameter types
-    for m in re.finditer(r'\b(Ac\w+)\s*\*', text):
-        types.add(m.group(1))
-    for m in re.finditer(r'\b(Ac\w+)\s+\w+', text):
-        types.add(m.group(1))
-    # filter out function names
-    types = {t for t in types if t.startswith("Ac") and not t.startswith("ac_")}
-    return funcs, types
-
-
-def parse_ffi_functions(data):
-    """从 ffi.rs 提取 FFI 函数名和类型名。"""
-    relpath = "ffi.rs"
-    if relpath not in data:
-        return [], []
-    _, items = data[relpath]
-    funcs = []
-    types = []
-    for docs, sig in items:
-        m = re.match(r'pub\s+unsafe\s+extern\s+"C"\s+fn\s+(\w+)', sig)
-        if m:
-            funcs.append(m.group(1))
-        m = re.match(r'pub\s+(struct|enum|type)\s+(\w+)', sig)
-        if m:
-            types.append(m.group(2))
-    return sorted(funcs), sorted(types)
-
-
 def src_hash():
     h = hashlib.sha256()
     for root, _dirs, files in os.walk(SRC):
@@ -183,9 +139,6 @@ def main():
     data = gather()
     total_items = sum(len(items) for _, items in data.values())
     stamp = src_hash()
-
-    header_funcs, header_types = parse_header()
-    ffi_funcs, ffi_types = parse_ffi_functions(data)
 
     # 未映射的文件丢到 Misc
     mapped_rels = set(LAYER_MAP.keys())
@@ -214,7 +167,6 @@ def main():
                 mod_doc, _ = data[rel]
                 label = sub if sub else (mod_doc if mod_doc else rel)
                 out.write(f"  - {label} (`{rel}`)\n")
-        out.write("- **C Header Cross-Reference**\n")
         out.write("\n---\n\n")
 
         # ========== Content by Layer ==========
@@ -249,50 +201,11 @@ def main():
 
             out.write("---\n\n")
 
-        # ========== C Header Cross-Reference ==========
-        out.write("## C Header Cross-Reference\n\n")
-        def plural(n, s): return f"{n} {s}" + ("" if n == 1 else "s")
-        out.write(f"`include/wavelink_audio_core.h` declares {plural(len(header_funcs), 'function')} and {plural(len(header_types), 'type')};\n")
-        out.write(f"`src/ffi.rs` defines {plural(len(ffi_funcs), 'exported function')} and {plural(len(ffi_types), 'type')}.\n\n")
-
-        missing_funcs = sorted(set(ffi_funcs) - set(header_funcs))
-        extra_funcs = sorted(set(header_funcs) - set(ffi_funcs))
-        # AcEngine is internal (opaque void* in C API), not expected in header
-        missing_types = sorted(set(ffi_types) - set(header_types) - {"AcEngine"})
-
-        if missing_funcs:
-            out.write("### Functions in Rust but missing from C header\n\n")
-            for fn in missing_funcs:
-                out.write(f"- `{fn}`\n")
-            out.write("\n")
-
-        if extra_funcs:
-            out.write("### Functions in C header but missing from Rust\n\n")
-            for fn in extra_funcs:
-                out.write(f"- `{fn}`\n")
-            out.write("\n")
-
-        if missing_types:
-            out.write("### Types in Rust but missing from C header\n\n")
-            for t in missing_types:
-                out.write(f"- `{t}`\n")
-            out.write("\n")
-
-        if not missing_funcs and not extra_funcs and not missing_types:
-            out.write("FFI layer and C header are fully in sync.\n\n")
-
-        out.write("---\n\n")
-        out.write(f"> {total_items} pub items ({len(ffi_funcs)} FFI exports). ")
+        out.write(f"> {total_items} pub items. ")
         out.write("Run `bash doc-api.sh` to refresh.\n")
 
     def plural(n, s): return f"{n} {s}" + ("" if n == 1 else "s")
-    print(f"[OK] {OUT} ({sum(1 for _ in open(OUT))} lines, {plural(total_items, 'pub item')}, {plural(len(ffi_funcs), 'FFI function')})")
-    if missing_funcs:
-        print(f"     WARNING: {plural(len(missing_funcs), 'FFI function')} missing from C header")
-    if extra_funcs:
-        print(f"     WARNING: {plural(len(extra_funcs), 'function')} in C header but not in Rust")
-    if missing_types:
-        print(f"     WARNING: {plural(len(missing_types), 'FFI type')} missing from C header")
+    print(f"[OK] {OUT} ({sum(1 for _ in open(OUT))} lines, {plural(total_items, 'pub item')})")
 
 
 if __name__ == "__main__":

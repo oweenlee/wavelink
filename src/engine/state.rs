@@ -58,9 +58,9 @@ pub struct EngineState {
     pub(crate) speed: Arc<AtomicU32>,
     /// 实时电平
     pub(crate) levels: Arc<Mutex<Levels>>,
-    /// 共享输出内部状态（替代全局 static，供 EngineHandle/FFI 读取）
+    /// 共享输出内部状态（替代全局 static，供 EngineHandle/宿主层读取）
     pub(crate) output_inner_shared: Option<Arc<RwLock<Option<Arc<AudioOutputInner>>>>>,
-    /// 流式播放的写入句柄（网络流媒体用，FFI 层通过此句柄写入数据）
+    /// 流式播放的写入句柄（网络流媒体用，宿主层通过此句柄写入数据）
     pub(crate) stream_handle: Option<StreamHandle>,
     /// 共享的实际输出采样率（与 EngineHandle 同步）
     pub(crate) output_sample_rate_shared: Option<Arc<AtomicU32>>,
@@ -356,7 +356,7 @@ impl EngineState {
             let _ = tx.send(Ok(()));
         }
 
-        // 将 StreamHandle 克隆一份发送给 FFI 层
+        // 将 StreamHandle 克隆一份发送给宿主层
         if let Some(tx) = stream_handle_out {
             let _ = tx.send(handle);
         }

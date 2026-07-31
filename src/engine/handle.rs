@@ -32,12 +32,12 @@ pub struct EngineHandle {
     pub(crate) config: Arc<RwLock<EngineConfig>>,
     /// 实时电平
     pub(crate) levels: Arc<Mutex<Levels>>,
-    /// 共享输出内部状态（替代全局 static，供 FFI 层读取音频数据）
+    /// 共享输出内部状态（替代全局 static，供宿主层读取音频数据）
     pub output_inner: Arc<RwLock<Option<Arc<AudioOutputInner>>>>,
     /// 实际输出采样率（与 EngineState.output_sample_rate 同步）
     pub(crate) output_sample_rate: Arc<AtomicU32>,
-    /// 捕获缓冲（替代全局 CAPTURE_INNER，供 FFI 层读取捕获数据）
-    #[allow(dead_code)] // 仅通过 FFI 层指针访问
+    /// 捕获缓冲（替代全局 CAPTURE_INNER，供宿主层读取捕获数据）
+    #[allow(dead_code)] // 仅通过宿主层访问
     pub(crate) capture_inner: Arc<RwLock<Option<Arc<CaptureInner>>>>,
 }
 

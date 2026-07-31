@@ -76,7 +76,6 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → 输出
 | `cue` | CUE 分轨解析 (parse_cue / CueSheet / CueTrack) |
 | `playlist` | M3U/M3U8/PLS 播放列表解析 |
 | `stream` | 网络流媒体数据源：`StreamMediaSource`（Symphonia MediaSource）+ `StreamHandle`，平台层写入字节流，core 解码 |
-| `ffi` | C 导出: 引擎控制 / 元数据 / 封面 / 音频分析 / BPM 调性 / 事件轮询 / 事件回调 / 流式播放 / 设备枚举 |
 
 ## 配置
 
