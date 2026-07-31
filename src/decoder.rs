@@ -562,6 +562,7 @@ pub fn read_cover(path: &Path) -> Result<Vec<u8>, String> {
 }
 
 /// ReplayGain 响度归一化增益值
+#[derive(serde::Serialize)]
 pub struct ReplayGain {
     /// 音轨增益 (dB)，如 -5.23
     pub track_gain_db: Option<f32>,
