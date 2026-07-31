@@ -23,6 +23,13 @@ class AudioOutputManager {
         setupRemoteCommands()
     }
 
+    /// App 启动时 session 配置（category/activate）完成后调用：
+    /// 存储属性 init 时 session 尚未配置，source node 用的是激活前速率，
+    /// 此处以激活后的实际采样率重建，保证与传给 Rust 的硬件速率一致。
+    func resyncToSessionRate() {
+        rebuildSourceNode(sampleRate: AVAudioSession.sharedInstance().sampleRate)
+    }
+
     /// 创建（或重建）source node 并连接到混音器。
     /// AVAudioSourceNode 的输出格式在连接时固定，故切换采样率需 detach 旧节点再以新格式重建。
     private func rebuildSourceNode(sampleRate: Double) {
@@ -210,11 +217,17 @@ class AudioOutputManager {
     ) -> Bool {
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .default)
+        // 音乐播放器不需要低延迟，加大 IO buffer 降低渲染回调频率，
+        // 给 RT 线程（需连拿多把锁读 ringbuf）更多余裕，减少 underrun 杂音。
+        try? session.setPreferredIOBufferDuration(0.02)
         try? session.setActive(true)
 
         // 将硬件采样率传给 Rust，避免 48kHz 文件无谓重采样
         let hwRate = session.sampleRate
         set_hw_sample_rate(UInt32(hwRate))
+
+        // session 激活后速率可能与存储属性 init 时不同，以实际速率重建 source node
+        audio.resyncToSessionRate()
 
         // 监听音频中断（电话/闹钟/快速前后台切换），中断结束时清空 ringbuf 避免噪声
         NotificationCenter.default.addObserver(
