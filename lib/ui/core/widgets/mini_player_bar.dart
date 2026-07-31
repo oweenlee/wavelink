@@ -1,4 +1,5 @@
 import 'dart:ui' as ui;
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -105,8 +106,8 @@ class MiniPlayerBar extends StatelessWidget {
                           IconButton(
                             icon: Icon(
                               player.isPlaying
-                                  ? Icons.pause_rounded
-                                  : Icons.play_arrow_rounded,
+                                  ? LucideIcons.pause300
+                                  : LucideIcons.play300,
                               color: AppTheme.textPrimary,
                               size: 28,
                             ),
@@ -116,7 +117,7 @@ class MiniPlayerBar extends StatelessWidget {
                           const SizedBox(width: 4),
                           IconButton(
                             icon: const Icon(
-                              Icons.skip_next_rounded,
+                              LucideIcons.skipForward300,
                               color: AppTheme.textPrimary,
                               size: 24,
                             ),

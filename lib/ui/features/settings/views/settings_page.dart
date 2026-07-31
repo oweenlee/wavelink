@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../../../l10n/app_localizations.dart';
@@ -22,49 +23,49 @@ class SettingsPage extends StatelessWidget {
           title: l10n.settingsAudio,
           children: [
             _SwitchItem(
-              icon: Icons.tune_rounded,
+              icon: LucideIcons.slidersHorizontal,
               label: l10n.dspPipeline,
               value: dsp.enabled,
               onChanged: (_) => player.toggleDspEnabled(),
             ),
             _SwitchItem(
-              icon: Icons.graphic_eq_rounded,
+              icon: LucideIcons.activity,
               label: l10n.dspCrossfeed,
               value: dsp.crossfeed,
               onChanged: (_) => player.toggleCrossfeed(),
             ),
             _SwitchItem(
-              icon: Icons.arrow_right_alt_rounded,
+              icon: LucideIcons.arrowRight,
               label: l10n.stereoWidening,
               value: dsp.widener,
               onChanged: (_) => player.toggleWidener(),
             ),
             _SwitchItem(
-              icon: Icons.volume_up_rounded,
+              icon: LucideIcons.volume2,
               label: l10n.truePeakLimiter,
               value: dsp.limiter,
               onChanged: (_) => player.toggleLimiter(),
             ),
             _SwitchItem(
-              icon: Icons.blur_on_rounded,
+              icon: LucideIcons.droplets,
               label: l10n.tpdfDither,
               value: dsp.dither,
               onChanged: (_) => player.toggleDither(),
             ),
             _SwitchItem(
-              icon: Icons.auto_awesome_rounded,
+              icon: LucideIcons.sparkles,
               label: l10n.replayGain,
               value: player.replayGain,
               onChanged: (_) => player.setReplayGain(!player.replayGain),
             ),
             _SwitchItem(
-              icon: Icons.high_quality_rounded,
+              icon: LucideIcons.badgeCheck,
               label: l10n.bitPerfect,
               value: player.bitPerfect,
               onChanged: (_) => player.setBitPerfect(!player.bitPerfect),
             ),
             _SettingItem(
-              icon: Icons.volume_up_rounded,
+              icon: LucideIcons.volume2,
               label: l10n.outputDevice,
               onTap: () {},
             ),
@@ -75,19 +76,19 @@ class SettingsPage extends StatelessWidget {
           title: l10n.settingsAppearance,
           children: [
             _SettingItem(
-              icon: Icons.palette_rounded,
+              icon: LucideIcons.palette,
               label: l10n.theme,
               trailing: l10n.themeDark,
               onTap: () {},
             ),
             _SwitchItem(
-              icon: Icons.colorize_rounded,
+              icon: LucideIcons.pipette,
               label: l10n.dynamicColor,
               value: player.dynamicColor,
               onChanged: (_) => player.setDynamicColor(!player.dynamicColor),
             ),
             _SliderItem(
-              icon: Icons.blur_on_rounded,
+              icon: LucideIcons.droplets,
               label: l10n.coverBlur,
               value: player.coverBlur,
               onChanged: player.setCoverBlur,
@@ -99,7 +100,7 @@ class SettingsPage extends StatelessWidget {
           title: l10n.settingsLibrary,
           children: [
             _ActionItem(
-              icon: Icons.library_music_rounded,
+              icon: LucideIcons.library,
               label: l10n.discoverSongs,
               onTap: () async {
                 final player = context.read<PlaybackProvider>();
@@ -118,7 +119,7 @@ class SettingsPage extends StatelessWidget {
               },
             ),
             _ActionItem(
-              icon: Icons.folder_rounded,
+              icon: LucideIcons.folder,
               label: l10n.scanDir,
               onTap: () async {
                 final player = context.read<PlaybackProvider>();
@@ -126,7 +127,7 @@ class SettingsPage extends StatelessWidget {
               },
             ),
             _SettingItem(
-              icon: Icons.file_upload_outlined,
+              icon: LucideIcons.upload,
               label: l10n.importExportPlaylist,
               onTap: () {},
             ),
@@ -139,18 +140,18 @@ class SettingsPage extends StatelessWidget {
           title: l10n.settingsAbout,
           children: [
             _SettingItem(
-              icon: Icons.info_outline_rounded,
+              icon: LucideIcons.info,
               label: l10n.version,
               trailing: l10n.versionValue,
               onTap: () {},
             ),
             _SettingItem(
-              icon: Icons.code_rounded,
+              icon: LucideIcons.code,
               label: l10n.licenses,
               onTap: () {},
             ),
             _SettingItem(
-              icon: Icons.bug_report_rounded,
+              icon: LucideIcons.bug,
               label: l10n.audioDiagnostic,
               onTap: () => context.push('/diagnostic'),
             ),
@@ -291,7 +292,7 @@ class _SettingItem extends StatelessWidget {
               ),
             )
           : const Icon(
-              Icons.chevron_right_rounded,
+              LucideIcons.chevronRight,
               color: AppTheme.textTertiary,
               size: 20,
             ),

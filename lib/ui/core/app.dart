@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/services.dart';
 import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
@@ -112,25 +113,25 @@ class AppShell extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _NavItem(
-                      icon: Icons.library_music_rounded,
+                      icon: LucideIcons.library,
                       label: l10n.tabLibrary,
                       isSelected: currentTab == 0,
                       onTap: () => _goTab(0),
                     ),
                     _NavItem(
-                      icon: Icons.equalizer_rounded,
+                      icon: LucideIcons.slidersHorizontal,
                       label: l10n.tabPlay,
                       isSelected: false,
                       onTap: () => context.push('/now-playing'),
                     ),
                     _NavItem(
-                      icon: Icons.search_rounded,
+                      icon: LucideIcons.search,
                       label: l10n.tabSearch,
                       isSelected: currentTab == 1,
                       onTap: () => _goTab(1),
                     ),
                     _NavItem(
-                      icon: Icons.settings_rounded,
+                      icon: LucideIcons.settings,
                       label: l10n.tabSettings,
                       isSelected: currentTab == 2,
                       onTap: () => _goTab(2),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../../../../domain/models/song.dart';
@@ -34,7 +35,7 @@ class SongListPage extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(
-            Icons.chevron_left_rounded,
+            LucideIcons.chevronLeft,
             color: AppTheme.textPrimary,
             size: 28,
           ),
@@ -69,8 +70,8 @@ class SongListPage extends StatelessWidget {
                     child: Center(
                       child: Icon(
                         isFavoriteList
-                            ? Icons.favorite_rounded
-                            : Icons.playlist_play_rounded,
+                            ? LucideIcons.heart
+                            : LucideIcons.listMusic,
                         color: Colors.white.withValues(alpha: 0.85),
                         size: 48,
                       ),
@@ -98,7 +99,7 @@ class SongListPage extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       _RoundBtn(
-                        icon: Icons.shuffle_rounded,
+                        icon: LucideIcons.shuffle,
                         label: l10n.shufflePlay,
                         onTap: () {
                           if (songs.isEmpty) return;
@@ -109,7 +110,7 @@ class SongListPage extends StatelessWidget {
                       ),
                       const SizedBox(width: 32),
                       _RoundBtn(
-                        icon: Icons.play_arrow_rounded,
+                        icon: LucideIcons.play,
                         label: l10n.play,
                         filled: true,
                         onTap: () {
@@ -176,7 +177,7 @@ class SongListPage extends StatelessWidget {
           children: [
             ListTile(
               leading: const Icon(
-                Icons.play_arrow_rounded,
+                LucideIcons.play,
                 color: AppTheme.textPrimary,
               ),
               title: Text(
@@ -190,7 +191,7 @@ class SongListPage extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(
-                Icons.skip_next_rounded,
+                LucideIcons.skipForward,
                 color: AppTheme.textPrimary,
               ),
               title: Text(
@@ -204,7 +205,7 @@ class SongListPage extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(
-                Icons.queue_music_rounded,
+                LucideIcons.listMusic,
                 color: AppTheme.textPrimary,
               ),
               title: Text(
@@ -219,8 +220,8 @@ class SongListPage extends StatelessWidget {
             ListTile(
               leading: Icon(
                 player.isSongFavorite(song.id)
-                    ? Icons.favorite_rounded
-                    : Icons.favorite_border_rounded,
+                    ? LucideIcons.heart
+                    : LucideIcons.heart,
                 color: AppTheme.danger,
               ),
               title: Text(

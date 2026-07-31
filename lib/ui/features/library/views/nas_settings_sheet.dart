@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../data/services/preferences_service.dart';
 import '../../../../data/services/smb_service.dart';
 import '../../../core/theme/app_theme.dart';
@@ -158,7 +159,7 @@ class _NasSettingsSheetState extends State<NasSettingsSheet> {
               const Spacer(),
               IconButton(
                 icon: const Icon(
-                  Icons.close_rounded,
+                  LucideIcons.x,
                   color: AppTheme.textSecondary,
                 ),
                 onPressed: () => Navigator.pop(context),
@@ -174,7 +175,7 @@ class _NasSettingsSheetState extends State<NasSettingsSheet> {
               style: TextStyle(color: AppTheme.textPrimary),
             ),
             secondary: const Icon(
-              Icons.cloud_off_rounded,
+              LucideIcons.cloudOff,
               color: AppTheme.textSecondary,
             ),
             activeThumbColor: AppTheme.brand,
@@ -185,7 +186,7 @@ class _NasSettingsSheetState extends State<NasSettingsSheet> {
               decoration: InputDecoration(
                 labelText: 'Host',
                 hintText: '192.168.1.100 or nas.local',
-                prefixIcon: const Icon(Icons.cloud_rounded, size: 20),
+                prefixIcon: const Icon(LucideIcons.cloud, size: 20),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -200,7 +201,7 @@ class _NasSettingsSheetState extends State<NasSettingsSheet> {
               decoration: InputDecoration(
                 labelText: 'Share Path',
                 hintText: '/Music or /public/music',
-                prefixIcon: const Icon(Icons.folder_rounded, size: 20),
+                prefixIcon: const Icon(LucideIcons.folder, size: 20),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -214,7 +215,7 @@ class _NasSettingsSheetState extends State<NasSettingsSheet> {
               controller: _userCtrl,
               decoration: InputDecoration(
                 labelText: 'Username',
-                prefixIcon: const Icon(Icons.person_rounded, size: 20),
+                prefixIcon: const Icon(LucideIcons.user, size: 20),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -229,7 +230,7 @@ class _NasSettingsSheetState extends State<NasSettingsSheet> {
               obscureText: true,
               decoration: InputDecoration(
                 labelText: 'Password',
-                prefixIcon: const Icon(Icons.lock_rounded, size: 20),
+                prefixIcon: const Icon(LucideIcons.lock, size: 20),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -250,7 +251,7 @@ class _NasSettingsSheetState extends State<NasSettingsSheet> {
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.cloud_sync_rounded, size: 18),
+                        : const Icon(LucideIcons.cloudCog, size: 18),
                     label: const Text('Test Connection'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.surfaceDark,
@@ -265,7 +266,7 @@ class _NasSettingsSheetState extends State<NasSettingsSheet> {
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: _saveAndConnect,
-                    icon: const Icon(Icons.save_rounded, size: 18),
+                    icon: const Icon(LucideIcons.save, size: 18),
                     label: const Text('Save'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.brand,

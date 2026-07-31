@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../../../../domain/models/song.dart';
@@ -21,7 +22,7 @@ class AlbumDetailPage extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(
-            Icons.chevron_left_rounded,
+            LucideIcons.chevronLeft,
             color: AppTheme.textPrimary,
             size: 28,
           ),
@@ -31,7 +32,7 @@ class AlbumDetailPage extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(
-              Icons.more_horiz_rounded,
+              LucideIcons.moreHorizontal,
               color: AppTheme.textPrimary,
             ),
             onPressed: () {},
@@ -118,7 +119,7 @@ class _AlbumCover extends StatelessWidget {
         ),
         child: Center(
           child: Icon(
-            Icons.album_rounded,
+            LucideIcons.album,
             color: Colors.white.withValues(alpha: 0.25),
             size: 80,
           ),
@@ -232,7 +233,7 @@ class _ActionButtons extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Icon(
-                      Icons.play_arrow_rounded,
+                      LucideIcons.play,
                       color: AppTheme.brand,
                       size: 20,
                     ),
@@ -267,7 +268,7 @@ class _ActionButtons extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Icon(
-                      Icons.shuffle_rounded,
+                      LucideIcons.shuffle,
                       color: AppTheme.brand,
                       size: 20,
                     ),

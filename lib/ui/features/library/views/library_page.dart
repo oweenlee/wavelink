@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../../../l10n/app_localizations.dart';
@@ -97,7 +98,7 @@ class _EmptyLibrary extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons.library_music_outlined,
+              LucideIcons.library,
               size: 64,
               color: AppTheme.textTertiary.withValues(alpha: 0.3),
             ),
@@ -147,7 +148,7 @@ class _SongsTab extends StatelessWidget {
                       onMore: () => _showContextMenu(context, song, player),
                       trailing: player.isSongFavorite(song.id)
                           ? const Icon(
-                              Icons.favorite_rounded,
+                              LucideIcons.heart,
                               size: 16,
                               color: AppTheme.danger,
                             )
@@ -173,7 +174,7 @@ class _ImportHeader extends StatelessWidget {
       child: Row(
         children: [
           const Icon(
-            Icons.folder_open_rounded,
+            LucideIcons.folderOpen,
             size: 18,
             color: AppTheme.brand,
           ),
@@ -198,7 +199,7 @@ class _ImportHeader extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.add_rounded, size: 16, color: AppTheme.brand),
+                  Icon(LucideIcons.plus, size: 16, color: AppTheme.brand),
                   SizedBox(width: 4),
                   Text(
                     l10n.import,
@@ -266,7 +267,7 @@ class _AlbumsTab extends StatelessWidget {
                   ),
                   child: Center(
                     child: Icon(
-                      Icons.album_rounded,
+                      LucideIcons.album,
                       color: Colors.white.withValues(alpha: 0.5),
                       size: 28,
                     ),
@@ -300,7 +301,7 @@ class _AlbumsTab extends StatelessWidget {
                   ),
                 ),
                 const Icon(
-                  Icons.chevron_right_rounded,
+                  LucideIcons.chevronRight,
                   color: AppTheme.textTertiary,
                   size: 20,
                 ),
@@ -389,7 +390,7 @@ class _ArtistsTab extends StatelessWidget {
                   ),
                 ),
                 const Icon(
-                  Icons.chevron_right_rounded,
+                  LucideIcons.chevronRight,
                   color: AppTheme.textTertiary,
                   size: 20,
                 ),
@@ -453,7 +454,7 @@ class _PlaylistsTab extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.add_rounded, color: AppTheme.brand, size: 20),
+                    Icon(LucideIcons.plus, color: AppTheme.brand, size: 20),
                     SizedBox(width: 8),
                     Text(
                       l10n.newPlaylistFromQueue,
@@ -495,8 +496,8 @@ class _PlaylistsTab extends StatelessWidget {
                   child: Center(
                     child: Icon(
                       pl.builtIn
-                          ? Icons.favorite_rounded
-                          : Icons.playlist_play_rounded,
+                          ? LucideIcons.heart
+                          : LucideIcons.listMusic,
                       color: Colors.white.withValues(alpha: 0.6),
                       size: 24,
                     ),
@@ -527,7 +528,7 @@ class _PlaylistsTab extends StatelessWidget {
                   ),
                 ),
                 const Icon(
-                  Icons.chevron_right_rounded,
+                  LucideIcons.chevronRight,
                   color: AppTheme.textTertiary,
                   size: 20,
                 ),
@@ -668,7 +669,7 @@ void _showContextMenu(
           ),
           const Divider(height: 1),
           _MenuItem(
-            icon: Icons.skip_next_rounded,
+            icon: LucideIcons.skipForward,
             label: l10n.playNext,
             onTap: () {
               player.playNext(song);
@@ -676,7 +677,7 @@ void _showContextMenu(
             },
           ),
           _MenuItem(
-            icon: Icons.queue_music_rounded,
+            icon: LucideIcons.listMusic,
             label: l10n.addToQueue,
             onTap: () {
               player.addToQueue(song);
@@ -684,14 +685,14 @@ void _showContextMenu(
             },
           ),
           _MenuItem(
-            icon: Icons.playlist_add_rounded,
+            icon: LucideIcons.listPlus,
             label: l10n.addToPlaylist,
             onTap: () => _showAddToPlaylist(ctx, song, player),
           ),
           _MenuItem(
             icon: player.isSongFavorite(song.id)
-                ? Icons.favorite_rounded
-                : Icons.favorite_border_rounded,
+                ? LucideIcons.heart
+                : LucideIcons.heart,
             label: player.isSongFavorite(song.id)
                 ? l10n.unfavorite
                 : l10n.favorite,
@@ -702,7 +703,7 @@ void _showContextMenu(
           ),
           const Divider(height: 1),
           _MenuItem(
-            icon: Icons.delete_outline_rounded,
+            icon: LucideIcons.trash2,
             label: l10n.deleteFromLibrary,
             isDestructive: true,
             onTap: () => Navigator.pop(ctx),
@@ -782,7 +783,7 @@ void _showAddToPlaylist(
           if (saved.isEmpty)
             ListTile(
               leading: const Icon(
-                Icons.info_outline_rounded,
+                LucideIcons.info,
                 color: AppTheme.textTertiary,
               ),
               title: Text(
@@ -796,7 +797,7 @@ void _showAddToPlaylist(
           ...saved.entries.map(
             (e) => ListTile(
               leading: const Icon(
-                Icons.playlist_play_rounded,
+                LucideIcons.listMusic,
                 color: AppTheme.brand,
               ),
               title: Text(

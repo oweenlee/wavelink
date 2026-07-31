@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../features/playback/view_models/playback_provider.dart';
@@ -40,7 +41,7 @@ class QueueSheet extends StatelessWidget {
                 padding: const EdgeInsets.only(right: 20),
                 color: AppTheme.danger.withValues(alpha: 0.3),
                 child: const Icon(
-                  Icons.delete_outline_rounded,
+                  LucideIcons.trash2,
                   color: AppTheme.danger,
                 ),
               ),
@@ -53,7 +54,7 @@ class QueueSheet extends StatelessWidget {
                 child: Row(
                   children: [
                     Icon(
-                      Icons.drag_handle_rounded,
+                      LucideIcons.gripHorizontal,
                       size: 18,
                       color: AppTheme.textTertiary,
                     ),
@@ -118,7 +119,7 @@ class QueueSheet extends StatelessWidget {
                       child: Padding(
                         padding: const EdgeInsets.all(4),
                         child: Icon(
-                          Icons.close_rounded,
+                          LucideIcons.x,
                           size: 16,
                           color: AppTheme.textTertiary,
                         ),

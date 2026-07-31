@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../../../l10n/app_localizations.dart';
@@ -118,14 +119,14 @@ class _SearchPageState extends State<SearchPage> {
                 color: AppTheme.textTertiary,
               ),
               prefixIcon: const Icon(
-                Icons.search_rounded,
+                LucideIcons.search,
                 color: AppTheme.textTertiary,
                 size: 22,
               ),
               suffixIcon: _query.isNotEmpty
                   ? IconButton(
                       icon: const Icon(
-                        Icons.close_rounded,
+                        LucideIcons.x,
                         color: AppTheme.textTertiary,
                         size: 18,
                       ),
@@ -159,7 +160,7 @@ class _SearchPageState extends State<SearchPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons.search_rounded,
+              LucideIcons.search,
               size: 48,
               color: AppTheme.textTertiary.withValues(alpha: 0.3),
             ),
@@ -237,7 +238,7 @@ class _SearchPageState extends State<SearchPage> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        Icons.history_rounded,
+                        LucideIcons.history,
                         size: 14,
                         color: AppTheme.textTertiary,
                       ),
@@ -269,7 +270,7 @@ class _SearchPageState extends State<SearchPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons.search_off_rounded,
+              LucideIcons.searchX,
               size: 48,
               color: AppTheme.textTertiary.withValues(alpha: 0.3),
             ),

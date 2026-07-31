@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../domain/models/lyric_line.dart';
 import '../theme/app_theme.dart';
 import '../../../l10n/app_localizations.dart';
@@ -66,7 +67,7 @@ class _LyricsOverlayState extends State<LyricsOverlay> {
                 children: [
                   IconButton(
                     icon: const Icon(
-                      Icons.keyboard_arrow_down_rounded,
+                      LucideIcons.chevronDown,
                       color: AppTheme.textPrimary,
                     ),
                     onPressed: widget.onClose,

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/material.dart';
 import '../../../domain/models/song.dart';
 import '../theme/app_theme.dart';
@@ -76,7 +77,7 @@ class SongTile extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.all(4),
                 child: Icon(
-                  Icons.more_horiz_rounded,
+                  LucideIcons.moreHorizontal,
                   size: 20,
                   color: AppTheme.textTertiary,
                 ),

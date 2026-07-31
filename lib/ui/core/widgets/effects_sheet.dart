@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../features/playback/view_models/playback_provider.dart';
@@ -21,7 +22,7 @@ class EffectsSheet extends StatelessWidget {
           padding: EdgeInsets.zero,
           children: [
             _EffectItem(
-              icon: Icons.vibration_rounded,
+              icon: LucideIcons.vibrate,
               label: l10n.bauerCrossfeed,
               subtitle: dsp.crossfeed ? l10n.enabled : l10n.bauerCrossfeed,
               trailing: _Toggle(
@@ -31,7 +32,7 @@ class EffectsSheet extends StatelessWidget {
             ),
             const _Divider(),
             _EffectItem(
-              icon: Icons.arrow_right_alt_rounded,
+              icon: LucideIcons.arrowRight,
               label: l10n.stereoWidening,
               subtitle: dsp.widener ? l10n.enabled : l10n.stereoWidening,
               trailing: _Toggle(
@@ -41,7 +42,7 @@ class EffectsSheet extends StatelessWidget {
             ),
             const _Divider(),
             _EffectItem(
-              icon: Icons.volume_up_rounded,
+              icon: LucideIcons.volume2,
               label: l10n.truePeakLimiter,
               subtitle: dsp.limiter ? l10n.enabled : l10n.truePeakLimiter,
               trailing: _Toggle(
@@ -51,7 +52,7 @@ class EffectsSheet extends StatelessWidget {
             ),
             const _Divider(),
             _EffectItem(
-              icon: Icons.graphic_eq_rounded,
+              icon: LucideIcons.activity,
               label: l10n.tpdfDither,
               subtitle: dsp.dither ? l10n.enabled : l10n.tpdfDither,
               trailing: _Toggle(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import '../../../../data/services/preferences_service.dart';
 import '../../../../l10n/app_localizations.dart';
@@ -21,7 +22,7 @@ class ImportPage extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(
-            Icons.arrow_back_rounded,
+            LucideIcons.arrowLeft,
             color: AppTheme.textPrimary,
           ),
           onPressed: () => Navigator.pop(context),
@@ -39,7 +40,7 @@ class ImportPage extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
         children: [
           _ImportOption(
-            icon: Icons.folder_open_rounded,
+            icon: LucideIcons.folderOpen,
             color: AppTheme.brand,
             title: l10n.scanDir,
             subtitle: l10n.importPickerHint,
@@ -57,7 +58,7 @@ class ImportPage extends StatelessWidget {
             },
           ),
           _ImportOption(
-            icon: Icons.library_music_rounded,
+            icon: LucideIcons.library,
             color: AppTheme.brand,
             title: l10n.discoverSongs,
             subtitle: l10n.discoverSongsHint,
@@ -68,7 +69,7 @@ class ImportPage extends StatelessWidget {
             },
           ),
           _ImportOption(
-            icon: Icons.near_me_rounded,
+            icon: LucideIcons.navigation,
             color: AppTheme.brand,
             title: l10n.scanSmb,
             subtitle: l10n.importSmbHint,
@@ -85,7 +86,7 @@ class ImportPage extends StatelessWidget {
             },
           ),
           _ImportOption(
-            icon: Icons.cloud_rounded,
+            icon: LucideIcons.cloud,
             color: AppTheme.brand,
             title: l10n.scanSubsonic,
             subtitle: l10n.importSubsonicHint,
@@ -182,7 +183,7 @@ class _ImportOption extends StatelessWidget {
                   ),
                 ),
                 const Icon(
-                  Icons.chevron_right_rounded,
+                  LucideIcons.chevronRight,
                   color: AppTheme.textTertiary,
                   size: 20,
                 ),

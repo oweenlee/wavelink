@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../../../../domain/models/lyric_line.dart';
@@ -91,7 +92,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
-                        Icons.music_note_outlined,
+                        LucideIcons.music,
                         size: 80,
                         color: AppTheme.textTertiary,
                       ),
@@ -225,7 +226,7 @@ class _TopBar extends StatelessWidget {
         children: [
           IconButton(
             icon: const Icon(
-              Icons.keyboard_arrow_down_rounded,
+              LucideIcons.chevronDown,
               color: AppTheme.textPrimary,
             ),
             onPressed: onClose,
@@ -243,7 +244,7 @@ class _TopBar extends StatelessWidget {
           const Spacer(),
           IconButton(
             icon: const Icon(
-              Icons.more_horiz_rounded,
+              LucideIcons.moreHorizontal,
               color: AppTheme.textPrimary,
             ),
             onPressed: () {},
@@ -306,10 +307,10 @@ class _Tags extends StatelessWidget {
       alignment: WrapAlignment.center,
       children: [
         if (bpm != null)
-          _Tag(icon: Icons.speed_rounded, label: '${bpm.round()} BPM'),
-        if (key != null) _Tag(icon: Icons.music_note_rounded, label: key),
+          _Tag(icon: LucideIcons.gauge, label: '${bpm.round()} BPM'),
+        if (key != null) _Tag(icon: LucideIcons.music, label: key),
         if (player.isSongFavorite(song.id))
-          _Tag(icon: Icons.favorite_rounded, label: l10n.favorited),
+          _Tag(icon: LucideIcons.heart, label: l10n.favorited),
       ],
     );
   }
@@ -382,12 +383,12 @@ class _TransportRow extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         _AuxBtn(
-          icon: Icons.fast_rewind_rounded,
+          icon: LucideIcons.rewind300,
           onTap: () => player.skipBackward(),
         ),
         const SizedBox(width: 12),
         _AuxBtn(
-          icon: Icons.skip_previous_rounded,
+          icon: LucideIcons.skipBack300,
           size: 44,
           onTap: () => player.previous(),
         ),
@@ -395,13 +396,13 @@ class _TransportRow extends StatelessWidget {
         _PlayBtn(isPlaying: player.isPlaying, onTap: () => player.togglePlay()),
         const SizedBox(width: 16),
         _AuxBtn(
-          icon: Icons.skip_next_rounded,
+          icon: LucideIcons.skipForward300,
           size: 44,
           onTap: () => player.next(),
         ),
         const SizedBox(width: 12),
         _AuxBtn(
-          icon: Icons.fast_forward_rounded,
+          icon: LucideIcons.fastForward300,
           onTap: () => player.skipForward(),
         ),
       ],
@@ -450,8 +451,8 @@ class _PlayBtn extends StatelessWidget {
           ],
         ),
         child: Icon(
-          isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-          color: accent.onAccent,
+          isPlaying ? LucideIcons.pause300 : LucideIcons.play300,
+          color: Colors.white,
           size: 30,
         ),
       ),
@@ -483,7 +484,7 @@ class _LyricsPreview extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
         child: Row(
           children: [
-            Icon(Icons.lyrics_rounded, size: 16, color: AppTheme.textTertiary),
+            Icon(LucideIcons.text, size: 16, color: AppTheme.textTertiary),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -500,7 +501,7 @@ class _LyricsPreview extends StatelessWidget {
             ),
             if (hasLyrics)
               Icon(
-                Icons.keyboard_arrow_up_rounded,
+                LucideIcons.chevronUp,
                 size: 16,
                 color: AppTheme.textTertiary,
               ),
@@ -536,26 +537,26 @@ class _BottomToolbar extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _BarItem(
-            icon: Icons.queue_music_rounded,
+            icon: LucideIcons.listMusic,
             label: l10n.queue,
             onTap: onQueue,
             badge: '${player.queue.length}',
           ),
           _BarItem(
-            icon: Icons.tune_rounded,
+            icon: LucideIcons.slidersHorizontal,
             label: l10n.sound,
             onTap: onEffects,
           ),
           _BarItem(
-            icon: lyricsActive ? Icons.lyrics_rounded : Icons.lyrics_outlined,
+            icon: lyricsActive ? LucideIcons.text : LucideIcons.text,
             label: l10n.lyrics,
             active: lyricsActive,
             onTap: onLyrics,
           ),
           _BarItem(
             icon: player.isFavorite
-                ? Icons.favorite_rounded
-                : Icons.favorite_border_rounded,
+                ? LucideIcons.heart
+                : LucideIcons.heart,
             label: l10n.favorite,
             active: player.isFavorite,
             activeColor: AppTheme.danger,

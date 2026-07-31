@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../../../../domain/models/song.dart';
@@ -29,7 +30,7 @@ class ArtistDetailPage extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(
-            Icons.chevron_left_rounded,
+            LucideIcons.chevronLeft,
             color: AppTheme.textPrimary,
             size: 28,
           ),
@@ -89,7 +90,7 @@ class ArtistDetailPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   _ActionButton(
-                    icon: Icons.shuffle_rounded,
+                    icon: LucideIcons.shuffle,
                     label: l10n.shuffleAll,
                     onTap: () {
                       final shuffled = List<Song>.from(songs)..shuffle();

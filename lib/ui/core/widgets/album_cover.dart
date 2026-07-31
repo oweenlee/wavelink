@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 class AlbumCover extends StatefulWidget {
   final Color color;
@@ -57,7 +58,7 @@ class _AlbumCoverState extends State<AlbumCover> {
           ),
           child: Center(
             child: Icon(
-              Icons.music_note_rounded,
+              LucideIcons.music,
               color: Colors.white.withValues(alpha: 0.2),
               size: size * 0.3,
             ),

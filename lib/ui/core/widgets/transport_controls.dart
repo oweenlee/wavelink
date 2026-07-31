@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/app_theme.dart';
 
 class TransportControls extends StatelessWidget {
@@ -25,13 +26,13 @@ class TransportControls extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         _ControlButton(
-          icon: Icons.skip_previous_rounded,
+          icon: LucideIcons.skipBack300,
           size: 44,
           onTap: onPrevious,
         ),
         const SizedBox(width: 8),
         _ControlButton(
-          icon: Icons.fast_rewind_rounded,
+          icon: LucideIcons.rewind300,
           size: 44,
           onTap: onSkipBack,
         ),
@@ -39,12 +40,16 @@ class TransportControls extends StatelessWidget {
         _PlayButton(isPlaying: isPlaying, onTap: onPlayPause),
         const SizedBox(width: 16),
         _ControlButton(
-          icon: Icons.fast_forward_rounded,
+          icon: LucideIcons.fastForward300,
           size: 44,
           onTap: onSkipForward,
         ),
         const SizedBox(width: 8),
-        _ControlButton(icon: Icons.skip_next_rounded, size: 44, onTap: onNext),
+        _ControlButton(
+          icon: LucideIcons.skipForward300,
+          size: 44,
+          onTap: onNext,
+        ),
       ],
     );
   }
@@ -76,8 +81,8 @@ class _PlayButton extends StatelessWidget {
           ],
         ),
         child: Icon(
-          isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-          color: accent.onAccent,
+          isPlaying ? LucideIcons.pause300 : LucideIcons.play300,
+          color: Colors.white,
           size: 32,
         ),
       ),
