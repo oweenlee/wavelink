@@ -8,10 +8,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+#[cfg(feature = "cpal-backend")]
 use ringbuf::traits::{Producer, Split};
-use ringbuf::{HeapCons, HeapRb};
+use ringbuf::HeapCons;
+#[cfg(feature = "cpal-backend")]
+use ringbuf::HeapRb;
 
-/// 捕获缓冲消费者端（供 FFI 读取）
+/// 捕获缓冲消费者端（供宿主层读取）
 pub struct CaptureInner {
     /// 捕获数据的环缓冲消费者端
     pub consumer: Mutex<HeapCons<f32>>,
@@ -19,7 +22,7 @@ pub struct CaptureInner {
 
 static CAPTURE_INNER: Mutex<Option<Arc<CaptureInner>>> = Mutex::new(None);
 
-/// 获取全局捕获缓冲（供 FFI `ac_audio_read_capture` 使用）
+/// 获取全局捕获缓冲（供宿主层读取捕获数据）
 pub(crate) fn capture_inner() -> Option<Arc<CaptureInner>> {
     CAPTURE_INNER.lock().clone()
 }
@@ -30,8 +33,10 @@ pub(crate) fn capture_inner() -> Option<Arc<CaptureInner>> {
 static CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// 捕获线程停止信号发送端（drop 即通知线程退出）
+#[cfg(feature = "cpal-backend")]
 static CAPTURE_STOP: Mutex<Option<crossbeam_channel::Sender<()>>> = Mutex::new(None);
 /// 捕获线程 JoinHandle
+#[cfg(feature = "cpal-backend")]
 static CAPTURE_THREAD: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
 
 /// 开始捕获。返回 Ok(()) 表示成功。
@@ -140,12 +145,14 @@ pub fn is_capturing() -> bool {
 
 // ─── 非 cpal 平台无操作实现 ──────────────────────────────────
 
+/// 开始捕获（非 cpal 平台无实际操作，仅置位运行标志）。
 #[cfg(not(feature = "cpal-backend"))]
 pub fn start_global_capture(_sample_rate: u32, _channels: u32) -> Result<(), String> {
     CAPTURE_ACTIVE.store(true, Ordering::Release);
     Ok(())
 }
 
+/// 停止捕获（非 cpal 平台无实际操作，仅清除运行标志与缓冲）。
 #[cfg(not(feature = "cpal-backend"))]
 pub fn stop_global_capture() {
     CAPTURE_ACTIVE.store(false, Ordering::Release);
