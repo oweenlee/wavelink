@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../domain/models/song.dart';
 import '../features/library/views/library_page.dart';
-import '../features/library/views/search_page.dart';
 import '../features/settings/views/settings_page.dart';
 import '../features/playback/views/now_playing_page.dart';
 import '../features/library/views/album_detail_page.dart';
@@ -25,15 +24,6 @@ final goRouter = GoRouter(
               path: '/library',
               pageBuilder: (context, state) =>
                   const NoTransitionPage(child: LibraryPage()),
-            ),
-          ],
-        ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
-              path: '/search',
-              pageBuilder: (context, state) =>
-                  const NoTransitionPage(child: SearchPage()),
             ),
           ],
         ),

@@ -44,9 +44,18 @@ pub fn get_underrun_count() -> u64 {
 }
 
 /// 清空 ringbuf 残留数据（平台音频流 start/stop 时调用）
+///
+/// 虽然 EngineHandle 在 seek/切歌时自动 swap_consumer 创建新 ringbuf，
+/// 但 pause/resume 或 iOS 中断恢复时会残留暂停前的数据，必须真正清空，
+/// 否则恢复播放会先听到旧数据造成"跳音"。
 pub(crate) fn clear_ringbuf_impl() {
-    // EngineHandle 在 seek/切歌时自动 swap_consumer 创建新 ringbuf，
-    // 无需手动清空。保留此函数为 no-op 以保持 FFI 兼容。
+    let mut buf = vec![0.0f32; 4096 * 2];
+    loop {
+        let n = crate::api::engine::engine_read_samples(&mut buf);
+        if n == 0 {
+            break;
+        }
+    }
 }
 
 /// 预分配的实时回调缓冲区（避免在音频线程中做堆分配）

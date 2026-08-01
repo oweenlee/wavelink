@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0-beta.5";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -831599352;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -971372368;
 
 // Section: executor
 
@@ -1015,6 +1015,41 @@ fn wire__crate__api__engine__engine_queue_path_at_impl(
         },
     )
 }
+fn wire__crate__api__engine__engine_read_samples_frames_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "engine_read_samples_frames",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_frames = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Result::<_, ()>::Ok(
+                        crate::api::engine::engine_read_samples_frames(api_frames),
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__engine__engine_remove_from_queue_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1147,6 +1182,76 @@ fn wire__crate__api__engine__engine_set_crossfeed_impl(
                 transform_result_sse::<_, ()>((move || {
                     let output_ok = Result::<_, ()>::Ok({
                         crate::api::engine::engine_set_crossfeed(api_enabled);
+                    })?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__engine__engine_set_dither_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "engine_set_dither",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_enabled = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Result::<_, ()>::Ok({
+                        crate::api::engine::engine_set_dither(api_enabled);
+                    })?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__engine__engine_set_limiter_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "engine_set_limiter",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_enabled = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Result::<_, ()>::Ok({
+                        crate::api::engine::engine_set_limiter(api_enabled);
                     })?;
                     Ok(output_ok)
                 })())
@@ -2566,86 +2671,94 @@ fn pde_ffi_dispatcher_primary_impl(
         28 => {
             wire__crate__api__engine__engine_queue_path_at_impl(port, ptr, rust_vec_len, data_len)
         }
-        29 => wire__crate__api__engine__engine_remove_from_queue_impl(
+        29 => wire__crate__api__engine__engine_read_samples_frames_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        30 => wire__crate__api__engine__engine_resume_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__engine__engine_seek_impl(port, ptr, rust_vec_len, data_len),
-        32 => {
+        30 => wire__crate__api__engine__engine_remove_from_queue_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        31 => wire__crate__api__engine__engine_resume_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__engine__engine_seek_impl(port, ptr, rust_vec_len, data_len),
+        33 => {
             wire__crate__api__engine__engine_set_crossfeed_impl(port, ptr, rust_vec_len, data_len)
         }
-        33 => wire__crate__api__engine__engine_set_output_sample_rate_impl(
+        34 => wire__crate__api__engine__engine_set_dither_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__engine__engine_set_limiter_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__engine__engine_set_output_sample_rate_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        34 => wire__crate__api__engine__engine_set_peq_band_impl(port, ptr, rust_vec_len, data_len),
-        35 => {
+        37 => wire__crate__api__engine__engine_set_peq_band_impl(port, ptr, rust_vec_len, data_len),
+        38 => {
             wire__crate__api__engine__engine_set_play_mode_impl(port, ptr, rust_vec_len, data_len)
         }
-        36 => wire__crate__api__engine__engine_set_replaygain_gain_impl(
+        39 => wire__crate__api__engine__engine_set_replaygain_gain_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        37 => wire__crate__api__engine__engine_set_speed_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__engine__engine_set_stereo_widener_impl(
+        40 => wire__crate__api__engine__engine_set_speed_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__engine__engine_set_stereo_widener_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        39 => wire__crate__api__engine__engine_set_volume_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__engine__engine_stop_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__engine__engine_take_event_impl(port, ptr, rust_vec_len, data_len),
-        42 => {
+        42 => wire__crate__api__engine__engine_set_volume_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__engine__engine_stop_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__engine__engine_take_event_impl(port, ptr, rust_vec_len, data_len),
+        45 => {
             wire__crate__api__engine__engine_underrun_count_impl(port, ptr, rust_vec_len, data_len)
         }
-        43 => wire__crate__api__device__enumerate_devices_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__metadata__get_cover_bytes_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__audio_output__get_hw_sample_rate_impl(
+        46 => wire__crate__api__device__enumerate_devices_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__metadata__get_cover_bytes_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__audio_output__get_hw_sample_rate_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        46 => wire__crate__api__audio_output__get_spectrum_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__audio_output__get_underrun_count_impl(
+        49 => wire__crate__api__audio_output__get_spectrum_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__audio_output__get_underrun_count_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        48 => wire__crate__api__decode__is_dsd_file_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__engine__levels_dto_default_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__cue__parse_cue_file_impl(port, ptr, rust_vec_len, data_len),
-        51 => {
+        51 => wire__crate__api__decode__is_dsd_file_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__engine__levels_dto_default_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__cue__parse_cue_file_impl(port, ptr, rust_vec_len, data_len),
+        54 => {
             wire__crate__api__playlist__parse_playlist_file_impl(port, ptr, rust_vec_len, data_len)
         }
-        52 => wire__crate__api__decode__probe_sample_rate_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__metadata__read_metadata_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__metadata__read_replaygain_impl(port, ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__audio_output__set_hw_sample_rate_impl(
+        55 => wire__crate__api__decode__probe_sample_rate_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__metadata__read_metadata_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__metadata__read_replaygain_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__audio_output__set_hw_sample_rate_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        56 => {
+        59 => {
             wire__crate__api__decode__stream_decoder_create_impl(port, ptr, rust_vec_len, data_len)
         }
-        57 => wire__crate__api__decode__stream_decoder_next_chunk_impl(
+        60 => wire__crate__api__decode__stream_decoder_next_chunk_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        58 => wire__crate__api__decode__stream_decoder_stop_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__decode__stream_decoder_stop_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

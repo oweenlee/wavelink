@@ -27,6 +27,9 @@ class AudioEngineRepository {
   Future<void> stop() => rs.engineStop();
   Future<void> seek(double posSecs) => rs.engineSeek(posSecs);
 
+  /// 从引擎 ringbuf 读取交错立体声 PCM（Android 流式播放拉取用）
+  Future<Float32List> readPcm(int frames) => rs.engineReadSamplesFrames(frames);
+
   /// 设置引擎输出采样率（下次播放生效，iOS bit-perfect 协调用）
   Future<void> setOutputSampleRate(int rate) =>
       rs.engineSetOutputSampleRate(rate: rate);
@@ -46,6 +49,10 @@ class AudioEngineRepository {
       rs.engineSetCrossfeed(enabled: enabled);
   Future<void> setStereoWidener(bool enabled, double width) =>
       rs.engineSetStereoWidener(enabled: enabled, width: width);
+  Future<void> setLimiter(bool enabled) =>
+      rs.engineSetLimiter(enabled: enabled);
+  Future<void> setDither(bool enabled) =>
+      rs.engineSetDither(enabled: enabled);
 
   // ── 状态 ──
 

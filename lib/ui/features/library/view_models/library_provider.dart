@@ -152,24 +152,36 @@ class LibraryProvider extends ChangeNotifier {
     final cacheDir = Directory('${appDir.path}/.covers');
     if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
 
+    // 待处理的歌曲（无封面缓存）
+    final pending = songs
+        .where((s) => s.hasCover && s.path != null && s.coverUrl == null)
+        .toList();
+    if (pending.isEmpty) return;
+
     var changed = false;
-    for (final song in songs) {
-      if (!song.hasCover || song.path == null || song.coverUrl != null)
-        continue;
-      final cacheFile = File('${cacheDir.path}/${song.path!.hashCode}.jpg');
-      if (await cacheFile.exists()) {
-        song.coverUrl = cacheFile.path;
-        changed = true;
-        continue;
-      }
-      try {
-        final bytes = await _engineRepo.getCoverBytes(song.path!);
-        await cacheFile.writeAsBytes(bytes);
-        song.coverUrl = cacheFile.path;
-        changed = true;
-      } catch (e) {
-        debugPrint('[Library] 提取封面失败: $e');
-      }
+    // 限制并发，避免一次性打满 FRB 线程池；每组并行完成后统一刷新
+    const batchSize = 4;
+    for (var i = 0; i < pending.length; i += batchSize) {
+      final batch = pending.sublist(
+        i,
+        i + batchSize > pending.length ? pending.length : i + batchSize,
+      );
+      await Future.wait(batch.map((song) async {
+        final cacheFile = File('${cacheDir.path}/${song.path!.hashCode}.jpg');
+        if (await cacheFile.exists()) {
+          song.coverUrl = cacheFile.path;
+          changed = true;
+          return;
+        }
+        try {
+          final bytes = await _engineRepo.getCoverBytes(song.path!);
+          await cacheFile.writeAsBytes(bytes);
+          song.coverUrl = cacheFile.path;
+          changed = true;
+        } catch (e) {
+          debugPrint('[Library] 提取封面失败: $e');
+        }
+      }));
     }
     if (changed) notifyListeners();
   }

@@ -96,12 +96,12 @@ void main() {
   });
 
   group('App 渲染', () {
-    testWidgets('基础渲染包含四个导航项', (tester) async {
+    testWidgets('基础渲染包含三个导航项', (tester) async {
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
       expect(find.byType(MaterialApp), findsOneWidget);
       expect(find.text('曲库'), findsWidgets);
-      expect(find.text('搜索'), findsWidgets);
+      expect(find.text('播放'), findsWidgets);
       expect(find.text('设置'), findsWidgets);
     });
 

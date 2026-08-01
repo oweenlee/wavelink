@@ -43,10 +43,21 @@ class NativeAudioService {
 
   // ── 播放控制 ──
 
-  Future<void> play() => _safeCall(_methodChannel.invokeMethod('play'));
+  /// Android 以指定采样率/声道启动流式播放（iOS 忽略参数）
+  Future<void> play({int sampleRate = 44100, int channels = 2}) => _safeCall(
+    _methodChannel.invokeMethod('play', {
+      'sampleRate': sampleRate,
+      'channels': channels,
+    }),
+  );
   Future<void> pause() => _safeCall(_methodChannel.invokeMethod('pause'));
   Future<void> resume() => _safeCall(_methodChannel.invokeMethod('resume'));
   Future<void> stop() => _safeCall(_methodChannel.invokeMethod('stop'));
+
+  /// Android 推送引擎输出的交错立体声 PCM 数据（iOS 无此通道，静默）
+  Future<void> pushPcm(Float32List samples) => _safeCall(
+    _methodChannel.invokeMethod('pushPcm', {'samples': samples}),
+  );
 
   // ── 锁屏信息更新 ──
 
@@ -85,6 +96,19 @@ class NativeAudioService {
       return result ?? 0.0;
     } on MissingPluginException {
       return 0.0;
+    }
+  }
+
+  /// iOS：把 iPod library 歌曲（ipod-library:// URL）导出为本地文件，
+  /// 返回可被 Rust 解码的绝对路径；失败返回 null（非 iOS 平台恒 null）。
+  Future<String?> resolveLibraryAsset(String url) async {
+    try {
+      return await _methodChannel.invokeMethod<String>(
+        'resolveLibraryAsset',
+        {'url': url},
+      );
+    } on MissingPluginException {
+      return null;
     }
   }
 

@@ -49,6 +49,13 @@ class PlaybackProvider extends ChangeNotifier {
     audioPlayer.onTrackEnd = () {
       next();
     };
+    // 锁屏/控制中心 next/previous 命令 → 复用播放器切歌逻辑
+    audioPlayer.onNext = () {
+      next();
+    };
+    audioPlayer.onPrevious = () {
+      previous();
+    };
 
     audioPlayer.addListener(_onAudioPlayerChange);
     library.addListener(_onLibraryChange);
@@ -80,6 +87,8 @@ class PlaybackProvider extends ChangeNotifier {
       ),
     );
     dsp.loadDspPrefs();
+    // 引擎初始化后应用已持久化的 DSP 状态（含总开关与 limiter/dither）
+    dsp.applyDsp();
     library.loadFavoritesPrefs();
   }
 

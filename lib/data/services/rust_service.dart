@@ -143,6 +143,10 @@ Future<void> engineSetOutputSampleRate({required int rate}) =>
     engine.engineSetOutputSampleRate(rate: rate);
 Future<void> engineSetCrossfeed({required bool enabled}) =>
     engine.engineSetCrossfeed(enabled: enabled);
+Future<void> engineSetLimiter({required bool enabled}) =>
+    engine.engineSetLimiter(enabled: enabled);
+Future<void> engineSetDither({required bool enabled}) =>
+    engine.engineSetDither(enabled: enabled);
 Future<void> engineSetStereoWidener({
   required bool enabled,
   required double width,
@@ -155,6 +159,11 @@ Future<void> engineStop() => engine.engineStop();
 Future<void> engineSeek(double posSecs) => engine.engineSeek(posSecs: posSecs);
 Future<void> engineNext() => engine.engineNext();
 Future<void> enginePrev() => engine.enginePrev();
+
+/// 从引擎 ringbuf 读取最多 [frames] 帧的交错立体声 PCM（Android 流式播放用）。
+/// 返回长度可能小于 frames*2（数据不足），调用方自行处理欠载。
+Future<Float32List> engineReadSamplesFrames(int frames) =>
+    engine.engineReadSamplesFrames(frames: frames);
 
 Future<String?> enginePollEvents() => engine.enginePollEvents();
 

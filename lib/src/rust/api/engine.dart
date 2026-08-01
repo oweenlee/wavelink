@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `with_engine`
+// These functions are ignored because they are not marked as `pub`: `push_event`, `with_engine`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `engine_read_samples`
 
 /// 初始化引擎，使用 HW_SAMPLE_RATE（由 Swift 设 set_hw_sample_rate 传入）
@@ -32,6 +32,12 @@ Future<void> engineInitEx({
   exclusiveMode: exclusiveMode,
   outputDevice: outputDevice,
 );
+
+/// 从引擎 ringbuf 读取最多 `frames` 帧的交错立体声 PCM（Android 流式播放用）。
+///
+/// 返回长度可能小于 `frames*2`（ringbuf 数据不足），调用方应自行处理欠载。
+Future<Float32List> engineReadSamplesFrames({required int frames}) =>
+    RustLib.instance.api.crateApiEngineEngineReadSamplesFrames(frames: frames);
 
 Future<void> engineDeinit() =>
     RustLib.instance.api.crateApiEngineEngineDeinit();
@@ -104,6 +110,14 @@ Future<void> engineSetOutputSampleRate({required int rate}) =>
 
 Future<void> engineSetCrossfeed({required bool enabled}) =>
     RustLib.instance.api.crateApiEngineEngineSetCrossfeed(enabled: enabled);
+
+/// 启用/禁用真峰值限幅
+Future<void> engineSetLimiter({required bool enabled}) =>
+    RustLib.instance.api.crateApiEngineEngineSetLimiter(enabled: enabled);
+
+/// 启用/禁用抖动（含噪声整形）
+Future<void> engineSetDither({required bool enabled}) =>
+    RustLib.instance.api.crateApiEngineEngineSetDither(enabled: enabled);
 
 Future<void> engineSetPlayMode({required int mode}) =>
     RustLib.instance.api.crateApiEngineEngineSetPlayMode(mode: mode);

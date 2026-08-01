@@ -3,10 +3,8 @@
   "appTitle": "WaveLink",
   "tabLibrary": "Library",
   "tabPlay": "Now Playing",
-  "tabSearch": "Search",
   "tabSettings": "Settings",
   "titleLibrary": "Library",
-  "titleSearch": "Search",
   "titleSettings": "Settings",
   "navPlaying": "Playing",
 
@@ -105,11 +103,6 @@
   "licenses": "Open Source Licenses",
   "language": "Language",
   "systemDefault": "System Default",
-
-  "searchHint": "Search songs, albums, artists",
-  "searchYourMusic": "Search your music",
-  "importThenSearch": "Import music to start searching",
-  "searchHistory": "Search History",
   "clear": "Clear",
   "noResults": "No results found",
 

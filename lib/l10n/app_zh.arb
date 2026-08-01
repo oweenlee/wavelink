@@ -3,10 +3,8 @@
   "appTitle": "WaveLink",
   "tabLibrary": "曲库",
   "tabPlay": "播放",
-  "tabSearch": "搜索",
   "tabSettings": "设置",
   "titleLibrary": "曲库",
-  "titleSearch": "搜索",
   "titleSettings": "设置",
   "navPlaying": "正在播放",
 
@@ -104,11 +102,6 @@
   "licenses": "开源许可",
   "language": "语言",
   "systemDefault": "跟随系统",
-
-  "searchHint": "搜索歌曲、专辑、艺术家",
-  "searchYourMusic": "搜索你的音乐",
-  "importThenSearch": "导入音乐后即可搜索",
-  "searchHistory": "搜索历史",
   "clear": "清空",
   "noResults": "未找到结果",
 

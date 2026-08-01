@@ -8,6 +8,7 @@ use audio_core::engine::{EngineEvent, EngineHandle, PlayMode};
 use audio_core::EngineConfig;
 use flutter_rust_bridge::frb;
 use once_cell::sync::OnceCell;
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
@@ -21,6 +22,8 @@ static LAST_ERROR: Mutex<String> = Mutex::new(String::new());
 static CURRENT_QUEUE: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static EVENT_OCCURRED: AtomicBool = AtomicBool::new(false);
 static LAST_EVENT_KIND: Mutex<String> = Mutex::new(String::new());
+// 事件队列：每次 poll 弹出一个，避免 while 循环丢事件
+static EVENT_QUEUE: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 
 #[derive(Default)]
 pub struct LevelsDto {
@@ -59,7 +62,19 @@ pub fn engine_init_ex(
     output_device: Option<String>,
 ) -> Result<(), String> {
     if ENGINE.get().is_some() {
-        return Ok(());
+        // 二次初始化：先停止旧引擎再替换，避免 OnceCell 无法重建
+        if let Some(mtx) = ENGINE.get() {
+            if let Ok(g) = mtx.lock() {
+                if let Some(ref h) = *g {
+                    h.stop();
+                }
+            }
+        }
+        if let Some(mtx) = EVENT_RX.get() {
+            if let Ok(mut g) = mtx.lock() {
+                *g = None;
+            }
+        }
     }
     let config = EngineConfig {
         sample_rate: sr,
@@ -73,8 +88,23 @@ pub fn engine_init_ex(
         ..Default::default()
     };
     let (handle, rx) = EngineHandle::start_with_config(config);
-    ENGINE.get_or_init(|| Mutex::new(Some(handle)));
-    EVENT_RX.get_or_init(|| Mutex::new(Some(rx)));
+    if let Some(mtx) = ENGINE.get() {
+        if let Ok(mut g) = mtx.lock() {
+            *g = Some(handle);
+        }
+    } else {
+        let _ = ENGINE.set(Mutex::new(Some(handle)));
+    }
+    if let Some(mtx) = EVENT_RX.get() {
+        if let Ok(mut g) = mtx.lock() {
+            *g = Some(rx);
+        }
+    } else {
+        let _ = EVENT_RX.set(Mutex::new(Some(rx)));
+    }
+    // 清空旧事件队列
+    EVENT_QUEUE.lock().unwrap().clear();
+    EVENT_OCCURRED.store(false, Ordering::Release);
     Ok(())
 }
 
@@ -84,6 +114,16 @@ pub fn engine_init_ex(
 #[frb(ignore)]
 pub fn engine_read_samples(buf: &mut [f32]) -> usize {
     with_engine(|h| h.read_samples(buf)).unwrap_or(0)
+}
+
+/// 从引擎 ringbuf 读取最多 `frames` 帧的交错立体声 PCM（Android 流式播放用）。
+///
+/// 返回长度可能小于 `frames*2`（ringbuf 数据不足），调用方应自行处理欠载。
+pub fn engine_read_samples_frames(frames: u32) -> Vec<f32> {
+    let mut buf = vec![0.0f32; frames as usize * 2];
+    let n = engine_read_samples(&mut buf);
+    buf.truncate(n);
+    buf
 }
 
 pub fn engine_deinit() {
@@ -105,43 +145,47 @@ pub fn engine_deinit() {
 // ── 事件轮询（Dart 侧每分钟应调用数十次以保持事件更新） ──
 
 pub fn engine_poll_events() -> Option<String> {
-    let rx = EVENT_RX.get().and_then(|mtx| mtx.lock().ok())?;
-    let rx = rx.as_ref()?;
+    {
+        let guard = EVENT_RX.get().and_then(|mtx| mtx.lock().ok())?;
+        let rx = guard.as_ref()?;
 
-    let mut kind: Option<String> = None;
-    while let Ok(event) = rx.try_recv() {
-        match event {
-            EngineEvent::TrackChanged(path) => {
-                *CURRENT_PATH.lock().unwrap() = path;
-                kind = Some("track_changed".into());
-            }
-            EngineEvent::PlaybackStopped => {
-                kind = Some("stopped".into());
-            }
-            EngineEvent::Error(e) => {
-                *LAST_ERROR.lock().unwrap() = e;
-                kind = Some("error".into());
-            }
-            EngineEvent::Spectrum(bands) => {
-                let mut arr = [0.0f32; 16];
-                for (i, &v) in bands.iter().take(16).enumerate() {
-                    arr[i] = v;
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                EngineEvent::TrackChanged(path) => {
+                    *CURRENT_PATH.lock().unwrap() = path;
+                    push_event("track_changed");
                 }
-                crate::api::audio_output::update_spectrum(&arr);
+                EngineEvent::PlaybackStopped => {
+                    push_event("stopped");
+                }
+                EngineEvent::Error(e) => {
+                    *LAST_ERROR.lock().unwrap() = e;
+                    push_event("error");
+                }
+                EngineEvent::Spectrum(bands) => {
+                    let mut arr = [0.0f32; 16];
+                    for (i, &v) in bands.iter().take(16).enumerate() {
+                        arr[i] = v;
+                    }
+                    crate::api::audio_output::update_spectrum(&arr);
+                }
+                EngineEvent::QueueChanged(queue, current) => {
+                    *CURRENT_QUEUE.lock().unwrap() = queue;
+                    *CURRENT_PATH.lock().unwrap() = current;
+                    push_event("queue_changed");
+                }
+                _ => {}
             }
-            EngineEvent::QueueChanged(queue, current) => {
-                *CURRENT_QUEUE.lock().unwrap() = queue;
-                *CURRENT_PATH.lock().unwrap() = current;
-                kind = Some("queue_changed".into());
-            }
-            _ => {}
         }
     }
-    if let Some(ref k) = kind {
-        *LAST_EVENT_KIND.lock().unwrap() = k.clone();
-        EVENT_OCCURRED.store(true, Ordering::Release);
-    }
-    kind
+    // 每次只弹出一个事件，剩余保留在队列中
+    EVENT_QUEUE.lock().unwrap().pop_front()
+}
+
+fn push_event(kind: &str) {
+    *LAST_EVENT_KIND.lock().unwrap() = kind.to_string();
+    EVENT_OCCURRED.store(true, Ordering::Release);
+    EVENT_QUEUE.lock().unwrap().push_back(kind.to_string());
 }
 
 /// 检查是否有新的事件发生并返回事件类型
@@ -238,6 +282,16 @@ pub fn engine_set_output_sample_rate(rate: u32) {
 
 pub fn engine_set_crossfeed(enabled: bool) {
     with_engine(|h| h.set_crossfeed(enabled));
+}
+
+/// 启用/禁用真峰值限幅
+pub fn engine_set_limiter(enabled: bool) {
+    with_engine(|h| h.set_limiter_enabled(enabled));
+}
+
+/// 启用/禁用抖动（含噪声整形）
+pub fn engine_set_dither(enabled: bool) {
+    with_engine(|h| h.set_dither_enabled(enabled));
 }
 
 pub fn engine_set_play_mode(mode: u8) {

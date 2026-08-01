@@ -251,7 +251,12 @@ class AudioOutputManager {
               let type = info[AVAudioSessionInterruptionTypeKey] as? UInt
         else { return }
 
-        if type == AVAudioSession.InterruptionType.ended.rawValue {
+        if type == AVAudioSession.InterruptionType.began.rawValue {
+            // 中断开始（来电/闹钟/插拔耳机）：通知 Dart 暂停引擎与 UI 状态。
+            // Dart 侧收到 remote:pause 后走统一 pause 流程，避免前后台状态不同步。
+            audio.pause()
+            audio.sendEvent("remote:pause")
+        } else if type == AVAudioSession.InterruptionType.ended.rawValue {
             // 中断结束：清空 ringbuf 避免累积脏数据导致杂音
             audio_output_clear_ringbuf()
             // 确保 AudioUnit 恢复运行
@@ -312,8 +317,66 @@ class AudioOutputManager {
                   let rateNum = args["rate"] as? NSNumber
             else { result(FlutterError(code: "INVALID_ARGS", message: nil, details: nil)); return }
             result(audio.setOutputRate(rateNum.doubleValue))
+        case "resolveLibraryAsset":
+            // 把 iPod library 歌曲（ipod-library:// URL，Rust 无法直接解码）
+            // 导出为本地文件，返回可被 Rust 读取的绝对路径。
+            guard let args = call.arguments as? [String: Any],
+                  let urlString = args["url"] as? String
+            else { result(FlutterError(code: "INVALID_ARGS", message: nil, details: nil)); return }
+            resolveLibraryAsset(urlString: urlString, result: result)
         default:
             result(FlutterMethodNotImplemented)
+        }
+    }
+
+    /// 导出 ipod-library:// 资产到 Documents/Exported/，已存在则直接复用。
+    /// 使用 passthrough 预设避免重编码（源文件格式各异，输出扩展名从 URL 推断）。
+    private func resolveLibraryAsset(urlString: String, result: @escaping FlutterResult) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let url = URL(string: urlString) else {
+                DispatchQueue.main.async { result(nil) }
+                return
+            }
+            // 缓存名：URL hash + 原始扩展名（m4a/mp3 等），同名直接复用
+            let ext = url.pathExtension.isEmpty ? "m4a" : url.pathExtension
+            let base = String(url.absoluteString.hashValue & 0x7fffffff)
+            let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Exported", isDirectory: true)
+            let dest = dir.appendingPathComponent("\(base).\(ext)")
+
+            if FileManager.default.fileExists(atPath: dest.path) {
+                DispatchQueue.main.async { result(dest.path) }
+                return
+            }
+
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let asset = AVURLAsset(url: url)
+            guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else {
+                DispatchQueue.main.async { result(nil) }
+                return
+            }
+            session.outputURL = dest
+            session.outputFileType = self.outputFileType(forExt: ext)
+            session.exportAsynchronously {
+                let ok = session.status == .completed
+                DispatchQueue.main.async {
+                    result(ok ? dest.path : nil)
+                }
+            }
+        }
+    }
+
+    private func outputFileType(forExt ext: String) -> AVFileType {
+        switch ext.lowercased() {
+        case "mp3": return .mp3
+        case "m4a", "m4b", "aac": return .m4a
+        case "caf": return .caf
+        case "wav": return .wav
+        case "aif", "aiff": return .aiff
+        case "mov": return .mov
+        case "mp4": return .mp4
+        case "opus", "ogg": return .m4a
+        default: return .m4a
         }
     }
 

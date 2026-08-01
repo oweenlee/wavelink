@@ -62,39 +62,11 @@ void main() {
       check(prefs.favorites).deepEquals({'a', 'b'});
     });
 
-    test('搜索历史：添加去重并限制长度', () async {
-      final prefs = PreferencesService.instance;
-      await prefs.addSearchHistory('hello');
-      await prefs.addSearchHistory('world');
-      await prefs.addSearchHistory('hello'); // 重复应置顶去重
-      final history = prefs.searchHistory;
-      check(history.length).equals(2);
-      check(history.first).equals('hello');
-    });
-
-    test('搜索历史：删除与清空', () async {
-      final prefs = PreferencesService.instance;
-      await prefs.addSearchHistory('a');
-      await prefs.addSearchHistory('b');
-      await prefs.removeSearchHistory('a');
-      check(prefs.searchHistory).deepEquals(['b']);
-      await prefs.clearSearchHistory();
-      check(prefs.searchHistory).isEmpty();
-    });
-
     test('播放列表读写', () async {
       final prefs = PreferencesService.instance;
       await prefs.savePlaylist('我的列表', ['s1', 's2']);
       final data = prefs.playlists;
       check(data['我的列表']!).deepEquals(['s1', 's2']);
-    });
-
-    test('搜索历史超过 20 条自动截断', () async {
-      final prefs = PreferencesService.instance;
-      for (var i = 0; i < 25; i++) {
-        await prefs.addSearchHistory('term$i');
-      }
-      check(prefs.searchHistory.length).equals(20);
     });
   });
 }

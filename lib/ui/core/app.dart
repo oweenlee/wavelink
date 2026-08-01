@@ -125,16 +125,10 @@ class AppShell extends StatelessWidget {
                       onTap: () => context.push('/now-playing'),
                     ),
                     _NavItem(
-                      icon: LucideIcons.search,
-                      label: l10n.tabSearch,
-                      isSelected: currentTab == 1,
-                      onTap: () => _goTab(1),
-                    ),
-                    _NavItem(
                       icon: LucideIcons.settings,
                       label: l10n.tabSettings,
-                      isSelected: currentTab == 2,
-                      onTap: () => _goTab(2),
+                      isSelected: currentTab == 1,
+                      onTap: () => _goTab(1),
                     ),
                   ],
                 ),
@@ -158,8 +152,6 @@ class AppShell extends StatelessWidget {
       case 0:
         return l10n.titleLibrary;
       case 1:
-        return l10n.titleSearch;
-      case 2:
         return l10n.titleSettings;
       default:
         return '';

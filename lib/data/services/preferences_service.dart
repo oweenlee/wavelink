@@ -85,30 +85,6 @@ class PreferencesService {
   Future<void> setFavorites(Set<String> ids) =>
       _prefs.setStringList(_kFavorites, ids.toList());
 
-  // ── 搜索历史 ──
-  static const _kSearchHistory = 'search_history';
-  List<String> get searchHistory => _prefs.getStringList(_kSearchHistory) ?? [];
-  Future<void> setSearchHistory(List<String> history) =>
-      _prefs.setStringList(_kSearchHistory, history);
-
-  Future<void> addSearchHistory(String term) async {
-    final trimmed = term.trim();
-    if (trimmed.isEmpty) return;
-    final list = searchHistory;
-    list.remove(trimmed);
-    list.insert(0, trimmed);
-    if (list.length > 20) list.removeRange(20, list.length);
-    await setSearchHistory(list);
-  }
-
-  Future<void> removeSearchHistory(String term) async {
-    final list = searchHistory;
-    list.remove(term);
-    await setSearchHistory(list);
-  }
-
-  Future<void> clearSearchHistory() => setSearchHistory([]);
-
   // ── 播放列表（id 列表，JSON 序列化）──
   static const _kPlaylists = 'playlists';
 

@@ -169,12 +169,14 @@ class MainActivity : FlutterActivity() {
             val dataIdx = c.getColumnIndex(MediaStore.Audio.AudioColumns.DATA)
             val albumIdIdx = c.getColumnIndex(MediaStore.Audio.AudioColumns.ALBUM_ID)
             while (c.moveToNext()) {
-                val path = if (dataIdx >= 0) c.getString(dataIdx) else ""
-                if (path.isNullOrEmpty()) continue
-                val file = File(path)
-                if (!file.exists()) continue
+                val id = c.getLong(idIdx)
+                // Android 10+ scoped storage 下 DATA 列不可直接读文件路径，
+                // 统一通过 content:// URI 复制到 app 私有目录，保证 Rust 解码器可访问。
+                val mediaUri = Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id.toString())
+                val path = copyToAppStorage(mediaUri, "ms_$id")
+                if (path == null) continue
                 songs.add(mapOf(
-                    "id" to "ms_${c.getLong(idIdx)}",
+                    "id" to "ms_$id",
                     "title" to (if (titleIdx >= 0) c.getString(titleIdx) ?: "" else ""),
                     "artist" to (if (artistIdx >= 0) c.getString(artistIdx) ?: "" else ""),
                     "album" to (if (albumIdx >= 0) c.getString(albumIdx) ?: "" else ""),
@@ -191,20 +193,19 @@ class MainActivity : FlutterActivity() {
             "play" -> {
                 @Suppress("UNCHECKED_CAST")
                 val args = arguments as? Map<String, Any>
-                val dataBytes = args?.get("pcmBytes") as? ByteArray
                 val sampleRate = (args?.get("sampleRate") as? Number)?.toInt() ?: 44100
                 val channels = (args?.get("channels") as? Number)?.toInt() ?: 2
 
-                if (dataBytes == null) {
-                    result.error("INVALID_ARGS", "play: missing pcmBytes", null)
-                    return
-                }
-                val floatCount = dataBytes.size / 4
-                val floats = FloatArray(floatCount)
-                val bb = java.nio.ByteBuffer.wrap(dataBytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
-                bb.asFloatBuffer().get(floats)
+                // 流式播放：不再整体传 PCM，由 Dart 侧定时从 Rust 引擎 ringbuf 拉取推送
+                audioEngine.start(sampleRate, channels)
+                result.success(null)
+            }
 
-                audioEngine.play(floats, sampleRate, channels)
+            "pushPcm" -> {
+                @Suppress("UNCHECKED_CAST")
+                val args = arguments as? Map<String, Any>
+                val samples = (args?.get("samples") as? FloatArray) ?: FloatArray(0)
+                audioEngine.pushPcm(samples)
                 result.success(null)
             }
 
@@ -233,10 +234,12 @@ class MainActivity : FlutterActivity() {
     }
 
     /// 将选中文件复制到应用私有目录，确保 Rust 解码器可以访问
-    private fun copyToAppStorage(uri: Uri): String? {
+    /// [fallbackName]：文件名，缺省时从 content URI 查询 DISPLAY_NAME
+    private fun copyToAppStorage(uri: Uri, fallbackName: String? = null): String? {
         try {
             val inputStream = contentResolver.openInputStream(uri) ?: return null
-            val fileName = queryFileName(uri) ?: "unknown_${System.currentTimeMillis()}"
+            val fileName = queryFileName(uri) ?: fallbackName
+                ?: "unknown_${System.currentTimeMillis()}"
             val destDir = File(filesDir, "Imported")
             if (!destDir.exists()) destDir.mkdirs()
             val destFile = File(destDir, fileName)

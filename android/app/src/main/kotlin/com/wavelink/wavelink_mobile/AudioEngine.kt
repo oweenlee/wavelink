@@ -4,19 +4,28 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
-import android.os.Handler
-import android.os.Looper
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 
+/**
+ * 流式音频引擎：与 iOS 一致，从 Rust 引擎 ringbuf 拉取 PCM。
+ *
+ * Dart 侧定期调用 [pushPcm] 推送交错立体声 float 数据，
+ * 本类写入 AudioTrack 播放，数据不足时静默等待（underrun 由引擎缓冲吸收）。
+ */
 class AudioEngine {
     private var audioTrack: AudioTrack? = null
-    private var pcmBuffer: FloatArray = floatArrayOf()
-    @Volatile var readIndex: Int = 0
     private var sampleRate: Int = 44100
     private var channels: Int = 2
     @Volatile private var playing = false
     @Volatile private var paused = false
     private var writeThread: Thread? = null
-    private val mainHandler = Handler(Looper.getMainLooper())
+
+    // 流式 PCM 队列（每项为交错立体声 float）
+    private val pcmQueue = LinkedBlockingQueue<FloatArray>(512)
+
+    // 已写入样本总数（交错），用于 positionMs
+    @Volatile private var writtenSamples = 0L
 
     var eventCallback: ((String) -> Unit)? = null
 
@@ -24,15 +33,15 @@ class AudioEngine {
     val positionMs: Int get() {
         if (sampleRate <= 0 || channels <= 0) return 0
         val framesPerMs = (sampleRate * channels) / 1000.0
-        return (readIndex / framesPerMs).toInt()
+        return (writtenSamples / framesPerMs).toInt()
     }
 
-    fun play(data: FloatArray, rate: Int, ch: Int) {
+    fun start(rate: Int, ch: Int) {
         stop()
-        pcmBuffer = data
         sampleRate = rate
         channels = ch
-        readIndex = 0
+        writtenSamples = 0
+        pcmQueue.clear()
         playing = true
         paused = false
 
@@ -67,20 +76,34 @@ class AudioEngine {
                     Thread.sleep(50)
                     continue
                 }
-                val avail = pcmBuffer.size - readIndex
-                if (avail <= 0) {
-                    playing = false
-                    mainHandler.post { eventCallback?.invoke("completed") }
-                    break
+                // 阻塞取一块；超时无数据则回到循环顶部继续检查 playing
+                val block = pcmQueue.poll(200, TimeUnit.MILLISECONDS)
+                    ?: continue
+                var off = 0
+                while (off < block.size && playing && !Thread.interrupted()) {
+                    if (paused) {
+                        Thread.sleep(50)
+                        continue
+                    }
+                    val n = minOf(chunk.size, block.size - off)
+                    System.arraycopy(block, off, chunk, 0, n)
+                    audioTrack?.write(chunk, 0, n, AudioTrack.WRITE_BLOCKING)
+                    writtenSamples += n
+                    off += n
                 }
-                val n = minOf(chunk.size, avail)
-                System.arraycopy(pcmBuffer, readIndex, chunk, 0, n)
-                readIndex += n
-                audioTrack?.write(chunk, 0, n, AudioTrack.WRITE_BLOCKING)
             }
-            // thread end
         }
         writeThread?.start()
+    }
+
+    /** Dart 侧推送引擎输出的交错立体声 float 数据 */
+    fun pushPcm(samples: FloatArray) {
+        if (!playing || paused || samples.isEmpty()) return
+        if (!pcmQueue.offer(samples)) {
+            // 队列满时丢弃最旧的块，避免播放延迟不断累积
+            pcmQueue.poll()
+            pcmQueue.offer(samples)
+        }
     }
 
     fun pause() {
@@ -95,20 +118,22 @@ class AudioEngine {
 
     fun stop() {
         playing = false
-        paused = false
         writeThread?.interrupt()
         writeThread = null
+        pcmQueue.clear()
         try { audioTrack?.stop() } catch (_: Exception) {}
         try { audioTrack?.release() } catch (_: Exception) {}
         audioTrack = null
-        readIndex = 0
+        writtenSamples = 0
     }
 
     fun seek(positionMs: Int) {
-        val framesPerMs = (sampleRate * channels) / 1000.0
-        readIndex = (positionMs * framesPerMs).toInt().coerceIn(0, pcmBuffer.size - 1)
-        audioTrack?.pause()
-        audioTrack?.flush()
-        audioTrack?.play()
+        // 流式模式下位置由 Rust 引擎控制，此处只需清掉积压的旧 PCM
+        pcmQueue.clear()
+        try {
+            audioTrack?.pause()
+            audioTrack?.flush()
+            audioTrack?.play()
+        } catch (_: Exception) {}
     }
 }

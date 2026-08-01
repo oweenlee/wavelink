@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../../domain/models/song.dart';
 import '../../../../domain/models/lyric_line.dart';
@@ -15,6 +15,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   final NativeAudioService _nativeAudio = NativeAudioService();
   StreamSubscription<AudioEvent>? _eventSub;
   Timer? _progressTimer;
+  Timer? _pcmTimer;
   bool _nativeReady = false;
 
   bool _isPlaying = false;
@@ -26,8 +27,15 @@ class AudioPlayerProvider extends ChangeNotifier {
   /// 开启后切歌时把输出速率对齐到文件速率（iOS 经 AVAudioSession），相等时不重采样。
   bool bitPerfect = false;
 
+  /// 是否 Android 平台（流式播放走 Dart 定时拉取引擎 PCM 推送）
+  static bool get _isAndroid {
+    return !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  }
+
   Future<void> Function(Song) startDecoderHook = (_) async {};
   VoidCallback? onTrackEnd;
+  VoidCallback? onNext;
+  VoidCallback? onPrevious;
 
   Song? _currentSong;
   void setCurrentSong(Song? song) => _currentSong = song;
@@ -69,6 +77,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   @override
   void dispose() {
     _progressTimer?.cancel();
+    _stopPcmPump();
     _eventSub?.cancel();
     _engineRepo.deinitEngine();
     _nativeAudio.dispose();
@@ -97,15 +106,21 @@ class AudioPlayerProvider extends ChangeNotifier {
     final token = ++_playToken;
 
     _progressTimer?.cancel();
+    _stopPcmPump();
     _position = 0;
 
     await _nativeAudio.stop();
     if (token != _playToken) return;
 
+    // iOS iPod library 歌曲是 ipod-library:// URL，Rust 无法直接解码，
+    // 先导出为本地文件（导出一次后缓存复用）。
+    final resolvedPath = await _resolvePlayablePath(song.path);
+    if (token != _playToken) return;
+
     // bit-perfect 协调：探测文件速率 → iOS 设 AVAudioSession 读回实际速率 → 引擎设输出速率。
     // 实际速率 == 文件速率时解码器不重采样（bit-perfect）；iOS 未满足时引擎按实际速率重采样保证播放正确。
-    if (bitPerfect && song.path != null && _engineRepo.rustAvailable) {
-      final fileRate = await _engineRepo.probeSampleRate(song.path!);
+    if (bitPerfect && resolvedPath != null && _engineRepo.rustAvailable) {
+      final fileRate = await _engineRepo.probeSampleRate(resolvedPath);
       if (token != _playToken) return;
       if (fileRate > 0) {
         final actualRate = await _nativeAudio.setOutputRate(
@@ -118,15 +133,18 @@ class AudioPlayerProvider extends ChangeNotifier {
       }
     }
 
-    if (song.path != null && _engineRepo.rustAvailable) {
-      await _engineRepo.play(song.path!);
+    if (resolvedPath != null && _engineRepo.rustAvailable) {
+      await _engineRepo.play(resolvedPath);
     }
     if (token != _playToken) return;
 
     if (token == _playToken) {
       _isPlaying = true;
       _startProgressTimer();
-      _nativeAudio.play();
+      await _nativeAudio.play();
+      if (_isAndroid && _engineRepo.rustAvailable) {
+        _startPcmPump();
+      }
       _updateLockScreenMetadata();
       _analyzeCurrent();
       notifyListeners();
@@ -136,6 +154,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   void pause() {
     _isPlaying = false;
     _progressTimer?.cancel();
+    _stopPcmPump();
     _engineRepo.pause();
     _nativeAudio.pause();
     notifyListeners();
@@ -150,6 +169,9 @@ class AudioPlayerProvider extends ChangeNotifier {
       _startProgressTimer();
       _engineRepo.resume();
       _nativeAudio.resume();
+      if (_isAndroid && _engineRepo.rustAvailable) {
+        _startPcmPump();
+      }
       notifyListeners();
     }
   }
@@ -213,12 +235,37 @@ class AudioPlayerProvider extends ChangeNotifier {
     });
   }
 
+  // ── Android 流式播放：定时从引擎 ringbuf 拉 PCM 推送原生 AudioTrack ──
+
+  static const int _pcmChunkFrames = 2048;
+
+  void _startPcmPump() {
+    _pcmTimer?.cancel();
+    _pcmTimer = Timer.periodic(const Duration(milliseconds: 40), (_) async {
+      if (!_isPlaying) return;
+      try {
+        final samples = await _engineRepo.readPcm(_pcmChunkFrames);
+        if (samples.isNotEmpty) {
+          await _nativeAudio.pushPcm(samples);
+        }
+      } catch (e) {
+        debugPrint('[Audio] PCM 推送失败: $e');
+      }
+    });
+  }
+
+  void _stopPcmPump() {
+    _pcmTimer?.cancel();
+    _pcmTimer = null;
+  }
+
   Future<void> _tick() async {
     if (!_isPlaying) return;
     try {
       final event = await _engineRepo.pollEvents();
       if (event == 'stopped') {
         _progressTimer?.cancel();
+        _stopPcmPump();
         _isPlaying = false;
         notifyListeners();
         onTrackEnd?.call();
@@ -241,6 +288,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     final song = _currentSong;
     if (song != null && _position >= song.duration.inMilliseconds) {
       _progressTimer?.cancel();
+      _stopPcmPump();
       _isPlaying = false;
       notifyListeners();
       onTrackEnd?.call();
@@ -268,13 +316,41 @@ class AudioPlayerProvider extends ChangeNotifier {
       case 'play':
       case 'togglePlayPause':
         togglePlay();
+        break;
       case 'pause':
         pause();
+        break;
       case 'next':
+        onNext?.call();
+        break;
       case 'previous':
+        onPrevious?.call();
+        break;
       case 'seek':
+        final target = cmd.seekPosition;
+        if (target != null) {
+          _seekToPosition(target * 1000);
+        }
         break;
     }
+  }
+
+  /// 把歌曲路径解析为 Rust 可读的本地文件路径。
+  /// iOS iPod library 的 ipod-library:// URL 需先导出为本地文件（结果缓存复用）；
+  /// 普通文件路径原样返回。
+  final Map<String, String> _resolvedPaths = {};
+
+  Future<String?> _resolvePlayablePath(String? path) async {
+    if (path == null) return null;
+    if (!path.startsWith('ipod-library://')) return path;
+    final cached = _resolvedPaths[path];
+    if (cached != null) return cached;
+    final resolved = await _nativeAudio.resolveLibraryAsset(path);
+    if (resolved != null && resolved.isNotEmpty) {
+      _resolvedPaths[path] = resolved;
+      return resolved;
+    }
+    return null;
   }
 
   Future<void> _updateLockScreenMetadata() async {
