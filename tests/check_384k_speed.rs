@@ -2,7 +2,7 @@
 //! 这个文件 ~553MB，全解太慢，所以先探测时长再取前 10s 数据量
 
 use audio_core::decoder::Decoder;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -31,7 +31,6 @@ fn diagnose_384k() {
         let mut samples = 0u64;
         let mut frames = 0u64;
         let mut first_frame_time = None;
-        let mut last_sample_rate = 0u32;
 
         loop {
             if start.elapsed() > timeout {
@@ -43,7 +42,6 @@ fn diagnose_384k() {
                     if first_frame_time.is_none() {
                         first_frame_time = Some(start.elapsed());
                     }
-                    last_sample_rate = frame.sample_rate;
                     samples += frame.samples.len() as u64;
                     frames += 1;
                 }

@@ -202,6 +202,14 @@ impl EngineHandle {
     pub fn set_noise_shaping(&self, enabled: bool) {
         let _ = self.tx.send(EngineCommand::SetNoiseShaping(enabled));
     }
+    /// 启用/禁用真峰值限幅
+    pub fn set_limiter_enabled(&self, enabled: bool) {
+        let _ = self.tx.send(EngineCommand::SetLimiterEnabled(enabled));
+    }
+    /// 启用/禁用抖动（含噪声整形）
+    pub fn set_dither_enabled(&self, enabled: bool) {
+        let _ = self.tx.send(EngineCommand::SetDitherEnabled(enabled));
+    }
     /// 动态调整输出缓冲时长（毫秒），实时生效。仅在 Oboe 后端受支持。
     pub fn set_buffer_ms(&self, ms: u32) {
         let _ = self.tx.send(EngineCommand::SetBufferMs(ms));

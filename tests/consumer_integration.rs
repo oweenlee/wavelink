@@ -13,7 +13,7 @@ use parking_lot::Mutex;
 use std::thread;
 use std::time::Duration;
 
-use audio_core::consumer::{run_consumer_loop, ConsumerConfig};
+use audio_core::consumer::{run_consumer_loop, ConsumerCallbacks, ConsumerConfig, ConsumerControl};
 use audio_core::decoder::Decoder;
 use crossbeam_channel::bounded;
 
@@ -46,22 +46,22 @@ fn test_real_wav_through_consumer() {
     };
 
     let consumer_h = thread::spawn(move || {
-        run_consumer_loop(
-            rx,
-            &config,
-            &|buf| {
+        let cb = ConsumerCallbacks {
+            push_samples: &|buf| {
                 *tp.lock() += buf.len();
                 buf.len()
             },
-            &|_| {},
-            &|_| {},
-            &|| {},
-            &|_| {},
-            &|| None,
-            &s,
-            ready_tx,
-            Arc::new(AtomicU32::new(1.0f32.to_bits())),
-        );
+            process_dsp: &|_| {},
+            on_spectrum: &|_| {},
+            on_bad_frame: &|| {},
+            on_samples_output: &|_| {},
+            on_end_of_track: &|| None,
+        };
+        let ctrl = ConsumerControl {
+            stop: s, ready_tx,
+            speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+        };
+        run_consumer_loop(rx, &config, &cb, &ctrl);
     });
 
     // 等待 ready
@@ -77,7 +77,7 @@ fn test_real_wav_through_consumer() {
 
     // test_wav_48k 中 44.1k 2s 立体声 = 176400 样本，这里也接近
     assert!(
-        total >= 176_000 && total <= 177_000,
+        (176_000..=177_000).contains(&total),
         "WAV 2s @44100/2ch 应产生 ~176400 样本, got {total}"
     );
 }
@@ -107,21 +107,21 @@ fn test_consumer_output_count_matches() {
     };
 
     let consumer_h = thread::spawn(move || {
-        run_consumer_loop(
-            rx,
-            &config,
-            &|buf| buf.len(),
-            &|_| {},
-            &|_| {},
-            &|| {},
-            &|n| {
+        let cb = ConsumerCallbacks {
+            push_samples: &|buf| buf.len(),
+            process_dsp: &|_| {},
+            on_spectrum: &|_| {},
+            on_bad_frame: &|| {},
+            on_samples_output: &|n| {
                 *oc.lock() += n;
             },
-            &|| None,
-            &s,
-            ready_tx,
-            Arc::new(AtomicU32::new(1.0f32.to_bits())),
-        );
+            on_end_of_track: &|| None,
+        };
+        let ctrl = ConsumerControl {
+            stop: s, ready_tx,
+            speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+        };
+        run_consumer_loop(rx, &config, &cb, &ctrl);
     });
 
     ready_rx
@@ -133,7 +133,7 @@ fn test_consumer_output_count_matches() {
     let reported = *output_count.lock();
     eprintln!("on_samples_output total: {reported}");
     assert!(
-        reported >= 176_000 && reported <= 177_000,
+        (176_000..=177_000).contains(&reported),
         "on_samples_output 应报告 ~176400, got {reported}"
     );
 }
@@ -163,22 +163,22 @@ fn test_48k_wav_through_consumer() {
     };
 
     let consumer_h = thread::spawn(move || {
-        run_consumer_loop(
-            rx,
-            &config,
-            &|buf| {
+        let cb = ConsumerCallbacks {
+            push_samples: &|buf| {
                 *tp.lock() += buf.len();
                 buf.len()
             },
-            &|_| {},
-            &|_| {},
-            &|| {},
-            &|_| {},
-            &|| None,
-            &s,
-            ready_tx,
-            Arc::new(AtomicU32::new(1.0f32.to_bits())),
-        );
+            process_dsp: &|_| {},
+            on_spectrum: &|_| {},
+            on_bad_frame: &|| {},
+            on_samples_output: &|_| {},
+            on_end_of_track: &|| None,
+        };
+        let ctrl = ConsumerControl {
+            stop: s, ready_tx,
+            speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+        };
+        run_consumer_loop(rx, &config, &cb, &ctrl);
     });
 
     ready_rx
@@ -192,7 +192,7 @@ fn test_48k_wav_through_consumer() {
 
     // 48kHz 2s 立体声 → 192000 样本（rubato 重采样到 48kHz = 无重采样）
     assert!(
-        total >= 191_000 && total <= 193_000,
+        (191_000..=193_000).contains(&total),
         "48kHz WAV 2s 应产生 ~192000 样本, got {total}"
     );
 }
@@ -220,19 +220,19 @@ fn test_consumer_stop_during_decoding() {
     };
 
     let consumer_h = thread::spawn(move || {
-        run_consumer_loop(
-            rx,
-            &config,
-            &|_| 0,
-            &|_| {},
-            &|_| {},
-            &|| {},
-            &|_| {},
-            &|| None,
-            &s,
-            ready_tx,
-            Arc::new(AtomicU32::new(1.0f32.to_bits())),
-        );
+        let cb = ConsumerCallbacks {
+            push_samples: &|_| 0,
+            process_dsp: &|_| {},
+            on_spectrum: &|_| {},
+            on_bad_frame: &|| {},
+            on_samples_output: &|_| {},
+            on_end_of_track: &|| None,
+        };
+        let ctrl = ConsumerControl {
+            stop: s, ready_tx,
+            speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+        };
+        run_consumer_loop(rx, &config, &cb, &ctrl);
     });
 
     ready_rx.recv_timeout(Duration::from_secs(5)).expect("ready");
@@ -270,19 +270,19 @@ fn test_consumer_zero_timeout() {
     };
 
     let consumer_h = thread::spawn(move || {
-        run_consumer_loop(
-            rx,
-            &config,
-            &|buf| { *tp.lock() += buf.len(); buf.len() },
-            &|_| {},
-            &|_| {},
-            &|| {},
-            &|_| {},
-            &|| None,
-            &s,
-            ready_tx,
-            Arc::new(AtomicU32::new(1.0f32.to_bits())),
-        );
+        let cb = ConsumerCallbacks {
+            push_samples: &|buf| { *tp.lock() += buf.len(); buf.len() },
+            process_dsp: &|_| {},
+            on_spectrum: &|_| {},
+            on_bad_frame: &|| {},
+            on_samples_output: &|_| {},
+            on_end_of_track: &|| None,
+        };
+        let ctrl = ConsumerControl {
+            stop: s, ready_tx,
+            speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+        };
+        run_consumer_loop(rx, &config, &cb, &ctrl);
     });
 
     ready_rx.recv_timeout(Duration::from_secs(5)).expect("consumer ready");
@@ -327,12 +327,19 @@ fn test_consumer_very_short_file() {
     let total = Arc::new(Mutex::new(0usize));
     let total_clone = total.clone();
     let consumer_h = thread::spawn(move || {
-        run_consumer_loop(
-            rx, &config,
-            &|buf| { *total_clone.lock() += buf.len(); buf.len() },
-            &|_| {}, &|_| {}, &|| {}, &|_| {},
-            &|| None, &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
-        );
+        let cb = ConsumerCallbacks {
+            push_samples: &|buf| { *total_clone.lock() += buf.len(); buf.len() },
+            process_dsp: &|_| {},
+            on_spectrum: &|_| {},
+            on_bad_frame: &|| {},
+            on_samples_output: &|_| {},
+            on_end_of_track: &|| None,
+        };
+        let ctrl = ConsumerControl {
+            stop: s, ready_tx,
+            speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+        };
+        run_consumer_loop(rx, &config, &cb, &ctrl);
     });
 
     ready_rx.recv_timeout(Duration::from_secs(5)).expect("consumer ready");
@@ -364,13 +371,19 @@ fn test_consumer_dsp_silences_output() {
 
     let consumer_h = thread::spawn(move || {
         // process_dsp 将样本全设 0（模拟静音输出）
-        run_consumer_loop(
-            rx, &config,
-            &|buf| { buf.len() },
-            &|buf| { for s in buf.iter_mut() { *s = 0.0; } },
-            &|_| {}, &|| {}, &|_| {},
-            &|| None, &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
-        );
+        let cb = ConsumerCallbacks {
+            push_samples: &|buf| { buf.len() },
+            process_dsp: &|buf: &mut [f32]| { for s in buf.iter_mut() { *s = 0.0; } },
+            on_spectrum: &|_| {},
+            on_bad_frame: &|| {},
+            on_samples_output: &|_| {},
+            on_end_of_track: &|| None,
+        };
+        let ctrl = ConsumerControl {
+            stop: s, ready_tx,
+            speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+        };
+        run_consumer_loop(rx, &config, &cb, &ctrl);
     });
 
     ready_rx.recv_timeout(Duration::from_secs(5)).expect("consumer ready");

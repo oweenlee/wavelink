@@ -200,11 +200,13 @@ fn test_multi_engine_instances() {
         ..Default::default()
     });
 
-    handle1.play(path.clone());
-    handle2.play(path.clone());
-    std::thread::sleep(Duration::from_millis(500));
+    // 用 play_sync 等引擎完成 consumer ready 握手后再断言，
+    // 避免固定 sleep 对 0.5s 短文件的播放时序敏感（flaky 来源）
+    handle1.play_sync(path.clone()).expect("引擎1启动播放");
+    handle2.play_sync(path.clone()).expect("引擎2启动播放");
 
-    assert!(handle1.is_playing() || handle2.is_playing());
+    assert!(handle1.is_playing(), "引擎1应处于播放状态");
+    assert!(handle2.is_playing(), "引擎2应处于播放状态");
     handle1.stop();
     handle2.stop();
 }

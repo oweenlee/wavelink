@@ -60,12 +60,44 @@ fn collect_events(rx: &Receiver<EngineEvent>, timeout: Duration) -> Vec<EngineEv
 
 /// 清空事件 channel 中残留的事件
 fn drain_events(rx: &Receiver<EngineEvent>) {
-    loop {
-        match rx.try_recv() {
+    while rx.try_recv().is_ok() {}
+}
+
+/// 等待引擎进入/退出播放状态（替代 sleep）
+fn wait_for_playing(handle: &EngineHandle, expected: bool, timeout: Duration) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        if handle.is_playing() == expected {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    handle.is_playing() == expected
+}
+
+/// 等待 Position 事件（seek 后引擎会发出）
+fn wait_for_position_event(rx: &Receiver<EngineEvent>, timeout: Duration) -> Option<f64> {
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        match rx.recv_timeout(Duration::from_millis(50)) {
+            Ok(EngineEvent::Position(pos)) => return Some(pos),
             Ok(_) => continue,
-            Err(_) => break,
+            Err(_) => continue,
         }
     }
+    None
+}
+
+/// 等待位置接近目标值（stop 后位置归零）
+fn wait_for_position_near(handle: &EngineHandle, target: f64, tolerance: f64, timeout: Duration) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        if (handle.position_secs() - target).abs() < tolerance {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    (handle.position_secs() - target).abs() < tolerance
 }
 
 // ── 测试 ──
@@ -89,7 +121,7 @@ fn test_engine_play_emits_track_changed() {
 
     handle.stop();
     // 等待引擎线程退出
-    std::thread::sleep(Duration::from_millis(100));
+    wait_for_playing(&handle, false, Duration::from_secs(1));
 }
 
 #[test]
@@ -106,12 +138,10 @@ fn test_engine_pause_resume_toggles_playing() {
     assert!(handle.is_playing(), "播放后应处于播放状态");
 
     handle.pause();
-    std::thread::sleep(Duration::from_millis(200));
-    assert!(!handle.is_playing(), "暂停后应停止");
+    assert!(wait_for_playing(&handle, false, Duration::from_secs(2)), "暂停后应停止");
 
     handle.resume();
-    std::thread::sleep(Duration::from_millis(200));
-    assert!(handle.is_playing(), "恢复后应继续");
+    assert!(wait_for_playing(&handle, true, Duration::from_secs(2)), "恢复后应继续");
 
     handle.stop();
 }
@@ -130,8 +160,8 @@ fn test_engine_seek_changes_position() {
     let pos_before = handle.position_secs();
 
     handle.seek(0.5);
-    // 等待 seek 命令被引擎线程处理 + 解码器在新位置开始输出
-    std::thread::sleep(Duration::from_millis(200));
+    // 等待 seek 命令被引擎线程处理 + Position 事件到达
+    wait_for_position_event(&rx, Duration::from_secs(2));
 
     let pos_after = handle.position_secs();
     // seek 后位置应明显不同于 seek 前，且在 0.5s 附近
@@ -185,12 +215,12 @@ fn test_engine_stop_resets_position() {
 
     handle.play(path.clone());
     rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
-    std::thread::sleep(Duration::from_millis(200));
+    wait_for_playing(&handle, true, Duration::from_secs(2));
 
     handle.stop();
-    std::thread::sleep(Duration::from_millis(200));
-
-    assert!(!handle.is_playing(), "stop 后应停止播放");
+    assert!(wait_for_playing(&handle, false, Duration::from_secs(2)), "stop 后应停止播放");
+    // 等待引擎线程完成 stop 处理（position 归零在 consumer join 之后）
+    wait_for_position_near(&handle, 0.0, 0.01, Duration::from_secs(2));
     let pos = handle.position_secs();
     assert!(
         (pos - 0.0).abs() < 0.01,
@@ -209,9 +239,9 @@ fn test_engine_play_after_stop() {
     // 第一次播放
     handle.play(path.clone());
     rx.recv_timeout(Duration::from_secs(5)).expect("第一次 TrackChanged");
-    std::thread::sleep(Duration::from_millis(200));
+    wait_for_playing(&handle, true, Duration::from_secs(2));
     handle.stop();
-    std::thread::sleep(Duration::from_millis(200));
+    wait_for_playing(&handle, false, Duration::from_secs(2));
     assert!(!handle.is_playing());
 
     // 排空残留事件（如 DurationSecs / Position）
@@ -345,7 +375,8 @@ fn test_engine_seek_beyond_end() {
 
     // seek 到远超出时长，不 panic 即可
     handle.seek(999.0);
-    std::thread::sleep(Duration::from_millis(500));
+    // 等待引擎处理 seek（可能失败并停止播放）
+    std::thread::sleep(Duration::from_millis(300));
 
     // 引擎仍可正常操作
     assert!(!handle.is_playing() || handle.position_secs() > 0.0);
@@ -361,11 +392,11 @@ fn test_engine_seek_negative() {
 
     // seek 到负数，不 panic 即可
     handle.seek(-5.0);
-    std::thread::sleep(Duration::from_millis(300));
+    wait_for_position_event(&rx, Duration::from_secs(2));
 
     let pos = handle.position_secs();
     assert!(
-        pos >= 0.0 && pos <= 2.0,
+        (0.0..=2.0).contains(&pos),
         "seek(-5) 后位置应在合理范围, 实际: {pos:.3}s"
     );
     handle.stop();
@@ -376,7 +407,7 @@ fn test_engine_empty_queue() {
     let (handle, rx) = EngineHandle::start();
     // 空队列不应 panic
     handle.play_queue(vec![]);
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(50));
     assert!(!handle.is_playing());
     drop(rx);
 }
@@ -391,7 +422,7 @@ fn test_engine_rapid_play_stop_cycles() {
         handle.play(path.clone());
         handle.stop();
     }
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(50));
     // 引擎可能已停止，也可能还在处理排队的命令——不掉 panic 就行
     drop(handle);
 }
@@ -403,7 +434,7 @@ fn test_engine_handle_dropped_without_stop() {
     handle.play(path.clone());
     // 不调 stop，直接 drop handle → 引擎线程应安全退出
     drop(handle);
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(50));
 }
 
 // ── 极端场景补充 ──
@@ -432,7 +463,7 @@ fn test_engine_seek_when_stopped() {
     handle.seek(0.5);
     handle.seek(-1.0);
     handle.seek(999.0);
-    std::thread::sleep(Duration::from_millis(100));
+    std::thread::sleep(Duration::from_millis(50));
 }
 
 #[test]
@@ -442,7 +473,7 @@ fn test_engine_seek_before_play() {
     // seek 后再 play
     handle.seek(0.3);
     handle.play(path.clone());
-    std::thread::sleep(Duration::from_millis(100));
+    std::thread::sleep(Duration::from_millis(50));
     // 不 panic 即可
     handle.stop();
 }
@@ -478,7 +509,6 @@ fn test_engine_extreme_config_values() {
         ..Default::default()
     });
     // 能创建成功即可，不发 play 命令
-    std::thread::sleep(Duration::from_millis(100));
 }
 
 #[test]
@@ -491,6 +521,6 @@ fn test_engine_play_same_file_twice() {
     // 连续两次 play 同一文件
     handle.play(path.clone());
     handle.play(path.clone());
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(50));
     handle.stop();
 }

@@ -134,7 +134,7 @@ mod tests {
         let mut d = Dither::new(1, 24, 1.0);
         d.set_noise_shaping(true);
         // 输入一个 24-bit 无法精确表示的值
-        let mut buf = vec![0.3333333333f32; 100];
+        let mut buf = vec![1.0f32 / 3.0; 100];
         d.process(&mut buf, 0);
         // 输出应被量化到 24-bit 网格
         let scale = (1u32 << 23) as f32;

@@ -85,7 +85,7 @@ impl EngineState {
         // 从断点位置重新启动解码器
         let seek_secs = entry.start_secs + pos_secs;
         let path_buf = Path::new(&entry.audio_file).to_path_buf();
-        let (rx, decoder) = match Decoder::start(
+        let (rx, mut decoder) = match Decoder::start(
             &path_buf, actual_sr, actual_ch, self.position.clone(),
             Some(seek_secs), entry.end_secs_opt(),
         ) {
@@ -96,6 +96,7 @@ impl EngineState {
                 return;
             }
         };
+        let decode_err_rx = decoder.take_err_rx().unwrap_or_else(|| crossbeam_channel::bounded(1).1);
         self.decoder = Some(decoder);
 
         // 重建 DSP 管线
@@ -110,7 +111,7 @@ impl EngineState {
         self.consumer_stop = Some(stop_flag.clone());
         let consumer_event_tx = self.internal_event_tx.clone();
         let (ready_tx, ready_rx) = unbounded::<bool>();
-        let consumer = spawn_consumer(rx, pcm, dsp, stop_flag, self.position.clone(), consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone());
+        let consumer = spawn_consumer(rx, pcm, dsp, stop_flag, self.position.clone(), consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx);
         self.consumer_thread = Some(consumer);
 
         let output = self.output.as_ref().expect("output 必须在之前创建");

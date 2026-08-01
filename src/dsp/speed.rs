@@ -183,7 +183,7 @@ mod tests {
         s.set_speed(0.75);
         let out = s.process(&input, 2);
         // 新速度下应有输出（可能需要多帧累积）
-        assert!(out.len() % 2 == 0, "变速后输出格式正确");
+        assert!(out.len().is_multiple_of(2), "变速后输出格式正确");
     }
 
     #[test]

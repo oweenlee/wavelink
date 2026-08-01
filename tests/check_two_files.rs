@@ -27,16 +27,11 @@ fn check_timed_out_files() {
                 let mut first_frame = None;
                 let mut total = 0u64;
 
-                loop {
-                    match rx.recv_timeout(Duration::from_secs(10)) {
-                        Ok(frame) => {
-                            if first_frame.is_none() {
-                                first_frame = Some(start.elapsed());
-                            }
-                            total += frame.samples.len() as u64;
-                        }
-                        Err(_) => break,
+                while let Ok(frame) = rx.recv_timeout(Duration::from_secs(10)) {
+                    if first_frame.is_none() {
+                        first_frame = Some(start.elapsed());
                     }
+                    total += frame.samples.len() as u64;
                 }
                 dec.stop();
                 let elapsed = start.elapsed();

@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use parking_lot::Mutex;
 use tracing::{debug, error, info, warn};
 
@@ -187,7 +187,7 @@ impl EngineState {
                 }
             };
 
-        let (rx, decoder) = match Decoder::start(
+        let (rx, mut decoder) = match Decoder::start(
             &path_buf, actual_sr, actual_ch, self.position.clone(),
             entry.seek_pos(), entry.end_secs_opt(),
         ) {
@@ -199,6 +199,7 @@ impl EngineState {
                 return;
             }
         };
+        let decode_err_rx = decoder.take_err_rx().unwrap_or_else(|| bounded(1).1);
         let dsp = Arc::new(Mutex::new(DspPipeline::new(
             actual_sr, actual_ch as usize, &self.peq_bands,
             true, self.current_volume, self.output_bit_depth,
@@ -207,7 +208,7 @@ impl EngineState {
         let position_clone = self.position.clone();
         let consumer_event_tx = self.internal_event_tx.clone();
         let (ready_tx, ready_rx) = unbounded::<bool>();
-        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone());
+        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx);
         let output = match self.output.as_ref() {
             Some(o) => o,
             None => { error!("播放时输出设备未初始化"); self.stop_playback(); self.advance_queue(); return; }
@@ -298,17 +299,18 @@ impl EngineState {
         let (source, handle) = crate::stream::stream_pair(content_length);
 
         // 启动流式解码
-        let (rx, decoder) = match Decoder::start_from_stream(
+        let (rx, mut decoder) = match Decoder::start_from_stream(
             source, actual_sr, actual_ch, self.position.clone(), format_hint,
         ) {
             Ok(v) => v,
             Err(e) => {
                 error!("流式: 启动解码失败: {e}");
                 self.emit(EngineEvent::Error(format!("流式解码失败: {e}")));
-                self.fail_stream(ack, EngineError::DecodeFailed(e.to_string()));
+                self.fail_stream(ack, EngineError::DecodeFailed { path: "stream".into(), reason: e.to_string() });
                 return;
             }
         };
+        let decode_err_rx = decoder.take_err_rx().unwrap_or_else(|| bounded(1).1);
 
         let dsp = Arc::new(Mutex::new(DspPipeline::new(
             actual_sr, actual_ch as usize, &self.peq_bands,
@@ -321,8 +323,7 @@ impl EngineState {
         let position_clone = self.position.clone();
         let consumer_event_tx = self.internal_event_tx.clone();
         let (ready_tx, ready_rx) = unbounded::<bool>();
-        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone());
-
+        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx);
         let output = match self.output.as_ref() {
             Some(o) => o,
             None => { error!("流式播放时输出设备未初始化"); self.stop_playback(); self.fail_stream(ack, EngineError::InvalidState("未初始化输出设备".into())); return; }
@@ -339,7 +340,7 @@ impl EngineState {
                 error!("流式: 解码失败（无有效音频帧）");
                 self.emit(EngineEvent::Error("流式解码失败: 无有效音频数据".into()));
                 self.stop_playback();
-                self.fail_stream(ack, EngineError::DecodeFailed("无有效音频帧".into()));
+                self.fail_stream(ack, EngineError::DecodeFailed { path: "stream".into(), reason: "无有效音频帧".into() });
                 return;
             }
         }
@@ -411,13 +412,14 @@ impl EngineState {
             None => { error!("seek 时输出设备未初始化"); return; }
         };
 
-        let (rx, decoder) = match Decoder::start(
+        let (rx, mut decoder) = match Decoder::start(
             &path_buf, sr, ch, self.position.clone(),
             Some(file_pos), entry.end_secs_opt(),
         ) {
             Ok(v) => v,
             Err(e) => { error!("seek 启动解码失败: {e}"); return; }
         };
+        let decode_err_rx = decoder.take_err_rx().unwrap_or_else(|| bounded(1).1);
         let dsp = Arc::new(Mutex::new(DspPipeline::new(
             sr, ch as usize, &self.peq_bands,
             true, self.current_volume, self.output_bit_depth,
@@ -430,7 +432,7 @@ impl EngineState {
         let position_clone = self.position.clone();
         let consumer_event_tx = self.internal_event_tx.clone();
         let (ready_tx, ready_rx) = unbounded::<bool>();
-        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), sr, ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone());
+        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), sr, ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx);
         let output = match self.output.as_ref() {
             Some(o) => o,
             None => { error!("seek 后输出设备未初始化"); return; }
@@ -578,6 +580,18 @@ impl EngineState {
         }
     }
 
+    pub(crate) fn set_limiter_enabled(&mut self, enabled: bool) {
+        if let Some(dsp) = &self.dsp {
+            dsp.lock().set_limiter_enabled(enabled);
+        }
+    }
+
+    pub(crate) fn set_dither_enabled(&mut self, enabled: bool) {
+        if let Some(dsp) = &self.dsp {
+            dsp.lock().set_dither_enabled(enabled);
+        }
+    }
+
     pub(crate) fn set_volume(&mut self, vol: f32) {
         self.current_volume = vol;
         if let Some(dsp) = &self.dsp {
@@ -693,7 +707,7 @@ pub(crate) mod tests {
         let duration = Arc::new(AtomicU64::new(0));
         let playing = Arc::new(AtomicBool::new(false));
         let (internal_tx, _) = unbounded();
-        let queue_entries: Vec<QueueEntry> = queue.into_iter().map(|s| QueueEntry::for_file(s)).collect();
+        let queue_entries: Vec<QueueEntry> = queue.into_iter().map(QueueEntry::for_file).collect();
         let s = EngineState {
             config: EngineConfig::default(),
             output: None,

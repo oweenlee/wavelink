@@ -1,6 +1,6 @@
 # wavelink-audio-core API Reference
 
-> Source hash: `81f7c93b4718` | Generated: 2026-08-01 00:33
+> Source hash: `810f8f8521ab` | Generated: 2026-08-01 23:36
 > AI 助手优先读此文件，而非读 `src/` 源码。若 AI 返回的代码与当前签名不匹配，请重新运行 `bash doc-api.sh`。
 
 ## Table of Contents
@@ -120,6 +120,11 @@ pub mod output;
 pub mod stream;
 ```
 
+播放列表解析（M3U / M3U8 / PLS）  
+```rust
+pub mod playlist;
+```
+
 目标输出采样率（默认 44100 Hz），可通过 EngineConfig 覆盖  
 ```rust
 pub const TARGET_SAMPLE_RATE: u32 = 44100;
@@ -183,26 +188,6 @@ pub use engine:: { ...
 统一错误类型  
 ```rust
 pub use error::EngineError;
-```
-
-音频文件元数据（标题/艺术家/专辑/时长/封面标志）  
-```rust
-pub use decoder:: { ...
-```
-
-CUE 分轨解析入口及核心类型  
-```rust
-pub use cue:: { ...
-```
-
-播放列表解析（M3U / M3U8 / PLS）  
-```rust
-pub mod playlist;
-```
-
-DSP 管线核心类型：默认 PEQ 频段 / 预设 / 管线 / 单段均衡 / 预设名  
-```rust
-pub use dsp:: { ...
 ```
 
 ---
@@ -577,6 +562,11 @@ pub struct Decoder { ...
 pub position: Arc<AtomicU64>,
 ```
 
+取走解码错误（非阻塞）。后台解码线程失败时通过此方法获取具体原因。  
+```rust
+pub fn take_decode_error(&self) -> Option<EngineError> { ...
+```
+
 启动后台解码线程。返回 (帧接收器, 解码器句柄)。  
 - `path` — 音频文件路径  
 - `target_rate` / `target_channels` — 输出重采样目标  
@@ -752,6 +742,16 @@ pub fn stop_global_capture() { ...
 pub fn is_capturing() -> bool { ...
 ```
 
+开始捕获（非 cpal 平台无实际操作，仅置位运行标志）。  
+```rust
+pub fn start_global_capture(_sample_rate: u32, _channels: u32) -> Result<(), String> { ...
+```
+
+停止捕获（非 cpal 平台无实际操作，仅清除运行标志与缓冲）。  
+```rust
+pub fn stop_global_capture() { ...
+```
+
 ---
 
 ## Consumer (Decode→DSP→Ringbuf)
@@ -793,22 +793,65 @@ pub crossfade_ms: u32,
 pub recv_timeout_ms: u64,
 ```
 
+消费者循环回调集合  
+```rust
+pub struct ConsumerCallbacks<'a> { ...
+```
+
+将处理后的样本写入 ringbuf，返回实际写入的样本数  
+```rust
+pub push_samples: &'a dyn Fn(&[f32]) -> usize,
+```
+
+过 DSP 管线，原地修改样本  
+```rust
+pub process_dsp: &'a dyn Fn(&mut [f32]),
+```
+
+16 频段频谱回调，每 `fft_interval` 帧调用一次  
+```rust
+pub on_spectrum: &'a dyn Fn(&[f32; SPECTRUM_BANDS]),
+```
+
+检测到坏帧时回调（全零/NaN）  
+```rust
+pub on_bad_frame: &'a dyn Fn(),
+```
+
+每帧输出后回调，参数为输出样本数（用于进度追踪）  
+```rust
+pub on_samples_output: &'a dyn Fn(u64),
+```
+
+当前解码器结束时回调，返回新解码器可无缝切歌  
+```rust
+pub on_end_of_track: &'a dyn Fn() -> Option<Receiver<DecodedFrame>>,
+```
+
+消费者循环控制信号  
+```rust
+pub struct ConsumerControl { ...
+```
+
+停止信号，设 true 后循环尽快退出  
+```rust
+pub stop: Arc<AtomicBool>,
+```
+
+首帧就绪时发送 true，通知播放器可以起播  
+```rust
+pub ready_tx: Sender<bool>,
+```
+
+共享播放速度（0.25 ~ 4.0），设 1.0 不变速  
+```rust
+pub speed: Arc<AtomicU32>,
+```
+
 平台无关的解码消费循环。  
 从 `rx` 接收解码帧，依次过 `process_dsp`、可选 crossfade、坏帧检测、`push_samples`。  
 每 `fft_interval` 帧计算一次频谱，通过 `on_spectrum` 回调。  
 当 `rx` 断开（曲目播完）时调 `on_end_of_track`：返回新的 rx 继续循环，返回 None 退出。  
-# 参数  
-- `rx` — 解码帧接收器  
-- `config` — 采样率、声道数、FFT 间隔、crossfade 等配置  
-- `push_samples` — 将处理后的样本写入 ringbuf，返回实际写入的样本数  
-- `process_dsp` — 过 DSP 管线，原地修改样本  
-- `on_spectrum` — 16 频段频谱回调，每 `fft_interval` 帧调用一次  
-- `on_bad_frame` — 检测到坏帧时回调（全零/NaN）  
-- `on_samples_output` — 每帧输出后回调，参数为输出样本数（用于进度追踪）  
-- `on_end_of_track` — 当前解码器结束时回调，返回新解码器可无缝切歌  
-- `stop` — 停止信号，设 true 后循环尽快退出  
-- `ready_tx` — 首帧就绪时发送 true，通知播放器可以起播  
-- `speed` — 共享播放速度（0.25 ~ 4.0），设 1.0 不变速  
 ```rust
 pub fn run_consumer_loop(
 ```
@@ -1827,4 +1870,4 @@ Windows WASAPI Exclusive 模式输出后端
 
 ---
 
-> 306 pub items. Run `bash doc-api.sh` to refresh.
+> 317 pub items. Run `bash doc-api.sh` to refresh.

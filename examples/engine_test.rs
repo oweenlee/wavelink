@@ -21,10 +21,8 @@ fn main() {
     let (cmd_tx, cmd_rx) = mpsc::channel::<String>();
     std::thread::spawn(move || {
         let stdin = std::io::BufReader::new(std::io::stdin());
-        for line in stdin.lines() {
-            if let Ok(l) = line {
-                if cmd_tx.send(l).is_err() { break; }
-            }
+        for line in stdin.lines().map_while(Result::ok) {
+            if cmd_tx.send(line).is_err() { break; }
         }
     });
 

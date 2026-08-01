@@ -142,6 +142,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)] // 3.14 仅作任意非零输入，非圆周率
     fn test_convolver_identity_ir() {
         let path = "/tmp/_test_conv_identity.wav";
         // 16帧 IR：第一帧 1.0，其余 0 → 恒等变换

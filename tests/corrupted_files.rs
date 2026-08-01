@@ -19,11 +19,8 @@ fn decode_expect_err(path: &str) -> bool {
     match result {
         Ok((rx, _dec)) => {
             let mut had_frames = false;
-            loop {
-                match rx.recv_timeout(Duration::from_secs(3)) {
-                    Ok(_) => had_frames = true,
-                    Err(_) => break,
-                }
+            while rx.recv_timeout(Duration::from_secs(3)).is_ok() {
+                had_frames = true;
             }
             had_frames
         }
@@ -34,7 +31,7 @@ fn decode_expect_err(path: &str) -> bool {
 #[test]
 fn test_zero_byte_file() {
     let path = "/tmp/_corrupted_empty.wav";
-    std::fs::write(path, &[]).ok();
+    std::fs::write(path, []).ok();
     let had_frames = decode_expect_err(path);
     assert!(!had_frames, "0 字节文件不应产生任何帧");
     let _ = std::fs::remove_file(path);

@@ -1,5 +1,61 @@
 # Changelog
 
+## Unreleased
+
+### 整改（1.0-rc.2 方向）
+
+- **API 收敛**：移除根级重导出（`Metadata`/`read_metadata`/`parse_cue`/`CueSheet` 等），
+  下游统一走模块路径 `audio_core::decoder::*`、`audio_core::cue::*`
+- **错误类型结构化**：`EngineError` 去掉 `PartialEq`，
+  `FileNotFound(PathBuf)`、`DecodeFailed { path, reason }` 携带上下文
+- **解码错误传播**：解码线程失败时通过 `bounded::<EngineError>(1)` 旁路通道上报，
+  consumer `on_end_of_track` 时检查并转发为 `EngineEvent::Error`
+- **consumer 回调 struct 化**：`run_consumer_loop` 从 11 参数收敛为
+  `ConsumerCallbacks<'a>` + `ConsumerControl`（stop/ready_tx/speed）
+- **测试去 sleep**：consumer 单元测试改用 Condvar/channel 信号等待；
+  engine_integration 改用 `wait_for_playing`/`wait_for_position_event` 事件轮询
+
+## 1.0.0-rc.1 (2026-08-01)
+
+1.0 候选版：清理遗留架构，聚焦纯 Rust API。
+
+### 亮点
+
+- 移除无消费者的 FFI / UniFFI 层，对外统一为纯 Rust `EngineHandle`
+- 引擎支持运行时切换输出采样率（`SetOutputSampleRate` / `HeadlessOutput`），iOS bit-perfect 地基
+- 独占模式跟随选中设备 + Windows WASAPI 独占/共享降级
+- 变速音质升级：rubato sinc + Crossfeed 三预设
+- ReplayGain peak 防过载，派生 `serde::Serialize`
+- dither 位深匹配实际输出 + WASAPI 渲染线程实时优先级
+- 多声道 downmix + `decode_to_memory` 保护 + speed 无锁化
+- Oboe 真设备枚举 + 自适应缓冲（WavPack 待 symphonia 上游发版，见 pdeljanov/Symphonia#502）
+- 端到端信号精度测试（11 个）+ CI 增加 fuzz 与平台后端专项检查
+- 10 项代码质量修复（P0~P3），clippy 全门槛转绿
+
+### 提交历史
+
+- `4b461b5` feat(decoder): ReplayGain 派生 serde::Serialize
+- `e07662f` chore: 修复 capture.rs 在 headless 构建下的警告
+- `ed61023` refactor: 移除无消费者的 FFI / UniFFI 层
+- `e2d9b22` feat(audio): 引擎支持运行时设置输出采样率
+- `3f97333` feat(audio): HeadlessOutput 支持运行时切换输出采样率
+- `1977486` chore: 版本升至 1.0.0-rc.1
+- `dbe1b4c` chore: 清理 clippy 警告，CI 全门槛转绿
+- `b48f513` feat(audio): 独占模式跟随选中设备 + WASAPI 独占/共享降级
+- `ff07049` docs: 刷新 API_REFERENCE.md
+- `95e1ee9` fix: ReplayGain peak 防过载
+- `01deb3a` fix: dither 位深匹配实际输出 + WASAPI 实时优先级
+- `07417e9` feat: 变速音质升级 rubato sinc + Crossfeed 三预设
+- `e7b599c` test: 端到端信号精度测试（11 个）
+- `3697541` docs: 刷新 API_REFERENCE.md
+- `1dfca42` fix: 多声道 downmix + decode_to_memory 保护 + speed 无锁化
+- `5c028c1` fix: 10 项代码质量修复（P0~P3）
+- `869cb19` feat: Oboe 真设备枚举 + 自适应缓冲；移除 wavpack-rs 待 symphonia 发版
+- `6d85fa8` refactor: 抽出 output_setup 纯函数
+- `c63106a` chore: HIFI_OUTPUT_ANALYSIS.md 归档 + CI 加 fuzz
+- `eba9ba9` ci: 修复 --all-features 失败 + 平台后端专项检查
+- `a3c0782` chore: README 默认值修正 + wavpack-rs git rev 锁定 + CHANGELOG
+
 ## 0.1.0 (2026-07-27)
 
 初始版本，从 wavelink-engine 独立仓库。

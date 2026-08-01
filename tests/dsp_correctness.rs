@@ -156,8 +156,8 @@ fn test_limiter_releases_slowly() {
     let mut lim = TruePeakLimiter::new(1, 0.0);
 
     let mut buf = [0.1f32; 200];
-    for i in 0..100 {
-        buf[i] = 2.0;
+    for s in buf.iter_mut().take(100) {
+        *s = 2.0;
     }
     lim.process(&mut buf, 0);
 
@@ -239,8 +239,8 @@ fn test_biquad_peaking_impulse_response() {
     let mut bq = Biquad::peaking(1000.0, 44100.0, 6.0, 1.0);
     let mut out = vec![0.0f32; 256];
     out[0] = bq.process(1.0);
-    for i in 1..256 {
-        out[i] = bq.process(0.0);
+    for s in out.iter_mut().skip(1) {
+        *s = bq.process(0.0);
     }
 
     for &s in &out {

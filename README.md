@@ -16,7 +16,7 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → 输出
 │  解码线程                                                     │
 │  Symphonia: mp3/flac/wav/ogg/aac/m4a/aiff/opus               │
 │  DSD 直解: dsf/dff (3 级 sinc 降采样)                         │
-│  WavPack: wv (TODO: symphonia 发版后恢复, 见 #WavPack)           │
+│  WavPack: wv (待上游 pdeljanov/Symphonia#502 合并)               │
 │  rubato 异步重采样 (BlackmanHarris2, -120dB aliasing)          │
 │  声道混音: 多声道 → 立体声/单声道                                │
 └──────────────┬───────────────────────────────────────────────┘
@@ -59,7 +59,7 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → 输出
 
 | 模块 | 说明 |
 |------|------|
-| `decoder` | Symphonia 流式解码 + DSD；rubato 异步 SRC；声道混音；seek；`decode_to_memory` (WavPack TODO: symphonia 发版后恢复) |
+| `decoder` | Symphonia 流式解码 + DSD；rubato 异步 SRC；声道混音；seek；`decode_to_memory` (WavPack 待上游 pdeljanov/Symphonia#502) |
 | `dsp::biquad` | IIR 双二阶 (RBJ cookbook: peaking/lowpass/highpass/shelving) |
 | `dsp::convolver` | FIR 分区卷积 (fft-convolver) |
 | `dsp::crossfeed` | Bauer 算法耳机串音模拟 |
@@ -114,7 +114,7 @@ let (engine, events) = EngineHandle::start_with_config(config);
 | **解码** | |
 | Symphonia: mp3/flac/wav/ogg/aac/m4a/aiff | ✅ |
 | Opus (symphonia-adapter-oporus) | ✅ |
-| WavPack (wv) | ⏳ TODO: symphonia 发版后恢复 (feature `wavpack`) |
+| WavPack (wv) | ⏳ 待上游 symphonia 合并 (pdeljanov/Symphonia#502) |
 | DSD (dsf/dff) | ✅ |
 | rubato 异步 SRC (-120dB aliasing) | ✅ |
 | 声道混音 (多声道→立体声/单声道) | ✅ |
@@ -161,32 +161,18 @@ let (engine, events) = EngineHandle::start_with_config(config);
 | mm:ss:ff 时间戳转换 | ✅ |
 | PREGAP 扣除 | ✅ |
 | 引擎 CUE 虚拟队列展开 | ✅ |
-| **FFI (C 绑定)** | |
-| 引擎创建/销毁/控制 | ✅ |
-| 播放控制 (play/play_queue/pause/resume/stop/seek/prev/next) | ✅ |
-| DSP 控制 (音量/PEQ/展宽/Crossfeed/ReplayGain/IR) | ✅ |
-| 队列 & 播放模式 (Normal/RepeatOne/RepeatAll/Shuffle) | ✅ |
-| 事件轮询 (非阻塞, 8 种事件类型) | ✅ |
-| 事件回调注册 (ac_engine_set_event_callback) | ✅ |
-| 流式播放 (ac_engine_play_stream / ac_stream_write / ac_stream_eof) | ✅ |
-| 输出设备枚举 (ac_list_output_devices) | ✅ |
-| 元数据读取 (lofty: title/artist/album/genre/year/track/disc/封面) | ✅ |
+| **元数据/探测** | |
+| 元数据读取 (lofty: title/artist/album/genre/year/track/disc) | ✅ |
+| 封面读取 (音频 + MP4 + MKV/WebM 附件) | ✅ |
 | ReplayGain 标签读取 (track/album gain+peak) | ✅ |
-| 封面读取 (音频 + MP4 + MKV/WebM 附件) / 释放 | ✅ |
-| 音频分析 (BPM/Key/能量) | ✅ |
-| 变速播放 | ✅ |
-| 实时电平表 (RMS/Peak/Clipping) | ✅ |
-| 音频输入捕获 (启动/停止/读取) | ✅ |
-| 会话中断管理 (iOS 音频打断) | ✅ |
-| 采样率探测 | ✅ |
-| 曲库查询 | ✅ |
-| 音频分析 (JSON 输出) | ✅ |
+| 采样率/位深探测 | ✅ |
+| 输出设备枚举 (含格式探测) | ✅ |
 | 跨平台 (macOS/Windows/Linux/Android/iOS) | ✅ 编译 |
 
 ## 测试
 
 ```bash
-cargo test -p audio-core    # 205 个测试 (单元 + 集成)
+cargo test -p audio-core    # 219 个测试 (单元 + 集成)
 cargo test -p audio-core -- --ignored  # 含 FFmpeg 依赖的格式验证
 ```
 
@@ -224,94 +210,27 @@ for event in events {
 
 平台层负责网络 I/O，core 只做解码 + DSP + 输出：
 
-```c
-// 1. 启动流式播放（format_hint 可为 NULL 或 "flac"/"mp3" 等）
-ac_engine_play_stream(engine, "flac");
+```rust
+// 1. 启动流式播放（format_hint 可为 None 或 "flac"/"mp3" 等）
+let stream = engine.play_stream(Some("flac".into()), None)?;
 
 // 2. 在网络数据回调中写入字节
-ac_stream_write(engine, data, len);
+let n = stream.write(data);
 
 // 3. 数据全部写完
-ac_stream_eof(engine);
-
-// 4. 播放结束或出错时清理
-ac_stream_destroy(engine);
-```
-
-## 事件回调
-
-无需轮询，事件主动推送：
-
-```c
-void on_event(const AcEvent* ev, void* ctx) {
-    switch (ev->event_type) {
-        case 0: printf("切歌: %s\n", ev->path); break;
-        case 2: printf("位置: %.1fs\n", ev->value); break;
-        // ...
-    }
-}
-
-ac_engine_set_event_callback(engine, on_event, NULL);
-// 传 callback=NULL 恢复轮询模式
+stream.signal_eof();
 ```
 
 ## 输出设备枚举
 
-```c
-char buf[10][256];  // 最多 10 个设备，每个名称最长 255 字符
-int count = ac_list_output_devices(buf[0], 256, 10);
+```rust
+use audio_core::output::enumerate_devices;
+
+for dev in enumerate_devices() {
+    println!("{}: {}Hz/{}ch", dev.name, dev.sample_rate, dev.channels);
+}
 ```
 
 ## API 文档
 
 详细 API 参考见 [`API_REFERENCE.md`](./API_REFERENCE.md)（由 `bash doc-api.sh` 自动生成）。
-
-## FFI 迁移指南（v2）
-
-### AcEvent 结构体变更
-
-`path` 从固定长度数组改为调用方提供的动态缓冲区：
-
-```c
-// 旧版（v1）
-typedef struct {
-    int event_type;
-    char path[1024];      // 固定 1024 字节
-    double value;
-    float spectrum[16];
-} AcEvent;
-
-// 新版（v2）
-typedef struct {
-    int event_type;
-    char* path;           // 调用方分配缓冲区
-    int   path_cap;       // 缓冲区容量
-    int   path_len;       // 实际长度（>= path_cap 表示缓冲区不足）
-    double value;
-    float spectrum[16];
-} AcEvent;
-```
-
-**迁移步骤：**
-
-```c
-// 轮询模式：分配缓冲区并设置指针
-char buf[2048];
-AcEvent ev = { .path = buf, .path_cap = sizeof(buf) };
-if (ac_engine_poll_event(engine, &ev)) {
-    if (ev.path_len >= ev.path_cap) {
-        // 缓冲区不足，需要更大 buf
-    }
-    printf("event %d: %s\n", ev.event_type, buf);
-}
-```
-
-### ac_list_output_devices 签名变更
-
-```c
-// 旧版
-int ac_list_output_devices(char (*out_names)[256], int max_count);
-
-// 新版
-int ac_list_output_devices(char* out_buf, int name_size, int max_count);
-```

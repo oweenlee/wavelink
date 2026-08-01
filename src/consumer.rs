@@ -46,37 +46,46 @@ impl Default for ConsumerConfig {
     }
 }
 
+/// 消费者循环回调集合
+pub struct ConsumerCallbacks<'a> {
+    /// 将处理后的样本写入 ringbuf，返回实际写入的样本数
+    pub push_samples: &'a dyn Fn(&[f32]) -> usize,
+    /// 过 DSP 管线，原地修改样本
+    pub process_dsp: &'a dyn Fn(&mut [f32]),
+    /// 16 频段频谱回调，每 `fft_interval` 帧调用一次
+    pub on_spectrum: &'a dyn Fn(&[f32; SPECTRUM_BANDS]),
+    /// 检测到坏帧时回调（全零/NaN）
+    pub on_bad_frame: &'a dyn Fn(),
+    /// 每帧输出后回调，参数为输出样本数（用于进度追踪）
+    pub on_samples_output: &'a dyn Fn(u64),
+    /// 当前解码器结束时回调，返回新解码器可无缝切歌
+    pub on_end_of_track: &'a dyn Fn() -> Option<Receiver<DecodedFrame>>,
+}
+
+/// 消费者循环控制信号
+pub struct ConsumerControl {
+    /// 停止信号，设 true 后循环尽快退出
+    pub stop: Arc<AtomicBool>,
+    /// 首帧就绪时发送 true，通知播放器可以起播
+    pub ready_tx: Sender<bool>,
+    /// 共享播放速度（0.25 ~ 4.0），设 1.0 不变速
+    pub speed: Arc<AtomicU32>,
+}
+
 /// 平台无关的解码消费循环。
 ///
 /// 从 `rx` 接收解码帧，依次过 `process_dsp`、可选 crossfade、坏帧检测、`push_samples`。
 /// 每 `fft_interval` 帧计算一次频谱，通过 `on_spectrum` 回调。
 /// 当 `rx` 断开（曲目播完）时调 `on_end_of_track`：返回新的 rx 继续循环，返回 None 退出。
-///
-/// # 参数
-/// - `rx` — 解码帧接收器
-/// - `config` — 采样率、声道数、FFT 间隔、crossfade 等配置
-/// - `push_samples` — 将处理后的样本写入 ringbuf，返回实际写入的样本数
-/// - `process_dsp` — 过 DSP 管线，原地修改样本
-/// - `on_spectrum` — 16 频段频谱回调，每 `fft_interval` 帧调用一次
-/// - `on_bad_frame` — 检测到坏帧时回调（全零/NaN）
-/// - `on_samples_output` — 每帧输出后回调，参数为输出样本数（用于进度追踪）
-/// - `on_end_of_track` — 当前解码器结束时回调，返回新解码器可无缝切歌
-/// - `stop` — 停止信号，设 true 后循环尽快退出
-/// - `ready_tx` — 首帧就绪时发送 true，通知播放器可以起播
-/// - `speed` — 共享播放速度（0.25 ~ 4.0），设 1.0 不变速
 pub fn run_consumer_loop(
     rx: Receiver<DecodedFrame>,
     config: &ConsumerConfig,
-    push_samples: &dyn Fn(&[f32]) -> usize,
-    process_dsp: &dyn Fn(&mut [f32]),
-    on_spectrum: &dyn Fn(&[f32; SPECTRUM_BANDS]),
-    on_bad_frame: &dyn Fn(),
-    on_samples_output: &dyn Fn(u64),
-    on_end_of_track: &dyn Fn() -> Option<Receiver<DecodedFrame>>,
-    stop: &AtomicBool,
-    ready_tx: Sender<bool>,
-    speed: Arc<AtomicU32>,
+    cb: &ConsumerCallbacks<'_>,
+    ctrl: &ConsumerControl,
 ) {
+    let stop = &ctrl.stop;
+    let ready_tx = ctrl.ready_tx.clone();
+    let speed = ctrl.speed.clone();
     // 线程优先级由调用方（engine.rs / audio_output.rs）在 spawn 前设置
 
     // ── 频谱 FFT 初始化 ──
@@ -153,7 +162,7 @@ pub fn run_consumer_loop(
                 let mut buf = frame.samples;
 
                 // 1) DSP 处理
-                process_dsp(&mut buf);
+                (cb.process_dsp)(&mut buf);
 
                 // 2) 实时频谱
                 if frame_count.is_multiple_of(config.fft_interval as u64) && buf.len() >= fft_size * ch {
@@ -187,13 +196,13 @@ pub fn run_consumer_loop(
                                 band_peaks[b] *= 0.90;
                             }
                         }
-                        on_spectrum(&bands);
+                        (cb.on_spectrum)(&bands);
                     }
                 }
 
                 // 3) 坏帧检测（在淡入之前，避免淡入把首帧压到接近零被误判）
                 if buf.iter().all(|&s| s == 0.0) || buf.iter().any(|&s| !s.is_finite()) {
-                    on_bad_frame();
+                    (cb.on_bad_frame)();
                     continue;
                 }
 
@@ -226,7 +235,7 @@ pub fn run_consumer_loop(
                 let mut remaining: &[f32] = output_buf;
                 let mut spin_count = 0u32;
                 while !remaining.is_empty() && !stop.load(Ordering::SeqCst) {
-                    let n = push_samples(remaining);
+                    let n = (cb.push_samples)(remaining);
                     if n == 0 {
                         // 先 spin 几次，避免 sleep 导致 underrun；连续满才 yield
                         spin_count += 1;
@@ -243,7 +252,7 @@ pub fn run_consumer_loop(
                 }
 
                 // 7) 进度追踪（使用原始解码样本数，追踪源音频位置）
-                on_samples_output(count);
+                (cb.on_samples_output)(count);
             }
             Err(RecvTimeoutError::Timeout) => {
                 // 暂停/空闲时防止 CPU 空转
@@ -252,7 +261,7 @@ pub fn run_consumer_loop(
             }
             Err(RecvTimeoutError::Disconnected) => {
                 // 解码器 channel 断开 → 曲目播完
-                if let Some(new_rx) = on_end_of_track() {
+                if let Some(new_rx) = (cb.on_end_of_track)() {
                     current_rx = new_rx;
                     // 无缝切歌时重置淡入
                     fade_remaining = fade_total;
@@ -290,9 +299,8 @@ mod tests {
         }
     }
 
-    /// 在后台线程跑 consumer loop，返回(handle, stop, ready_rx)
-    /// 所有闭包在 thread::spawn 内部创建，避免 dyn Fn 不是 Sync 的问题
-    fn spawn_consumer<E>(
+    /// 在后台线程跑 consumer loop，返回 (handle, stop, ready_rx)
+    fn spawn_test_consumer<E>(
         rx: Receiver<DecodedFrame>,
         config: ConsumerConfig,
         push_fn: E,
@@ -305,17 +313,16 @@ mod tests {
         let speed = Arc::new(AtomicU32::new(1.0f32.to_bits()));
         let (ready_tx, ready_rx) = bounded(1);
         let handle = thread::spawn(move || {
-            let push = &push_fn;
-            let passthrough = &|_: &mut [f32]| {};
-            let nospec = &|_: &[f32; SPECTRUM_BANDS]| {};
-            let nobad = &|| {};
-            let nooutput = &|_: u64| {};
-            let noeot = &|| -> Option<Receiver<DecodedFrame>> { None };
-            run_consumer_loop(
-                rx, &config,
-                push, passthrough, nospec, nobad, nooutput, noeot,
-                &s, ready_tx, speed,
-            );
+            let cb = ConsumerCallbacks {
+                push_samples: &push_fn,
+                process_dsp: &|_: &mut [f32]| {},
+                on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| {},
+                on_bad_frame: &|| {},
+                on_samples_output: &|_: u64| {},
+                on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
+            };
+            let ctrl = ConsumerControl { stop: s, ready_tx, speed };
+            run_consumer_loop(rx, &config, &cb, &ctrl);
         });
         (handle, stop, ready_rx)
     }
@@ -323,7 +330,7 @@ mod tests {
     #[test]
     fn test_ready_handshake() {
         let (tx, rx) = unbounded();
-        let (handle, _, ready_rx) = spawn_consumer(rx, default_config(), |s| s.len());
+        let (handle, _, ready_rx) = spawn_test_consumer(rx, default_config(), |s| s.len());
         tx.send(make_frame(vec![0.5; 256])).unwrap();
         let ok = ready_rx.recv_timeout(Duration::from_secs(3)).is_ok();
         assert!(ok, "ready signal should be sent");
@@ -334,70 +341,85 @@ mod tests {
     #[test]
     fn test_bad_frame_all_zero_skipped() {
         let (tx, rx) = unbounded();
-        let bad = Arc::new(Mutex::new(false));
+        let pair = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let pair2 = pair.clone();
         let pushed = Arc::new(Mutex::new(0usize));
-        let b = bad.clone();
         let p = pushed.clone();
 
         let stop = Arc::new(AtomicBool::new(false));
         let s = stop.clone();
-        let (ready_tx, ready_rx) = bounded(1);
+        let (ready_tx, _ready_rx) = bounded(1);
         let handle = thread::spawn(move || {
-            let push = &|s: &[f32]| { *p.lock().unwrap() += s.len(); s.len() };
-            let on_bad = &|| { *b.lock().unwrap() = true; };
-            let passthrough = &|_: &mut [f32]| {};
-            let nospec = &|_: &[f32; SPECTRUM_BANDS]| {};
-            let nooutput = &|_: u64| {};
-            let noeot = &|| -> Option<Receiver<DecodedFrame>> { None };
-            run_consumer_loop(
-                rx, &default_config(),
-                push, passthrough, nospec, on_bad, nooutput, noeot,
-                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            );
+            let cb = ConsumerCallbacks {
+                push_samples: &|s: &[f32]| { *p.lock().unwrap() += s.len(); s.len() },
+                process_dsp: &|_: &mut [f32]| {},
+                on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| {},
+                on_bad_frame: &|| {
+                    let (lock, cvar) = &*pair2;
+                    *lock.lock().unwrap() = true;
+                    cvar.notify_one();
+                },
+                on_samples_output: &|_: u64| {},
+                on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
+            };
+            let ctrl = ConsumerControl {
+                stop: s, ready_tx,
+                speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            };
+            run_consumer_loop(rx, &default_config(), &cb, &ctrl);
         });
 
         tx.send(make_frame(vec![0.0; 256])).unwrap();
-        let _ = ready_rx.recv_timeout(Duration::from_secs(3));
-        thread::sleep(Duration::from_millis(50));
+        // 等待 on_bad_frame 被调用（替代 sleep）
+        let (lock, cvar) = &*pair;
+        let guard = lock.lock().unwrap();
+        let bad = cvar.wait_timeout(guard, Duration::from_secs(3)).unwrap();
         drop(tx);
         handle.join().unwrap();
 
-        assert!(*bad.lock().unwrap(), "on_bad_frame should be called for all-zero");
+        assert!(*bad.0, "on_bad_frame should be called for all-zero");
         assert_eq!(*pushed.lock().unwrap(), 0, "bad frame should not be pushed");
     }
 
     #[test]
     fn test_nan_frame_skipped() {
         let (tx, rx) = unbounded();
-        let bad = Arc::new(Mutex::new(false));
+        let pair = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let pair2 = pair.clone();
         let pushed = Arc::new(Mutex::new(0usize));
-        let b = bad.clone();
         let p = pushed.clone();
 
         let stop = Arc::new(AtomicBool::new(false));
         let s = stop.clone();
-        let (ready_tx, ready_rx) = bounded(1);
+        let (ready_tx, _ready_rx) = bounded(1);
         let handle = thread::spawn(move || {
-            let push = &|s: &[f32]| { *p.lock().unwrap() += s.len(); s.len() };
-            let on_bad = &|| { *b.lock().unwrap() = true; };
-            let passthrough = &|_: &mut [f32]| {};
-            let nospec = &|_: &[f32; SPECTRUM_BANDS]| {};
-            let nooutput = &|_: u64| {};
-            let noeot = &|| -> Option<Receiver<DecodedFrame>> { None };
-            run_consumer_loop(
-                rx, &default_config(),
-                push, passthrough, nospec, on_bad, nooutput, noeot,
-                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            );
+            let cb = ConsumerCallbacks {
+                push_samples: &|s: &[f32]| { *p.lock().unwrap() += s.len(); s.len() },
+                process_dsp: &|_: &mut [f32]| {},
+                on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| {},
+                on_bad_frame: &|| {
+                    let (lock, cvar) = &*pair2;
+                    *lock.lock().unwrap() = true;
+                    cvar.notify_one();
+                },
+                on_samples_output: &|_: u64| {},
+                on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
+            };
+            let ctrl = ConsumerControl {
+                stop: s, ready_tx,
+                speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            };
+            run_consumer_loop(rx, &default_config(), &cb, &ctrl);
         });
 
         tx.send(make_frame(vec![f32::NAN; 256])).unwrap();
-        let _ = ready_rx.recv_timeout(Duration::from_secs(3));
-        thread::sleep(Duration::from_millis(50));
+        let (lock, cvar) = &*pair;
+        let guard = lock.lock().unwrap();
+        let bad = cvar.wait_timeout(guard, Duration::from_secs(3)).unwrap();
         drop(tx);
         handle.join().unwrap();
 
-        assert!(*bad.lock().unwrap(), "on_bad_frame should be called for NaN");
+        assert!(*bad.0, "on_bad_frame should be called for NaN");
         assert_eq!(*pushed.lock().unwrap(), 0, "NaN frame should not be pushed");
     }
 
@@ -411,17 +433,19 @@ mod tests {
         let (ready_tx, ready_rx) = bounded(1);
 
         let handle = thread::spawn(move || {
-            let push = &|_: &[f32]| 0;
-            let passthrough = &|_: &mut [f32]| {};
-            let nospec = &|_: &[f32; SPECTRUM_BANDS]| {};
-            let nobad = &|| {};
-            let nooutput = &|_: u64| {};
-            let noeot = &|| -> Option<Receiver<DecodedFrame>> { None };
-            run_consumer_loop(
-                rx, &cfg,
-                push, passthrough, nospec, nobad, nooutput, noeot,
-                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            );
+            let cb = ConsumerCallbacks {
+                push_samples: &|_: &[f32]| 0,
+                process_dsp: &|_: &mut [f32]| {},
+                on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| {},
+                on_bad_frame: &|| {},
+                on_samples_output: &|_: u64| {},
+                on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
+            };
+            let ctrl = ConsumerControl {
+                stop: s, ready_tx,
+                speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            };
+            run_consumer_loop(rx, &cfg, &cb, &ctrl);
         });
 
         tx.send(make_frame(vec![0.5; 256])).unwrap();
@@ -443,23 +467,24 @@ mod tests {
         let (ready_tx, ready_rx) = bounded(1);
 
         let handle = thread::spawn(move || {
-            let push = &|s: &[f32]| { p.lock().unwrap().extend_from_slice(s); s.len() };
-            let passthrough = &|_: &mut [f32]| {};
-            let nospec = &|_: &[f32; SPECTRUM_BANDS]| {};
-            let nobad = &|| {};
-            let nooutput = &|_: u64| {};
-            let noeot = &|| -> Option<Receiver<DecodedFrame>> { None };
-            run_consumer_loop(
-                rx, &cfg,
-                push, passthrough, nospec, nobad, nooutput, noeot,
-                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            );
+            let cb = ConsumerCallbacks {
+                push_samples: &|s: &[f32]| { p.lock().unwrap().extend_from_slice(s); s.len() },
+                process_dsp: &|_: &mut [f32]| {},
+                on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| {},
+                on_bad_frame: &|| {},
+                on_samples_output: &|_: u64| {},
+                on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
+            };
+            let ctrl = ConsumerControl {
+                stop: s, ready_tx,
+                speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            };
+            run_consumer_loop(rx, &cfg, &cb, &ctrl);
         });
 
         let n = (44100.0 * 0.2) as usize * 2; // ~17640 samples
         tx.send(make_frame(vec![1.0; n])).unwrap();
         let _ = ready_rx.recv_timeout(Duration::from_secs(3));
-        thread::sleep(Duration::from_millis(200));
         drop(tx);
         handle.join().unwrap();
 
@@ -486,10 +511,8 @@ mod tests {
     fn test_on_end_of_track_chain() {
         let (tx, rx) = unbounded();
         let (tx2, rx2) = unbounded();
-        let frame_count = Arc::new(Mutex::new(0u64));
-        let fc = frame_count.clone();
+        let (done_tx, done_rx) = bounded::<()>(4);
 
-        // rx2 放在 Mutex<Option<>> 里，Fn 闭包可多次调 take()
         let next_rx = Arc::new(Mutex::new(Some(rx2)));
         let nr = next_rx.clone();
 
@@ -497,41 +520,38 @@ mod tests {
         let s = stop.clone();
         let (ready_tx, ready_rx) = bounded(1);
         let handle = thread::spawn(move || {
-            let push = &|s: &[f32]| s.len();
-            let passthrough = &|_: &mut [f32]| {};
-            let nospec = &|_: &[f32; SPECTRUM_BANDS]| {};
-            let nobad = &|| {};
-            let on_output = &|n: u64| { *fc.lock().unwrap() += 1; let _ = n; };
-            let on_eot = &|| -> Option<Receiver<DecodedFrame>> { nr.lock().unwrap().take() };
-            run_consumer_loop(
-                rx, &default_config(),
-                push, passthrough, nospec, nobad, on_output, on_eot,
-                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            );
+            let cb = ConsumerCallbacks {
+                push_samples: &|s: &[f32]| s.len(),
+                process_dsp: &|_: &mut [f32]| {},
+                on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| {},
+                on_bad_frame: &|| {},
+                on_samples_output: &|_: u64| { let _ = done_tx.send(()); },
+                on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { nr.lock().unwrap().take() },
+            };
+            let ctrl = ConsumerControl {
+                stop: s, ready_tx,
+                speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            };
+            run_consumer_loop(rx, &default_config(), &cb, &ctrl);
         });
 
         tx.send(make_frame(vec![0.5; 256])).unwrap();
         let _ = ready_rx.recv_timeout(Duration::from_secs(3));
         drop(tx);
-        thread::sleep(Duration::from_millis(50));
+        // 等第一帧处理完（替代 sleep）
+        done_rx.recv_timeout(Duration::from_secs(3)).expect("frame 1 processed");
 
         tx2.send(make_frame(vec![0.5; 256])).unwrap();
-        thread::sleep(Duration::from_millis(50));
+        // 等第二帧处理完（替代 sleep）
+        done_rx.recv_timeout(Duration::from_secs(3)).expect("frame 2 processed");
         drop(tx2);
         handle.join().unwrap();
-
-        assert_eq!(
-            *frame_count.lock().unwrap(),
-            2,
-            "should process 2 frames across chained decoders"
-        );
     }
 
     #[test]
     fn test_on_end_of_track_exit_on_none() {
         let (tx, rx) = unbounded();
-        // 用 |s| s.len() 而非 |_| 0，避免 push 无限循环
-        let (handle, _, ready_rx) = spawn_consumer(rx, default_config(), |s| s.len());
+        let (handle, _, ready_rx) = spawn_test_consumer(rx, default_config(), |s| s.len());
         tx.send(make_frame(vec![0.5; 256])).unwrap();
         let _ = ready_rx.recv_timeout(Duration::from_secs(3));
         drop(tx);
@@ -551,24 +571,25 @@ mod tests {
         let s = stop.clone();
         let (ready_tx, ready_rx) = bounded(1);
         let handle = thread::spawn(move || {
-            let push = &|s: &[f32]| s.len();
-            let passthrough = &|_: &mut [f32]| {};
-            let on_spec = &|_: &[f32; SPECTRUM_BANDS]| { *sc.lock().unwrap() += 1; };
-            let nobad = &|| {};
-            let nooutput = &|_: u64| {};
-            let noeot = &|| -> Option<Receiver<DecodedFrame>> { None };
-            run_consumer_loop(
-                rx, &cfg,
-                push, passthrough, on_spec, nobad, nooutput, noeot,
-                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            );
+            let cb = ConsumerCallbacks {
+                push_samples: &|s: &[f32]| s.len(),
+                process_dsp: &|_: &mut [f32]| {},
+                on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| { *sc.lock().unwrap() += 1; },
+                on_bad_frame: &|| {},
+                on_samples_output: &|_: u64| {},
+                on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
+            };
+            let ctrl = ConsumerControl {
+                stop: s, ready_tx,
+                speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            };
+            run_consumer_loop(rx, &cfg, &cb, &ctrl);
         });
 
         for _ in 0..6 {
             tx.send(make_frame(vec![0.5; 4096])).unwrap();
         }
         let _ = ready_rx.recv_timeout(Duration::from_secs(3));
-        thread::sleep(Duration::from_millis(200));
         drop(tx);
         handle.join().unwrap();
 
@@ -585,28 +606,38 @@ mod tests {
         let (tx, rx) = unbounded();
         let total_samples = Arc::new(Mutex::new(0u64));
         let ts = total_samples.clone();
+        let (done_tx, done_rx) = bounded::<()>(4);
 
         let stop = Arc::new(AtomicBool::new(false));
         let s = stop.clone();
         let (ready_tx, ready_rx) = bounded(1);
         let handle = thread::spawn(move || {
-            let push = &|s: &[f32]| s.len();
-            let passthrough = &|_: &mut [f32]| {};
-            let nospec = &|_: &[f32; SPECTRUM_BANDS]| {};
-            let nobad = &|| {};
-            let on_output = &|n: u64| { *ts.lock().unwrap() += n; };
-            let noeot = &|| -> Option<Receiver<DecodedFrame>> { None };
-            run_consumer_loop(
-                rx, &default_config(),
-                push, passthrough, nospec, nobad, on_output, noeot,
-                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            );
+            let cb = ConsumerCallbacks {
+                push_samples: &|s: &[f32]| s.len(),
+                process_dsp: &|_: &mut [f32]| {},
+                on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| {},
+                on_bad_frame: &|| {},
+                on_samples_output: &|n: u64| {
+                    let mut total = ts.lock().unwrap();
+                    *total += n;
+                    if *total >= 768 {
+                        let _ = done_tx.send(());
+                    }
+                },
+                on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
+            };
+            let ctrl = ConsumerControl {
+                stop: s, ready_tx,
+                speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            };
+            run_consumer_loop(rx, &default_config(), &cb, &ctrl);
         });
 
         tx.send(make_frame(vec![0.5; 256])).unwrap();
         tx.send(make_frame(vec![0.5; 512])).unwrap();
         let _ = ready_rx.recv_timeout(Duration::from_secs(3));
-        thread::sleep(Duration::from_millis(100));
+        // 等待累计样本数达标（替代 sleep）
+        done_rx.recv_timeout(Duration::from_secs(3)).expect("samples should reach 768");
         drop(tx);
         handle.join().unwrap();
 
@@ -619,32 +650,38 @@ mod tests {
         let (tx, rx) = unbounded();
         let processed = Arc::new(Mutex::new(Vec::new()));
         let p = processed.clone();
+        let (done_tx, done_rx) = bounded::<()>(4);
 
         let stop = Arc::new(AtomicBool::new(false));
         let s = stop.clone();
         let (ready_tx, ready_rx) = bounded(1);
         let handle = thread::spawn(move || {
-            let push = &|s: &[f32]| s.len();
-            let dsp = &mut |buf: &mut [f32]| {
+            let dsp_fn = |buf: &mut [f32]| {
                 for sample in buf.iter_mut() {
                     *sample *= 2.0;
                 }
                 p.lock().unwrap().extend_from_slice(buf);
+                let _ = done_tx.send(());
             };
-            let nospec = &|_: &[f32; SPECTRUM_BANDS]| {};
-            let nobad = &|| {};
-            let nooutput = &|_: u64| {};
-            let noeot = &|| -> Option<Receiver<DecodedFrame>> { None };
-            run_consumer_loop(
-                rx, &default_config(),
-                push, dsp, nospec, nobad, nooutput, noeot,
-                &s, ready_tx, Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            );
+            let cb = ConsumerCallbacks {
+                push_samples: &|s: &[f32]| s.len(),
+                process_dsp: &dsp_fn,
+                on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| {},
+                on_bad_frame: &|| {},
+                on_samples_output: &|_: u64| {},
+                on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
+            };
+            let ctrl = ConsumerControl {
+                stop: s, ready_tx,
+                speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            };
+            run_consumer_loop(rx, &default_config(), &cb, &ctrl);
         });
 
         tx.send(make_frame(vec![1.0; 128])).unwrap();
         let _ = ready_rx.recv_timeout(Duration::from_secs(3));
-        thread::sleep(Duration::from_millis(50));
+        // 等待 DSP 处理完成（替代 sleep）
+        done_rx.recv_timeout(Duration::from_secs(3)).expect("dsp should process");
         drop(tx);
         handle.join().unwrap();
 

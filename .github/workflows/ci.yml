@@ -31,18 +31,15 @@ jobs:
       - name: Cargo test
         run: cargo test
 
-      - name: Cargo check (FFI)
-        run: cargo check --features ffi
-
   platform:
     name: Platform backends
     strategy:
       matrix:
         include:
           - os: macos-latest
-            features: audiounit-backend,ffi
+            features: audiounit-backend
           - os: windows-latest
-            features: wasapi-backend,ffi
+            features: wasapi-backend
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

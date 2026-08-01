@@ -16,11 +16,9 @@ fn decode_count(path: &str) -> Result<(u64, usize), String> {
     ).map_err(|e| format!("Decoder::start 失败: {e}"))?;
     let mut total = 0u64;
     let mut chunks = 0usize;
-    loop {
-        match rx.recv_timeout(Duration::from_secs(5)) {
-            Ok(frame) => { total += frame.samples.len() as u64; chunks += 1; }
-            Err(_) => break,
-        }
+    while let Ok(frame) = rx.recv_timeout(Duration::from_secs(5)) {
+        total += frame.samples.len() as u64;
+        chunks += 1;
     }
     if chunks == 0 { return Err("无音频帧".into()); }
     Ok((total, chunks))
@@ -32,7 +30,7 @@ fn test_wav() {
     match decode_count(&a.wav) {
         Ok((cnt, chk)) => {
             assert!(chk > 0);
-            assert!(cnt >= 150_000 && cnt <= 250_000, "WAV samples: {cnt}");
+            assert!((150_000..=250_000).contains(&cnt), "WAV samples: {cnt}");
         }
         Err(e) => panic!("WAV decode failed: {e}"),
     }

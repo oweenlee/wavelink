@@ -35,6 +35,8 @@ pub mod engine;
 pub mod output;
 /// 流式音频数据源（网络流媒体解码用，平台层写入字节流）
 pub mod stream;
+/// 播放列表解析（M3U / M3U8 / PLS）
+pub mod playlist;
 
 /// 目标输出采样率（默认 44100 Hz），可通过 EngineConfig 覆盖
 pub const TARGET_SAMPLE_RATE: u32 = 44100;
@@ -83,14 +85,3 @@ pub use engine::{EngineEvent, EngineHandle, Levels, PlayMode};
 /// 统一错误类型
 #[doc(inline)]
 pub use error::EngineError;
-/// 音频文件元数据（标题/艺术家/专辑/时长/封面标志）
-#[doc(inline)]
-pub use decoder::{probe_bit_depth, probe_sample_rate, read_cover, read_metadata, read_replaygain, Metadata, ReplayGain};
-/// CUE 分轨解析入口及核心类型
-#[doc(inline)]
-pub use cue::{parse_cue, parse_cue_str, CueSheet, CueFile, CueTrack};
-/// 播放列表解析（M3U / M3U8 / PLS）
-pub mod playlist;
-/// DSP 管线核心类型：默认 PEQ 频段 / 预设 / 管线 / 单段均衡 / 预设名
-#[doc(inline)]
-pub use dsp::{default_peq_bands, preset_bands, DspPipeline, PeqBand, PresetName};

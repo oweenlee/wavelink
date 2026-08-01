@@ -15,6 +15,7 @@ use super::state::EngineState;
 use super::thread_priority::elevate_audio_thread;
 use crate::decoder::DecodedFrame;
 use crate::dsp::DspPipeline;
+use crate::error::EngineError;
 use crate::output::{AudioOutputInner, PcmProducer};
 use crate::EngineConfig;
 
@@ -122,6 +123,8 @@ pub(crate) fn run_engine(
                         },
                         Ok(EngineCommand::SetSpeed(speed)) => state.set_speed(speed),
                         Ok(EngineCommand::SetNoiseShaping(enabled)) => state.set_noise_shaping(enabled),
+                        Ok(EngineCommand::SetLimiterEnabled(enabled)) => state.set_limiter_enabled(enabled),
+                        Ok(EngineCommand::SetDitherEnabled(enabled)) => state.set_dither_enabled(enabled),
                         Ok(EngineCommand::SetPlayMode(mode)) => state.set_play_mode(mode),
                         Ok(EngineCommand::SetOutputDevice(dev, ack)) => {
                             if state.config.output_device.as_deref() != Some(&dev) {
@@ -231,6 +234,7 @@ pub(crate) fn spawn_consumer(
     crossfade_ms: u32,
     speed: Arc<AtomicU32>,
     levels: Arc<Mutex<Levels>>,
+    err_rx: Receiver<EngineError>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -246,40 +250,45 @@ pub(crate) fn spawn_consumer(
             };
 
             let pcm_mutex = Mutex::new(pcm);
-            crate::consumer::run_consumer_loop(
-            rx,
-            &config,
-            &|s| pcm_mutex.lock().push_slice(s),
-            &|buf| {
-                dsp.lock().process(buf);
-                // 计算 RMS 和峰值
-                let mut sum_sq = 0.0f32;
-                let mut peak_val = 0.0f32;
-                for &s in buf.iter() {
-                    let abs = s.abs();
-                    sum_sq += s * s;
-                    if abs > peak_val { peak_val = abs; }
-                }
-                let n = buf.len() as f32;
-                let rms = (sum_sq / n).sqrt();
-                let mut lv = levels.lock();
-                lv.rms = rms;
-                lv.peak = lv.peak.max(peak_val) * 0.95;
-                lv.clip = peak_val >= 1.0;
-            },
-            &|bands| { let _ = event_tx.send(EngineEvent::Spectrum(bands.to_vec())); },
-            &|| { let _ = event_tx.send(EngineEvent::Error("解码器输出坏帧（全零/NaN），已跳过".into())); },
-            &|n| { position.fetch_add(n, Ordering::Release); },
-            &|| {
-                let mut guard = next_rx.lock();
-                let preloaded = guard.take();
-                let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
-                preloaded
-            },
-            &stop_flag,
-            ready_tx,
-            speed,
-        );
+            let callbacks = crate::consumer::ConsumerCallbacks {
+                push_samples: &|s| pcm_mutex.lock().push_slice(s),
+                process_dsp: &|buf| {
+                    dsp.lock().process(buf);
+                    // 计算 RMS 和峰值
+                    let mut sum_sq = 0.0f32;
+                    let mut peak_val = 0.0f32;
+                    for &s in buf.iter() {
+                        let abs = s.abs();
+                        sum_sq += s * s;
+                        if abs > peak_val { peak_val = abs; }
+                    }
+                    let n = buf.len() as f32;
+                    let rms = (sum_sq / n).sqrt();
+                    let mut lv = levels.lock();
+                    lv.rms = rms;
+                    lv.peak = lv.peak.max(peak_val) * 0.95;
+                    lv.clip = peak_val >= 1.0;
+                },
+                on_spectrum: &|bands| { let _ = event_tx.send(EngineEvent::Spectrum(bands.to_vec())); },
+                on_bad_frame: &|| { let _ = event_tx.send(EngineEvent::Error("解码器输出坏帧（全零/NaN），已跳过".into())); },
+                on_samples_output: &|n| { position.fetch_add(n, Ordering::Release); },
+                on_end_of_track: &|| {
+                    // 检查解码错误（后台解码线程失败时发送）
+                    if let Ok(e) = err_rx.try_recv() {
+                        let _ = event_tx.send(EngineEvent::Error(e.to_string()));
+                    }
+                    let mut guard = next_rx.lock();
+                    let preloaded = guard.take();
+                    let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
+                    preloaded
+                },
+            };
+            let control = crate::consumer::ConsumerControl {
+                stop: stop_flag,
+                ready_tx,
+                speed,
+            };
+            crate::consumer::run_consumer_loop(rx, &config, &callbacks, &control);
 
         }));
         if let Err(panic_info) = result {
@@ -296,6 +305,7 @@ pub(crate) fn spawn_consumer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossbeam_channel::bounded;
 
     #[test]
     fn test_probe_duration_nonexistent_file() {
@@ -344,7 +354,7 @@ mod tests {
         let rb = ringbuf::HeapRb::<f32>::new(65536);
         let (prod, _cons) = rb.split();
 
-        let consumer = spawn_consumer(rx1, prod, dsp, stop.clone(), pos, ev_tx, ready_tx, next_rx.clone(), 44100, 2, 0, Arc::new(AtomicU32::new(1.0f32.to_bits())), Arc::new(Mutex::new(Levels::default())));
+        let consumer = spawn_consumer(rx1, prod, dsp, stop.clone(), pos, ev_tx, ready_tx, next_rx.clone(), 44100, 2, 0, Arc::new(AtomicU32::new(1.0f32.to_bits())), Arc::new(Mutex::new(Levels::default())), bounded(1).1);
 
         let frame = DecodedFrame {
             samples: vec![0.5f32; 1024],

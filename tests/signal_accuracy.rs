@@ -40,8 +40,8 @@ fn measure_amplitude_at(samples: &[f32], freq: f32, sample_rate: u32) -> f32 {
     let start = bin.saturating_sub(2);
     let end = (bin + 3).min(output.len());
     let mut max_mag = 0.0f32;
-    for b in start..end {
-        let mag = output[b].norm();
+    for o in &output[start..end] {
+        let mag = o.norm();
         if mag > max_mag { max_mag = mag; }
     }
     // Hann 窗补偿：相干增益 0.5，单边谱 ×2

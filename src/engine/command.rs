@@ -93,6 +93,10 @@ pub enum EngineCommand {
     SetSpeed(f32),
     /// 启用/禁用 ATH 噪声整形（替代 TPDF 抖动）
     SetNoiseShaping(bool),
+    /// 启用/禁用真峰值限幅
+    SetLimiterEnabled(bool),
+    /// 启用/禁用抖动（含噪声整形）
+    SetDitherEnabled(bool),
     /// 动态调整输出缓冲时长（毫秒），实时生效
     SetBufferMs(u32),
     /// 设置输出采样率（下次播放生效）。

@@ -19,6 +19,7 @@ use tracing::{debug, error, info, warn};
 
 use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedOut, WindowFunction};
 
+use crate::error::EngineError;
 use crate::dsd;
 use lofty::prelude::*;
 use lofty::read_from_path;
@@ -45,6 +46,20 @@ pub struct Decoder {
     handle: Option<JoinHandle<()>>,
     /// 解码进度（已输出样本数），可被外部读取
     pub position: Arc<AtomicU64>,
+    /// 解码错误接收端（后台线程解码失败时发送）
+    err_rx: Option<Receiver<EngineError>>,
+}
+
+impl Decoder {
+    /// 取走解码错误（非阻塞）。后台解码线程失败时通过此方法获取具体原因。
+    pub fn take_decode_error(&self) -> Option<EngineError> {
+        self.err_rx.as_ref().and_then(|rx| rx.try_recv().ok())
+    }
+
+    /// 取走错误接收端（用于传递给消费者线程，取走后 take_decode_error 不再可用）
+    pub(crate) fn take_err_rx(&mut self) -> Option<Receiver<EngineError>> {
+        self.err_rx.take()
+    }
 }
 
 impl Drop for Decoder {
@@ -69,24 +84,32 @@ impl Decoder {
         path: &Path, target_rate: u32, target_channels: u32,
         position: Arc<AtomicU64>, seek_pos: Option<f64>,
         end_secs: Option<f64>,
-    ) -> Result<(Receiver<DecodedFrame>, Self), String> {
+    ) -> Result<(Receiver<DecodedFrame>, Self), EngineError> {
         let (tx, rx) = bounded(DECODE_CHANNEL_CAPACITY);
         let (stx, srx) = unbounded();
+        let (err_tx, err_rx) = bounded::<EngineError>(1);
         let p = path.to_path_buf();
         let pos_clone = position.clone();
         let handle = thread::spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 run(&p, target_rate, target_channels, tx, srx, position, seek_pos, end_secs)
             }));
-            if let Err(panic_info) = result {
-                let msg = if let Some(s) = panic_info.downcast_ref::<&str>() { s.to_string() }
-                          else if let Some(s) = panic_info.downcast_ref::<String>() { s.clone() }
-                          else { "解码线程未知 panic".to_string() };
-                error!("解码线程 crash: {msg}");
-                // tx 被 drop → consumer 收到 Disconnected，自然切歌
+            match result {
+                Ok(Err(e)) => {
+                    error!("解码失败: {e}");
+                    let _ = err_tx.send(e);
+                }
+                Err(panic_info) => {
+                    let msg = if let Some(s) = panic_info.downcast_ref::<&str>() { s.to_string() }
+                              else if let Some(s) = panic_info.downcast_ref::<String>() { s.clone() }
+                              else { "解码线程未知 panic".to_string() };
+                    error!("解码线程 crash: {msg}");
+                    let _ = err_tx.send(EngineError::DecodeFailed { path: p.clone(), reason: msg });
+                }
+                Ok(Ok(())) => {}
             }
         });
-        Ok((rx, Decoder { tx: Some(stx), handle: Some(handle), position: pos_clone }))
+        Ok((rx, Decoder { tx: Some(stx), handle: Some(handle), position: pos_clone, err_rx: Some(err_rx) }))
     }
     /// 停止后台解码线程
     pub fn stop(&self) { if let Some(ref t) = self.tx { let _ = t.send(()); } }
@@ -102,22 +125,31 @@ impl Decoder {
         target_rate: u32, target_channels: u32,
         position: Arc<AtomicU64>,
         format_hint: Option<String>,
-    ) -> Result<(Receiver<DecodedFrame>, Self), String> {
+    ) -> Result<(Receiver<DecodedFrame>, Self), EngineError> {
         let (tx, rx) = bounded(DECODE_CHANNEL_CAPACITY);
         let (stx, srx) = unbounded();
+        let (err_tx, err_rx) = bounded::<EngineError>(1);
         let pos_clone = position.clone();
         let handle = thread::spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 run_from_stream(source, target_rate, target_channels, tx, srx, position, format_hint)
             }));
-            if let Err(panic_info) = result {
-                let msg = if let Some(s) = panic_info.downcast_ref::<&str>() { s.to_string() }
-                          else if let Some(s) = panic_info.downcast_ref::<String>() { s.clone() }
-                          else { "流式解码线程未知 panic".to_string() };
-                error!("流式解码线程 crash: {msg}");
+            match result {
+                Ok(Err(e)) => {
+                    error!("流式解码失败: {e}");
+                    let _ = err_tx.send(e);
+                }
+                Err(panic_info) => {
+                    let msg = if let Some(s) = panic_info.downcast_ref::<&str>() { s.to_string() }
+                              else if let Some(s) = panic_info.downcast_ref::<String>() { s.clone() }
+                              else { "流式解码线程未知 panic".to_string() };
+                    error!("流式解码线程 crash: {msg}");
+                    let _ = err_tx.send(EngineError::DecodeFailed { path: "stream".into(), reason: msg });
+                }
+                Ok(Ok(())) => {}
             }
         });
-        Ok((rx, Decoder { tx: Some(stx), handle: Some(handle), position: pos_clone }))
+        Ok((rx, Decoder { tx: Some(stx), handle: Some(handle), position: pos_clone, err_rx: Some(err_rx) }))
     }
 }
 
@@ -207,7 +239,7 @@ fn run(
     tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
     _position: Arc<AtomicU64>, seek_pos: Option<f64>,
     end_secs: Option<f64>,
-) {
+) -> Result<(), EngineError> {
     // 绕过 Symphonia 直解：DSD
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         if ext.eq_ignore_ascii_case("dsf") || ext.eq_ignore_ascii_case("dff") {
@@ -215,24 +247,22 @@ fn run(
         }
     }
 
-    let file = match File::open(path) {
-        Ok(f) => f, Err(e) => { warn!("打开失败: {e}"); return; }
-    };
+    let file = File::open(path)
+        .map_err(|_| EngineError::FileNotFound(path.to_path_buf()))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
     }
-    let mut format = match symphonia::default::get_probe().probe(
+    let mut format = symphonia::default::get_probe().probe(
         &hint, mss, FormatOptions::default(), MetadataOptions::default(),
-    ) { Ok(p) => p, Err(e) => { warn!("探测失败: {e}"); return; } };
+    ).map_err(|e| EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("探测失败: {e}") })?;
     let (track_id, audio_cp) = {
-        let track = match format.default_track(TrackType::Audio) {
-            Some(t) => t, None => { warn!("无音频轨"); return; }
-        };
+        let track = format.default_track(TrackType::Audio)
+            .ok_or_else(|| EngineError::DecodeFailed { path: path.to_path_buf(), reason: "无音频轨".into() })?;
         let cp = match &track.codec_params {
             Some(symphonia::core::codecs::CodecParameters::Audio(a)) => a.clone(),
-            _ => { warn!("非音频编解码参数"); return; }
+            _ => return Err(EngineError::DecodeFailed { path: path.to_path_buf(), reason: "非音频编解码参数".into() }),
         };
         (track.id, cp)
     };
@@ -245,7 +275,7 @@ fn run(
         Ok(d) => d,
         Err(_) => match symphonia_adapter_oporus::OpusDecoder::try_registry_new(&audio_cp, &AudioDecoderOptions::default()) {
             Ok(d) => { info!("使用 Opus 适配器解码"); d }
-            Err(e) => { warn!("创建解码器失败: {e}"); return; }
+            Err(e) => return Err(EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("创建解码器失败: {e}") }),
         }
     };
 
@@ -268,7 +298,7 @@ fn run(
             .or_else(|_| symphonia_adapter_oporus::OpusDecoder::try_registry_new(&audio_cp, &AudioDecoderOptions::default()));
         match new_dec {
             Ok(d) => decoder = d,
-            Err(e) => { warn!("seek 后解码器重建失败，终止解码: {e}"); return; }
+            Err(e) => return Err(EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("seek 后解码器重建失败: {e}") }),
         }
     }
 
@@ -324,6 +354,7 @@ fn run(
         let _ = resample_and_send(&mixed, &mut rubato_resampler, &mut rubato_buf,
             out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
     }
+    Ok(())
 }
 
 /// 流式解码：从 `StreamMediaSource` 读取字节流 → Symphonia 解码 → 重采样 → 发送
@@ -333,22 +364,21 @@ fn run_from_stream(
     tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
     _position: Arc<AtomicU64>,
     format_hint: Option<String>,
-) {
+) -> Result<(), EngineError> {
     let mss = MediaSourceStream::new(Box::new(source), Default::default());
     let mut hint = Hint::new();
     if let Some(ref ext) = format_hint {
         hint.with_extension(ext);
     }
-    let mut format = match symphonia::default::get_probe().probe(
+    let mut format = symphonia::default::get_probe().probe(
         &hint, mss, FormatOptions::default(), MetadataOptions::default(),
-    ) { Ok(p) => p, Err(e) => { warn!("流式探测失败: {e}"); return; } };
+    ).map_err(|e| EngineError::DecodeFailed { path: "stream".into(), reason: format!("流式探测失败: {e}") })?;
     let (track_id, audio_cp) = {
-        let track = match format.default_track(TrackType::Audio) {
-            Some(t) => t, None => { warn!("流式: 无音频轨"); return; }
-        };
+        let track = format.default_track(TrackType::Audio)
+            .ok_or_else(|| EngineError::DecodeFailed { path: "stream".into(), reason: "无音频轨".into() })?;
         let cp = match &track.codec_params {
             Some(symphonia::core::codecs::CodecParameters::Audio(a)) => a.clone(),
-            _ => { warn!("流式: 非音频编解码参数"); return; }
+            _ => return Err(EngineError::DecodeFailed { path: "stream".into(), reason: "非音频编解码参数".into() }),
         };
         (track.id, cp)
     };
@@ -360,7 +390,7 @@ fn run_from_stream(
         Ok(d) => d,
         Err(_) => match symphonia_adapter_oporus::OpusDecoder::try_registry_new(&audio_cp, &AudioDecoderOptions::default()) {
             Ok(d) => { info!("流式: 使用 Opus 适配器解码"); d }
-            Err(e) => { warn!("流式: 创建解码器失败: {e}"); return; }
+            Err(e) => return Err(EngineError::DecodeFailed { path: "stream".into(), reason: format!("创建解码器失败: {e}") }),
         }
     };
 
@@ -401,6 +431,7 @@ fn run_from_stream(
         let _ = resample_and_send(&mixed, &mut rubato_resampler, &mut rubato_buf,
             out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
     }
+    Ok(())
 }
 
 /// 将整个音频文件解码到内存，返回交错 PCM f32 样本。
@@ -659,14 +690,12 @@ fn run_dsd(
     tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
     seek_pos: Option<f64>,
     end_secs: Option<f64>,
-) {
+) -> Result<(), EngineError> {
     use dsd_reader::DsdReader;
 
     // 流式解码器：恒定内存占用
-    let mut converter = match dsd::StreamingDsdDecoder::new(path) {
-        Ok(c) => c,
-        Err(e) => { warn!("DSD 解码失败: {e}"); return; }
-    };
+    let mut converter = dsd::StreamingDsdDecoder::new(path)
+        .map_err(|e| EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("DSD 解码失败: {e}") })?;
     let src_rate = converter.sample_rate();
     let src_ch = converter.channels();
     let out_ch = target_ch as usize;
@@ -674,14 +703,10 @@ fn run_dsd(
     info!("DSD 流式解码: {} ({}Hz, {}ch)", path.display(), src_rate, src_ch);
 
     // 创建 DSD 迭代器
-    let reader = match DsdReader::from_container(path.to_path_buf()) {
-        Ok(r) => r,
-        Err(e) => { warn!("DSD 文件打开失败: {e}"); return; }
-    };
-    let iter = match reader.dsd_iter() {
-        Ok(i) => i,
-        Err(e) => { warn!("DSD 迭代器创建失败: {e}"); return; }
-    };
+    let reader = DsdReader::from_container(path.to_path_buf())
+        .map_err(|e| EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("DSD 文件打开失败: {e}") })?;
+    let iter = reader.dsd_iter()
+        .map_err(|e| EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("DSD 迭代器创建失败: {e}") })?;
 
     // Seek：计算需要跳过的 DSD 字节数（每声道）
     // DSD bytes_per_sec_per_channel = src_rate * 8 (64x 降采样后得 src_rate PCM frames/s)
@@ -708,7 +733,7 @@ fn run_dsd(
 
     // 主循环：流式读取 DSD 块 → 转换 → 混音 → 重采样 → 发送
     for (_nread, chan_frames) in iter {
-        if stop_rx.try_recv().is_ok() { return; }
+        if stop_rx.try_recv().is_ok() { return Ok(()); }
 
         // Seek 跳过
         if skip_bytes > 0 {
@@ -771,6 +796,7 @@ fn run_dsd(
                 out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
         }
     }
+    Ok(())
 }
 
 /// 声道混音：将交错 PCM 从 in_ch 混到 out_ch
@@ -824,10 +850,6 @@ fn mix_channels(pcm: &[f32], in_ch: usize, out_ch: usize) -> Vec<f32> {
     mixed
 }
 
-// ── WavPack 解码 ──────────────────────────────────────────────────────
-
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -841,7 +863,9 @@ mod tests {
             Err(_) => return None,
         };
         let mut t = 0u64;
-        loop { match rx.recv_timeout(Duration::from_secs(5)) { Ok(f) => t += f.samples.len() as u64, Err(_) => break } }
+        while let Ok(f) = rx.recv_timeout(Duration::from_secs(5)) {
+            t += f.samples.len() as u64;
+        }
         Some(t)
     }
 
@@ -883,11 +907,9 @@ mod tests {
         ).unwrap();
         // 接收少量帧后立即停止
         let mut count = 0u64;
-        loop {
-            match rx.recv_timeout(Duration::from_millis(200)) {
-                Ok(f) => { count += f.samples.len() as u64; if count > 5000 { break; } }
-                Err(_) => break,
-            }
+        while let Ok(f) = rx.recv_timeout(Duration::from_millis(200)) {
+            count += f.samples.len() as u64;
+            if count > 5000 { break; }
         }
         dec.stop(); // 应快速返回，不阻塞
         assert!(count > 0, "应收到至少一些样本");
@@ -921,7 +943,9 @@ mod tests {
             Arc::new(AtomicU64::new(0)), Some(0.1), None,
         ).unwrap();
         let mut frames = Vec::new();
-        loop { match rx.recv_timeout(Duration::from_secs(3)) { Ok(f) => frames.push(f), Err(_) => break } }
+        while let Ok(f) = rx.recv_timeout(Duration::from_secs(3)) {
+            frames.push(f);
+        }
         assert!(!frames.is_empty(), "seek 后应有帧输出");
         // 第一帧的 pts 应该在 0.1s 附近（允许 ±0.03s 误差）
         if let Some(first) = frames.first() {

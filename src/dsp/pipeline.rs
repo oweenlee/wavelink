@@ -41,6 +41,10 @@ pub struct DspPipeline {
     widener: StereoWidener,
     limiter: TruePeakLimiter,
     dither: Dither,
+    /// 真峰值限幅开关（默认真启用，可独立关闭）
+    limiter_enabled: bool,
+    /// 抖动/噪声整形开关（默认真启用，可独立关闭）
+    dither_enabled: bool,
     volume: f32,
     sample_rate: f32,
     /// 预分配的工作缓冲区（避免热路径分配）
@@ -101,6 +105,8 @@ impl DspPipeline {
             widener: StereoWidener::new(),
             limiter: TruePeakLimiter::new(channels, 0.0),
             dither: Dither::new(channels, bits, 1.0),
+            limiter_enabled: true,
+            dither_enabled: true,
             volume: volume.clamp(0.0, 2.0),
             sample_rate: sr,
             ch_buf: Vec::new(),
@@ -157,12 +163,14 @@ impl DspPipeline {
         self.widener.process(buf);
 
         // 6. 真峰值限幅（逐声道，复用预分配缓冲区）
-        for c in 0..ch {
-            self.ch_buf.clear();
-            self.ch_buf.extend(buf.iter().skip(c).step_by(ch).copied());
-            self.limiter.process(&mut self.ch_buf, c);
-            for (i, v) in self.ch_buf.iter().enumerate() {
-                buf[c + i * ch] = *v;
+        if self.limiter_enabled {
+            for c in 0..ch {
+                self.ch_buf.clear();
+                self.ch_buf.extend(buf.iter().skip(c).step_by(ch).copied());
+                self.limiter.process(&mut self.ch_buf, c);
+                for (i, v) in self.ch_buf.iter().enumerate() {
+                    buf[c + i * ch] = *v;
+                }
             }
         }
 
@@ -205,12 +213,14 @@ impl DspPipeline {
         }
 
         // 8. TPDF 抖动 / ATH 噪声整形（复用预分配缓冲区）
-        for c in 0..ch {
-            self.ch_buf.clear();
-            self.ch_buf.extend(buf.iter().skip(c).step_by(ch).copied());
-            self.dither.process(&mut self.ch_buf, c);
-            for (i, v) in self.ch_buf.iter().enumerate() {
-                buf[c + i * ch] = *v;
+        if self.dither_enabled {
+            for c in 0..ch {
+                self.ch_buf.clear();
+                self.ch_buf.extend(buf.iter().skip(c).step_by(ch).copied());
+                self.dither.process(&mut self.ch_buf, c);
+                for (i, v) in self.ch_buf.iter().enumerate() {
+                    buf[c + i * ch] = *v;
+                }
             }
         }
     }
@@ -267,6 +277,16 @@ impl DspPipeline {
     /// 启用/禁用 ATH 噪声整形（替代 TPDF）
     pub fn set_noise_shaping(&mut self, enabled: bool) {
         self.dither.set_noise_shaping(enabled);
+    }
+
+    /// 启用/禁用真峰值限幅
+    pub fn set_limiter_enabled(&mut self, enabled: bool) {
+        self.limiter_enabled = enabled;
+    }
+
+    /// 启用/禁用抖动（含噪声整形）
+    pub fn set_dither_enabled(&mut self, enabled: bool) {
+        self.dither_enabled = enabled;
     }
 
     /// 设置立体声展宽
