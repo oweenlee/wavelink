@@ -233,7 +233,7 @@ fn scan_file(path: &Path) -> Result<Option<Track>, String> {
         .map(|s| s.to_lowercase());
 
     // 用 audio-core 读取元数据
-    let metadata = match audio_core::read_metadata(path) {
+    let metadata = match audio_core::decoder::read_metadata(path) {
         Ok(m) => m,
         Err(e) => {
             debug!("audio_core 无法读取 {}: {e}", path.display());
@@ -242,7 +242,7 @@ fn scan_file(path: &Path) -> Result<Option<Track>, String> {
     };
 
     // 用 audio-core 读取封面
-    let cover_base64 = audio_core::read_cover(path)
+    let cover_base64 = audio_core::decoder::read_cover(path)
         .ok()
         .and_then(|data| resize_and_encode(&data));
 
@@ -288,7 +288,7 @@ fn scan_file(path: &Path) -> Result<Option<Track>, String> {
 
 /// 从音频文件读取封面（data URI 格式），委托给 audio-core
 pub fn get_file_cover(path: &Path) -> Result<Option<String>, String> {
-    match audio_core::read_cover(path) {
+    match audio_core::decoder::read_cover(path) {
         Ok(data) => Ok(resize_and_encode(&data)),
         Err(_) => Ok(None),
     }

@@ -7,11 +7,11 @@ pub use audio_core::{EngineConfig, EngineEvent, EngineHandle, Levels, PlayMode, 
 /// 统一错误类型
 pub use audio_core::EngineError;
 /// 元数据
-pub use audio_core::{Metadata, ReplayGain, read_metadata, read_cover, read_replaygain};
+pub use audio_core::decoder::{Metadata, ReplayGain, read_metadata, read_cover, read_replaygain};
 /// 文件探测
-pub use audio_core::{probe_sample_rate, probe_bit_depth};
+pub use audio_core::decoder::{probe_sample_rate, probe_bit_depth};
 /// CUE 分轨解析
-pub use audio_core::{parse_cue, parse_cue_str, CueSheet, CueFile, CueTrack};
+pub use audio_core::cue::{parse_cue, parse_cue_str, CueSheet, CueFile, CueTrack};
 /// 音频分析
 pub use audio_core::analysis::{analyze_file, analyze_from_samples, AnalysisResult, mix_to_mono};
 pub use audio_core::analysis::bpm::detect_bpm;
