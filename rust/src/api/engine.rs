@@ -234,7 +234,7 @@ pub fn engine_prev() {
 // ── DSP 控制 ──
 
 pub fn engine_set_peq_band(index: u32, freq: f32, gain_db: f32, q: f32) {
-    with_engine(|h| h.set_peq_band(index as usize, PeqBand { freq, gain_db, q }));
+    with_engine(|h| h.set_peq_band(index as usize, PeqBand { freq, gain_db, q, ..Default::default() }));
 }
 
 pub fn engine_apply_preset(preset_name: String) {
