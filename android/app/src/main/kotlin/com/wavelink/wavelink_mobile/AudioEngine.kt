@@ -1,9 +1,12 @@
 package com.wavelink.wavelink_mobile
 
+import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.os.Build
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
@@ -12,8 +15,23 @@ import java.util.concurrent.TimeUnit
  *
  * Dart 侧定期调用 [pushPcm] 推送交错立体声 float 数据，
  * 本类写入 AudioTrack 播放，数据不足时静默等待（underrun 由引擎缓冲吸收）。
+ *
+ * 音频焦点：播放时请求 AUDIOFOCUS_GAIN。焦点变化时：
+ * - 永久丢失（其他音乐 app）→ 发 remote:pause，不自动恢复
+ * - 瞬时丢失（来电/语音搜索 TTS）→ 发 remote:pause，焦点恢复后自动续播
+ * - 可降音 → 本地 setVolume(0.3) 压低，不暂停引擎
+ * 事件经 eventCallback 走与 iOS 锁屏命令同一套 remote:* 协议，Dart 统一处理。
  */
-class AudioEngine {
+class AudioEngine(context: Context) {
+    private val appContext = context.applicationContext
+    private val audioManager: AudioManager by lazy {
+        appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
+    private var focusRequest: AudioFocusRequest? = null
+
+    /// 是否因瞬时焦点丢失而暂停（用于焦点恢复时判断是否自动续播）
+    @Volatile private var pausedByFocusLoss = false
+
     private var audioTrack: AudioTrack? = null
     private var sampleRate: Int = 44100
     private var channels: Int = 2
@@ -29,6 +47,67 @@ class AudioEngine {
 
     var eventCallback: ((String) -> Unit)? = null
 
+    private val focusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                // 恢复音量（若之前 duck）；若因瞬时焦点丢失而暂停，则恢复播放
+                audioTrack?.setVolume(1.0f)
+                if (pausedByFocusLoss) {
+                    pausedByFocusLoss = false
+                    eventCallback?.invoke("remote:play")
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                // 永久丢失（其他音乐 app 抢焦点）：暂停，不自动恢复
+                pausedByFocusLoss = false
+                eventCallback?.invoke("remote:pause")
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                // 瞬时丢失（来电/语音搜索 TTS）：暂停，焦点恢复后自动续播
+                pausedByFocusLoss = playing && !paused
+                eventCallback?.invoke("remote:pause")
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // 可降音：本地压低音量，不暂停引擎
+                audioTrack?.setVolume(0.3f)
+            }
+        }
+    }
+
+    private fun requestAudioFocus() {
+        val attrs = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+            .build()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(attrs)
+                .setOnAudioFocusChangeListener(focusChangeListener)
+                .setWillPauseWhenDucked(false) // duck 由本地 setVolume 处理
+                .build()
+            focusRequest = req
+            audioManager.requestAudioFocus(req)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(
+                focusChangeListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN
+            )
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+            focusRequest = null
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus(focusChangeListener)
+        }
+        pausedByFocusLoss = false
+    }
+
     val isPlaying: Boolean get() = playing
     val positionMs: Int get() {
         if (sampleRate <= 0 || channels <= 0) return 0
@@ -38,6 +117,7 @@ class AudioEngine {
 
     fun start(rate: Int, ch: Int) {
         stop()
+        requestAudioFocus()
         sampleRate = rate
         channels = ch
         writtenSamples = 0
@@ -116,11 +196,13 @@ class AudioEngine {
     }
 
     fun resume() {
+        requestAudioFocus()
         paused = false
         audioTrack?.play()
     }
 
     fun stop() {
+        abandonAudioFocus()
         playing = false
         writeThread?.interrupt()
         writeThread = null

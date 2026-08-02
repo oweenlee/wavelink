@@ -16,7 +16,7 @@ import io.flutter.plugin.common.MethodChannel.Result
 import java.io.File
 
 class MainActivity : FlutterActivity() {
-    private val audioEngine = AudioEngine()
+    private val audioEngine = AudioEngine(this)
     private var eventSink: EventChannel.EventSink? = null
     private var filePickerResult: Result? = null
 
