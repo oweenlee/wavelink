@@ -159,9 +159,16 @@ class SubsonicService {
     if (path == null && songId == null) return null;
 
     String? coverUrl;
-    if (coverArt != null && _baseUrl != null) {
-      coverUrl =
-          '$_baseUrl/rest/getCoverArt?id=$coverArt&u=$_username&p=$_password&v=1.16.0&c=wavelink';
+    String? streamUrl;
+    if (_baseUrl != null) {
+      if (coverArt != null) {
+        coverUrl =
+            '$_baseUrl/rest/getCoverArt?id=$coverArt&u=$_username&p=$_password&v=1.16.0&c=wavelink';
+      }
+      if (songId != null) {
+        streamUrl =
+            '$_baseUrl/rest/stream?id=$songId&u=$_username&p=$_password&v=1.16.0&c=wavelink';
+      }
     }
 
     return Song(
@@ -172,6 +179,7 @@ class SubsonicService {
       duration: Duration(milliseconds: durationMs),
       dominantColor: _colorFromPath(path ?? songId ?? ''),
       path: path,
+      streamUrl: streamUrl,
       coverUrl: coverUrl,
       hasCover: coverUrl != null,
     );
@@ -183,8 +191,6 @@ class SubsonicService {
   }
 
   static Color _colorFromPath(String path) {
-    final hash = path.hashCode;
-    final palette = AppTheme.palette;
-    return palette[hash.abs() % palette.length];
+    return AppTheme.s2;
   }
 }

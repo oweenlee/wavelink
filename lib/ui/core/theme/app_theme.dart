@@ -4,42 +4,57 @@ import 'package:flutter/material.dart';
 
 /// WaveLink 设计令牌
 ///
-/// 色彩哲学：「琥珀为体，随内容为用」
-/// - 结构色（brand 琥珀金）：你在操作 app —— Tab、导航、开关、按钮骨架
+/// 色彩哲学：「灰阶为体，随内容为用」
+/// - 结构色（S0–S4 中性灰阶）：你在操作 app —— 背景、卡片、表面、边框
 /// - 动态色（accent）：你在听音乐 —— 播放按钮/进度/频谱跟随当前歌曲封面主色
-/// - 语义色（danger/success）：状态反馈
+/// - 非播放域使用 textPrimary/textSecondary 代替固定品牌色
 class AppTheme {
-  // ── 基底（中性偏暖炭灰，替代原冷靛蓝）──
-  static const Color background = Color(0xFF121110);
-  static const Color surfaceDark = Color(0xFF1C1A18);
-  static const Color surfaceHigh = Color(0xFF262320);
+  // ── 灰阶层级（S0 最暗 → S4 最亮）──
+  static const Color s0 = Color(0xFF08090A);  // 最深底
+  static const Color s1 = Color(0xFF0E1011);  // 主背景
+  static const Color s2 = Color(0xFF16191B);  // 卡片/弹窗
+  static const Color s3 = Color(0xFF1F2427);  // 高亮表面
+  static const Color s4 = Color(0xFF2A3033);  // 边框/分隔
 
-  // ── 品牌（琥珀金，胆机暖光 / VU 表头）──
-  static const Color brand = Color(0xFFF0B450);
+  // ── 兼容旧引用（渐进式别名）──
+  static const Color background = s1;
+  static const Color surfaceDark = s2;
+  static const Color surfaceHigh = s3;
 
-  // ── 文字 ──
-  static const Color textPrimary = Color(0xDDFFFFFF);
-  static const Color textSecondary = Color(0x8CFFFFFF);
-  static const Color textTertiary = Color(0x4DFFFFFF);
+  // ── 品牌（去琥珀金，改为中性白）
+  // 旧代码中 62 处引用 AppTheme.brand 的地方自动变为中性白，
+  // 不再闪琥珀金。播放域通过 AccentScope.of(context) 获取动态色。
+  static const Color brand = textPrimary;
 
-  // ── 语义 ──
-  static const Color danger = Color(0xFFF2554A);
-  static const Color success = Color(0xFF4CC38A);
-  static const Color edgeHighlight = Color(0x1AFFFFFF);
+  // ── 文字（冷白灰）──
+  static const Color textPrimary = Color(0xFFF0F1F3);     // 94%
+  static const Color textSecondary = Color(0xFF9A9FA6);   // 60%
+  static const Color textTertiary = Color(0xFF5C6166);    // 36%
+  static const Color textDisabled = Color(0xFF3A3F43);    // 23%
 
-  /// 专辑/歌手占位色盘：13 色，等色相环分布 + 统一 S/L 区间，保证彼此协调。
-  /// 用 HSL 生成而非手调，避免高饱和糖果色与暖底色冲突。
-  static final List<Color> palette = List.generate(13, (i) {
-    final hue = (i * 360.0 / 13 + 18) % 360;
-    return HSLColor.fromAHSL(1, hue, 0.56, 0.60).toColor();
-  });
+  // ── 强调（由封面动态提取，这里仅作 fallback）──
+  static const Color accentFallback = Color(0xFFE8553F);  // 橙红，仅用于无封面时
+
+  // ── 高亮/分割 ──
+  static const Color highlight = Color(0x0FFFFFFF);       // 6% 白
+  static const Color highlightStrong = Color(0x1FFFFFFF); // 12% 白
+  static const Color divider = Color(0x14FFFFFF);         // 8% 白
+  static const Color edgeHighlight = highlightStrong;     // 兼容旧引用
+
+  // ── 语义色 ──
+  static const Color ok = Color(0xFF4EC9A0);       // 绿色（成功/正常）
+  static const Color warn = Color(0xFFE8B33D);     // 黄色（警告）
+  static const Color danger = Color(0xFFE85D5D);   // 红色（危险/错误）
+  static const Color success = ok;
+
+  // ── 占位色盘已移除 — dominantColor 统一使用 s2 ──
 
   static ThemeData get darkTheme => ThemeData(
     brightness: Brightness.dark,
-    scaffoldBackgroundColor: background,
+    scaffoldBackgroundColor: s1,
     colorScheme: const ColorScheme.dark(
-      primary: brand,
-      secondary: brand,
+      primary: accentFallback,
+      secondary: accentFallback,
       surface: surfaceDark,
       error: danger,
     ),
@@ -54,9 +69,9 @@ class AppTheme {
       ),
     ),
     bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-      backgroundColor: Colors.transparent,
+      backgroundColor: s1,
       elevation: 0,
-      selectedItemColor: brand,
+      selectedItemColor: textPrimary,
       unselectedItemColor: textTertiary,
       type: BottomNavigationBarType.fixed,
       selectedLabelStyle: TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
@@ -106,7 +121,7 @@ class AppTheme {
       ),
     ),
     dividerTheme: const DividerThemeData(
-      color: Color(0x1AFFFFFF),
+      color: divider,
       thickness: 0.5,
     ),
   );
@@ -153,6 +168,50 @@ class AppTheme {
   }
 }
 
+// ── 排版辅助类 ──
+
+/// 强制字体规则：
+/// - display = SpaceGrotesk（标题、大号文字）
+/// - body = Inter（正文，通过 ThemeData 全局生效）
+/// - mono = JetBrainsMono（采样率/位深/格式/BPM/调性/时间码/计数器 — 必须等宽）
+class WlText {
+  static const String _display = 'SpaceGrotesk';
+  static const String _mono = 'JetBrainsMono';
+
+  /// 技术读数专用样式（必须等宽）
+  /// 用于：采样率、位深、格式标签、BPM、调性、时间码、underrun 计数
+  static TextStyle mono({
+    double? fontSize,
+    Color? color,
+    FontWeight? fontWeight,
+    double? letterSpacing,
+  }) {
+    return TextStyle(
+      fontFamily: _mono,
+      fontSize: fontSize ?? 11,
+      color: color ?? AppTheme.textSecondary,
+      fontWeight: fontWeight ?? FontWeight.w500,
+      letterSpacing: letterSpacing ?? 0.3,
+    );
+  }
+
+  /// 标题样式（display face）
+  static TextStyle display({
+    double? fontSize,
+    Color? color,
+    FontWeight? fontWeight,
+    double? letterSpacing,
+  }) {
+    return TextStyle(
+      fontFamily: _display,
+      fontSize: fontSize ?? 22,
+      color: color ?? AppTheme.textPrimary,
+      fontWeight: fontWeight ?? FontWeight.w700,
+      letterSpacing: letterSpacing ?? -0.3,
+    );
+  }
+}
+
 // ── 动态强调色机制 ──
 
 /// 把任意封面主色规整为可安全用作控件色的强调色。
@@ -174,7 +233,7 @@ extension AccentNormalize on Color {
 /// 向子树注入「当前强调色」。
 ///
 /// 播放域（NowPlayingPage / MiniPlayerBar）注入当前歌曲主色，
-/// 其余位置 [of] 自动回退到品牌金 [AppTheme.brand]。
+/// 其余位置 [of] 自动回退到 [AppTheme.accentFallback]。
 class AccentScope extends InheritedWidget {
   final Color accent;
 
@@ -182,7 +241,7 @@ class AccentScope extends InheritedWidget {
 
   static Color of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<AccentScope>();
-    return scope?.accent ?? AppTheme.brand;
+    return scope?.accent ?? AppTheme.accentFallback;
   }
 
   @override

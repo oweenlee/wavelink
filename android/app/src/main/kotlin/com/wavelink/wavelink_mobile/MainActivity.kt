@@ -108,24 +108,29 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == FILE_PICK_REQUEST_CODE && resultCode == RESULT_OK && data != null) {
-            val uris = mutableListOf<Uri>()
-            data.data?.let { uris.add(it) }
-            data.clipData?.let { clip ->
-                for (i in 0 until clip.itemCount) {
-                    clip.getItemAt(i).uri?.let { uris.add(it) }
+        if (requestCode == FILE_PICK_REQUEST_CODE) {
+            if (resultCode == RESULT_OK && data != null) {
+                val uris = mutableListOf<Uri>()
+                data.data?.let { uris.add(it) }
+                data.clipData?.let { clip ->
+                    for (i in 0 until clip.itemCount) {
+                        clip.getItemAt(i).uri?.let { uris.add(it) }
+                    }
                 }
+                val paths = uris.mapNotNull { copyToAppStorage(it) }
+                for (uri in uris) {
+                    try {
+                        contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    } catch (_: Exception) {}
+                }
+                filePickerResult?.success(paths)
+            } else {
+                // 用户取消选择或出错 → 返回空列表，避免 Dart 侧 future 永久挂起
+                filePickerResult?.success(emptyList<String>())
             }
-            val paths = uris.mapNotNull { copyToAppStorage(it) }
-            for (uri in uris) {
-                try {
-                    contentResolver.takePersistableUriPermission(
-                        uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
-                } catch (_: Exception) {}
-            }
-            filePickerResult?.success(paths)
             filePickerResult = null
         }
     }

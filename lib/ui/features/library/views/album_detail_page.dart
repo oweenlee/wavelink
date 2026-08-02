@@ -6,6 +6,7 @@ import '../../../../domain/models/song.dart';
 import '../../playback/view_models/playback_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/now_playing_indicator.dart';
+import '../../../core/widgets/album_cover.dart';
 
 class AlbumDetailPage extends StatelessWidget {
   final Album album;
@@ -103,27 +104,12 @@ class _AlbumCover extends StatelessWidget {
     final h = MediaQuery.of(context).size.height * 0.35;
     final w = MediaQuery.of(context).size.width * 0.6;
     return Center(
-      child: Container(
+      child: WlCover(
+        coverUrl: album.songs.isNotEmpty ? album.songs.first.coverUrl : null,
+        fallbackColor: album.dominantColor,
+        borderRadius: 20,
         width: w,
         height: h.clamp(240.0, 320.0),
-        decoration: BoxDecoration(
-          color: album.dominantColor,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: album.dominantColor.withValues(alpha: 0.35),
-              blurRadius: 40,
-              spreadRadius: 4,
-            ),
-          ],
-        ),
-        child: Center(
-          child: Icon(
-            LucideIcons.album,
-            color: Colors.white.withValues(alpha: 0.25),
-            size: 80,
-          ),
-        ),
       ),
     );
   }

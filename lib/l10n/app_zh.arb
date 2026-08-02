@@ -104,6 +104,7 @@
   "systemDefault": "跟随系统",
   "clear": "清空",
   "noResults": "未找到结果",
+  "searchLibrary": "搜索曲库…",
 
   "unknownArtist": "未知艺术家",
   "importedMusic": "导入的音乐",
@@ -125,5 +126,13 @@
   "audioDiagnostic": "音频诊断",
   "diagnosticTotalUnderrun": "累计欠载次数",
   "diagnosticRecentUnderrun": "近期欠载",
-  "diagnosticHint": "如果欠载次数持续增加，请尝试关闭后台应用或切换输出设备。"
+  "diagnosticHint": "如果欠载次数持续增加，请尝试关闭后台应用或切换输出设备。",
+
+  "pickFiles": "选择文件",
+  "pickFilesHint": "从设备存储选择 FLAC/WAV/DSD/APE/CUE 等音频文件",
+  "airDrop": "AirDrop / 分享",
+  "airDropHint": "从其他 App 接收分享的音频文件",
+  "webDav": "WebDAV",
+  "webDavHint": "连接 WebDAV 网络存储",
+  "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS"
 }

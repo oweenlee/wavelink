@@ -19,6 +19,17 @@ class SettingsPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
       children: [
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 24),
+          child: Text(
+            'SETTINGS',
+            style: WlText.display(
+              fontSize: 28,
+              letterSpacing: 0.18 * 28,
+            ),
+          ),
+        ),
         _Section(
           title: l10n.settingsAudio,
           children: [
@@ -67,7 +78,6 @@ class SettingsPage extends StatelessWidget {
             _SettingItem(
               icon: LucideIcons.volume2,
               label: l10n.outputDevice,
-              onTap: () {},
             ),
           ],
         ),
@@ -79,7 +89,6 @@ class SettingsPage extends StatelessWidget {
               icon: LucideIcons.palette,
               label: l10n.theme,
               trailing: l10n.themeDark,
-              onTap: () {},
             ),
             _SwitchItem(
               icon: LucideIcons.pipette,
@@ -108,10 +117,7 @@ class SettingsPage extends StatelessWidget {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(
-                        ok ? l10n.scanNoPermission : l10n.scanNoPermission,
-                        // 无结果也提示检查权限
-                      ),
+                      content: Text(ok ? l10n.scanDone : l10n.scanNoPermission),
                       backgroundColor: ok ? AppTheme.brand : AppTheme.danger,
                     ),
                   );
@@ -129,7 +135,7 @@ class SettingsPage extends StatelessWidget {
             _SettingItem(
               icon: LucideIcons.upload,
               label: l10n.importExportPlaylist,
-              onTap: () {},
+              trailing: 'Coming soon',
             ),
           ],
         ),
@@ -143,17 +149,6 @@ class SettingsPage extends StatelessWidget {
               icon: LucideIcons.info,
               label: l10n.version,
               trailing: l10n.versionValue,
-              onTap: () {},
-            ),
-            _SettingItem(
-              icon: LucideIcons.code,
-              label: l10n.licenses,
-              onTap: () {},
-            ),
-            _SettingItem(
-              icon: LucideIcons.bug,
-              label: l10n.audioDiagnostic,
-              onTap: () => context.push('/diagnostic'),
             ),
           ],
         ),
@@ -195,9 +190,9 @@ class _LanguageSelector extends StatelessWidget {
             label: Text(label),
             selected: selected,
             onSelected: (_) => locale.setMode(opt.$1),
-            selectedColor: AppTheme.brand.withValues(alpha: 0.2),
+            selectedColor: AppTheme.surfaceHigh,
             labelStyle: TextStyle(
-              color: selected ? AppTheme.brand : AppTheme.textSecondary,
+              color: selected ? AppTheme.textPrimary : AppTheme.textSecondary,
               fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
             ),
             backgroundColor: AppTheme.surfaceDark,
@@ -205,7 +200,7 @@ class _LanguageSelector extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
               side: BorderSide(
                 color: selected
-                    ? AppTheme.brand
+                    ? AppTheme.textSecondary
                     : AppTheme.textTertiary.withValues(alpha: 0.2),
               ),
             ),
@@ -266,13 +261,13 @@ class _SettingItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final String? trailing;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _SettingItem({
     required this.icon,
     required this.label,
     this.trailing,
-    required this.onTap,
+    this.onTap,
   });
 
   @override
@@ -291,11 +286,13 @@ class _SettingItem extends StatelessWidget {
                 color: AppTheme.textTertiary,
               ),
             )
-          : const Icon(
-              LucideIcons.chevronRight,
-              color: AppTheme.textTertiary,
-              size: 20,
-            ),
+          : onTap != null
+              ? const Icon(
+                  LucideIcons.chevronRight,
+                  color: AppTheme.textTertiary,
+                  size: 20,
+                )
+              : null,
       onTap: onTap,
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -327,7 +324,7 @@ class _SwitchItem extends StatelessWidget {
       trailing: Switch(
         value: value,
         onChanged: onChanged,
-        activeThumbColor: AppTheme.brand,
+        activeThumbColor: AppTheme.textPrimary,
       ),
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -351,16 +348,15 @@ class _SliderItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
         children: [
           Icon(icon, color: AppTheme.textSecondary, size: 22),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 8),
                 Text(
                   label,
                   style: const TextStyle(
@@ -370,12 +366,12 @@ class _SliderItem extends StatelessWidget {
                 ),
                 SliderTheme(
                   data: SliderThemeData(
-                    activeTrackColor: AppTheme.brand,
+                    activeTrackColor: AppTheme.textPrimary,
                     inactiveTrackColor: AppTheme.textTertiary.withValues(
                       alpha: 0.3,
                     ),
-                    thumbColor: AppTheme.brand,
-                    overlayColor: AppTheme.brand.withValues(alpha: 0.1),
+                    thumbColor: AppTheme.textPrimary,
+                    overlayColor: AppTheme.textPrimary.withValues(alpha: 0.08),
                   ),
                   child: Slider(value: value, onChanged: onChanged),
                 ),

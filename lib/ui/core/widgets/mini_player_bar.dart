@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../features/playback/view_models/playback_provider.dart';
 import '../theme/app_theme.dart';
+import 'album_cover.dart';
 
 class MiniPlayerBar extends StatelessWidget {
   final VoidCallback? onTap;
@@ -18,9 +19,7 @@ class MiniPlayerBar extends StatelessWidget {
         final song = player.currentSong;
         if (song == null) return const SizedBox.shrink();
 
-        final accent = player.dynamicColor
-            ? song.dominantColor.toAccent()
-            : AppTheme.brand;
+        final accent = AppTheme.accentFallback;
         return AccentScope(
           accent: accent,
           child: GestureDetector(
@@ -57,7 +56,7 @@ class MiniPlayerBar extends StatelessWidget {
                       height: 56,
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       decoration: BoxDecoration(
-                        color: song.dominantColor.withValues(alpha: 0.2),
+                        color: AppTheme.s2,
                         border: Border(
                           top: BorderSide(
                             color: AppTheme.edgeHighlight,
@@ -67,13 +66,12 @@ class MiniPlayerBar extends StatelessWidget {
                       ),
                       child: Row(
                         children: [
-                          Container(
+                          WlCover(
+                            coverUrl: song.coverUrl,
+                            fallbackColor: song.dominantColor,
+                            borderRadius: 6,
                             width: 36,
                             height: 36,
-                            decoration: BoxDecoration(
-                              color: song.dominantColor,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(

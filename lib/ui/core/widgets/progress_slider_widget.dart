@@ -48,27 +48,25 @@ class ProgressSliderWidget extends StatelessWidget {
                   },
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                current,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppTheme.textTertiary,
-                ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              current,
+              style: WlText.mono(
+                fontSize: 10,
+                color: AppTheme.textTertiary,
               ),
-              Text(
-                total,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppTheme.textTertiary,
-                ),
+            ),
+            Text(
+              total,
+              style: WlText.mono(
+                fontSize: 10,
+                color: AppTheme.textTertiary,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ],
     );

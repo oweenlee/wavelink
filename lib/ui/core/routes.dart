@@ -8,7 +8,6 @@ import '../features/library/views/album_detail_page.dart';
 import '../features/library/views/artist_detail_page.dart';
 import '../features/library/views/song_list_page.dart';
 import '../features/settings/views/diagnostic_page.dart';
-import '../features/library/views/import_page.dart';
 import 'app.dart';
 
 final goRouter = GoRouter(
@@ -82,6 +81,5 @@ final goRouter = GoRouter(
       path: '/diagnostic',
       builder: (context, state) => const DiagnosticPage(),
     ),
-    GoRoute(path: '/import', builder: (context, state) => const ImportPage()),
   ],
 );

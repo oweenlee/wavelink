@@ -6,6 +6,7 @@ import '../../../../domain/models/song.dart';
 import '../../playback/view_models/playback_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/now_playing_indicator.dart';
+import '../../../core/widgets/album_cover.dart';
 
 class ArtistDetailPage extends StatelessWidget {
   final String artistName;
@@ -53,14 +54,13 @@ class ArtistDetailPage extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
               child: Column(
                 children: [
-                  Container(
+                  WlCover(
+                    coverUrl: songs.isNotEmpty ? songs.first.coverUrl : null,
+                    fallbackColor: artistColor,
+                    borderRadius: 50,
                     width: 100,
                     height: 100,
-                    decoration: BoxDecoration(
-                      color: artistColor,
-                      borderRadius: BorderRadius.circular(50),
-                    ),
-                    child: Center(
+                    placeholder: Center(
                       child: Text(
                         artistName.isNotEmpty ? artistName[0] : '?',
                         style: const TextStyle(
@@ -165,7 +165,7 @@ class _TrackTile extends StatelessWidget {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: song.dominantColor,
+                color: AppTheme.s2,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: isCurrent

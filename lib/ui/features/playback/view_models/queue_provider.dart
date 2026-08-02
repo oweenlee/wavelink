@@ -70,7 +70,11 @@ class QueueProvider extends ChangeNotifier {
     final idx = _queue.indexWhere((s) => s.id == song.id);
     if (idx >= 0) {
       _currentIndex = idx;
+    } else {
+      _queue.add(song);
+      _currentIndex = _queue.length - 1;
     }
+    notifyListeners();
   }
 
   void advanceTo(int index) {
@@ -91,6 +95,8 @@ class QueueProvider extends ChangeNotifier {
 
   void setLoopMode(LoopMode mode) {
     _loopMode = mode;
+    _prefsRepo.setLoopMode(_loopMode.name);
+    notifyListeners();
   }
 
   void toggleLoopMode() {

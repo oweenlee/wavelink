@@ -70,27 +70,31 @@ class AudioEngine {
         audioTrack?.play()
 
         writeThread = Thread {
-            val chunk = FloatArray(4096)
-            while (playing && !Thread.interrupted()) {
-                if (paused) {
-                    Thread.sleep(50)
-                    continue
-                }
-                // 阻塞取一块；超时无数据则回到循环顶部继续检查 playing
-                val block = pcmQueue.poll(200, TimeUnit.MILLISECONDS)
-                    ?: continue
-                var off = 0
-                while (off < block.size && playing && !Thread.interrupted()) {
+            try {
+                val chunk = FloatArray(4096)
+                while (playing && !Thread.interrupted()) {
                     if (paused) {
-                        Thread.sleep(50)
+                        try { Thread.sleep(50) } catch (_: InterruptedException) { break }
                         continue
                     }
-                    val n = minOf(chunk.size, block.size - off)
-                    System.arraycopy(block, off, chunk, 0, n)
-                    audioTrack?.write(chunk, 0, n, AudioTrack.WRITE_BLOCKING)
-                    writtenSamples += n
-                    off += n
+                    // 阻塞取一块；超时无数据则回到循环顶部继续检查 playing
+                    val block = pcmQueue.poll(200, TimeUnit.MILLISECONDS)
+                        ?: continue
+                    var off = 0
+                    while (off < block.size && playing && !Thread.interrupted()) {
+                        if (paused) {
+                            try { Thread.sleep(50) } catch (_: InterruptedException) { break }
+                            continue
+                        }
+                        val n = minOf(chunk.size, block.size - off)
+                        System.arraycopy(block, off, chunk, 0, n)
+                        audioTrack?.write(chunk, 0, n, AudioTrack.WRITE_BLOCKING)
+                        writtenSamples += n
+                        off += n
+                    }
                 }
+            } catch (_: InterruptedException) {
+                // stop() 中断了 sleep——安全退出
             }
         }
         writeThread?.start()

@@ -16,7 +16,7 @@
   "addToQueue": "Add to Queue",
   "addToPlaylist": "Add to Playlist",
   "unfavorite": "Remove from Favorites",
-  "favorite": "Add to Favorites",
+  "favorite": "Favorite",
   "noSongs": "No songs",
   "noLyrics": "No lyrics",
 
@@ -105,6 +105,7 @@
   "systemDefault": "System Default",
   "clear": "Clear",
   "noResults": "No results found",
+  "searchLibrary": "Search library…",
 
   "unknownArtist": "Unknown Artist",
   "importedMusic": "Imported Music",
@@ -126,5 +127,13 @@
   "audioDiagnostic": "Audio Diagnostics",
   "diagnosticTotalUnderrun": "Total Underruns",
   "diagnosticRecentUnderrun": "Recent Underruns",
-  "diagnosticHint": "If underruns keep increasing, try closing background apps or switching output device."
+  "diagnosticHint": "If underruns keep increasing, try closing background apps or switching output device.",
+
+  "pickFiles": "Pick Files",
+  "pickFilesHint": "Choose audio files (FLAC, WAV, DSD, APE, CUE...) from device storage",
+  "airDrop": "AirDrop / Share",
+  "airDropHint": "Receive audio files shared from other apps",
+  "webDav": "WebDAV",
+  "webDavHint": "Connect to WebDAV network storage",
+  "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS"
 }

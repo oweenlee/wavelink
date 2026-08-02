@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/material.dart';
 import '../../../domain/models/song.dart';
 import '../theme/app_theme.dart';
+import 'album_cover.dart';
 
 class SongTile extends StatelessWidget {
   final Song song;
@@ -10,6 +11,7 @@ class SongTile extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onMore;
   final Widget? trailing;
+  final int? trackNumber;
 
   const SongTile({
     super.key,
@@ -18,16 +20,44 @@ class SongTile extends StatelessWidget {
     this.onTap,
     this.onMore,
     this.trailing,
+    this.trackNumber,
   });
 
   @override
   Widget build(BuildContext context) {
+    final accent = AccentScope.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: isPlaying
+            ? BoxDecoration(
+                border: Border(
+                  left: BorderSide(
+                    color: accent,
+                    width: 2,
+                  ),
+                ),
+                color: accent.withValues(alpha: 0.04),
+              )
+            : null,
         child: Row(
           children: [
+            // Track number
+            if (trackNumber != null) ...[
+              SizedBox(
+                width: 26,
+                child: Text(
+                  trackNumber.toString().padLeft(2, '0'),
+                  textAlign: TextAlign.center,
+                  style: WlText.mono(
+                    fontSize: 12,
+                    color: AppTheme.textTertiary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+            ],
             // Album art
             _AlbumArt(song: song, isPlaying: isPlaying),
             const SizedBox(width: 12),
@@ -41,7 +71,7 @@ class SongTile extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: isPlaying ? FontWeight.w600 : FontWeight.w400,
-                      color: isPlaying ? AppTheme.brand : AppTheme.textPrimary,
+                      color: isPlaying ? accent : AppTheme.textPrimary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -60,11 +90,16 @@ class SongTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
+            // 格式标签 pill
+            if (song.formatInfo != null) ...[
+              _FormatBadge(song: song),
+              const SizedBox(width: 6),
+            ],
             // Duration
             Text(
               song.formattedDuration,
-              style: const TextStyle(
-                fontSize: 13,
+              style: WlText.mono(
+                fontSize: 12,
                 color: AppTheme.textTertiary,
               ),
             ),
@@ -84,6 +119,40 @@ class SongTile extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 格式标签 pill：无损格式（FLAC/WAV/DSD 等）用 accent 高亮，有损格式用灰色
+class _FormatBadge extends StatelessWidget {
+  final Song song;
+  const _FormatBadge({required this.song});
+
+  @override
+  Widget build(BuildContext context) {
+    final fmt = song.formatInfo!;
+    final isLossless = song.isLossless;
+    final accent = AccentScope.of(context);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: isLossless
+            ? accent.withValues(alpha: 0.12)
+            : AppTheme.highlight,
+        borderRadius: BorderRadius.circular(4),
+        border: isLossless
+            ? Border.all(color: accent.withValues(alpha: 0.3), width: 0.5)
+            : null,
+      ),
+      child: Text(
+        fmt,
+        style: WlText.mono(
+          fontSize: 9,
+          color: isLossless ? accent : AppTheme.textTertiary,
+          fontWeight: FontWeight.w500,
         ),
       ),
     );
@@ -115,8 +184,11 @@ class _AlbumArt extends StatelessWidget {
       width: 40,
       height: 40,
       decoration: BoxDecoration(
-        color: song.dominantColor,
+        color: hasCover ? song.dominantColor : AppTheme.s2,
         borderRadius: BorderRadius.circular(8),
+        border: hasCover
+            ? null
+            : Border.all(color: AppTheme.s4, width: 0.5),
       ),
       clipBehavior: Clip.antiAlias,
       child: hasCover
@@ -126,7 +198,7 @@ class _AlbumArt extends StatelessWidget {
                 Image.file(
                   coverFile,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  errorBuilder: (_, _, _) => const CoverPlaceholder(size: 40),
                 ),
                 if (isPlaying)
                   Container(
@@ -135,7 +207,9 @@ class _AlbumArt extends StatelessWidget {
                   ),
               ],
             )
-          : (isPlaying ? const Center(child: _EqualizerBars()) : null),
+          : isPlaying
+              ? const Center(child: _EqualizerBars())
+              : const CoverPlaceholder(size: 40),
     );
   }
 }

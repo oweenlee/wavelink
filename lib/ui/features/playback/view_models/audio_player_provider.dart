@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import '../../../../domain/models/song.dart';
 import '../../../../domain/models/lyric_line.dart';
@@ -112,9 +113,17 @@ class AudioPlayerProvider extends ChangeNotifier {
     await _nativeAudio.stop();
     if (token != _playToken) return;
 
-    // iOS iPod library 歌曲是 ipod-library:// URL，Rust 无法直接解码，
-    // 先导出为本地文件（导出一次后缓存复用）。
-    final resolvedPath = await _resolvePlayablePath(song.path);
+    // 解析本地可播放路径：远程流式源先下载到本地缓存
+    String? resolvedPath;
+    if (song.streamUrl != null && song.streamUrl!.isNotEmpty) {
+      resolvedPath = await _downloadToCache(song.streamUrl!, song.id, song.title);
+    } else {
+      resolvedPath = await _resolvePlayablePath(song.path);
+      // 校验本地文件存在性（避免 Subsonic server-local 路径被误判）
+      if (resolvedPath != null && !await File(resolvedPath).exists()) {
+        resolvedPath = null;
+      }
+    }
     if (token != _playToken) return;
 
     // bit-perfect 协调：探测文件速率 → iOS 设 AVAudioSession 读回实际速率 → 引擎设输出速率。
@@ -339,6 +348,59 @@ class AudioPlayerProvider extends ChangeNotifier {
   /// iOS iPod library 的 ipod-library:// URL 需先导出为本地文件（结果缓存复用）；
   /// 普通文件路径原样返回。
   final Map<String, String> _resolvedPaths = {};
+
+  /// HTTP(S) 流式 URL 下载到本地缓存目录。
+  /// 缓存命中直接返回，避免重复下载。
+  final Map<String, String> _streamCache = {};
+
+  Future<String?> _downloadToCache(String url, String songId, String title) async {
+    // 检查内存缓存
+    final cached = _streamCache[songId];
+    if (cached != null && await File(cached).exists()) return cached;
+
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final cacheDir = Directory('${appDir.path}/.stream_cache');
+      if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
+
+      final ext = _extFromUrl(url);
+      final cacheFile = File('${cacheDir.path}/$songId$ext');
+
+      // 磁盘缓存命中
+      if (await cacheFile.exists() && await cacheFile.length() > 0) {
+        _streamCache[songId] = cacheFile.path;
+        return cacheFile.path;
+      }
+
+      debugPrint('[Audio] 下载流式文件: $title');
+      final response = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 30));
+      if (response.statusCode != 200) {
+        debugPrint('[Audio] 下载失败 HTTP ${response.statusCode}');
+        return null;
+      }
+
+      await cacheFile.writeAsBytes(response.bodyBytes);
+      _streamCache[songId] = cacheFile.path;
+      debugPrint('[Audio] 下载完成: ${cacheFile.path} (${response.bodyBytes.length} bytes)');
+      return cacheFile.path;
+    } catch (e) {
+      debugPrint('[Audio] 流式下载失败: $e');
+      return null;
+    }
+  }
+
+  String _extFromUrl(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return '.audio';
+    final path = uri.path.toLowerCase();
+    for (final ext in ['.flac', '.wav', '.mp3', '.aac', '.ogg', '.m4a',
+                       '.opus', '.dsf', '.dff', '.aiff', '.ape', '.wv']) {
+      if (path.endsWith(ext)) return ext;
+    }
+    return '.audio';
+  }
 
   Future<String?> _resolvePlayablePath(String? path) async {
     if (path == null) return null;

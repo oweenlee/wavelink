@@ -19,6 +19,7 @@ class LibraryProvider extends ChangeNotifier {
   final Set<String> _favoriteIds = {};
   List<Song> _importedSongs = [];
   bool _scanDone = false;
+  bool _isScanning = false;
 
   List<Song> Function() queueSupplier = () => [];
   Song? Function() currentSongSupplier = () => null;
@@ -86,60 +87,92 @@ class LibraryProvider extends ChangeNotifier {
   // ── 导入与扫描 ──
 
   Future<bool> discoverSongs() async {
-    List<Song> allSongs;
-    final mediaSongs = await _songRepo.scanMediaStore();
-    final docSongs = await _songRepo.scanDocuments();
-    allSongs = [...mediaSongs, ...docSongs];
-    final seen = <String>{};
-    allSongs.retainWhere((s) {
-      if (s.path == null) return true;
-      return seen.add(s.path!);
-    });
-    if (allSongs.isEmpty) return false;
-    _importedSongs = allSongs;
-    _songRepo.setCachedSongs(allSongs);
-    onImportedSongsLoaded(allSongs);
-    _scanDone = true;
-    notifyListeners();
-    return true;
+    if (_isScanning) return false;
+    _isScanning = true;
+    try {
+      final mediaSongs = await _songRepo.scanMediaStore();
+      final docSongs = await _songRepo.scanDocuments();
+      final scannedSongs = [...mediaSongs, ...docSongs];
+
+      // 按 path 去重（扫描结果内部）
+      final seen = <String>{};
+      scannedSongs.retainWhere((s) {
+        if (s.path == null) return true;
+        return seen.add(s.path!);
+      });
+
+      if (scannedSongs.isEmpty) return false;
+
+      // 合并到已有列表：扫描到的新 path 替换已有，保留已有的其他歌曲
+      final scannedPaths = scannedSongs
+          .where((s) => s.path != null)
+          .map((s) => s.path!)
+          .toSet();
+      _importedSongs = [
+        ...scannedSongs,
+        ..._importedSongs.where(
+          (s) => s.path == null || !scannedPaths.contains(s.path),
+        ),
+      ];
+
+      _songRepo.setCachedSongs(_importedSongs);
+      onImportedSongsLoaded(_importedSongs);
+      _scanDone = true;
+      notifyListeners();
+      return true;
+    } finally {
+      _isScanning = false;
+    }
   }
 
   Future<bool> scanSubsonic() async {
-    final songs = await _songRepo.scanSubsonic();
-    if (songs.isEmpty) return false;
-    final newPaths = songs
-        .where((s) => s.path != null)
-        .map((s) => s.path!)
-        .toSet();
-    _importedSongs = [
-      ...songs,
-      ..._importedSongs.where(
-        (s) => s.path == null || !newPaths.contains(s.path),
-      ),
-    ];
-    _songRepo.setCachedSongs(_importedSongs);
-    onImportedSongsLoaded(_importedSongs);
-    notifyListeners();
-    return true;
+    if (_isScanning) return false;
+    _isScanning = true;
+    try {
+      final songs = await _songRepo.scanSubsonic();
+      if (songs.isEmpty) return false;
+      final newPaths = songs
+          .where((s) => s.path != null)
+          .map((s) => s.path!)
+          .toSet();
+      _importedSongs = [
+        ...songs,
+        ..._importedSongs.where(
+          (s) => s.path == null || !newPaths.contains(s.path),
+        ),
+      ];
+      _songRepo.setCachedSongs(_importedSongs);
+      onImportedSongsLoaded(_importedSongs);
+      notifyListeners();
+      return true;
+    } finally {
+      _isScanning = false;
+    }
   }
 
   Future<bool> scanSmb(String sharePath) async {
-    final songs = await _songRepo.scanSmb(sharePath);
-    if (songs.isEmpty) return false;
-    final newPaths = songs
-        .where((s) => s.path != null)
-        .map((s) => s.path!)
-        .toSet();
-    _importedSongs = [
-      ...songs,
-      ..._importedSongs.where(
-        (s) => s.path == null || !newPaths.contains(s.path),
-      ),
-    ];
-    _songRepo.setCachedSongs(_importedSongs);
-    onImportedSongsLoaded(_importedSongs);
-    notifyListeners();
-    return true;
+    if (_isScanning) return false;
+    _isScanning = true;
+    try {
+      final songs = await _songRepo.scanSmb(sharePath);
+      if (songs.isEmpty) return false;
+      final newPaths = songs
+          .where((s) => s.path != null)
+          .map((s) => s.path!)
+          .toSet();
+      _importedSongs = [
+        ...songs,
+        ..._importedSongs.where(
+          (s) => s.path == null || !newPaths.contains(s.path),
+        ),
+      ];
+      _songRepo.setCachedSongs(_importedSongs);
+      onImportedSongsLoaded(_importedSongs);
+      notifyListeners();
+      return true;
+    } finally {
+      _isScanning = false;
+    }
   }
 
   void onImportedSongsLoaded(List<Song> songs) {
@@ -152,9 +185,11 @@ class LibraryProvider extends ChangeNotifier {
     final cacheDir = Directory('${appDir.path}/.covers');
     if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
 
-    // 待处理的歌曲（无封面缓存）
+    // 待处理的歌曲（无封面缓存）。
+    // 不依赖 hasCover 标记（_fileToSong 降级导入时未设），
+    // 有本地文件路径但无 coverUrl 的就尝试提取——Rust 读不到封面会自然失败。
     final pending = songs
-        .where((s) => s.hasCover && s.path != null && s.coverUrl == null)
+        .where((s) => s.path != null && s.coverUrl == null)
         .toList();
     if (pending.isEmpty) return;
 

@@ -82,8 +82,6 @@ class MediaStoreChannel {
   }
 
   static Color _colorFromPath(String path) {
-    final hash = path.hashCode;
-    final palette = AppTheme.palette;
-    return palette[hash.abs() % palette.length];
+    return AppTheme.s2;
   }
 }

@@ -8,6 +8,7 @@ import 'data/repositories/song_repository.dart';
 import 'data/repositories/preferences_repository.dart';
 import 'ui/features/playback/view_models/playback_provider.dart';
 import 'ui/features/settings/view_models/locale_provider.dart';
+import 'ui/features/library/view_models/library_header_notifier.dart';
 import 'ui/core/app.dart';
 
 Future<void> main() async {
@@ -43,6 +44,7 @@ Future<void> main() async {
         ChangeNotifierProvider.value(value: playback.library),
         ChangeNotifierProvider.value(value: playback.dsp),
         ChangeNotifierProvider(create: (_) => LocaleProvider()),
+        ChangeNotifierProvider(create: (_) => LibraryHeaderNotifier()),
       ],
       child: const WaveLinkApp(),
     ),

@@ -9,6 +9,8 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'theme/app_theme.dart';
 import '../features/settings/view_models/locale_provider.dart';
+import '../features/library/view_models/library_header_notifier.dart';
+import '../features/library/views/import_page.dart';
 import 'widgets/mini_player_bar.dart';
 import 'routes.dart';
 
@@ -42,16 +44,19 @@ class WaveLinkApp extends StatelessWidget {
   }
 }
 
-class AppShell extends StatelessWidget {
+class AppShell extends StatefulWidget {
   final StatefulNavigationShell navigationShell;
 
   const AppShell({super.key, required this.navigationShell});
 
   @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final currentTab = navigationShell.currentIndex;
+  State<AppShell> createState() => _AppShellState();
+}
 
+class _AppShellState extends State<AppShell> {
+  @override
+  void initState() {
+    super.initState();
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -61,35 +66,66 @@ class AppShell extends StatelessWidget {
       ),
     );
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final currentTab = widget.navigationShell.currentIndex;
+    final headerNotifier = context.watch<LibraryHeaderNotifier>();
 
     return Scaffold(
       backgroundColor: AppTheme.background,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    children: [
-                      Text(
-                        _getTitle(currentTab, l10n),
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.textPrimary,
-                        ),
+      body: Column(
+        children: [
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Row(
+                children: [
+                  if (currentTab == 0)
+                    // Library tab: Space Grotesk wordmark + action icons
+                    const Text(
+                      'WAVELINK',
+                      style: TextStyle(
+                        fontFamily: 'Space Grotesk',
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.18 * 22,
+                        color: AppTheme.textPrimary,
                       ),
-                      const Spacer(),
-                    ],
-                  ),
-                ),
-                Expanded(child: navigationShell),
-              ],
+                    )
+                  else
+                    Text(
+                      _getTitle(currentTab, l10n),
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                  const Spacer(),
+                  if (currentTab == 0) ...[
+                    // Search toggle
+                    _HeaderIconButton(
+                      icon: LucideIcons.search,
+                      onTap: () => headerNotifier.toggleSearch(),
+                      active: headerNotifier.isSearchVisible,
+                    ),
+                    const SizedBox(width: 4),
+                    // Import
+                    _HeaderIconButton(
+                      icon: LucideIcons.download,
+                      onTap: () => showImportSheet(context),
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ],
-        ),
+          ),
+          Expanded(child: widget.navigationShell),
+        ],
       ),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
@@ -141,9 +177,9 @@ class AppShell extends StatelessWidget {
   }
 
   void _goTab(int index) {
-    navigationShell.goBranch(
+    widget.navigationShell.goBranch(
       index,
-      initialLocation: index == navigationShell.currentIndex,
+      initialLocation: index == widget.navigationShell.currentIndex,
     );
   }
 
@@ -156,6 +192,41 @@ class AppShell extends StatelessWidget {
       default:
         return '';
     }
+  }
+}
+
+class _HeaderIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool active;
+
+  const _HeaderIconButton({
+    required this.icon,
+    required this.onTap,
+    this.active = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: active
+              ? AppTheme.textTertiary.withValues(alpha: 0.15)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(
+          icon,
+          size: 20,
+          color: active ? AppTheme.textPrimary : AppTheme.textSecondary,
+        ),
+      ),
+    );
   }
 }
 

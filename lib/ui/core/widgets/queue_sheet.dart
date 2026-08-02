@@ -63,7 +63,7 @@ class QueueSheet extends StatelessWidget {
                       width: 36,
                       height: 36,
                       decoration: BoxDecoration(
-                        color: s.dominantColor,
+                        color: AppTheme.s2,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: isCurrent

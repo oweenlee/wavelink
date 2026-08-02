@@ -5,8 +5,11 @@ import 'package:provider/provider.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../../domain/models/song.dart';
 import '../../playback/view_models/playback_provider.dart';
+import '../view_models/library_header_notifier.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/song_tile.dart';
+import '../../../core/widgets/album_cover.dart';
+
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key});
@@ -18,6 +21,7 @@ class LibraryPage extends StatefulWidget {
 class _LibraryPageState extends State<LibraryPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -28,45 +32,97 @@ class _LibraryPageState extends State<LibraryPage>
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final headerNotifier = context.watch<LibraryHeaderNotifier>();
+
     return Column(
       children: [
-        const SizedBox(height: 8),
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: AppTheme.surfaceHigh.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(12),
+        // ── Search bar (toggled from AppShell top-right icon) ──
+        if (headerNotifier.isSearchVisible)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Container(
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppTheme.s2,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: TextField(
+                controller: _searchController,
+                autofocus: true,
+                onChanged: (v) => headerNotifier.setQuery(v.toLowerCase()),
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppTheme.textPrimary,
+                  fontFamily: 'Inter',
+                ),
+                cursorColor: AppTheme.accentFallback,
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(
+                    LucideIcons.search,
+                    size: 16,
+                    color: AppTheme.textTertiary,
+                  ),
+                  hintText: l10n.searchLibrary,
+                  hintStyle: const TextStyle(
+                    fontSize: 14,
+                    color: AppTheme.textTertiary,
+                  ),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+              ),
+            ),
           ),
-          child: TabBar(
-            controller: _tabController,
-            indicator: BoxDecoration(
-              color: AppTheme.brand.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(10),
+
+        // ── Segmented tab control ──
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppTheme.s2,
+              borderRadius: BorderRadius.circular(8),
             ),
-            indicatorSize: TabBarIndicatorSize.tab,
-            dividerColor: Colors.transparent,
-            labelColor: AppTheme.brand,
-            unselectedLabelColor: AppTheme.textTertiary,
-            labelStyle: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
+            padding: const EdgeInsets.all(2),
+            child: TabBar(
+              controller: _tabController,
+              indicator: BoxDecoration(
+                color: AppTheme.s4,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              labelColor: AppTheme.textPrimary,
+              unselectedLabelColor: AppTheme.textTertiary,
+              labelStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+              unselectedLabelStyle: const TextStyle(fontSize: 12),
+              tabs: [
+                Tab(text: l10n.libSongs),
+                Tab(text: l10n.libAlbums),
+                Tab(text: l10n.libArtists),
+                Tab(text: l10n.libPlaylists),
+              ],
+              onTap: (_) {
+                // Close search when switching tabs
+                if (headerNotifier.isSearchVisible) {
+                  headerNotifier.closeSearch();
+                  _searchController.clear();
+                }
+              },
             ),
-            unselectedLabelStyle: const TextStyle(fontSize: 13),
-            tabs: [
-              Tab(text: l10n.libSongs),
-              Tab(text: l10n.libAlbums),
-              Tab(text: l10n.libArtists),
-              Tab(text: l10n.libPlaylists),
-            ],
           ),
         ),
         const SizedBox(height: 8),
+
         Expanded(
           child: TabBarView(
             controller: _tabController,
@@ -122,99 +178,53 @@ class _EmptyLibrary extends StatelessWidget {
 // ── Songs Tab ──
 
 class _SongsTab extends StatelessWidget {
+  const _SongsTab();
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final player = context.watch<PlaybackProvider>();
-    final songs = player.allSongs;
+    final headerNotifier = context.watch<LibraryHeaderNotifier>();
+    final allSongs = player.allSongs;
 
-    return Column(
-      children: [
-        _ImportHeader(importCount: songs.length),
-        Expanded(
-          child: songs.isEmpty
-              ? _EmptyLibrary(message: l10n.noMusicHint)
-              : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 80),
-                  itemCount: songs.length,
-                  itemBuilder: (context, index) {
-                    final song = songs[index];
-                    final isPlaying =
-                        player.isPlaying && player.currentSong?.id == song.id;
-                    return SongTile(
-                      song: song,
-                      isPlaying: isPlaying,
-                      onTap: () => player.playSong(song),
-                      onMore: () => _showContextMenu(context, song, player),
-                      trailing: player.isSongFavorite(song.id)
-                          ? const Icon(
-                              LucideIcons.heart,
-                              size: 16,
-                              color: AppTheme.danger,
-                            )
-                          : null,
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-}
+    final query = headerNotifier.searchQuery;
+    final displayed = query.isEmpty
+        ? allSongs
+        : allSongs
+            .where((s) =>
+                s.title.toLowerCase().contains(query) ||
+                s.artist.toLowerCase().contains(query) ||
+                s.album.toLowerCase().contains(query))
+            .toList();
 
-class _ImportHeader extends StatelessWidget {
-  final int importCount;
-  const _ImportHeader({required this.importCount});
+    if (displayed.isEmpty) {
+      return _EmptyLibrary(
+        message: query.isNotEmpty ? l10n.noSongs : l10n.noMusicHint,
+      );
+    }
 
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Row(
-        children: [
-          const Icon(
-            LucideIcons.folderOpen,
-            size: 18,
-            color: AppTheme.brand,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            importCount > 0 ? l10n.importN(importCount) : l10n.importMusic,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textSecondary,
-            ),
-          ),
-          const Spacer(),
-          GestureDetector(
-            onTap: () => context.push('/import'),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppTheme.brand.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(LucideIcons.plus, size: 16, color: AppTheme.brand),
-                  SizedBox(width: 4),
-                  Text(
-                    l10n.import,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: AppTheme.brand,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 80),
+      itemCount: displayed.length,
+      itemBuilder: (context, index) {
+        final song = displayed[index];
+        final isPlaying =
+            player.isPlaying && player.currentSong?.id == song.id;
+        return SongTile(
+          song: song,
+          isPlaying: isPlaying,
+          trackNumber: allSongs.indexOf(song) + 1,
+          onTap: () => player.playSong(song),
+          onMore: () => _showContextMenu(context, song, player),
+          trailing: player.isSongFavorite(song.id)
+              ? const Icon(
+                  LucideIcons.heart,
+                  size: 16,
+                  color: AppTheme.danger,
+                )
+              : null,
+        );
+      },
     );
   }
 }
@@ -234,79 +244,98 @@ class _AlbumsTab extends StatelessWidget {
       return _EmptyLibrary(message: l10n.noAlbumInfo);
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 80, left: 16, right: 16, top: 8),
+    return GridView.builder(
+      padding: const EdgeInsets.only(
+        bottom: 80,
+        left: 16,
+        right: 16,
+        top: 8,
+      ),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 16,
+        crossAxisSpacing: 16,
+        childAspectRatio: 0.72,
+      ),
       itemCount: albumNames.length,
       itemBuilder: (context, index) {
         final name = albumNames[index];
         final albumSongs = songs.where((s) => s.album == name).toList();
         final color = albumSongs.first.dominantColor;
+        final isPlayingAlbum =
+            player.currentSong?.album == name && player.isPlaying;
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          child: GestureDetector(
-            onTap: () => context.push(
-              '/album',
-              extra: Album(
-                id: name,
-                title: name,
-                artist: albumSongs.first.artist,
-                year: 0,
-                songs: albumSongs,
-                dominantColor: color,
+        return GestureDetector(
+          onTap: () => context.push(
+            '/album',
+            extra: Album(
+              id: name,
+              title: name,
+              artist: albumSongs.first.artist,
+              year: 0,
+              songs: albumSongs,
+              dominantColor: color,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Album artwork
+              Expanded(
+                child: WlCover(
+                  coverUrl: albumSongs.first.coverUrl,
+                  fallbackColor: color,
+                  borderRadius: 10,
+                  width: double.infinity,
+                  height: double.infinity,
+                  overlay: isPlayingAlbum
+                      ? Align(
+                          alignment: Alignment.bottomRight,
+                          child: Container(
+                            margin: const EdgeInsets.all(8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accentFallback,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'NOW',
+                              style: WlText.mono(
+                                fontSize: 9,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        )
+                      : null,
+                ),
               ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Icon(
-                      LucideIcons.album,
-                      color: Colors.white.withValues(alpha: 0.5),
-                      size: 28,
-                    ),
-                  ),
+              const SizedBox(height: 8),
+              // Album title
+              Text(
+                name,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textPrimary,
                 ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        l10n.albumArtistCount(
-                          albumSongs.first.artist,
-                          albumSongs.length,
-                        ),
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(
-                  LucideIcons.chevronRight,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              // Mono meta line
+              Text(
+                '${albumSongs.length} songs',
+                style: WlText.mono(
+                  fontSize: 11,
                   color: AppTheme.textTertiary,
-                  size: 20,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         );
       },
@@ -328,77 +357,142 @@ class _ArtistsTab extends StatelessWidget {
       return _EmptyLibrary(message: l10n.noArtistInfo);
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 80, left: 16, right: 16, top: 8),
-      itemCount: artistNames.length,
-      itemBuilder: (context, index) {
-        final name = artistNames[index];
-        final count = songs.where((s) => s.artist == name).length;
-        final artistColor = songs
-            .firstWhere((s) => s.artist == name)
-            .dominantColor;
-
-        return GestureDetector(
-          onTap: () => context.push(
-            '/artist',
-            extra: {'name': name, 'color': artistColor},
-          ),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 12),
+    return CustomScrollView(
+      slivers: [
+        // Shuffle All pill
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: Row(
               children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: artistColor,
-                    borderRadius: BorderRadius.circular(26),
-                  ),
-                  child: Center(
-                    child: Text(
-                      name.isNotEmpty ? name[0] : '?',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
+                GestureDetector(
+                  onTap: () {
+                    if (songs.isNotEmpty) {
+                      player.playSong(songs.first);
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.s3,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          LucideIcons.shuffle,
+                          size: 14,
+                          color: AppTheme.textPrimary,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          l10n.shuffleAll,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        l10n.songsCount(count),
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                    ],
+                const Spacer(),
+                Text(
+                  '${artistNames.length} artists',
+                  style: WlText.mono(
+                    fontSize: 11,
+                    color: AppTheme.textTertiary,
                   ),
-                ),
-                const Icon(
-                  LucideIcons.chevronRight,
-                  color: AppTheme.textTertiary,
-                  size: 20,
                 ),
               ],
             ),
           ),
-        );
-      },
+        ),
+        // Artist list
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final name = artistNames[index];
+              final artistSongs = songs.where((s) => s.artist == name).toList();
+              final count = artistSongs.length;
+              final albumCount =
+                  artistSongs.map((s) => s.album).toSet().length;
+              final artistColor = artistSongs.first.dominantColor;
+
+              return GestureDetector(
+                onTap: () => context.push(
+                  '/artist',
+                  extra: {'name': name, 'color': artistColor},
+                ),
+                child: Container(
+                  margin: const EdgeInsets.only(
+                    bottom: 12,
+                    left: 16,
+                    right: 16,
+                  ),
+                  child: Row(
+                    children: [
+                      WlCover(
+                        coverUrl: artistSongs.first.coverUrl,
+                        fallbackColor: artistColor,
+                        borderRadius: 24,
+                        width: 48,
+                        height: 48,
+                        placeholder: Center(
+                          child: Text(
+                            name.isNotEmpty ? name[0] : '?',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                                color: AppTheme.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              l10n.artistSongsAlbums(count, albumCount),
+                              style: WlText.mono(
+                                fontSize: 11,
+                                color: AppTheme.textTertiary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        LucideIcons.chevronRight,
+                        color: AppTheme.textTertiary,
+                        size: 18,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+            childCount: artistNames.length,
+          ),
+        ),
+        const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
+      ],
     );
   }
 }
@@ -439,34 +533,78 @@ class _PlaylistsTab extends StatelessWidget {
         if (index == 0) {
           return Container(
             margin: const EdgeInsets.only(bottom: 16),
-            child: GestureDetector(
-              onTap: () => _showCreatePlaylist(context, player),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.brand.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: AppTheme.brand.withValues(alpha: 0.3),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(LucideIcons.plus, color: AppTheme.brand, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      l10n.newPlaylistFromQueue,
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: AppTheme.brand,
-                        fontWeight: FontWeight.w500,
+            child: Row(
+              children: [
+                // New Playlist
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _showCreatePlaylist(context, player),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.s3,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            LucideIcons.plus,
+                            color: AppTheme.textPrimary,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            l10n.newPlaylist,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.textPrimary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
+                const SizedBox(width: 10),
+                // Import/Export
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _showComingSoon(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.s2,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: AppTheme.s4,
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            LucideIcons.download,
+                            color: AppTheme.textSecondary,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'M3U · PLS',
+                            style: WlText.mono(
+                              fontSize: 12,
+                              color: AppTheme.textSecondary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           );
         }
@@ -483,23 +621,22 @@ class _PlaylistsTab extends StatelessWidget {
             },
           ),
           child: Container(
-            margin: const EdgeInsets.only(bottom: 12),
+            margin: const EdgeInsets.only(bottom: 10),
             child: Row(
               children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: pl.color,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
+                WlCover(
+                  coverUrl: pl.songs.isNotEmpty ? pl.songs.first.coverUrl : null,
+                  fallbackColor: pl.color,
+                  borderRadius: 10,
+                  width: 48,
+                  height: 48,
+                  placeholder: Center(
                     child: Icon(
                       pl.builtIn
                           ? LucideIcons.heart
                           : LucideIcons.listMusic,
                       color: Colors.white.withValues(alpha: 0.6),
-                      size: 24,
+                      size: 22,
                     ),
                   ),
                 ),
@@ -511,17 +648,17 @@ class _PlaylistsTab extends StatelessWidget {
                       Text(
                         pl.name,
                         style: const TextStyle(
-                          fontSize: 16,
+                          fontSize: 15,
                           fontWeight: FontWeight.w500,
                           color: AppTheme.textPrimary,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 3),
                       Text(
                         l10n.songsCount(pl.count),
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppTheme.textSecondary,
+                        style: WlText.mono(
+                          fontSize: 11,
+                          color: AppTheme.textTertiary,
                         ),
                       ),
                     ],
@@ -530,7 +667,7 @@ class _PlaylistsTab extends StatelessWidget {
                 const Icon(
                   LucideIcons.chevronRight,
                   color: AppTheme.textTertiary,
-                  size: 20,
+                  size: 18,
                 ),
               ],
             ),
@@ -591,6 +728,16 @@ class _PlaylistsTab extends StatelessWidget {
       ),
     );
   }
+
+  void _showComingSoon(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Coming soon'),
+        backgroundColor: AppTheme.s3,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 }
 
 class _PlaylistEntry {
@@ -632,13 +779,12 @@ void _showContextMenu(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                Container(
+                WlCover(
+                  coverUrl: song.coverUrl,
+                  fallbackColor: song.dominantColor,
+                  borderRadius: 8,
                   width: 48,
                   height: 48,
-                  decoration: BoxDecoration(
-                    color: song.dominantColor,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(

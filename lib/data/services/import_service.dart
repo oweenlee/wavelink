@@ -131,10 +131,18 @@ class ImportService {
         continue;
       }
       final dest = File('${importDir.path}/$name');
-      if (!await dest.exists()) {
+      if (await dest.exists()) {
+        // 同名文件已存在（可能来自不同来源）→ 加时间戳后缀避免冲突
+        final base = name.replaceAll(RegExp(r'\.[^.]+$'), '');
+        final ts = DateTime.now().millisecondsSinceEpoch;
+        final uniqueName = '${base}_$ts.$ext';
+        final uniqueDest = File('${importDir.path}/$uniqueName');
+        await file.copy(uniqueDest.path);
+        files.add(uniqueDest);
+      } else {
         await file.copy(dest.path);
+        files.add(dest);
       }
-      files.add(dest);
 
       // 如果是音频文件，也复制对应的 .lrc 歌词文件
       if (ext != 'lrc') {
@@ -308,9 +316,7 @@ class ImportService {
   }
 
   static Color _colorFromPath(String path) {
-    final hash = path.hashCode;
-    final palette = AppTheme.palette;
-    return palette[hash.abs() % palette.length];
+    return AppTheme.s2;
   }
 
   static Future<Directory> _coverCacheDir() async {

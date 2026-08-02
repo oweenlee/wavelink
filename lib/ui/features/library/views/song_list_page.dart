@@ -6,6 +6,7 @@ import '../../../../domain/models/song.dart';
 import '../../playback/view_models/playback_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/song_tile.dart';
+import '../../../core/widgets/album_cover.dart';
 
 /// 通用歌曲列表页（用于「我喜欢的音乐」、已保存播放列表等）
 class SongListPage extends StatelessWidget {
@@ -53,21 +54,13 @@ class SongListPage extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  Container(
+                  WlCover(
+                    coverUrl: songs.isNotEmpty ? songs.first.coverUrl : null,
+                    fallbackColor: accentColor,
+                    borderRadius: 20,
                     width: 120,
                     height: 120,
-                    decoration: BoxDecoration(
-                      color: accentColor,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: accentColor.withValues(alpha: 0.4),
-                          blurRadius: 30,
-                          spreadRadius: 4,
-                        ),
-                      ],
-                    ),
-                    child: Center(
+                    placeholder: Center(
                       child: Icon(
                         isFavoriteList
                             ? LucideIcons.heart
@@ -103,7 +96,7 @@ class SongListPage extends StatelessWidget {
                         label: l10n.shufflePlay,
                         onTap: () {
                           if (songs.isEmpty) return;
-                          player.toggleShuffle();
+                          player.setLoopMode(LoopMode.shuffle);
                           player.playAlbum(songs, startIndex: 0);
                           Navigator.pop(context);
                         },
@@ -146,6 +139,7 @@ class SongListPage extends StatelessWidget {
                 return SongTile(
                   song: song,
                   isPlaying: isPlaying,
+                  trackNumber: i + 1,
                   onTap: () => player.playSong(song),
                   onMore: () => _showContextMenu(ctx, song, player),
                 );

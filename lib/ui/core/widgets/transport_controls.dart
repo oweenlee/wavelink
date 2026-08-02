@@ -67,8 +67,8 @@ class _PlayButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 64,
-        height: 64,
+        width: 56,
+        height: 56,
         decoration: BoxDecoration(
           color: accent,
           shape: BoxShape.circle,
@@ -83,7 +83,7 @@ class _PlayButton extends StatelessWidget {
         child: Icon(
           isPlaying ? LucideIcons.pause300 : LucideIcons.play300,
           color: Colors.white,
-          size: 32,
+          size: 28,
         ),
       ),
     );

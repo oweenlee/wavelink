@@ -198,7 +198,7 @@ class PlaybackProvider extends ChangeNotifier {
   }
 
   void toggleLoopMode() => queueProvider.toggleLoopMode();
-  void toggleShuffle() => queueProvider.toggleShuffle();
+  void setLoopMode(LoopMode mode) => queueProvider.setLoopMode(mode);
 
   void setVolume(double v) {
     audioPlayer.setVolume(v);

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wavelink_mobile/domain/models/song.dart';
+import 'package:wavelink_mobile/domain/models/playback_types.dart';
 import 'package:wavelink_mobile/ui/features/playback/view_models/playback_provider.dart';
 import 'package:wavelink_mobile/data/services/preferences_service.dart';
 import 'helpers/mock_repositories.dart';
@@ -89,7 +90,7 @@ void main() {
 
     test('shuffle 模式 random next 不越界', () {
       final p = buildProvider();
-      p.toggleShuffle();
+      p.setLoopMode(LoopMode.shuffle);
       p.next();
       check(p.currentIndex >= 0 && p.currentIndex <= 2).isTrue();
     });
@@ -97,7 +98,7 @@ void main() {
     test('shuffle 模式单曲队列 next 不崩溃', () {
       final p = buildProvider();
       p.setQueue([_song('solo')]);
-      p.toggleShuffle();
+      p.setLoopMode(LoopMode.shuffle);
       p.next();
       check(p.currentIndex).equals(0);
     });
@@ -105,7 +106,7 @@ void main() {
     test('findNextIndex 队列单曲不崩溃', () {
       final p = buildProvider();
       p.setQueue([_song('solo')]);
-      p.toggleShuffle();
+      p.setLoopMode(LoopMode.shuffle);
       check(p.findNextIndex()).equals(0);
     });
 
