@@ -18,8 +18,8 @@ pub fn set_peq_band(
 ) -> Result<(), String> {
     let mut bands = state.peq_bands.lock().map_err(|e| format!("lock failed: {e}"))?;
     if index < bands.len() {
-        bands[index] = PeqBand { freq, gain_db, q };
-        state.engine.set_peq_band(index, PeqBand { freq, gain_db, q });
+        bands[index] = PeqBand { freq, gain_db, q, ..Default::default() };
+        state.engine.set_peq_band(index, PeqBand { freq, gain_db, q, ..Default::default() });
     }
     Ok(())
 }
@@ -42,7 +42,7 @@ pub fn set_eq_preset(preset: PresetName, state: State<AppState>) -> Result<(), S
         state.engine.set_peq_band(i, band.clone());
     }
     for i in 10..31 {
-        state.engine.set_peq_band(i, PeqBand { freq: 0.0, gain_db: 0.0, q: 1.41 });
+        state.engine.set_peq_band(i, PeqBand { freq: 0.0, gain_db: 0.0, q: 1.41, ..Default::default() });
     }
     Ok(())
 }

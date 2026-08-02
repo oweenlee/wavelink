@@ -60,6 +60,9 @@ pub fn forward_engine_events(app_handle: tauri::AppHandle, event_rx: Receiver<En
                 EngineEvent::Levels(lv) => {
                     let _ = app_handle.emit("player:levels", &lv);
                 }
+                EngineEvent::DopActive(active) => {
+                    let _ = app_handle.emit("player:dop_active", active);
+                }
             }
         }
     });

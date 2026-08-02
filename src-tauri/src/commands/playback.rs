@@ -188,6 +188,7 @@ pub fn set_engine_config(
         auto_sample_rate: auto_sample_rate.unwrap_or(false),
         exclusive_mode: exclusive_mode.unwrap_or(false),
         bit_perfect: bit_perfect.unwrap_or(false),
+        ..Default::default()
     };
     state.engine.set_config(cfg);
 }
