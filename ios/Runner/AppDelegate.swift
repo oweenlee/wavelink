@@ -10,6 +10,8 @@ class AudioOutputManager {
     private var sourceNode: AVAudioSourceNode?
     private var isPlayingFlag = false
     private var eventSink: FlutterEventSink?
+    /// source node 当前生效的采样率（路由变化时据此判断是否需重建）
+    private var currentSourceRate: Double = 0
 
     // 当前曲目元数据
     private var nowTitle = ""
@@ -28,6 +30,33 @@ class AudioOutputManager {
     /// 此处以激活后的实际采样率重建，保证与传给 Rust 的硬件速率一致。
     func resyncToSessionRate() {
         rebuildSourceNode(sampleRate: AVAudioSession.sharedInstance().sampleRate)
+    }
+
+    /// 路由/中断变化后的采样率重同步入口（iOS 无独立的采样率变更通知，
+    /// 速率变化随 routeChange / interruption 发生，故在这两个时机调用）。
+    ///
+    /// 硬件速率与 source node 一致时仅按需恢复停摆的 engine；不一致时
+    /// 停 engine → 以新速率重建 source node → 恢复运行，并调用
+    /// `engine_sync_output_rate` 把 Rust 引擎产出速率一并对齐，
+    /// 避免 source node 格式与硬件失配造成杂音。
+    func resyncToSessionRateIfNeeded() {
+        let actual = AVAudioSession.sharedInstance().sampleRate
+        if abs(actual - currentSourceRate) < 1.0 {
+            // 速率未变：仅在“应播但 engine 已停摆”时恢复（如路由切换后）
+            if isPlayingFlag, !engine.isRunning {
+                try? AVAudioSession.sharedInstance().setActive(true)
+                try? engine.start()
+            }
+            return
+        }
+        let shouldRun = engine.isRunning || isPlayingFlag
+        engine.stop()
+        rebuildSourceNode(sampleRate: actual)
+        engine_sync_output_rate(UInt32(actual))
+        if shouldRun {
+            try? AVAudioSession.sharedInstance().setActive(true)
+            try? engine.start()
+        }
     }
 
     /// 创建（或重建）source node 并连接到混音器。
@@ -59,6 +88,7 @@ class AudioOutputManager {
         }
 
         sourceNode = node
+        currentSourceRate = sampleRate
         engine.attach(node)
         engine.connect(node, to: engine.mainMixerNode, format: fmt)
     }
@@ -237,6 +267,16 @@ class AudioOutputManager {
             object: nil
         )
 
+        // 监听路由变化（耳机插拔/蓝牙/扬声器切换，以及 Spotlight 键盘音/听写麦克风
+        // 等系统声音触发的硬件速率变化——iOS 无独立采样率通知，速率变化随路由变化发生）。
+        // 路由/速率变化后若不重建 source node 并对齐引擎速率，格式失配 → 杂音。
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleRouteChange),
+            name: AVAudioSession.routeChangeNotification,
+            object: nil
+        )
+
         GeneratedPluginRegistrant.register(with: self)
 
         if let controller = window?.rootViewController as? FlutterViewController {
@@ -244,6 +284,13 @@ class AudioOutputManager {
         }
 
         return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    }
+
+    /// 路由变化（耳机插拔/蓝牙/系统声音触发的速率变化）：
+    /// 检测硬件速率是否改变，变了则重建 source node + 对齐引擎速率（消除失配杂音），
+    /// 未变则仅在引擎停摆时恢复。
+    @objc private func handleRouteChange(_ notification: Notification) {
+        audio.resyncToSessionRateIfNeeded()
     }
 
     @objc private func handleAudioInterruption(_ notification: Notification) {
@@ -257,7 +304,10 @@ class AudioOutputManager {
             audio.pause()
             audio.sendEvent("remote:pause")
         } else if type == AVAudioSession.InterruptionType.ended.rawValue {
-            // 中断结束：清空 ringbuf 避免累积脏数据导致杂音
+            // 中断结束：中断期间硬件速率可能被改变（如通话音频），按需重同步采样率
+            // （速率变了则重建 source node + 对齐引擎速率），否则恢复播放会因格式失配而杂音
+            audio.resyncToSessionRateIfNeeded()
+            // 清空 ringbuf 避免累积脏数据
             audio_output_clear_ringbuf()
             // 确保 AudioUnit 恢复运行
             if !audio.engine.isRunning {

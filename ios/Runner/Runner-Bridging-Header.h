@@ -9,3 +9,6 @@ void audio_output_clear_ringbuf(void);
 
 // 设置硬件采样率（从 AVAudioSession 获取后传入 Rust）
 void set_hw_sample_rate(unsigned int rate);
+
+// 系统运行时改变硬件采样率时，把引擎输出速率对齐到新速率（与重建 source node 配套）
+void engine_sync_output_rate(unsigned int rate);

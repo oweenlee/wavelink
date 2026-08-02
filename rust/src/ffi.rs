@@ -14,3 +14,12 @@ pub unsafe extern "C" fn audio_output_fill_buffer_stereo(
 pub extern "C" fn audio_output_clear_ringbuf() {
     crate::api::audio_output::clear_ringbuf_impl();
 }
+
+/// iOS 系统运行时改变硬件采样率（键盘音/激活麦克风/路由切换/中断等会触发）：
+/// 把引擎输出速率对齐到新硬件速率。必须与 Swift 侧重建 source node 配套调用，
+/// 否则引擎产出速率与 source node/硬件失配 → 杂音。不走 Dart（系统介入时 Dart 可能被节流）。
+#[no_mangle]
+pub extern "C" fn engine_sync_output_rate(rate: u32) {
+    crate::api::audio_output::set_hw_sample_rate(rate);
+    crate::api::engine::engine_set_output_sample_rate(rate);
+}
