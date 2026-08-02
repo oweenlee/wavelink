@@ -15,9 +15,9 @@ use super::queue::{resolve_entries, QueueEntry};
 use super::worker::spawn_consumer;
 use crate::decoder::{Decoder, DecodedFrame};
 use crate::dsp::{DspPipeline, PeqBand};
-use crate::output::{AudioOutput, AudioOutputInner};
+use crate::output::{AudioOutput, AudioOutputInner, SampleFormat};
 use crate::stream::StreamHandle;
-use crate::EngineConfig;
+use crate::{DsdMode, EngineConfig};
 use crate::error::EngineError;
 
 /// 引擎内部运行状态（只存在于引擎线程）
@@ -42,6 +42,12 @@ pub struct EngineState {
     pub(crate) external_tx: Sender<EngineEvent>,
     pub(crate) internal_event_tx: Sender<EngineEvent>,
     pub(crate) peq_bands: Vec<PeqBand>,
+    /// 当前 AutoEQ 档案名（None = 未启用）
+    pub(crate) auto_eq_profile: Option<String>,
+    /// AutoEQ 档案建议的前置增益（防削峰）
+    pub(crate) auto_eq_preamp_db: f32,
+    /// 当前曲目是否以 DoP 直出
+    pub(crate) dop_active: bool,
     pub(crate) duration_us: Arc<AtomicU64>,
     pub(crate) playing: Arc<AtomicBool>,
     /// 预加载的下一首（无缝播放）
@@ -94,6 +100,9 @@ impl EngineState {
             external_tx,
             internal_event_tx,
             peq_bands: crate::dsp::default_peq_bands(),
+            auto_eq_profile: None,
+            auto_eq_preamp_db: 0.0,
+            dop_active: false,
             duration_us,
             playing,
             next_entry: None,
@@ -154,7 +163,7 @@ impl EngineState {
         }
 
         let mut sr = self.config.sample_rate;
-        let ch = self.config.channels;
+        let mut ch = self.config.channels;
         let mut source_bit_depth: u16 = 0;
 
         // bit-perfect 模式：探测源文件采样率和位深，强制精确匹配
@@ -164,6 +173,24 @@ impl EngineState {
             }
             source_bit_depth = crate::decoder::probe_bit_depth(&path_buf).unwrap_or(24);
             info!("bit-perfect 模式: 采样率 {}Hz, 位深 {}bit", sr, source_bit_depth);
+        }
+
+        // DoP 直出：DSD 文件 + Dop 模式 → 输出速率 = DSD 速率/16，位深 24，绕过 DSP
+        let mut dop_active = false;
+        if self.config.dsd_mode == DsdMode::Dop && crate::decoder::is_dsd_file(&path_buf) {
+            match crate::decoder::probe_dsd_info(&path_buf) {
+                Some((dsd_rate_hz, dsd_ch)) if crate::dsd::dop::dop_supported(dsd_rate_hz) => {
+                    sr = crate::dsd::dop::dop_pcm_rate(dsd_rate_hz);
+                    source_bit_depth = 24;
+                    ch = dsd_ch;
+                    dop_active = true;
+                    info!("DoP 模式: DSD{} → {}kHz/24bit 直出", dsd_rate_hz / 44100, sr / 1000);
+                }
+                Some((dsd_rate_hz, _)) => {
+                    warn!("DoP: DSD 速率 {}Hz 超出上限（DSD256），回退 PCM 转换", dsd_rate_hz);
+                }
+                None => warn!("DoP: 无法探测 DSD 信息，回退 PCM 转换"),
+            }
         }
 
         // 计算时长（CUE 分轨使用虚轨时长）
@@ -187,10 +214,27 @@ impl EngineState {
                 }
             };
 
-        let (rx, mut decoder) = match Decoder::start(
-            &path_buf, actual_sr, actual_ch, self.position.clone(),
-            entry.seek_pos(), entry.end_secs_opt(),
-        ) {
+        // 设备不接受 DoP 目标速率 → 回退 PCM 转换（解码器重采样到 actual_sr）
+        if dop_active && actual_sr != sr {
+            warn!("DoP: 输出设备不支持 {}Hz（实际 {}Hz），回退 PCM 转换", sr, actual_sr);
+            dop_active = false;
+        }
+
+        let decode_result = if dop_active {
+            let left_justify = self.output.as_ref()
+                .map(|o| matches!(o.sample_format(), SampleFormat::I32))
+                .unwrap_or(false);
+            Decoder::start_dop(
+                &path_buf, left_justify, actual_ch, self.position.clone(),
+                entry.seek_pos(), entry.end_secs_opt(),
+            )
+        } else {
+            Decoder::start(
+                &path_buf, actual_sr, actual_ch, self.position.clone(),
+                entry.seek_pos(), entry.end_secs_opt(),
+            )
+        };
+        let (rx, mut decoder) = match decode_result {
             Ok(v) => v,
             Err(e) => {
                 error!("启动解码失败: {e}");
@@ -208,7 +252,10 @@ impl EngineState {
         let position_clone = self.position.clone();
         let consumer_event_tx = self.internal_event_tx.clone();
         let (ready_tx, ready_rx) = unbounded::<bool>();
-        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx);
+        if self.config.bit_perfect || dop_active {
+            dsp.lock().set_bypass(true);
+        }
+        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx, dop_active);
         let output = match self.output.as_ref() {
             Some(o) => o,
             None => { error!("播放时输出设备未初始化"); self.stop_playback(); self.advance_queue(); return; }
@@ -219,6 +266,7 @@ impl EngineState {
                 info!("播放: {}", entry.display);
                 self.playing.store(true, Ordering::Release);
                 let _ = self.external_tx.send(EngineEvent::TrackChanged(entry.display.clone()));
+                let _ = self.external_tx.send(EngineEvent::DopActive(dop_active));
                 let dur = self.duration_us.load(Ordering::Acquire);
                 if dur > 0 {
                     let _ = self.external_tx.send(EngineEvent::DurationSecs(dur as f64 / 1_000_000.0));
@@ -238,6 +286,7 @@ impl EngineState {
         self.consumer_thread = Some(consumer);
         self.dsp = Some(dsp);
         self.consumer_stop = Some(stop_flag);
+        self.dop_active = dop_active;
         self.apply_pending_replaygain();
 
         if let Some(ir_path) = self.pending_ir.clone() {
@@ -323,7 +372,7 @@ impl EngineState {
         let position_clone = self.position.clone();
         let consumer_event_tx = self.internal_event_tx.clone();
         let (ready_tx, ready_rx) = unbounded::<bool>();
-        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx);
+        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx, false);
         let output = match self.output.as_ref() {
             Some(o) => o,
             None => { error!("流式播放时输出设备未初始化"); self.stop_playback(); self.fail_stream(ack, EngineError::InvalidState("未初始化输出设备".into())); return; }
@@ -397,7 +446,15 @@ impl EngineState {
         let file_pos = entry.start_secs + pos;
         info!("seek_to: track={pos:.2}s, file={file_pos:.2}s");
         let sr = self.output_sample_rate;
-        let ch = self.config.channels;
+        let dop = self.dop_active;
+        // DoP 时输出声道数 = DSD 源声道数（可能不等于 config.channels）
+        let ch = if dop {
+            crate::decoder::probe_dsd_info(Path::new(&entry.audio_file))
+                .map(|(_, c)| c)
+                .unwrap_or(self.config.channels)
+        } else {
+            self.config.channels
+        };
         let target_samples = (pos * sr as f64 * ch as f64) as u64;
         self.stop_playback();
         self.position.store(target_samples, Ordering::SeqCst);
@@ -412,10 +469,21 @@ impl EngineState {
             None => { error!("seek 时输出设备未初始化"); return; }
         };
 
-        let (rx, mut decoder) = match Decoder::start(
-            &path_buf, sr, ch, self.position.clone(),
-            Some(file_pos), entry.end_secs_opt(),
-        ) {
+        let decode_result = if dop {
+            let left_justify = self.output.as_ref()
+                .map(|o| matches!(o.sample_format(), SampleFormat::I32))
+                .unwrap_or(false);
+            Decoder::start_dop(
+                &path_buf, left_justify, ch, self.position.clone(),
+                Some(file_pos), entry.end_secs_opt(),
+            )
+        } else {
+            Decoder::start(
+                &path_buf, sr, ch, self.position.clone(),
+                Some(file_pos), entry.end_secs_opt(),
+            )
+        };
+        let (rx, mut decoder) = match decode_result {
             Ok(v) => v,
             Err(e) => { error!("seek 启动解码失败: {e}"); return; }
         };
@@ -424,15 +492,15 @@ impl EngineState {
             sr, ch as usize, &self.peq_bands,
             true, self.current_volume, self.output_bit_depth,
         )));
-        if self.config.bit_perfect {
+        if self.config.bit_perfect || dop {
             dsp.lock().set_bypass(true);
-            info!("bit-perfect: DSP 管线已绕过");
+            info!("bit-perfect/DoP: DSP 管线已绕过");
         }
         let stop_flag = Arc::new(AtomicBool::new(false));
         let position_clone = self.position.clone();
         let consumer_event_tx = self.internal_event_tx.clone();
         let (ready_tx, ready_rx) = unbounded::<bool>();
-        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), sr, ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx);
+        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), sr, ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx, dop);
         let output = match self.output.as_ref() {
             Some(o) => o,
             None => { error!("seek 后输出设备未初始化"); return; }
@@ -468,13 +536,41 @@ impl EngineState {
             error!("预加载文件不存在: {}", entry.audio_file);
             return;
         }
+        let next_is_dsd = crate::decoder::is_dsd_file(&path_buf);
+        if self.dop_active {
+            // DoP 播放中：仅当下一首是同速率 DSD 才预加载（否则需重配输出，交给 play_entry）
+            let same_rate = next_is_dsd
+                && crate::decoder::probe_dsd_info(&path_buf)
+                    .map(|(r, _)| crate::dsd::dop::dop_pcm_rate(r) == self.output_sample_rate)
+                    .unwrap_or(false);
+            if !same_rate {
+                debug!("DoP: 下一首格式不同，跳过预加载");
+                return;
+            }
+        } else if self.config.dsd_mode == DsdMode::Dop && next_is_dsd {
+            // PCM 播放中但下一首需 DoP → 需重配输出速率，不预加载
+            return;
+        }
         let dummy_pos = Arc::new(AtomicU64::new(0));
         let sr = self.output_sample_rate;
-        let ch = self.config.channels;
-        let (rx, decoder) = match Decoder::start(
-            &path_buf, sr, ch, dummy_pos,
-            entry.seek_pos(), entry.end_secs_opt(),
-        ) {
+        let ch = if self.dop_active {
+            crate::decoder::probe_dsd_info(&path_buf)
+                .map(|(_, c)| c)
+                .unwrap_or(self.config.channels)
+        } else {
+            self.config.channels
+        };
+        let start_result = if self.dop_active {
+            let left_justify = self.output.as_ref()
+                .map(|o| matches!(o.sample_format(), SampleFormat::I32))
+                .unwrap_or(false);
+            Decoder::start_dop(&path_buf, left_justify, ch, dummy_pos,
+                entry.seek_pos(), entry.end_secs_opt())
+        } else {
+            Decoder::start(&path_buf, sr, ch, dummy_pos,
+                entry.seek_pos(), entry.end_secs_opt())
+        };
+        let (rx, decoder) = match start_result {
             Ok(v) => v,
             Err(e) => { error!("预加载解码失败: {e}"); return; }
         };
@@ -514,10 +610,51 @@ impl EngineState {
     // ── DSP 配置 ──
 
     pub(crate) fn apply_pending_replaygain(&mut self) {
-        if let Some(gain_db) = self.pending_replaygain_db {
-            let effective = self.effective_replaygain_db(gain_db);
-            if let Some(dsp) = &self.dsp {
-                dsp.lock().set_replaygain_db(effective);
+        let rg_db = self
+            .pending_replaygain_db
+            .map(|g| self.effective_replaygain_db(g))
+            .unwrap_or(0.0);
+        // AutoEQ preamp 与 ReplayGain 叠加（都是 dB 前置增益）
+        let total = rg_db + self.auto_eq_preamp_db;
+        if let Some(dsp) = &self.dsp {
+            dsp.lock().set_replaygain_db(total);
+        }
+    }
+
+    /// 应用 AutoEQ 耳机校正档案（None = 清除，恢复平坦 31 段）
+    pub(crate) fn apply_auto_eq(&mut self, name: Option<String>) {
+        match name.as_deref() {
+            Some(n) => match crate::dsp::autoeq::find_profile(n) {
+                Some(profile) => {
+                    let bands = crate::dsp::autoeq::profile_to_peq_bands(profile);
+                    self.peq_bands = bands.clone();
+                    self.auto_eq_preamp_db = profile.preamp_db;
+                    self.auto_eq_profile = Some(profile.name.to_string());
+                    if let Some(dsp) = &self.dsp {
+                        dsp.lock().replace_peq_bands(&bands, self.output_sample_rate as f32);
+                    }
+                    self.apply_pending_replaygain();
+                    info!(
+                        "AutoEQ 已应用: {} ({} 段, preamp {:.1}dB)",
+                        profile.name,
+                        bands.len(),
+                        profile.preamp_db
+                    );
+                }
+                None => {
+                    self.emit(EngineEvent::Error(format!("AutoEQ: 未找到耳机型号 '{n}'")));
+                }
+            },
+            None => {
+                self.peq_bands = crate::dsp::default_peq_bands();
+                self.auto_eq_preamp_db = 0.0;
+                self.auto_eq_profile = None;
+                if let Some(dsp) = &self.dsp {
+                    let bands = self.peq_bands.clone();
+                    dsp.lock().replace_peq_bands(&bands, self.output_sample_rate as f32);
+                }
+                self.apply_pending_replaygain();
+                info!("AutoEQ 已清除，EQ 恢复平坦");
             }
         }
     }
@@ -555,7 +692,7 @@ impl EngineState {
 
     pub(crate) fn set_peq_band(&mut self, index: usize, band: PeqBand) {
         if index < self.peq_bands.len() {
-            self.peq_bands[index] = PeqBand { freq: band.freq, gain_db: band.gain_db, q: band.q };
+            self.peq_bands[index] = band.clone();
         }
         if let Some(dsp) = &self.dsp {
             dsp.lock().set_peq_band(index, &band, self.output_sample_rate as f32);
@@ -727,6 +864,9 @@ pub(crate) mod tests {
             external_tx: tx.clone(),
             internal_event_tx: internal_tx,
             peq_bands: crate::dsp::default_peq_bands(),
+            auto_eq_profile: None,
+            auto_eq_preamp_db: 0.0,
+            dop_active: false,
             duration_us: duration,
             playing,
             next_entry: None,

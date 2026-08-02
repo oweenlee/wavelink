@@ -7,6 +7,7 @@
 //! 本模块自研核心滤波器（纯 Rust、零额外重依赖），便于单元测试验证
 //! （计划书强调：DSP 正确性必须靠自动化测试，不能靠人工试听）。
 
+pub mod autoeq;
 pub mod biquad;
 pub mod convolver;
 pub mod crossfeed;
@@ -16,4 +17,4 @@ pub mod pipeline;
 pub mod speed;
 pub mod widener;
 
-pub use pipeline::{default_peq_bands, preset_bands, DspPipeline, PeqBand, PresetName};
+pub use pipeline::{default_peq_bands, preset_bands, DspPipeline, PeqBand, PeqKind, PresetName};

@@ -61,7 +61,7 @@ fn pipeline_gain_at(dsp: &mut DspPipeline, sr: u32, freq: f32) -> f32 {
 #[test]
 fn test_peq_gain_at_center_frequency() {
     let sr = 44100u32;
-    let bands = vec![PeqBand { freq: 1000.0, gain_db: 12.0, q: 2.0 }];
+    let bands = vec![PeqBand { freq: 1000.0, gain_db: 12.0, q: 2.0, ..Default::default() }];
     let mut dsp = DspPipeline::new(sr, 2, &bands, false, 1.0, 24);
 
     let gain = pipeline_gain_at(&mut dsp, sr, 1000.0);
@@ -75,7 +75,7 @@ fn test_peq_gain_at_center_frequency() {
 #[test]
 fn test_peq_no_effect_at_distant_frequency() {
     let sr = 96000u32;
-    let bands = vec![PeqBand { freq: 1000.0, gain_db: 12.0, q: 2.0 }];
+    let bands = vec![PeqBand { freq: 1000.0, gain_db: 12.0, q: 2.0, ..Default::default() }];
     let mut dsp = DspPipeline::new(sr, 2, &bands, false, 1.0, 24);
 
     let gain = pipeline_gain_at(&mut dsp, sr, 10_000.0);
@@ -89,7 +89,7 @@ fn test_peq_no_effect_at_distant_frequency() {
 #[test]
 fn test_peq_negative_gain_cuts() {
     let sr = 44100u32;
-    let bands = vec![PeqBand { freq: 5000.0, gain_db: -9.0, q: 1.0 }];
+    let bands = vec![PeqBand { freq: 5000.0, gain_db: -9.0, q: 1.0, ..Default::default() }];
     let mut dsp = DspPipeline::new(sr, 2, &bands, false, 1.0, 24);
 
     let gain = pipeline_gain_at(&mut dsp, sr, 5000.0);
@@ -496,7 +496,7 @@ fn test_mixed_nan_no_panic() {
 #[test]
 fn test_peq_extreme_q_value() {
     let sr = 44100u32;
-    let bands = vec![PeqBand { freq: 1000.0, gain_db: 12.0, q: 100.0 }];
+    let bands = vec![PeqBand { freq: 1000.0, gain_db: 12.0, q: 100.0, ..Default::default() }];
     let mut dsp = DspPipeline::new(sr, 2, &bands, false, 1.0, 24);
     let signal = generate_sine(1000.0, 0.1, sr, 0.5);
     let mut buf = to_stereo(&signal);
@@ -509,7 +509,7 @@ fn test_peq_extreme_q_value() {
 #[test]
 fn test_peq_freq_above_nyquist_no_panic() {
     let sr = 44100u32;
-    let bands = vec![PeqBand { freq: 30000.0, gain_db: 12.0, q: 1.0 }];
+    let bands = vec![PeqBand { freq: 30000.0, gain_db: 12.0, q: 1.0, ..Default::default() }];
     let mut dsp = DspPipeline::new(sr, 2, &bands, false, 1.0, 24);
     let signal = generate_sine(1000.0, 0.1, sr, 0.2);
     let mut buf = to_stereo(&signal);
@@ -521,7 +521,7 @@ fn test_peq_freq_above_nyquist_no_panic() {
 fn test_peq_extreme_negative_gain() {
     let sr = 44100u32;
     // 用高 Q 值确保衰减精确
-    let bands = vec![PeqBand { freq: 1000.0, gain_db: -40.0, q: 5.0 }];
+    let bands = vec![PeqBand { freq: 1000.0, gain_db: -40.0, q: 5.0, ..Default::default() }];
     let mut dsp = DspPipeline::new(sr, 2, &bands, false, 1.0, 24);
     let signal = generate_sine(1000.0, 0.5, sr, 0.2);
     let mut buf = to_stereo(&signal);

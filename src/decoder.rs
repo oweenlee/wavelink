@@ -111,6 +111,45 @@ impl Decoder {
         });
         Ok((rx, Decoder { tx: Some(stx), handle: Some(handle), position: pos_clone, err_rx: Some(err_rx) }))
     }
+
+    /// 以 DoP（DSD over PCM）方式启动 DSD 解码线程。
+    ///
+    /// 原始 DSD 比特流打包为 DoP PCM（采样率 = DSD 速率 / 16），
+    /// 不做 DSD→PCM 转换、不重采样、不过 DSP，交给支持 DoP 的 DAC 还原原生 DSD。
+    /// - `left_justify` — 输出格式为 32-bit 整数时传 true（24-bit 字左对齐），24-bit/浮点传 false
+    /// - `target_channels` — 期望声道数（通常用源文件声道数）
+    pub fn start_dop(
+        path: &Path, left_justify: bool, target_channels: u32,
+        position: Arc<AtomicU64>, seek_pos: Option<f64>,
+        end_secs: Option<f64>,
+    ) -> Result<(Receiver<DecodedFrame>, Self), EngineError> {
+        let (tx, rx) = bounded(DECODE_CHANNEL_CAPACITY);
+        let (stx, srx) = unbounded();
+        let (err_tx, err_rx) = bounded::<EngineError>(1);
+        let p = path.to_path_buf();
+        let pos_clone = position.clone();
+        let handle = thread::spawn(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run_dsd_dop(&p, left_justify, target_channels, tx, srx, seek_pos, end_secs)
+            }));
+            match result {
+                Ok(Err(e)) => {
+                    error!("DoP 解码失败: {e}");
+                    let _ = err_tx.send(e);
+                }
+                Err(panic_info) => {
+                    let msg = if let Some(s) = panic_info.downcast_ref::<&str>() { s.to_string() }
+                              else if let Some(s) = panic_info.downcast_ref::<String>() { s.clone() }
+                              else { "DoP 解码线程未知 panic".to_string() };
+                    error!("DoP 解码线程 crash: {msg}");
+                    let _ = err_tx.send(EngineError::DecodeFailed { path: p.clone(), reason: msg });
+                }
+                Ok(Ok(())) => {}
+            }
+        });
+        Ok((rx, Decoder { tx: Some(stx), handle: Some(handle), position: pos_clone, err_rx: Some(err_rx) }))
+    }
+
     /// 停止后台解码线程
     pub fn stop(&self) { if let Some(ref t) = self.tx { let _ = t.send(()); } }
 
@@ -244,6 +283,13 @@ fn run(
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         if ext.eq_ignore_ascii_case("dsf") || ext.eq_ignore_ascii_case("dff") {
             return run_dsd(path, target_rate, target_ch, tx, stop_rx, seek_pos, end_secs);
+        }
+        // WavPack 无可用 Rust 解码器（Symphonia 上游亦不支持），明确报错而非“探测失败”
+        if ext.eq_ignore_ascii_case("wv") || ext.eq_ignore_ascii_case("wvc") {
+            return Err(EngineError::DecodeFailed {
+                path: path.to_path_buf(),
+                reason: "暂不支持 WavPack (.wv) 格式".into(),
+            });
         }
     }
 
@@ -509,7 +555,7 @@ pub fn read_metadata(path: &Path) -> Result<Metadata, String> {
         return Ok(meta);
     }
 
-    // lofty 不支持的格式（DSF/DFF/WavPack）回退到 Symphonia 探测时长
+    // lofty 不支持的格式（DSF/DFF）回退到 Symphonia 探测时长
     let duration_secs = probe_duration_secs(path).unwrap_or(0.0);
 
     Ok(Metadata {
@@ -685,6 +731,27 @@ pub fn probe_bit_depth(path: &Path) -> Option<u16> {
 
 // ── DSD 解码 ──────────────────────────────────────────────────────────
 
+/// 判断扩展名是否为 DSD 容器（DSF/DFF）
+pub fn is_dsd_file(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some(ext) if ext.eq_ignore_ascii_case("dsf") || ext.eq_ignore_ascii_case("dff")
+    )
+}
+
+/// 探测 DSD 文件的原始速率和声道数（只读文件头）。
+/// 返回 `(dsd_rate_hz, channels)`，如 DSD64 立体声 → `(2822400, 2)`。
+/// 非 DSD 文件或打开失败返回 None。
+pub fn probe_dsd_info(path: &Path) -> Option<(u32, u32)> {
+    use dsd_reader::DsdReader;
+    let reader = DsdReader::from_container(path.to_path_buf()).ok()?;
+    let mult = reader.dsd_rate();
+    if mult <= 0 {
+        return None;
+    }
+    Some((2_822_400 * mult as u32, reader.channels_num() as u32))
+}
+
 fn run_dsd(
     path: &Path, target_rate: u32, target_ch: u32,
     tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
@@ -795,6 +862,150 @@ fn run_dsd(
             let _ = resample_and_send(&mixed, &mut resampler, &mut rubato_buf,
                 out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
         }
+    }
+    Ok(())
+}
+
+/// 将累积的 DSD 字节打包为 DoP 帧并发送（按偶数字节消费，奇数尾部保留）
+#[allow(clippy::too_many_arguments)]
+fn flush_pack_dop(
+    chan_buf: &mut [Vec<u8>],
+    packer: &mut crate::dsd::dop::DopPacker,
+    packed: &mut Vec<f32>,
+    tx: &Sender<DecodedFrame>,
+    stop_rx: &Receiver<()>,
+    out_ch: usize,
+    pcm_rate: u32,
+    pts: &mut f64,
+    output_frames: &mut u64,
+    max_output_frames: Option<u64>,
+) {
+    let usable = chan_buf.iter().map(|b| b.len() / 2 * 2).min().unwrap_or(0);
+    if usable == 0 {
+        return;
+    }
+    let refs: Vec<&[u8]> = chan_buf.iter().map(|b| &b[..usable]).collect();
+    packed.clear();
+    let frames = packer.pack(&refs, packed);
+    for b in chan_buf.iter_mut() {
+        b.drain(..(frames * 2).min(b.len()));
+    }
+    if packed.is_empty() {
+        return;
+    }
+    // end_secs 截断
+    let send_len = match max_output_frames {
+        Some(max) => packed.len().min(max.saturating_sub(*output_frames) as usize * out_ch),
+        None => packed.len(),
+    };
+    if send_len == 0 {
+        return;
+    }
+    let n_frames = send_len / out_ch;
+    try_send_or_stop(tx, DecodedFrame {
+        samples: packed[..send_len].to_vec(),
+        pts_secs: *pts,
+        sample_rate: pcm_rate,
+        channels: out_ch as u32,
+    }, stop_rx);
+    *pts += n_frames as f64 / pcm_rate as f64;
+    *output_frames += n_frames as u64;
+}
+
+/// DoP 直出：原始 DSD 比特 → DoP PCM 帧（不转 PCM、不重采样）
+fn run_dsd_dop(
+    path: &Path, left_justify: bool, target_ch: u32,
+    tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
+    seek_pos: Option<f64>,
+    end_secs: Option<f64>,
+) -> Result<(), EngineError> {
+    use dsd_reader::DsdReader;
+    use crate::dsd::dop::{dop_pcm_rate, dop_supported, DopPacker};
+
+    let reader = DsdReader::from_container(path.to_path_buf())
+        .map_err(|e| EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("DSD 文件打开失败: {e}") })?;
+    let mult = reader.dsd_rate();
+    let dsd_rate_hz = 2_822_400 * mult.max(1) as u32;
+    let src_ch = reader.channels_num();
+    if src_ch == 0 {
+        return Err(EngineError::DecodeFailed { path: path.to_path_buf(), reason: "DSD 文件无声道".into() });
+    }
+    if !dop_supported(dsd_rate_hz) {
+        return Err(EngineError::DecodeFailed {
+            path: path.to_path_buf(),
+            reason: format!("DSD 速率 {}Hz 过高，无法 DoP 直出（上限 DSD256）", dsd_rate_hz),
+        });
+    }
+    let pcm_rate = dop_pcm_rate(dsd_rate_hz);
+    let out_ch = if target_ch == 0 { src_ch } else { src_ch.min(target_ch as usize).max(1) };
+
+    info!("DoP 直出: {} (DSD{} → {}kHz PCM, {}ch)", path.display(), mult * 64, pcm_rate / 1000, out_ch);
+
+    let iter = reader.dsd_iter()
+        .map_err(|e| EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("DSD 迭代器创建失败: {e}") })?;
+
+    // Seek：每声道需跳过的 DSD 字节数 = secs * dsd_rate / 8
+    let mut skip_bytes: usize = if let Some(secs) = seek_pos {
+        (secs * dsd_rate_hz as f64 / 8.0) as usize
+    } else {
+        0
+    };
+    let max_output_frames: Option<u64> = if let Some(end) = end_secs {
+        let start = seek_pos.unwrap_or(0.0);
+        let dur = end - start;
+        if dur > 0.0 { Some((dur * pcm_rate as f64) as u64) } else { None }
+    } else {
+        None
+    };
+
+    let mut packer = DopPacker::new(left_justify);
+    // 每声道累积缓冲（达阈后打包发送）
+    const FLUSH_BYTES: usize = 8192;
+    let mut chan_buf: Vec<Vec<u8>> = (0..src_ch).map(|_| Vec::with_capacity(FLUSH_BYTES + 4096)).collect();
+    let mut packed: Vec<f32> = Vec::with_capacity(FLUSH_BYTES / 2 * out_ch);
+    let mut output_frames: u64 = 0;
+    let mut pts = 0.0f64;
+
+    for (_nread, chan_frames) in iter {
+        if stop_rx.try_recv().is_ok() { return Ok(()); }
+        if let Some(max_frames) = max_output_frames {
+            if output_frames >= max_frames { break; }
+        }
+
+        // Seek 跳过
+        if skip_bytes > 0 {
+            let block_len = chan_frames.first().map(|b| b.len()).unwrap_or(0);
+            if block_len == 0 { continue; }
+            if skip_bytes >= block_len {
+                skip_bytes -= block_len;
+                continue;
+            } else {
+                let skip = skip_bytes;
+                skip_bytes = 0;
+                for (c, data) in chan_frames.iter().enumerate() {
+                    if let Some(buf) = chan_buf.get_mut(c) {
+                        buf.extend_from_slice(&data[skip.min(data.len())..]);
+                    }
+                }
+            }
+        } else {
+            for (c, data) in chan_frames.iter().enumerate() {
+                if let Some(buf) = chan_buf.get_mut(c) {
+                    buf.extend_from_slice(data);
+                }
+            }
+        }
+
+        if chan_buf.first().map(|b| b.len() >= FLUSH_BYTES).unwrap_or(false) {
+            flush_pack_dop(&mut chan_buf, &mut packer, &mut packed, &tx, &stop_rx,
+                out_ch, pcm_rate, &mut pts, &mut output_frames, max_output_frames);
+        }
+    }
+
+    // 文件结束：打包剩余字节
+    if stop_rx.try_recv().is_err() {
+        flush_pack_dop(&mut chan_buf, &mut packer, &mut packed, &tx, &stop_rx,
+            out_ch, pcm_rate, &mut pts, &mut output_frames, max_output_frames);
     }
     Ok(())
 }

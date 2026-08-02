@@ -148,6 +148,12 @@ pub trait AudioOutput {
         vec![self.sample_rate()]
     }
 
+    /// 当前输出样本格式（默认 F32，整数直出后端覆盖）。
+    /// 引擎据此决定 DoP 的位对齐方式（24-bit 右对齐 / 32-bit 左对齐）。
+    fn sample_format(&self) -> SampleFormat {
+        SampleFormat::F32
+    }
+
     /// 设置目标位深（仅部分后端生效，如 WASAPI Exclusive）。
     fn set_bit_depth(&mut self, _depth: u16) {}
     /// 动态调整缓冲时长（毫秒），仅部分后端支持实时调整。
@@ -491,6 +497,34 @@ pub fn decide_output(
     prefer_exclusive: bool,
 ) -> Result<OutputDecision, OutputError> {
     let mut candidates: Vec<&DeviceConfig> = device.configs.iter().collect();
+
+    // DoP 直出：DSD 源 + 设备支持对应 DoP 速率的 24-bit 配置
+    if source.is_dsd {
+        if let Some(dsd_rate) = source.dsd_rate {
+            let dop_rate = crate::dsd::dop::dop_pcm_rate(dsd_rate);
+            if crate::dsd::dop::dop_supported(dsd_rate) {
+                if let Some(cfg) = candidates.iter().find(|c| {
+                    c.sample_rate == dop_rate && c.bit_depth >= 24
+                }) {
+                    return Ok(OutputDecision {
+                        device_id: device.id.clone(),
+                        sample_rate: cfg.sample_rate,
+                        bit_depth: 24,
+                        sample_format: cfg.sample_format,
+                        exclusive: cfg.exclusive,
+                        need_resample: false,
+                        need_dop: true,
+                        reason: format!(
+                            "DoP 直出 DSD{} → {}kHz/24bit {}",
+                            dsd_rate / 44100,
+                            dop_rate / 1000,
+                            if cfg.exclusive { "独占" } else { "共享" },
+                        ),
+                    });
+                }
+            }
+        }
+    }
 
     // 优先只看独占模式的配置
     if prefer_exclusive {

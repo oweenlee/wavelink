@@ -225,7 +225,7 @@ fn test_full_chain_peq_gain() {
     let amp_before = measure_amplitude_at(&left, 1000.0, 44100);
 
     // 过 PEQ：1kHz +6dB
-    let bands = vec![PeqBand { freq: 1000.0, gain_db: 6.0, q: 1.0 }];
+    let bands = vec![PeqBand { freq: 1000.0, gain_db: 6.0, q: 1.0, ..Default::default() }];
     let mut dsp = DspPipeline::new(44100, 2, &bands, false, 1.0, 24);
     let mut buf = samples.clone();
     // 分帧处理（模拟实际 consumer 行为）
@@ -249,7 +249,7 @@ fn test_full_chain_peq_cut() {
     generate_sine_wav(path, 1000.0, 0.5, 44100, 2, 1.0);
     let samples = decode(path, 44100);
 
-    let bands = vec![PeqBand { freq: 1000.0, gain_db: -12.0, q: 1.0 }];
+    let bands = vec![PeqBand { freq: 1000.0, gain_db: -12.0, q: 1.0, ..Default::default() }];
     let mut dsp = DspPipeline::new(44100, 2, &bands, false, 1.0, 24);
     let mut buf = samples.clone();
     for chunk in buf.chunks_mut(4096) {

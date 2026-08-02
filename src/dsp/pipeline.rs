@@ -55,15 +55,42 @@ pub struct DspPipeline {
     bypass: bool,
 }
 
+/// PEQ 滤波器类型
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeqKind {
+    /// 峰值滤波器（Bell，默认）
+    #[default]
+    Peaking,
+    /// 低频搁架（freq 以下整体增/减）
+    LowShelf,
+    /// 高频搁架（freq 以上整体增/减）
+    HighShelf,
+}
+
 /// 单段 PEQ 参数（ISO 频段）。10 段典型配置见 `default_peq_bands()`。
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct PeqBand {
-    /// 中心频率（Hz）
+    /// 中心频率（Hz）；对 shelf 为拐点频率
     pub freq: f32,
     /// 增益（dB，范围通常 ±12）
     pub gain_db: f32,
     /// Q 值（影响带宽，典型 0.5~10）
     pub q: f32,
+    /// 滤波器类型（默认 Peaking；AutoEQ 耳机校正常用 Shelf）
+    #[serde(default)]
+    pub kind: PeqKind,
+}
+
+impl PeqBand {
+    /// 按类型构造对应的 Biquad
+    pub(crate) fn to_biquad(&self, sample_rate: f32) -> Biquad {
+        match self.kind {
+            PeqKind::Peaking => Biquad::peaking(self.freq, sample_rate, self.gain_db, self.q),
+            PeqKind::LowShelf => Biquad::low_shelf(self.freq, sample_rate, self.gain_db, self.q),
+            PeqKind::HighShelf => Biquad::high_shelf(self.freq, sample_rate, self.gain_db, self.q),
+        }
+    }
 }
 
 impl DspPipeline {
@@ -83,7 +110,7 @@ impl DspPipeline {
             .iter()
             .map(|b| {
                 (0..channels)
-                    .map(|_| Biquad::peaking(b.freq, sr, b.gain_db, b.q))
+                    .map(|_| b.to_biquad(sr))
                     .collect()
             })
             .collect();
@@ -241,11 +268,20 @@ impl DspPipeline {
     /// 运行时更新某段 PEQ 参数（所有声道同步更新）
     pub fn set_peq_band(&mut self, index: usize, band: &PeqBand, sample_rate: f32) {
         if index < self.peq.len() {
-            let new_bq = Biquad::peaking(band.freq, sample_rate, band.gain_db, band.q);
+            let new_bq = band.to_biquad(sample_rate);
             for bq in self.peq[index].iter_mut() {
                 *bq = new_bq.clone();
             }
         }
+    }
+
+    /// 整体替换 PEQ 频段（AutoEQ 耳机校正用）。
+    /// 频段数可变；在引擎命令线程调用，非实时路径。
+    pub fn replace_peq_bands(&mut self, bands: &[PeqBand], sample_rate: f32) {
+        self.peq = bands
+            .iter()
+            .map(|b| (0..self.channels).map(|_| b.to_biquad(sample_rate)).collect())
+            .collect();
     }
 
     /// 设置 ReplayGain 增益（dB），作为 Pre-amp 在 HPF 后、EQ 前应用
@@ -309,7 +345,7 @@ pub fn default_peq_bands() -> Vec<PeqBand> {
         2000.0, 2500.0, 3150.0, 4000.0, 5000.0, 6300.0, 8000.0, 10000.0, 12500.0, 16000.0,
         20000.0,
     ];
-    freqs.iter().map(|&f| PeqBand { freq: f, gain_db: 0.0, q: 1.41 }).collect()
+    freqs.iter().map(|&f| PeqBand { freq: f, gain_db: 0.0, q: 1.41, kind: PeqKind::Peaking }).collect()
 }
 
 /// 音效预设名称（10 种 EQ 预设）
@@ -356,7 +392,7 @@ pub fn preset_bands(name: PresetName) -> Vec<PeqBand> {
         PresetName::Vocals => [-3.0, -3.0, -2.0, -0.5, 1.0, 2.5, 3.0, 1.5, 0.0, 0.0],
     };
 
-    freq.iter().zip(gains.iter()).map(|(&f, &g)| PeqBand { freq: f, gain_db: g, q }).collect()
+    freq.iter().zip(gains.iter()).map(|(&f, &g)| PeqBand { freq: f, gain_db: g, q, kind: PeqKind::Peaking }).collect()
 }
 
 /// 对交错缓冲逐声道应用 Biquad（每声道独立状态，复用预分配缓冲区）
@@ -394,6 +430,7 @@ mod tests {
             freq: 1000.0,
             gain_db: 0.0,
             q: 1.0,
+            ..Default::default()
         }];
         let mut p = DspPipeline::new(44100, 2, &bands, false, 1.0, 24);
         let mut buf = vec![0.9f32; 2048];
@@ -447,7 +484,7 @@ mod tests {
     /// 验证左右声道 Biquad 状态独立——连续两帧 DC 输入，左右应各自收敛
     #[test]
     fn test_biquad_per_channel_state_independence() {
-        let bands = [PeqBand { freq: 1000.0, gain_db: 6.0, q: 1.0 }];
+        let bands = [PeqBand { freq: 1000.0, gain_db: 6.0, q: 1.0, ..Default::default() }];
         let mut p = DspPipeline::new(44100, 2, &bands, false, 1.0, 24);
         // 第一帧：左声道 0.5，右声道 0.0
         let mut buf1: Vec<f32> = (0..512).flat_map(|_| [0.5f32, 0.0]).collect();

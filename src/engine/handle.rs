@@ -137,6 +137,17 @@ impl EngineHandle {
     pub fn set_peq_band(&self, index: usize, band: PeqBand) {
         let _ = self.tx.send(EngineCommand::SetPeqBand { index, band });
     }
+    /// 应用 AutoEQ 耳机校正档案（型号名大小写不敏感，None = 清除恢复平坦）。
+    /// 可用型号见 `audio_core::dsp::autoeq::catalog()`。
+    /// 应用后 EQ 频段被档案替换，档案 preamp 自动作为前置增益应用。
+    pub fn set_auto_eq(&self, name: Option<&str>) {
+        let _ = self.tx.send(EngineCommand::SetAutoEq(name.map(|s| s.to_string())));
+    }
+    /// 设置 DSD 播放模式（下次播放生效）。
+    /// `DsdMode::Dop` 将 DSD 以 DoP 直出给兼容 DAC；设备不支持时引擎自动回退 PCM 转换。
+    pub fn set_dsd_mode(&self, mode: crate::DsdMode) {
+        let _ = self.tx.send(EngineCommand::SetDsdMode(mode));
+    }
     /// 设置立体声展宽
     pub fn set_stereo_widener(&self, enabled: bool, width: f32) {
         let _ = self.tx.send(EngineCommand::SetStereoWidener { enabled, width });

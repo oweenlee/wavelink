@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### 新增
+
+- **DSD DoP 直出**（`DsdMode::Dop`）：原始 DSD 比特打包为 DoP 24-bit 帧
+  （0x05/0xFA 交替标记）直送 DoP DAC，还原原生 DSD。支持 DSD64/128/256，
+  DSD512 自动回退 PCM 转换；设备不支持 DoP 速率时自动回退。
+  - `Decoder::start_dop()` / `decoder::probe_dsd_info()` / `dsd::dop::DopPacker`
+  - consumer 直通模式（passthrough）：DoP 时跳过全部 DSP，逐比特原样输出
+  - 后端整数转换改为 `round() + 2^N + clamp`（WASAPI/AudioUnit/Oboe 的 I16/I24/I32），
+    DoP 逐比特无损的前提，顺带消除原有截断失真
+  - `AudioOutput::sample_format()` 查询（引擎据此选 24-bit 右对齐 / 32-bit 左对齐）
+  - `EngineEvent::DopActive(bool)` 事件；`decide_output()` 输出 DoP 决策（`need_dop`）
+  - 穷举往返测试（2×65536 个 DoP 字）+ 合成 DSF 端到端集成测试
+- **AutoEQ 耳机校正**（`dsp::autoeq`）：34 个 oratory1990 实测档案离线内嵌
+  （HD600/650/800S、DT770/990/1990、Sundara/Ananda、AirPods Max、WH-1000XM4/5、
+  IE600、Moondrop Aria/Chu 等）。`EngineHandle::set_auto_eq(Some("型号"))` 应用，
+  `None` 清除；档案 preamp 经 ReplayGain 通道叠加防削峰
+  - PEQ 新增 shelf 滤波器：`PeqKind::{Peaking, LowShelf, HighShelf}`（`PeqBand.kind`，
+    serde default 向后兼容），biquad RBJ cookbook low_shelf/high_shelf
+  - `DspPipeline::replace_peq_bands()` 整体替换频段
+- **LRC 歌词**（`lyric` 模块）：标准 LRC 解析（多时间戳/ID 标签/`[offset:±ms]`/BOM），
+  `Lyrics::line_at()` 二分同步，`find_lrc_file()` 侧载查找（.lrc/.Lrc/.LRC/.txt）
+- **标签写入**（`tag` 模块）：`write_tags(path, TagUpdate)` 基于 lofty，
+  支持 MP3/FLAC/M4A/OGG/WAV/AIFF；`None` 字段保持原值；无标签时按容器格式创建
+
+### 变更
+
+- **WavPack 明确报错**：.wv/.wvc 解码返回“暂不支持 WavPack 格式”
+  （此前为含糊的“探测失败”；无成熟 Rust 解码器，symphonia 上游亦不支持）
+- `EngineConfig` 新增 `dsd_mode: DsdMode`（默认 `ToPcm`，行为不变）
+- `ConsumerConfig` 新增 `passthrough: bool`（默认 false）
+
 ### 整改（1.0-rc.2 方向）
 
 - **API 收敛**：移除根级重导出（`Metadata`/`read_metadata`/`parse_cue`/`CueSheet` 等），

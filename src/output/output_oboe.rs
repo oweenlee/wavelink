@@ -86,7 +86,7 @@ fn build_stream(
                     let mut guard = cb_inner.consumer.lock();
                     let n = guard.pop_slice(&mut tmp_buf);
                     for i in 0..n {
-                        buffer[i] = (tmp_buf[i].clamp(-1.0, 1.0) * 32767.0) as i16;
+                        buffer[i] = (tmp_buf[i].clamp(-1.0, 1.0) * 32768.0).round().clamp(-32768.0, 32767.0) as i16;
                     }
                     if n < buffer.len() {
                         cb_inner.underrun_count.fetch_add(1, Ordering::Relaxed);
@@ -112,7 +112,7 @@ fn build_stream(
                     let mut guard = cb_inner.consumer.lock();
                     let n = guard.pop_slice(&mut tmp_buf);
                     for i in 0..n {
-                        buffer[i] = (tmp_buf[i].clamp(-1.0, 1.0) * 2147483647.0) as i32;
+                        buffer[i] = (tmp_buf[i].clamp(-1.0, 1.0) * 2147483648.0).round().clamp(-2147483648.0, 2147483647.0) as i32;
                     }
                     if n < buffer.len() {
                         cb_inner.underrun_count.fetch_add(1, Ordering::Relaxed);

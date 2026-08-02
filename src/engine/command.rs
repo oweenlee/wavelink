@@ -66,6 +66,11 @@ pub enum EngineCommand {
         /// 频段参数（频率 / 增益 / Q 值）
         band: PeqBand,
     },
+    /// 应用 AutoEQ 耳机校正档案（型号名，None = 清除恢复平坦）。
+    /// 档案表见 `audio_core::dsp::autoeq::catalog()`。
+    SetAutoEq(Option<String>),
+    /// 设置 DSD 播放模式（ToPcm / Dop），下次播放生效
+    SetDsdMode(crate::DsdMode),
     /// 设置立体声展宽
     SetStereoWidener {
         /// 是否启用展宽
@@ -141,6 +146,8 @@ pub enum EngineEvent {
     Spectrum(Vec<f32>),
     /// 电平数据（RMS / 峰值 / 削波标志）
     Levels(Levels),
+    /// DoP 直出状态变更（true = 当前曲目以 DoP 输出，false = PCM）
+    DopActive(bool),
 }
 
 /// 实时音频电平：每帧计算 RMS 和峰值（各声道最大值）

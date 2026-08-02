@@ -32,6 +32,9 @@ pub struct ConsumerConfig {
     pub crossfade_ms: u32,
     /// 解码帧接收超时（毫秒）
     pub recv_timeout_ms: u64,
+    /// 直通模式（DoP 直出用）：跳过 DSP/频谱/淡入/变速/坏帧检测，
+    /// 解码帧逐比特原样推入 ringbuf。
+    pub passthrough: bool,
 }
 
 impl Default for ConsumerConfig {
@@ -42,6 +45,7 @@ impl Default for ConsumerConfig {
             fft_interval: 3,
             crossfade_ms: 0,
             recv_timeout_ms: 500,
+            passthrough: false,
         }
     }
 }
@@ -160,6 +164,20 @@ pub fn run_consumer_loop(
                 frame_count += 1;
                 let count = frame.samples.len() as u64;
                 let mut buf = frame.samples;
+
+                // 直通模式（DoP）：原样推入，不过任何处理（保护标记比特不被篡改）
+                if config.passthrough {
+                    let mut remaining: &[f32] = &buf;
+                    while !remaining.is_empty() && !stop.load(Ordering::SeqCst) {
+                        let n = (cb.push_samples)(remaining);
+                        if n == 0 {
+                            std::thread::yield_now();
+                        }
+                        remaining = &remaining[n..];
+                    }
+                    (cb.on_samples_output)(count);
+                    continue;
+                }
 
                 // 1) DSP 处理
                 (cb.process_dsp)(&mut buf);
@@ -296,6 +314,7 @@ mod tests {
             fft_interval: 3,
             crossfade_ms: 0,
             recv_timeout_ms: 100,
+            passthrough: false,
         }
     }
 
@@ -643,6 +662,56 @@ mod tests {
 
         let total = *total_samples.lock().unwrap();
         assert_eq!(total, 768, "on_samples_output should sum sample counts: got {}", total);
+    }
+
+    #[test]
+    fn test_passthrough_skips_dsp_and_pushes_raw() {
+        let (tx, rx) = unbounded();
+        let pushed = Arc::new(Mutex::new(Vec::new()));
+        let p = pushed.clone();
+        let dsp_called = Arc::new(Mutex::new(false));
+        let dc = dsp_called.clone();
+        let (done_tx, done_rx) = bounded::<()>(4);
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let s = stop.clone();
+        let (ready_tx, ready_rx) = bounded(1);
+        let mut cfg = default_config();
+        cfg.passthrough = true;
+        let handle = thread::spawn(move || {
+            let dsp_fn = move |buf: &mut [f32]| {
+                *dc.lock().unwrap() = true;
+                for sample in buf.iter_mut() { *sample = 0.0; }
+            };
+            let cb = ConsumerCallbacks {
+                push_samples: &|s: &[f32]| {
+                    p.lock().unwrap().extend_from_slice(s);
+                    let _ = done_tx.send(());
+                    s.len()
+                },
+                process_dsp: &dsp_fn,
+                on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| {},
+                on_bad_frame: &|| {},
+                on_samples_output: &|_: u64| {},
+                on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
+            };
+            let ctrl = ConsumerControl {
+                stop: s, ready_tx,
+                speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            };
+            run_consumer_loop(rx, &cfg, &cb, &ctrl);
+        });
+
+        // DoP 风格的“奇怪”数值（含超满刻度负值），必须原样通过
+        let dop_like = vec![0.0596f32, -0.0469, 0.0596, -0.0469];
+        tx.send(make_frame(dop_like.clone())).unwrap();
+        let _ = ready_rx.recv_timeout(Duration::from_secs(3));
+        done_rx.recv_timeout(Duration::from_secs(3)).expect("frame pushed");
+        drop(tx);
+        handle.join().unwrap();
+
+        assert!(!*dsp_called.lock().unwrap(), "passthrough 不应调用 DSP");
+        assert_eq!(*pushed.lock().unwrap(), dop_like, "passthrough 应逐比特原样推送");
     }
 
     #[test]

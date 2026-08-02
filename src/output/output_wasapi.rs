@@ -355,13 +355,14 @@ fn render_thread(
                 SampleFormat::I16 => {
                     let dst = std::slice::from_raw_parts_mut(buf_ptr as *mut i16, samples_needed);
                     for i in 0..n {
-                        dst[i] = (tmp_buf[i].clamp(-1.0, 1.0) * 32768.0) as i16;
+                        dst[i] = (tmp_buf[i].clamp(-1.0, 1.0) * 32768.0).round().clamp(-32768.0, 32767.0) as i16;
                     }
                     if underrun { dst[n..].fill(0); }
                 }
                 SampleFormat::I24 => {
                     for i in 0..n {
-                        let val = (tmp_buf[i].clamp(-1.0, 1.0) * 8388607.0) as i32;
+                        // 2^23 缩放 + round：对 DoP 的 24-bit 字逐比特无损，普通音频等价于四舍五入（优于截断）
+                        let val = (tmp_buf[i].clamp(-1.0, 1.0) * 8388608.0).round().clamp(-8388608.0, 8388607.0) as i32;
                         let dest = buf_ptr.add(i * 3);
                         dest.write(val as u8);
                         dest.add(1).write((val >> 8) as u8);
@@ -379,7 +380,7 @@ fn render_thread(
                 SampleFormat::I32 => {
                     let dst = std::slice::from_raw_parts_mut(buf_ptr as *mut i32, samples_needed);
                     for i in 0..n {
-                        dst[i] = (tmp_buf[i].clamp(-1.0, 1.0) * 2147483647.0) as i32;
+                        dst[i] = (tmp_buf[i].clamp(-1.0, 1.0) * 2147483648.0).round().clamp(-2147483648.0, 2147483647.0) as i32;
                     }
                     if underrun { dst[n..].fill(0); }
                 }
@@ -441,6 +442,14 @@ impl AudioOutput for AudioOutputWasapi {
 
     fn sample_rate(&self) -> u32 { self.sample_rate }
     fn channels(&self) -> u32 { self.channels }
+    fn sample_format(&self) -> SampleFormat {
+        match self.bit_depth {
+            16 => SampleFormat::I16,
+            24 => SampleFormat::I24,
+            32 => SampleFormat::I32,
+            _ => SampleFormat::F32,
+        }
+    }
     fn supported_sample_rates(&self) -> Vec<u32> { vec![self.sample_rate] }
 
     fn set_bit_depth(&mut self, depth: u16) {

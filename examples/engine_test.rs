@@ -63,6 +63,9 @@ fn main() {
             }
             Ok(EngineEvent::Spectrum(_)) => {}
             Ok(EngineEvent::Levels(_)) => {}
+            Ok(EngineEvent::DopActive(active)) => {
+                println!("\n[{:.2}s] DoP: {}", start.elapsed().as_secs_f64(), active);
+            }
             Err(crossbeam_channel::TryRecvError::Empty) => {}
             Err(crossbeam_channel::TryRecvError::Disconnected) => break,
         }

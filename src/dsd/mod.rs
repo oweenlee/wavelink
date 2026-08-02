@@ -5,6 +5,9 @@
 
 mod convert;
 
+/// DoP（DSD over PCM）打包
+pub mod dop;
+
 use convert::{convert_channels, output_sample_rate};
 use dsd_reader::{DsdRate, DsdReader};
 use std::convert::TryFrom;

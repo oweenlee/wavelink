@@ -60,6 +60,7 @@ impl AudioOutput for AudioOutputUnit {
 
     fn sample_rate(&self) -> u32 { self.sample_rate }
     fn channels(&self) -> u32 { self.channels }
+    fn sample_format(&self) -> SampleFormat { self.sample_format }
 
     fn supported_sample_rates(&self) -> Vec<u32> {
         vec![44100, 48000, 88200, 96000, 176400, 192000]
@@ -160,7 +161,7 @@ extern "C" fn render_callback(
                             let data = std::slice::from_raw_parts_mut(
                                 buf.mData as *mut i16, sample_count);
                             for dst in data.iter_mut() {
-                                *dst = (ctx.tmp_buf[si].clamp(-1.0, 1.0) * 32768.0) as i16;
+                                *dst = (ctx.tmp_buf[si].clamp(-1.0, 1.0) * 32768.0).round().clamp(-32768.0, 32767.0) as i16;
                                 si += 1;
                             }
                         }
@@ -168,7 +169,8 @@ extern "C" fn render_callback(
                             let data = std::slice::from_raw_parts_mut(
                                 buf.mData as *mut i32, sample_count);
                             for dst in data.iter_mut() {
-                                *dst = (ctx.tmp_buf[si].clamp(-1.0, 1.0) * 2147483647.0) as i32;
+                                // 2^31 缩放 + round：DoP 左对齐 24-bit 字逐比特无损
+                                *dst = (ctx.tmp_buf[si].clamp(-1.0, 1.0) * 2147483648.0).round().clamp(-2147483648.0, 2147483647.0) as i32;
                                 si += 1;
                             }
                         }

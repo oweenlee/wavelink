@@ -1,6 +1,6 @@
 # wavelink-audio-core API Reference
 
-> Source hash: `810f8f8521ab` | Generated: 2026-08-01 23:36
+> Source hash: `75ce5807b82a` | Generated: 2026-08-03 00:31
 > AI 助手优先读此文件，而非读 `src/` 源码。若 AI 返回的代码与当前签名不匹配，请重新运行 `bash doc-api.sh`。
 
 ## Table of Contents
@@ -55,9 +55,14 @@
 - **Exclusive Mode**
   - 独占模式支持 (`exclusive.rs`)
 - **Misc**
+  - DoP（DSD over PCM）打包 (`dsd/dop.rs`)
+  - AutoEQ 耳机校正（基于 AutoEq 社区测量数据） (`dsp/autoeq.rs`)
+  - AutoEQ 耳机校正数据（内嵌） (`dsp/autoeq/autoeq_data.rs`)
   - 输出设备设置：复用或打开新 output (`engine/output_setup.rs`)
+  - LRC 歌词解析与同步 (`lyric.rs`)
   - macOS CoreAudio 设备枚举 (`output/output_coreaudio.rs`)
   - Windows WASAPI Exclusive 模式输出后端 (`output/output_wasapi.rs`)
+  - 元数据标签写入（基于 lofty） (`tag.rs`)
 
 ---
 
@@ -75,7 +80,7 @@ pub mod capture;
 pub mod consumer;
 ```
 
-音频文件解码（Symphonia 流式解码 + WavPack + DSD）  
+音频文件解码（Symphonia 流式解码 + DSD 直解）  
 ```rust
 pub mod decoder;
 ```
@@ -98,6 +103,16 @@ pub mod dsp;
 统一错误类型  
 ```rust
 pub mod error;
+```
+
+LRC 歌词解析与同步  
+```rust
+pub mod lyric;
+```
+
+元数据标签写入（lofty）  
+```rust
+pub mod tag;
 ```
 
 独占模式（macOS Hog Mode / Windows WASAPI Exclusive）  
@@ -133,6 +148,11 @@ pub const TARGET_SAMPLE_RATE: u32 = 44100;
 目标输出声道数（默认 2 = 立体声）  
 ```rust
 pub const TARGET_CHANNELS: u32 = 2;
+```
+
+DSD 播放模式  
+```rust
+pub enum DsdMode { ...
 ```
 
 引擎配置  
@@ -178,6 +198,11 @@ pub exclusive_mode: bool,
 Bit-perfect 模式：绕过所有 DSP，输出采样率/位深精确匹配源文件  
 ```rust
 pub bit_perfect: bool,
+```
+
+DSD 播放模式（默认 ToPcm 转 PCM；Dop 需 DoP DAC）  
+```rust
+pub dsd_mode: DsdMode,
 ```
 
 引擎事件 / 引擎句柄 / 播放模式 / 电平数据  
@@ -343,6 +368,19 @@ pub fn clear_ir(&self) { ...
 pub fn set_peq_band(&self, index: usize, band: PeqBand) { ...
 ```
 
+应用 AutoEQ 耳机校正档案（型号名大小写不敏感，None = 清除恢复平坦）。  
+可用型号见 `audio_core::dsp::autoeq::catalog()`。  
+应用后 EQ 频段被档案替换，档案 preamp 自动作为前置增益应用。  
+```rust
+pub fn set_auto_eq(&self, name: Option<&str>) { ...
+```
+
+设置 DSD 播放模式（下次播放生效）。  
+`DsdMode::Dop` 将 DSD 以 DoP 直出给兼容 DAC；设备不支持时引擎自动回退 PCM 转换。  
+```rust
+pub fn set_dsd_mode(&self, mode: crate::DsdMode) { ...
+```
+
 设置立体声展宽  
 ```rust
 pub fn set_stereo_widener(&self, enabled: bool, width: f32) { ...
@@ -424,6 +462,16 @@ pub fn set_speed(&self, speed: f32) { ...
 启用/禁用 ATH 噪声整形  
 ```rust
 pub fn set_noise_shaping(&self, enabled: bool) { ...
+```
+
+启用/禁用真峰值限幅  
+```rust
+pub fn set_limiter_enabled(&self, enabled: bool) { ...
+```
+
+启用/禁用抖动（含噪声整形）  
+```rust
+pub fn set_dither_enabled(&self, enabled: bool) { ...
 ```
 
 动态调整输出缓冲时长（毫秒），实时生效。仅在 Oboe 后端受支持。  
@@ -577,6 +625,15 @@ pub fn take_decode_error(&self) -> Option<EngineError> { ...
 pub fn start(
 ```
 
+以 DoP（DSD over PCM）方式启动 DSD 解码线程。  
+原始 DSD 比特流打包为 DoP PCM（采样率 = DSD 速率 / 16），  
+不做 DSD→PCM 转换、不重采样、不过 DSP，交给支持 DoP 的 DAC 还原原生 DSD。  
+- `left_justify` — 输出格式为 32-bit 整数时传 true（24-bit 字左对齐），24-bit/浮点传 false  
+- `target_channels` — 期望声道数（通常用源文件声道数）  
+```rust
+pub fn start_dop(
+```
+
 停止后台解码线程  
 ```rust
 pub fn stop(&self) { ...
@@ -709,6 +766,18 @@ pub fn probe_sample_rate(path: &Path) -> Option<u32> { ...
 pub fn probe_bit_depth(path: &Path) -> Option<u16> { ...
 ```
 
+判断扩展名是否为 DSD 容器（DSF/DFF）  
+```rust
+pub fn is_dsd_file(path: &Path) -> bool { ...
+```
+
+探测 DSD 文件的原始速率和声道数（只读文件头）。  
+返回 `(dsd_rate_hz, channels)`，如 DSD64 立体声 → `(2822400, 2)`。  
+非 DSD 文件或打开失败返回 None。  
+```rust
+pub fn probe_dsd_info(path: &Path) -> Option<(u32, u32)> { ...
+```
+
 ---
 
 ## Capture
@@ -791,6 +860,12 @@ pub crossfade_ms: u32,
 解码帧接收超时（毫秒）  
 ```rust
 pub recv_timeout_ms: u64,
+```
+
+直通模式（DoP 直出用）：跳过 DSP/频谱/淡入/变速/坏帧检测，  
+解码帧逐比特原样推入 ringbuf。  
+```rust
+pub passthrough: bool,
 ```
 
 消费者循环回调集合  
@@ -881,6 +956,18 @@ pub fn lowpass(freq: f32, sample_rate: f32, q: f32) -> Self { ...
 高通（DC offset 滤除，~2Hz）  
 ```rust
 pub fn highpass(freq: f32, sample_rate: f32, q: f32) -> Self { ...
+```
+
+低频搁架（Low Shelf，RBJ audio EQ cookbook，Q 定义 alpha）。  
+freq 拐点频率，gain_db 低频增益，q 控制过渡陡峭度（AutoEQ/EqualizerAPO 约定）。  
+```rust
+pub fn low_shelf(freq: f32, sample_rate: f32, gain_db: f32, q: f32) -> Self { ...
+```
+
+高频搁架（High Shelf，RBJ audio EQ cookbook，Q 定义 alpha）。  
+freq 拐点频率，gain_db 高频增益，q 控制过渡陡峭度。  
+```rust
+pub fn high_shelf(freq: f32, sample_rate: f32, gain_db: f32, q: f32) -> Self { ...
 ```
 
 处理一个样本（单声道）  
@@ -1030,12 +1117,17 @@ DSP 管线，按顺序串联：DC HPF → ReplayGain → 卷积 EQ → PEQ → C
 pub struct DspPipeline { ...
 ```
 
+PEQ 滤波器类型  
+```rust
+pub enum PeqKind { ...
+```
+
 单段 PEQ 参数（ISO 频段）。10 段典型配置见 `default_peq_bands()`。  
 ```rust
 pub struct PeqBand { ...
 ```
 
-中心频率（Hz）  
+中心频率（Hz）；对 shelf 为拐点频率  
 ```rust
 pub freq: f32,
 ```
@@ -1048,6 +1140,11 @@ pub gain_db: f32,
 Q 值（影响带宽，典型 0.5~10）  
 ```rust
 pub q: f32,
+```
+
+滤波器类型（默认 Peaking；AutoEQ 耳机校正常用 Shelf）  
+```rust
+pub kind: PeqKind,
 ```
 
 构造管线。peq_bands: 各段 PEQ 参数；enable_crossfeed: 是否启用串音；  
@@ -1081,6 +1178,12 @@ pub fn clear_conv_ir(&mut self) { ...
 pub fn set_peq_band(&mut self, index: usize, band: &PeqBand, sample_rate: f32) { ...
 ```
 
+整体替换 PEQ 频段（AutoEQ 耳机校正用）。  
+频段数可变；在引擎命令线程调用，非实时路径。  
+```rust
+pub fn replace_peq_bands(&mut self, bands: &[PeqBand], sample_rate: f32) { ...
+```
+
 设置 ReplayGain 增益（dB），作为 Pre-amp 在 HPF 后、EQ 前应用  
 ```rust
 pub fn set_replaygain_db(&mut self, gain_db: f32) { ...
@@ -1104,6 +1207,16 @@ pub fn start_fade_out(&mut self, duration_ms: u32) { ...
 启用/禁用 ATH 噪声整形（替代 TPDF）  
 ```rust
 pub fn set_noise_shaping(&mut self, enabled: bool) { ...
+```
+
+启用/禁用真峰值限幅  
+```rust
+pub fn set_limiter_enabled(&mut self, enabled: bool) { ...
+```
+
+启用/禁用抖动（含噪声整形）  
+```rust
+pub fn set_dither_enabled(&mut self, enabled: bool) { ...
 ```
 
 设置立体声展宽  
@@ -1557,6 +1670,11 @@ pub fn output_sample_rate(dsd_rate: DsdRate) -> u32 { ...
 
 ### DSD 文件解码（DSF / DFF） (`dsd/mod.rs`)
 
+DoP（DSD over PCM）打包  
+```rust
+pub mod dop;
+```
+
 DSD 解码结果（交错的 PCM f32 样本）  
 ```rust
 pub struct DecodedDsd { ...
@@ -1856,9 +1974,211 @@ pub fn release_exclusive_mode(_device_name: Option<&str>) { ...
 
 ## Misc
 
+### DoP（DSD over PCM）打包 (`dsd/dop.rs`)
+
+DoP 标记 B（奇数帧）  
+```rust
+pub const DOP_MARKER_B: u32 = 0xFA;
+```
+
+DoP 支持的最大 PCM 速率（DSD256）。DSD512 的 1.4112 MHz 绝大多数 DAC 不支持。  
+```rust
+pub const MAX_DOP_RATE: u32 = 705_600;
+```
+
+由 DSD 原始速率（Hz）计算 DoP 的 PCM 采样率  
+```rust
+pub fn dop_pcm_rate(dsd_rate_hz: u32) -> u32 { ...
+```
+
+判断某 DSD 速率能否走 DoP（不超过 DAC 常见上限）  
+```rust
+pub fn dop_supported(dsd_rate_hz: u32) -> bool { ...
+```
+
+将 24-bit 有符号字编码为管线 f32。  
+left_justify=false：右对齐（`word / 2^23`，24-bit 输出设备）；  
+left_justify=true：左对齐（`(word << 8) / 2^31`，32-bit 输出设备）。  
+```rust
+pub fn encode_word(word: i32, left_justify: bool) -> f32 { ...
+```
+
+DoP 打包器（维护标记交替相位）  
+```rust
+pub struct DopPacker { ...
+```
+
+创建打包器。left_justify：输出格式为 32-bit 整数时传 true。  
+```rust
+pub fn new(left_justify: bool) -> Self { ...
+```
+
+将各声道的原始 DSD 字节打包为交错 DoP f32，追加到 out。  
+每声道每 2 个 DSD 字节产生 1 个 PCM 帧；不足 2 字节的尾部忽略  
+（调用方应保证按偶数字节喂入，DSF 块大小 4096 天然满足）。  
+返回产生的帧数。  
+```rust
+pub fn pack(&mut self, chans: &[&[u8]], out: &mut Vec<f32>) -> usize { ...
+```
+
+### AutoEQ 耳机校正（基于 AutoEq 社区测量数据） (`dsp/autoeq.rs`)
+
+档案滤波器类型（与 PEQ 的 [`PeqKind`](super::pipeline::PeqKind) 对应）  
+```rust
+pub enum ProfileFilterKind { ...
+```
+
+档案中的单个滤波器  
+```rust
+pub struct ProfileFilter { ...
+```
+
+滤波器类型  
+```rust
+pub kind: ProfileFilterKind,
+```
+
+频率 Hz（shelf 为拐点频率）  
+```rust
+pub freq: f32,
+```
+
+增益 dB  
+```rust
+pub gain_db: f32,
+```
+
+Q 值  
+```rust
+pub q: f32,
+```
+
+耳机佩戴形式  
+```rust
+pub enum HeadphoneForm { ...
+```
+
+耳机校正档案  
+```rust
+pub struct HeadphoneProfile { ...
+```
+
+耳机型号名（与 AutoEq 数据库一致）  
+```rust
+pub name: &'static str,
+```
+
+佩戴形式  
+```rust
+pub form: HeadphoneForm,
+```
+
+建议前置增益 dB（通常为负，用于给正增益滤波器留余量防削峰）  
+```rust
+pub preamp_db: f32,
+```
+
+参数化滤波器列表（按 AutoEq 输出顺序）  
+```rust
+pub filters: &'static [ProfileFilter],
+```
+
+返回全部内嵌档案  
+```rust
+pub fn catalog() -> &'static [HeadphoneProfile] { ...
+```
+
+按型号名查找档案（大小写不敏感）  
+```rust
+pub fn find_profile(name: &str) -> Option<&'static HeadphoneProfile> { ...
+```
+
+模糊搜索档案（型号名包含关键字，大小写不敏感）  
+```rust
+pub fn search_profiles(keyword: &str) -> Vec<&'static HeadphoneProfile> { ...
+```
+
+将档案转换为 PEQ 频段（可直接喂给 `EngineHandle::set_peq_band`）  
+```rust
+pub fn profile_to_peq_bands(profile: &HeadphoneProfile) -> Vec<super::pipeline::PeqBand> { ...
+```
+
+### AutoEQ 耳机校正数据（内嵌） (`dsp/autoeq/autoeq_data.rs`)
+
+AutoEQ 耳机校正数据（内嵌）
+
 ### 输出设备设置：复用或打开新 output (`engine/output_setup.rs`)
 
 输出设备设置：复用或打开新 output
+
+### LRC 歌词解析与同步 (`lyric.rs`)
+
+单行歌词  
+```rust
+pub struct LyricLine { ...
+```
+
+出现时间（秒，已含 offset 修正）  
+```rust
+pub time_secs: f64,
+```
+
+歌词文本（已去除首尾空白）  
+```rust
+pub text: String,
+```
+
+解析后的歌词  
+```rust
+pub struct Lyrics { ...
+```
+
+按时间升序排列的歌词行  
+```rust
+pub lines: Vec<LyricLine>,
+```
+
+标题（[ti:]）  
+```rust
+pub title: Option<String>,
+```
+
+歌手（[ar:]）  
+```rust
+pub artist: Option<String>,
+```
+
+专辑（[al:]）  
+```rust
+pub album: Option<String>,
+```
+
+是否为空歌词（无有效行）  
+```rust
+pub fn is_empty(&self) -> bool { ...
+```
+
+二分查找给定时刻（秒）应显示的歌词行索引。  
+返回最后一个 time_secs <= secs 的行；若尚未到第一行则 None。  
+```rust
+pub fn line_at(&self, secs: f64) -> Option<usize> { ...
+```
+
+解析 LRC 文本内容  
+```rust
+pub fn parse_lrc(content: &str) -> Lyrics { ...
+```
+
+从文件加载歌词（自动识别 UTF-8；BOM 容错）  
+```rust
+pub fn load_lrc(path: &Path) -> Result<Lyrics, String> { ...
+```
+
+为音频文件查找同名侧载歌词文件。  
+依次尝试：`song.flac` → `song.lrc` / `song.Lrc` / `song.LRC` / `song.txt`  
+```rust
+pub fn find_lrc_file(audio_path: &Path) -> Option<PathBuf> { ...
+```
 
 ### macOS CoreAudio 设备枚举 (`output/output_coreaudio.rs`)
 
@@ -1868,6 +2188,115 @@ macOS CoreAudio 设备枚举
 
 Windows WASAPI Exclusive 模式输出后端
 
+### 元数据标签写入（基于 lofty） (`tag.rs`)
+
+标签更新请求（`None` = 保持原值不变）  
+```rust
+pub struct TagUpdate { ...
+```
+
+标题  
+```rust
+pub title: Option<String>,
+```
+
+歌手  
+```rust
+pub artist: Option<String>,
+```
+
+专辑  
+```rust
+pub album: Option<String>,
+```
+
+专辑歌手  
+```rust
+pub album_artist: Option<String>,
+```
+
+流派  
+```rust
+pub genre: Option<String>,
+```
+
+备注  
+```rust
+pub comment: Option<String>,
+```
+
+曲目号  
+```rust
+pub track_number: Option<u32>,
+```
+
+总曲目数  
+```rust
+pub track_total: Option<u32>,
+```
+
+碟号  
+```rust
+pub disc_number: Option<u32>,
+```
+
+总碟数  
+```rust
+pub disc_total: Option<u32>,
+```
+
+是否所有字段都为空（无操作）  
+```rust
+pub fn is_empty(&self) -> bool { ...
+```
+
+将标签更新写入文件（原地修改）。  
+文件无任何标签时，按容器格式创建主标签（如 MP3→ID3v2、FLAC→VorbisComment）。  
+仅写入 `Some` 字段，其余保持原值。  
+```rust
+pub fn write_tags(path: &Path, update: &TagUpdate) -> Result<(), String> { ...
+```
+
+读取文件的常见标签字段（写入前预览 / 回读验证用）  
+```rust
+pub struct TagInfo { ...
+```
+
+标题  
+```rust
+pub title: Option<String>,
+```
+
+歌手  
+```rust
+pub artist: Option<String>,
+```
+
+专辑  
+```rust
+pub album: Option<String>,
+```
+
+专辑歌手  
+```rust
+pub album_artist: Option<String>,
+```
+
+流派  
+```rust
+pub genre: Option<String>,
+```
+
+曲目号  
+```rust
+pub track_number: Option<u32>,
+```
+
+读取文件标签（优先主标签，退而任意标签）  
+```rust
+pub fn read_tags(path: &Path) -> Result<TagInfo, String> { ...
+```
+
 ---
 
-> 317 pub items. Run `bash doc-api.sh` to refresh.
+> 395 pub items. Run `bash doc-api.sh` to refresh.

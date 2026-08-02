@@ -1,7 +1,6 @@
 # audio-core（wavelink-audio-core）
 
-> 跨端纯 Rust 音频核心。被 `wavelink-engine/sdk` 与 `wavelink_mobile/rust` 以 git tag 依赖。
-> 发布新版本见根目录 `../README.md` 的发版顺序。
+> 跨端纯 Rust 音频核心。被 `wavelink-app/src-tauri/crates/sdk` 与 `wavelink_mobile/rust` 以 path 依赖引用。
 
 纯 Rust 音频引擎。零 C 依赖，macOS/Windows/Linux/Android/iOS 均可编译。
 
@@ -15,8 +14,7 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → 输出
 ┌──────────────────────────────────────────────────────────────┐
 │  解码线程                                                     │
 │  Symphonia: mp3/flac/wav/ogg/aac/m4a/aiff/opus               │
-│  DSD 直解: dsf/dff (3 级 sinc 降采样)                         │
-│  WavPack: wv (待上游 pdeljanov/Symphonia#502 合并)               │
+│  DSD: dsf/dff → PCM (3 级 sinc 降采样) 或 DoP 直出              │
 │  rubato 异步重采样 (BlackmanHarris2, -120dB aliasing)          │
 │  声道混音: 多声道 → 立体声/单声道                                │
 └──────────────┬───────────────────────────────────────────────┘
@@ -29,7 +27,7 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → 输出
 │  │ ① DC offset HPF (~2Hz)                         │         │
 │  │ ② ReplayGain Pre-amp (EBU R128)                  │         │
 │  │ ③ FIR 卷积 EQ (fft-convolver, 加载任意 IR WAV)   │         │
-│  │ ④ IIR PEQ (31 段 ISO, RBJ Biquad)               │         │
+│  │ ④ IIR PEQ (31 段 ISO, RBJ Biquad, 含 shelf)     │         │
 │  │ ⑤ Crossfeed (Bauer 算法)                         │         │
 │  │ ⑥ 立体声展宽 (Mid/Side)                           │         │
 │  │ ⑦ 真峰值限幅 (4x 过采样)                          │         │
@@ -59,19 +57,22 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → 输出
 
 | 模块 | 说明 |
 |------|------|
-| `decoder` | Symphonia 流式解码 + DSD；rubato 异步 SRC；声道混音；seek；`decode_to_memory` (WavPack 待上游 pdeljanov/Symphonia#502) |
-| `dsp::biquad` | IIR 双二阶 (RBJ cookbook: peaking/lowpass/highpass/shelving) |
+| `decoder` | Symphonia 流式解码 + DSD；rubato 异步 SRC；声道混音；seek；`decode_to_memory`；WavPack 明确报错（无可用 Rust 解码器） |
+| `dsp::biquad` | IIR 双二阶 (RBJ cookbook: peaking/lowpass/highpass/low_shelf/high_shelf) |
+| `dsp::autoeq` | AutoEQ 耳机校正：34 个 oratory1990 实测档案内嵌（离线），`catalog()` / `find_profile()` / `profile_to_peq_bands()` |
 | `dsp::convolver` | FIR 分区卷积 (fft-convolver) |
 | `dsp::crossfeed` | Bauer 算法耳机串音模拟 |
 | `dsp::widener` | Mid/Side 立体声展宽 |
 | `dsp::limiter` | 4x 过采样真峰值限幅 |
 | `dsp::dither` | TPDF 抖动 (声道独立噪声序列) |
-| `dsp::pipeline` | `DspPipeline` 串联所有滤波器；10 种 EQ 预设；运行时调参 |
+| `dsp::pipeline` | `DspPipeline` 串联所有滤波器；10 种 EQ 预设；AutoEQ 档案整体替换 (`replace_peq_bands`)；运行时调参 |
 | `engine` | Actor 模型引擎线程；队列 + 4 种播放模式 + 无缝预加载 + CUE 分轨虚拟队列 + 交叉淡入 + 实时频谱 + 实时电平 + 变速播放 + 会话管理 + 坏帧保护 + 排他模式状态跟踪 |
 | `output` | 多后端输出 (cpal / WASAPI / AudioUnit / Oboe) + `swap_consumer` + 采样率 fallback + underrun 计数 + 设备枚举 + 设备热插拔监视 + 输出决策 |
 | `analysis` | BPM (自相关) + 调性 (Chromagram + Krumhansl-Schmuckler) + 能量 |
 | `capture` | 音频输入捕获 (cpal 后端, 全局状态管理) |
-| `dsd` | DSD→PCM 转换 (3 级 sinc 降采样) |
+| `dsd` | DSD→PCM 转换 (3 级 sinc 降采样) + DoP 打包 (`dsd::dop`：标记交替 + 24-bit 逐比特无损) |
+| `lyric` | LRC 歌词解析与同步（多时间戳 / offset 标签 / 侧载文件查找） |
+| `tag` | 元数据标签写入（lofty：title/artist/album/genre/track/disc，None = 不改） |
 | `exclusive` | 独占模式：macOS Hog Mode / WASAPI Exclusive |
 | `cue` | CUE 分轨解析 (parse_cue / CueSheet / CueTrack) |
 | `playlist` | M3U/M3U8/PLS 播放列表解析 |
@@ -95,6 +96,8 @@ let config = EngineConfig {
     auto_sample_rate: true, // 自动匹配文件采样率到输出设备
     exclusive_mode: false,  // WASAPI Exclusive / macOS Hog Mode
     bit_perfect: false,     // 绕过 DSP，精确匹配源格式
+    dsd_mode: DsdMode::ToPcm, // ToPcm = DSD转PCM；Dop = DoP 直出（需 DoP DAC）
+    ..Default::default()
 };
 let (engine, events) = EngineHandle::start_with_config(config);
 ```
@@ -114,8 +117,9 @@ let (engine, events) = EngineHandle::start_with_config(config);
 | **解码** | |
 | Symphonia: mp3/flac/wav/ogg/aac/m4a/aiff | ✅ |
 | Opus (symphonia-adapter-oporus) | ✅ |
-| WavPack (wv) | ⏳ 待上游 symphonia 合并 (pdeljanov/Symphonia#502) |
-| DSD (dsf/dff) | ✅ |
+| WavPack (wv) | ❌ 不支持（明确报错；无成熟 Rust 解码器，symphonia 上游亦无） |
+| DSD (dsf/dff) → PCM | ✅ |
+| DSD DoP 直出 (DSD64/128/256, 逐比特无损) | ✅ 需 DoP DAC |
 | rubato 异步 SRC (-120dB aliasing) | ✅ |
 | 声道混音 (多声道→立体声/单声道) | ✅ |
 | 流式解码 (1GB+ 文件, 恒定内存) | ✅ |
@@ -132,6 +136,8 @@ let (engine, events) = EngineHandle::start_with_config(config);
 | 真峰值限幅 (4x 过采样) | ✅ |
 | TPDF 抖动 | ✅ |
 | 10 种 EQ 预设 (Rock/Pop/Classical/Vocals...) | ✅ |
+| Shelf 滤波器 (low/high shelf, RBJ cookbook) | ✅ |
+| AutoEQ 耳机校正 (34 个 oratory1990 实测档案, 离线内嵌) | ✅ |
 | 运行时所有参数热切换 | ✅ |
 | **引擎** | |
 | 播放/暂停/恢复/停止/Seek | ✅ |
@@ -163,6 +169,8 @@ let (engine, events) = EngineHandle::start_with_config(config);
 | 引擎 CUE 虚拟队列展开 | ✅ |
 | **元数据/探测** | |
 | 元数据读取 (lofty: title/artist/album/genre/year/track/disc) | ✅ |
+| 元数据写入 (lofty: MP3/FLAC/M4A/OGG/WAV/AIFF) | ✅ |
+| LRC 歌词解析与同步 (多时间戳/offset/侧载查找) | ✅ |
 | 封面读取 (音频 + MP4 + MKV/WebM 附件) | ✅ |
 | ReplayGain 标签读取 (track/album gain+peak) | ✅ |
 | 采样率/位深探测 | ✅ |
@@ -172,7 +180,7 @@ let (engine, events) = EngineHandle::start_with_config(config);
 ## 测试
 
 ```bash
-cargo test -p audio-core    # 219 个测试 (单元 + 集成)
+cargo test -p audio-core    # 255 个测试 (单元 + 集成)
 cargo test -p audio-core -- --ignored  # 含 FFmpeg 依赖的格式验证
 ```
 

@@ -43,6 +43,7 @@ fn test_real_wav_through_consumer() {
         fft_interval: 3,
         crossfade_ms: 0,
         recv_timeout_ms: 500,
+        passthrough: false,
     };
 
     let consumer_h = thread::spawn(move || {
@@ -104,6 +105,7 @@ fn test_consumer_output_count_matches() {
         fft_interval: 3,
         crossfade_ms: 0,
         recv_timeout_ms: 500,
+        passthrough: false,
     };
 
     let consumer_h = thread::spawn(move || {
@@ -160,6 +162,7 @@ fn test_48k_wav_through_consumer() {
         fft_interval: 3,
         crossfade_ms: 0,
         recv_timeout_ms: 500,
+        passthrough: false,
     };
 
     let consumer_h = thread::spawn(move || {
@@ -217,6 +220,7 @@ fn test_consumer_stop_during_decoding() {
         fft_interval: 3,
         crossfade_ms: 0,
         recv_timeout_ms: 100, // 快速检查 stop
+        passthrough: false,
     };
 
     let consumer_h = thread::spawn(move || {
@@ -267,6 +271,7 @@ fn test_consumer_zero_timeout() {
         fft_interval: 3,
         crossfade_ms: 0,
         recv_timeout_ms: 0, // 忙轮询
+        passthrough: false,
     };
 
     let consumer_h = thread::spawn(move || {
@@ -321,7 +326,7 @@ fn test_consumer_very_short_file() {
 
     let config = ConsumerConfig {
         sample_rate: 44100, channels: 2, fft_interval: 3,
-        crossfade_ms: 0, recv_timeout_ms: 200,
+        crossfade_ms: 0, recv_timeout_ms: 200, passthrough: false,
     };
 
     let total = Arc::new(Mutex::new(0usize));
@@ -366,7 +371,7 @@ fn test_consumer_dsp_silences_output() {
 
     let config = ConsumerConfig {
         sample_rate: 44100, channels: 2, fft_interval: 3,
-        crossfade_ms: 0, recv_timeout_ms: 200,
+        crossfade_ms: 0, recv_timeout_ms: 200, passthrough: false,
     };
 
     let consumer_h = thread::spawn(move || {

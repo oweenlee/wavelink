@@ -89,6 +89,8 @@ pub(crate) fn run_engine(
                         Ok(EngineCommand::LoadIr(p)) => state.load_ir(&p),
                         Ok(EngineCommand::ClearIr) => state.clear_ir(),
                         Ok(EngineCommand::SetPeqBand { index, band }) => state.set_peq_band(index, band),
+                        Ok(EngineCommand::SetAutoEq(name)) => state.apply_auto_eq(name),
+                        Ok(EngineCommand::SetDsdMode(mode)) => state.config.dsd_mode = mode,
                         Ok(EngineCommand::SetStereoWidener { enabled, width }) => state.set_stereo_widener(enabled, width),
                         Ok(EngineCommand::SetCrossfeed(enabled)) => state.set_crossfeed(enabled),
                         Ok(EngineCommand::SetVolume(vol)) => state.set_volume(vol),
@@ -235,6 +237,7 @@ pub(crate) fn spawn_consumer(
     speed: Arc<AtomicU32>,
     levels: Arc<Mutex<Levels>>,
     err_rx: Receiver<EngineError>,
+    passthrough: bool,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -247,6 +250,7 @@ pub(crate) fn spawn_consumer(
                 fft_interval: 3,
                 crossfade_ms,
                 recv_timeout_ms: 500,
+                passthrough,
             };
 
             let pcm_mutex = Mutex::new(pcm);
@@ -354,7 +358,7 @@ mod tests {
         let rb = ringbuf::HeapRb::<f32>::new(65536);
         let (prod, _cons) = rb.split();
 
-        let consumer = spawn_consumer(rx1, prod, dsp, stop.clone(), pos, ev_tx, ready_tx, next_rx.clone(), 44100, 2, 0, Arc::new(AtomicU32::new(1.0f32.to_bits())), Arc::new(Mutex::new(Levels::default())), bounded(1).1);
+        let consumer = spawn_consumer(rx1, prod, dsp, stop.clone(), pos, ev_tx, ready_tx, next_rx.clone(), 44100, 2, 0, Arc::new(AtomicU32::new(1.0f32.to_bits())), Arc::new(Mutex::new(Levels::default())), bounded(1).1, false);
 
         let frame = DecodedFrame {
             samples: vec![0.5f32; 1024],

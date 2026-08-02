@@ -74,6 +74,44 @@ impl Biquad {
         Biquad::new(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0)
     }
 
+    /// 低频搁架（Low Shelf，RBJ audio EQ cookbook，Q 定义 alpha）。
+    /// freq 拐点频率，gain_db 低频增益，q 控制过渡陡峭度（AutoEQ/EqualizerAPO 约定）。
+    pub fn low_shelf(freq: f32, sample_rate: f32, gain_db: f32, q: f32) -> Self {
+        let q = q.max(0.001);
+        let a = 10f32.powf(gain_db / 40.0);
+        let w0 = 2.0 * std::f32::consts::PI * freq / sample_rate;
+        let cos_w0 = w0.cos();
+        let sin_w0 = w0.sin();
+        let alpha = sin_w0 / (2.0 * q);
+        let two_sqrt_a_alpha = 2.0 * a.sqrt() * alpha;
+        let b0 = a * ((a + 1.0) - (a - 1.0) * cos_w0 + two_sqrt_a_alpha);
+        let b1 = 2.0 * a * ((a - 1.0) - (a + 1.0) * cos_w0);
+        let b2 = a * ((a + 1.0) - (a - 1.0) * cos_w0 - two_sqrt_a_alpha);
+        let a0 = (a + 1.0) + (a - 1.0) * cos_w0 + two_sqrt_a_alpha;
+        let a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cos_w0);
+        let a2 = (a + 1.0) + (a - 1.0) * cos_w0 - two_sqrt_a_alpha;
+        Biquad::new(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0)
+    }
+
+    /// 高频搁架（High Shelf，RBJ audio EQ cookbook，Q 定义 alpha）。
+    /// freq 拐点频率，gain_db 高频增益，q 控制过渡陡峭度。
+    pub fn high_shelf(freq: f32, sample_rate: f32, gain_db: f32, q: f32) -> Self {
+        let q = q.max(0.001);
+        let a = 10f32.powf(gain_db / 40.0);
+        let w0 = 2.0 * std::f32::consts::PI * freq / sample_rate;
+        let cos_w0 = w0.cos();
+        let sin_w0 = w0.sin();
+        let alpha = sin_w0 / (2.0 * q);
+        let two_sqrt_a_alpha = 2.0 * a.sqrt() * alpha;
+        let b0 = a * ((a + 1.0) + (a - 1.0) * cos_w0 + two_sqrt_a_alpha);
+        let b1 = -2.0 * a * ((a - 1.0) + (a + 1.0) * cos_w0);
+        let b2 = a * ((a + 1.0) + (a - 1.0) * cos_w0 - two_sqrt_a_alpha);
+        let a0 = (a + 1.0) - (a - 1.0) * cos_w0 + two_sqrt_a_alpha;
+        let a1 = 2.0 * ((a - 1.0) - (a + 1.0) * cos_w0);
+        let a2 = (a + 1.0) - (a - 1.0) * cos_w0 - two_sqrt_a_alpha;
+        Biquad::new(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0)
+    }
+
     /// 处理一个样本（单声道）
     #[inline]
     pub fn process(&mut self, x0: f32) -> f32 {
