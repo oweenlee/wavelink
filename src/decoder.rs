@@ -346,6 +346,53 @@ fn run(
             Ok(d) => decoder = d,
             Err(e) => return Err(EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("seek 后解码器重建失败: {e}") }),
         }
+
+        // 样本级精确 seek：format.seek() 只保证落在包边界（可能偏移几十 ms），
+        // 继续解码并丢弃目标之前的残余样本。
+        // 位置累计基于每个 packet 的 pts（绝对样本位置，WAV/FLAC 等由字节
+        // 偏移或 granule 反推，可靠）；pts 缺失（个别格式）则退回相对累计，
+        // 此时落点可能偏早几个包，但绝不丢过头。
+        let target_total = (secs * src_rate as f64) as u64 * src_ch as u64;
+        let mut consumed: u64 = 0; // 无 pts 时的相对累计
+        while consumed < target_total {
+            if stop_rx.try_recv().is_ok() { return Ok(()); }
+            let packet = match format.next_packet() {
+                Ok(Some(pkt)) => pkt,
+                _ => break, // EOF/错误：无更多数据可丢
+            };
+            if packet.track_id != track_id { continue; }
+            // 用 packet.pts 校准累计位置为绝对交错样本下标。
+            // 注意 pts 单位是帧（frame），不是样本，需乘声道数
+            let pkt_start_abs = packet.pts.get() as u64 * src_ch as u64;
+            if pkt_start_abs > consumed { consumed = pkt_start_abs; }
+            let decoded = match decoder.decode(&packet) {
+                Ok(buf) => buf,
+                Err(_) => continue,
+            };
+            let n = (decoded.samples_interleaved() * decoded.spec().channels().count()) as u64;
+            if consumed + n <= target_total {
+                // 整包都在目标之前，直接丢弃（不解交错）
+                consumed += n;
+            } else {
+                // 目标落在本包内：只保留目标之后的样本（saturating 防 pts 越界下溢）
+                let drop = target_total.saturating_sub(consumed) as usize;
+                let spec = decoded.spec().clone();
+                let num_samples = decoded.samples_interleaved();
+                let mut interleaved = vec![0.0f32; num_samples];
+                decoded.copy_to_slice_interleaved(&mut interleaved);
+                let kept: Vec<f32> = interleaved[drop.min(interleaved.len())..].to_vec();
+                if !kept.is_empty() && kept.iter().all(|s| s.is_finite()) {
+                    let in_ch = spec.channels().count();
+                    let mixed = mix_channels(&kept, in_ch, target_ch as usize);
+                    let out_ch = target_ch as usize;
+                    let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
+                    let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
+                    let _ = resample_and_send(&mixed, &mut rubato_resampler, &mut rubato_buf,
+                        out_ch, target_rate, target_ch, secs, &tx, &stop_rx);
+                }
+                break;
+            }
+        }
     }
 
     // ── 创建 rubato 重采样器（如有必要） ──
