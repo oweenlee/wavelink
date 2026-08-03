@@ -386,6 +386,7 @@ class AudioPlayerProvider extends ChangeNotifier {
     try {
       final event = await _engineRepo.pollEvents();
       if (event == 'stopped') {
+        debugPrint('[Audio] 收到引擎 stopped 事件 → 队列结束，触发切歌/停止');
         _progressTimer?.cancel();
         _stopPcmPump();
         _isPlaying = false;
@@ -400,15 +401,26 @@ class AudioPlayerProvider extends ChangeNotifier {
       debugPrint('[Audio] 事件轮询失败: $e');
     }
 
+    // 引擎位置（ms）。查询失败时保留上次合法值，绝不盲目累加：
+    // 锁屏后台 Dart Timer 被节流、FRB 通道抖动时 positionSecs 可能异常，
+    // 原实现 _position += 250 会随轮询累积虚高，越过时长线被误判为曲终而自停。
+    double? enginePosMs;
     try {
-      final secs = await _engineRepo.positionSecs();
-      _position = secs * 1000;
+      enginePosMs = (await _engineRepo.positionSecs()) * 1000;
+      _position = enginePosMs;
     } catch (e) {
-      _position += 250;
+      debugPrint('[Audio] 位置查询失败，保留上次位置: ${_position.toInt()}ms');
     }
 
     final song = _currentSong;
-    if (song != null && _position >= song.duration.inMilliseconds) {
+    // 曲终判断仅在引擎位置真实读取成功时进行，避免后台异常时误停。
+    if (song != null &&
+        enginePosMs != null &&
+        enginePosMs >= song.duration.inMilliseconds) {
+      debugPrint(
+        '[Audio] 位置到达时长（${_position.toInt()}ms >= '
+        '${song.duration.inMilliseconds}ms）→ 视为曲终',
+      );
       _progressTimer?.cancel();
       _stopPcmPump();
       _isPlaying = false;
@@ -460,6 +472,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   }
 
   void _handleRemoteCommand(RemoteCommand cmd) {
+    debugPrint('[Audio] 收到远程命令: ${cmd.command}');
     switch (cmd.command) {
       case 'play':
       case 'togglePlayPause':

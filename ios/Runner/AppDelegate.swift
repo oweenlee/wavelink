@@ -11,9 +11,14 @@ class AudioOutputManager {
     /// 仅主线程读写的播放标志（NowPlaying/resync 判断用）。
     /// 渲染线程用的是 Rust 侧原子门控（audio_output_set_playing），两者在四个控制点同步更新。
     private var isPlayingFlag = false
+    /// 是否有活动曲目（播放中或暂停中，从 channel play/resume 到 stop）。
+    /// 活动曲目期间绝不改变 source node/引擎速率：引擎对当前曲目的重采样
+    /// 目标在开播时固定，中途改速率声明会造成产出/声明失配（变慢/变调）。
+    /// 速率对齐留到下一曲开播时自然完成（bit-perfect 路径或引擎 SRC 兑底）。
+    private var hasActiveTrack = false
     private var eventSink: FlutterEventSink?
     /// source node 当前生效的采样率（路由变化时据此判断是否需重建）
-    private var currentSourceRate: Double = 0
+    var currentSourceRate: Double = 0
 
     // 当前曲目元数据
     private var nowTitle = ""
@@ -46,24 +51,37 @@ class AudioOutputManager {
         if abs(actual - currentSourceRate) < 1.0 {
             // 速率未变：仅在“应播但 engine 已停摆”时恢复（如路由切换后）
             if isPlayingFlag, !engine.isRunning {
+                NSLog("[Audio] resync: 速率未变，重启停摆的 engine")
                 try? AVAudioSession.sharedInstance().setActive(true)
+                engine.prepare()
                 try? engine.start()
             }
             return
         }
-        let shouldRun = engine.isRunning || isPlayingFlag
+        if hasActiveTrack {
+            // 曲目活动中（播放/暂停）：保持 source node/引擎速率不变（两者仍互
+            // 相对齐），只重启被系统停止的 engine；AVAudioEngine 会自动把节点
+            // 格式 SRC 到新硬件速率。速率对齐留到下一曲开播。
+            NSLog("[Audio] resync: 速率 %.0f → %.0f，曲目活动中，保持速率，engineRunning=%@",
+                  currentSourceRate, actual, engine.isRunning ? "true" : "false")
+            if isPlayingFlag, !engine.isRunning {
+                try? AVAudioSession.sharedInstance().setActive(true)
+                engine.prepare()
+                try? engine.start()
+            }
+            return
+        }
+        // 无活动曲目：重建到新速率 + 对齐引擎速率
+        NSLog("[Audio] resync: 速率 %.0f → %.0f，无活动曲目，重建 source node", currentSourceRate, actual)
         engine.stop()
         rebuildSourceNode(sampleRate: actual)
         engine_sync_output_rate(UInt32(actual))
-        if shouldRun {
-            try? AVAudioSession.sharedInstance().setActive(true)
-            try? engine.start()
-        }
     }
 
     /// 创建（或重建）source node 并连接到混音器。
     /// AVAudioSourceNode 的输出格式在连接时固定，故切换采样率需 detach 旧节点再以新格式重建。
     private func rebuildSourceNode(sampleRate: Double) {
+        NSLog("[Audio] rebuildSourceNode: %.0f (playing=%@, engineRunning=%@)", sampleRate, isPlayingFlag ? "true" : "false", engine.isRunning ? "true" : "false")
         if let old = sourceNode {
             engine.detach(old)
         }
@@ -96,6 +114,7 @@ class AudioOutputManager {
     /// 返回实际生效的采样率：请求未必被满足（内置输出常固定，外接 DAC 才会真切）。
     func setOutputRate(_ rate: Double) -> Double {
         let session = AVAudioSession.sharedInstance()
+        NSLog("[Audio] setOutputRate: 请求 %.0f，当前 session %.0f，node %.0f", rate, session.sampleRate, currentSourceRate)
         // 目标速率与当前一致（容差内）时无需重建，避免无谓的 engine 停启。
         // 同采样率曲目连续播放是常见场景（如整张专辑），跳过重建也利于 gapless。
         if abs(session.sampleRate - rate) < 1.0 {
@@ -196,7 +215,9 @@ class AudioOutputManager {
     var isPlaying: Bool { isPlayingFlag }
 
     func play() {
+        NSLog("[Audio] play() nodeRate=%.0f sessionRate=%.0f", currentSourceRate, AVAudioSession.sharedInstance().sampleRate)
         isPlayingFlag = true
+        hasActiveTrack = true
         audio_output_set_playing(true)
         try? AVAudioSession.sharedInstance().setActive(true)
         if !engine.isRunning {
@@ -213,6 +234,7 @@ class AudioOutputManager {
 
     func resume() {
         isPlayingFlag = true
+        hasActiveTrack = true
         audio_output_set_playing(true)
         audio_output_clear_ringbuf()
         if !engine.isRunning {
@@ -224,6 +246,7 @@ class AudioOutputManager {
 
     func stop() {
         isPlayingFlag = false
+        hasActiveTrack = false
         audio_output_set_playing(false)
         refreshNowPlaying()
     }
@@ -279,6 +302,15 @@ class AudioOutputManager {
             object: nil
         )
 
+        // AVAudioEngine 在配置变化（路由/格式）时会被系统自动停止且不恢复，
+        // 必须监听此通知并重建/重启，否则播放中静默死亡。
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleEngineConfigChange),
+            name: .AVAudioEngineConfigurationChange,
+            object: audio.engine
+        )
+
         GeneratedPluginRegistrant.register(with: self)
 
         if let controller = window?.rootViewController as? FlutterViewController {
@@ -292,6 +324,19 @@ class AudioOutputManager {
     /// 检测硬件速率是否改变，变了则重建 source node + 对齐引擎速率（消除失配杂音），
     /// 未变则仅在引擎停摆时恢复。
     @objc private func handleRouteChange(_ notification: Notification) {
+        let session = AVAudioSession.sharedInstance()
+        let outs = session.currentRoute.outputs
+            .map { $0.portType.rawValue }
+            .joined(separator: ",")
+        NSLog("[Audio] routeChange → outputs=[%@], sessionRate=%.0f, nodeRate=%.0f, playing=%@, engineRunning=%@",
+              outs, session.sampleRate, audio.currentSourceRate,
+              audio.isPlaying ? "true" : "false", audio.engine.isRunning ? "true" : "false")
+        audio.resyncToSessionRateIfNeeded()
+    }
+
+    /// AVAudioEngine 被系统因配置变化自动停止时触发：重建并按需恢复播放。
+    @objc private func handleEngineConfigChange(_ notification: Notification) {
+        NSLog("[Audio] AVAudioEngineConfigurationChange（引擎被系统停止，尝试恢复）")
         audio.resyncToSessionRateIfNeeded()
     }
 
@@ -301,13 +346,15 @@ class AudioOutputManager {
         else { return }
 
         if type == AVAudioSession.InterruptionType.began.rawValue {
-            // 中断开始（来电/闹钟/插拔耳机）：通知 Dart 暂停引擎与 UI 状态。
-            // Dart 侧收到 remote:pause 后走统一 pause 流程，避免前后台状态不同步。
+            // 中断开始（来电/闹钟/系统提示音）：记录中断前状态，通知 Dart 暂停引擎与 UI。
+            NSLog("[Audio] interruption began, wasPlaying=%@", audio.isPlaying ? "true" : "false")
+            wasPlayingBeforeInterruption = audio.isPlaying
             audio.pause()
             audio.sendEvent("remote:pause")
         } else if type == AVAudioSession.InterruptionType.ended.rawValue {
             // 中断结束：中断期间硬件速率可能被改变（如通话音频），按需重同步采样率
             // （速率变了则重建 source node + 对齐引擎速率），否则恢复播放会因格式失配而杂音
+            NSLog("[Audio] interruption ended, resume=%@", wasPlayingBeforeInterruption ? "true" : "false")
             audio.resyncToSessionRateIfNeeded()
             // 清空 ringbuf 避免累积脏数据
             audio_output_clear_ringbuf()
@@ -316,11 +363,20 @@ class AudioOutputManager {
                 try? AVAudioSession.sharedInstance().setActive(true)
                 try? audio.engine.start()
             }
+            if wasPlayingBeforeInterruption {
+                wasPlayingBeforeInterruption = false
+                // began 时 Dart 已走 pause（引擎暂停+门控关），此处让 Dart 走统一
+                // play 路径恢复全链路（resume 引擎+开门控+UI 状态），避免“中断后永久无声”
+                audio.sendEvent("remote:play")
+            }
             audio.refreshNowPlaying()
         }
     }
 
     private var filePickerCompletion: FlutterResult?
+
+    /// 音频中断开始前是否正在播放（用于中断结束后自动恢复）
+    private var wasPlayingBeforeInterruption = false
 
     func registerChannels(with messenger: FlutterBinaryMessenger) {
         let audioChannel = FlutterMethodChannel(name: "wavelink/audio", binaryMessenger: messenger)
@@ -344,10 +400,10 @@ class AudioOutputManager {
 
     private func handleAudio(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
-        case "play": audio.play(); result(nil)
-        case "pause": audio.pause(); result(nil)
-        case "resume": audio.resume(); result(nil)
-        case "stop": audio.stop(); result(nil)
+        case "play": NSLog("[Audio] channel play"); audio.play(); result(nil)
+        case "pause": NSLog("[Audio] channel pause"); audio.pause(); result(nil)
+        case "resume": NSLog("[Audio] channel resume"); audio.resume(); result(nil)
+        case "stop": NSLog("[Audio] channel stop"); audio.stop(); result(nil)
         case "updateMetadata":
             if let args = call.arguments as? [String: Any],
                let title = args["title"] as? String,
