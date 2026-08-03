@@ -274,6 +274,11 @@ class AudioPlayerProvider extends ChangeNotifier {
     notifyListeners();
     if (!_nativeReady || !_engineRepo.rustAvailable) return;
     _engineRepo.seek(_position / 1000.0);
+    // Android：引擎 seek 换新 ringbuf 后，再清原生侧积压的旧 PCM（pcmQueue+AudioTrack），
+    // 否则 seek 前的声音会先播出来造成几百毫秒错位。iOS 无中间队列，不需要。
+    if (_isAndroid) {
+      _nativeAudio.seek(_position);
+    }
   }
 
   void setVolume(double v) {

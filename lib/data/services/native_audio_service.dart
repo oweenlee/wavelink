@@ -54,6 +54,12 @@ class NativeAudioService {
   Future<void> resume() => _safeCall(_methodChannel.invokeMethod('resume'));
   Future<void> stop() => _safeCall(_methodChannel.invokeMethod('stop'));
 
+  /// Android seek：清掉 pcmQueue/AudioTrack 里 seek 前的旧 PCM（iOS 无此通道，静默）。
+  /// 必须在引擎 seek 之后调：引擎先换新 ringbuf，原生再 flush 旧缓冲。
+  Future<void> seek(double positionMs) => _safeCall(
+    _methodChannel.invokeMethod('seek', {'positionMs': positionMs}),
+  );
+
   /// Android 推送引擎输出的交错立体声 PCM 数据（iOS 无此通道，静默）
   Future<void> pushPcm(Float32List samples) => _safeCall(
     _methodChannel.invokeMethod('pushPcm', {'samples': samples}),
