@@ -1,12 +1,16 @@
 package com.wavelink.wavelink_mobile
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
 import android.os.Build
+import android.util.Log
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
@@ -20,6 +24,7 @@ import java.util.concurrent.TimeUnit
  * - 永久丢失（其他音乐 app）→ 发 remote:pause，不自动恢复
  * - 瞬时丢失（来电/语音搜索 TTS）→ 发 remote:pause，焦点恢复后自动续播
  * - 可降音 → 本地 setVolume(0.3) 压低，不暂停引擎
+ * - 拔耳机（ACTION_AUDIO_BECOMING_NOISY）→ 发 remote:pause，避免声音从扬声器爆出
  * 事件经 eventCallback 走与 iOS 锁屏命令同一套 remote:* 协议，Dart 统一处理。
  */
 class AudioEngine(context: Context) {
@@ -28,6 +33,37 @@ class AudioEngine(context: Context) {
         appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     }
     private var focusRequest: AudioFocusRequest? = null
+
+    /// 拔耳机广播接收器：声音即将改走扬声器时暂停，避免外放爆出。
+    /// 该 action 是系统保护广播（第三方无法伪造），注册生命周期跟随 start/stop。
+    private var noisyReceiverRegistered = false
+    private val noisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != AudioManager.ACTION_AUDIO_BECOMING_NOISY) return
+            Log.i(TAG, "ACTION_AUDIO_BECOMING_NOISY（耳机拔出）→ 暂停")
+            if (playing && !paused) {
+                pausedByFocusLoss = false // 拔耳机不应自动续播
+                eventCallback?.invoke("remote:pause")
+            }
+        }
+    }
+
+    private fun registerNoisyReceiver() {
+        if (noisyReceiverRegistered) return
+        val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        if (Build.VERSION.SDK_INT >= 33) {
+            appContext.registerReceiver(noisyReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            appContext.registerReceiver(noisyReceiver, filter)
+        }
+        noisyReceiverRegistered = true
+    }
+
+    private fun unregisterNoisyReceiver() {
+        if (!noisyReceiverRegistered) return
+        try { appContext.unregisterReceiver(noisyReceiver) } catch (_: Exception) {}
+        noisyReceiverRegistered = false
+    }
 
     /// 是否因瞬时焦点丢失而暂停（用于焦点恢复时判断是否自动续播）
     @Volatile private var pausedByFocusLoss = false
@@ -119,6 +155,7 @@ class AudioEngine(context: Context) {
     fun start(rate: Int, ch: Int) {
         stop()
         requestAudioFocus()
+        registerNoisyReceiver()
         sampleRate = rate
         channels = ch
         writtenSamples = 0
@@ -204,6 +241,7 @@ class AudioEngine(context: Context) {
 
     fun stop() {
         abandonAudioFocus()
+        unregisterNoisyReceiver()
         playing = false
         writeThread?.interrupt()
         writeThread = null
@@ -222,7 +260,14 @@ class AudioEngine(context: Context) {
         try {
             audioTrack?.pause()
             audioTrack?.flush()
-            audioTrack?.play()
+            // 暂停态 seek 不应误启动 AudioTrack（避免空转的“已播放”状态）
+            if (!paused) {
+                audioTrack?.play()
+            }
         } catch (_: Exception) {}
+    }
+
+    companion object {
+        private const val TAG = "AudioEngine"
     }
 }
