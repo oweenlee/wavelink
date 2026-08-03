@@ -41,6 +41,7 @@ pub mod exclusive {
 /// DSP 管线
 pub mod dsp {
     pub use audio_core::dsp::{default_peq_bands, preset_bands, PeqBand, PresetName};
+    pub use audio_core::dsp::autoeq::{catalog as autoeq_catalog, find_profile as autoeq_find_profile, HeadphoneProfile};
 }
 
 /// 流式播放（网络流媒体）

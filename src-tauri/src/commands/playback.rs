@@ -1,5 +1,5 @@
 use tauri::{Emitter, State};
-use sdk::{Levels, PlayMode};
+use sdk::{DsdMode, Levels, PlayMode};
 use sdk::output::{DeviceEvent, OutputDeviceInfo};
 use crate::state::AppState;
 use super::{apply_track_settings, lock_or_die};
@@ -260,4 +260,40 @@ pub fn stop_capture() {
 #[tauri::command]
 pub fn is_capturing() -> bool {
     sdk::is_capturing()
+}
+
+/// AutoEQ 耳机校正：传入型号名称应用，None 清除
+#[tauri::command]
+pub fn set_auto_eq(name: Option<String>, state: State<AppState>) {
+    state.engine.set_auto_eq(name.as_deref());
+}
+
+/// 列出全部内嵌 AutoEQ 耳机档案名
+#[tauri::command]
+pub fn list_auto_eq_profiles() -> Vec<String> {
+    sdk::dsp::autoeq_catalog().iter().map(|p| p.name.to_string()).collect()
+}
+
+/// 设置 DSD 处理模式（ToPcm / Dop）
+#[tauri::command]
+pub fn set_dsd_mode(mode: DsdMode, state: State<AppState>) {
+    state.engine.set_dsd_mode(mode);
+}
+
+/// 启用/禁用真峰值限幅器
+#[tauri::command]
+pub fn set_limiter_enabled(enabled: bool, state: State<AppState>) {
+    state.engine.set_limiter_enabled(enabled);
+}
+
+/// 启用/禁用 TPDF 抖动
+#[tauri::command]
+pub fn set_dither_enabled(enabled: bool, state: State<AppState>) {
+    state.engine.set_dither_enabled(enabled);
+}
+
+/// 运行时切换输出采样率（下次播放生效）
+#[tauri::command]
+pub fn set_output_sample_rate(rate: u32, state: State<AppState>) {
+    state.engine.set_output_sample_rate(rate);
 }

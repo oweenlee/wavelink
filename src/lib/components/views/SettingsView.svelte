@@ -228,6 +228,34 @@
 							<span class="toggle-knob"></span>
 						</button>
 					</div>
+					<div class="setting-row">
+						<div class="setting-label">
+							<span class="label-text">{t('settings.dsd_mode')}</span>
+							<span class="label-desc">{t('settings.dsd_mode_desc')}</span>
+						</div>
+						<select class="select" value={settings.dsdMode} onchange={(e) => settings.setDsdMode((e.currentTarget as HTMLSelectElement).value as 'to_pcm' | 'dop')}>
+							<option value="to_pcm">{t('settings.dsd_to_pcm')}</option>
+							<option value="dop">{t('settings.dsd_dop')}</option>
+						</select>
+					</div>
+					<div class="setting-row">
+						<div class="setting-label">
+							<span class="label-text">{t('settings.limiter')}</span>
+							<span class="label-desc">{t('settings.limiter_desc')}</span>
+						</div>
+						<button class="toggle" class:active={settings.limiterEnabled} onclick={() => settings.setLimiter(!settings.limiterEnabled)} aria-label="{t('settings.limiter')}">
+							<span class="toggle-knob"></span>
+						</button>
+					</div>
+					<div class="setting-row">
+						<div class="setting-label">
+							<span class="label-text">{t('settings.dither')}</span>
+							<span class="label-desc">{t('settings.dither_desc')}</span>
+						</div>
+						<button class="toggle" class:active={settings.ditherEnabled} onclick={() => settings.setDither(!settings.ditherEnabled)} aria-label="{t('settings.dither')}">
+							<span class="toggle-knob"></span>
+						</button>
+					</div>
 				</div>
 			{/if}
 		</div>

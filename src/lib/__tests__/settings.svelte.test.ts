@@ -130,13 +130,15 @@ describe('getSettingsState', () => {
 
 	it('applyEngineConfig calls set_engine_config with all fields and saves', async () => {
 		mockInvoke.mockResolvedValueOnce(undefined);
+		mockInvoke.mockResolvedValueOnce({});
 		mockInvoke.mockResolvedValueOnce(undefined);
 		await state.applyEngineConfig();
 		expect(mockInvoke).toHaveBeenCalledWith('set_engine_config', {
 			sampleRate: 44100, channels: 2, bufferMs: 280, crossfadeMs: 0,
 			autoSampleRate: false, exclusiveMode: false, bitPerfect: false,
 		});
-		expect(mockInvoke).toHaveBeenCalledTimes(2);
+		// set_engine_config + save 内部的 load_settings + save_settings
+		expect(mockInvoke).toHaveBeenCalledTimes(3);
 	});
 
 	it('setReplaygain calls backend and saves', async () => {

@@ -25,6 +25,10 @@
 		await settings.applyEngineConfig();
 		if (settings.audioDevice) await settings.setAudioDevice(settings.audioDevice);
 		await settings.setReplaygain(settings.replaygainEnabled);
+		// 引擎默认 limiter/dither 开启、DSD 转 PCM；仅在保存值非默认时同步
+		if (!settings.limiterEnabled) await settings.setLimiter(false);
+		if (!settings.ditherEnabled) await settings.setDither(false);
+		if (settings.dsdMode !== 'to_pcm') await settings.setDsdMode(settings.dsdMode);
 	});
 
 	const onKeydown = createKeyboardHandler(playback);

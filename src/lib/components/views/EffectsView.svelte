@@ -15,6 +15,8 @@
 	let stereoWidth = $state(0.5);
 	let crossfeedEnabled = $state(false);
 	let noiseShapingEnabled = $state(false);
+	let autoEqProfiles = $state<string[]>([]);
+	let _autoEq = $state('');
 	let _invoke: ((cmd: string, args?: any) => Promise<any>) | null = null;
 
 	// ── Load settings ──
@@ -49,7 +51,17 @@
 				if (typeof saved.eqPreset === 'string' && saved.eqPreset && eqPresets.includes(saved.eqPreset)) {
 					_activePreset = saved.eqPreset;
 				}
+				if (typeof saved.autoEq === 'string' && saved.autoEq) {
+					_autoEq = saved.autoEq;
+					await mod.invoke('set_auto_eq', { name: saved.autoEq }).catch(() => console.warn('[Effects] AutoEQ 恢复失败'));
+				}
 			} catch { console.warn('[Effects] 设置加载/同步失败'); }
+
+			// AutoEQ 档案列表
+			try {
+				const profiles: any = await mod.invoke('list_auto_eq_profiles');
+				autoEqProfiles = profiles as string[];
+			} catch { console.warn('[Effects] AutoEQ 档案加载失败'); }
 
 		});
 	});
@@ -67,8 +79,12 @@
 	async function saveAll() {
 		if (!_invoke) return;
 		try {
+			// 先读已有设置再合并，避免覆盖 settings store 持久化的其他字段
+			let existing: Record<string, any> = {};
+			try { existing = await _invoke('load_settings') ?? {}; } catch { /* 首次无文件 */ }
 			await _invoke('save_settings', {
 				settings: {
+					...existing,
 					accentColor: settings.accentColor,
 					volume: playback.volume,
 					eqBands: eqBands.map(b => ({ freq: b.freq, gain_db: b.gain_db, q: b.q })),
@@ -76,6 +92,7 @@
 					crossfeedEnabled, noiseShapingEnabled,
 					replaygainEnabled: settings.replaygainEnabled,
 					eqPreset: _activePreset,
+					autoEq: _autoEq,
 				},
 			});
 		} catch { console.warn('[Effects] 保存设置失败'); }
@@ -125,6 +142,21 @@
 
 	const eqPresets = ['flat', 'rock', 'pop', 'dance', 'classical', 'soft', 'full_bass', 'full_treble', 'techno', 'vocals'];
 	let _activePreset = $state('');
+
+	// ── AutoEQ（耳机校正，本质是整组 PEQ 预设）──
+	async function applyAutoEq(name: string) {
+		if (!_invoke) return;
+		_autoEq = name;
+		try {
+			await _invoke('set_auto_eq', { name: name || null });
+			// 同步回显引擎实际频段，让曲线反映校正结果
+			const bands: any = await _invoke('get_eq_bands');
+			eqBands = bands as PeqBand[];
+			saveAll();
+		} catch (err) {
+			console.warn('[Effects] AutoEQ 应用失败', err);
+		}
+	}
 
 	// 预设名称的显示映射
 	const presetLabels: Record<string, string> = {
@@ -550,6 +582,10 @@
 		<div class="card-header">
 			<h3 class="card-title">{t('effects.equalizer')}</h3>
 			<div class="card-actions">
+				<select class="preset-select" value={_autoEq} onchange={(e) => applyAutoEq((e.currentTarget as HTMLSelectElement).value)} title={t('effects.autoeq_title')}>
+					<option value="">{t('effects.autoeq_none')}</option>
+					{#each autoEqProfiles as p (p)}<option value={p}>{p}</option>{/each}
+				</select>
 				<select class="preset-select" bind:value={_activePreset} onchange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; if (v) setEqPreset(v); }}>
 					<option value="">{t('effects.preset')}</option>
 					{#each eqPresets as p (p)}<option value={p}>{presetLabels[p] || p}</option>{/each}

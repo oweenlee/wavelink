@@ -267,6 +267,55 @@ export async function setBufferMs(ms: number) {
 	}
 }
 
+// ── AutoEQ / DSD / 限幅 / 抖动 / 输出采样率 ──
+
+export async function setAutoEq(name: string | null) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('set_auto_eq', { name });
+	} catch (err) {
+		console.error('Set AutoEQ failed:', err);
+	}
+}
+
+export type DsdMode = 'to_pcm' | 'dop';
+
+export async function setDsdMode(mode: DsdMode) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('set_dsd_mode', { mode });
+	} catch (err) {
+		console.error('Set DSD mode failed:', err);
+	}
+}
+
+export async function setLimiterEnabled(enabled: boolean) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('set_limiter_enabled', { enabled });
+	} catch (err) {
+		console.error('Set limiter failed:', err);
+	}
+}
+
+export async function setDitherEnabled(enabled: boolean) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('set_dither_enabled', { enabled });
+	} catch (err) {
+		console.error('Set dither failed:', err);
+	}
+}
+
+export async function setOutputSampleRate(rate: number) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('set_output_sample_rate', { rate });
+	} catch (err) {
+		console.error('Set output sample rate failed:', err);
+	}
+}
+
 export async function setReplaygainPeak(peak: number | null) {
 	try {
 		const invoke = await lazyInvoke();

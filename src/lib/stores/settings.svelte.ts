@@ -10,6 +10,9 @@ let _audioDevice = $state('');
 let _autoSampleRate = $state(false);
 let _exclusiveMode = $state(false);
 let _bitPerfect = $state(false);
+let _limiterEnabled = $state(true);
+let _ditherEnabled = $state(true);
+let _dsdMode = $state<'to_pcm' | 'dop'>('to_pcm');
 let _loaded = $state(false);
 
 export function getSettingsState() {
@@ -45,6 +48,15 @@ export function getSettingsState() {
 		get bitPerfect() { return _bitPerfect; },
 		set bitPerfect(v: boolean) { _bitPerfect = v; },
 
+		get limiterEnabled() { return _limiterEnabled; },
+		set limiterEnabled(v: boolean) { _limiterEnabled = v; },
+
+		get ditherEnabled() { return _ditherEnabled; },
+		set ditherEnabled(v: boolean) { _ditherEnabled = v; },
+
+		get dsdMode() { return _dsdMode; },
+		set dsdMode(v: 'to_pcm' | 'dop') { _dsdMode = v; },
+
 		get loaded() { return _loaded; },
 
 		// ── Persistence ──
@@ -63,6 +75,9 @@ export function getSettingsState() {
 				if (typeof saved.autoSampleRate === 'boolean') _autoSampleRate = saved.autoSampleRate;
 				if (typeof saved.exclusiveMode === 'boolean') _exclusiveMode = saved.exclusiveMode;
 				if (typeof saved.bitPerfect === 'boolean') _bitPerfect = saved.bitPerfect;
+				if (typeof saved.limiterEnabled === 'boolean') _limiterEnabled = saved.limiterEnabled;
+				if (typeof saved.ditherEnabled === 'boolean') _ditherEnabled = saved.ditherEnabled;
+				if (saved.dsdMode === 'to_pcm' || saved.dsdMode === 'dop') _dsdMode = saved.dsdMode;
 				_loaded = true;
 				return saved;
 			} catch (err) {
@@ -76,8 +91,12 @@ export function getSettingsState() {
 			if (!browser) return;
 			try {
 				const invoke = await lazyInvoke();
+				// 先读已有设置再合并，避免覆盖 Effects 页持久化的字段（eqBands/autoEq 等）
+				let existing: Record<string, any> = {};
+				try { existing = (await invoke('load_settings')) ?? {}; } catch { /* 首次无文件 */ }
 				await invoke('save_settings', {
 					settings: {
+						...existing,
 						accentColor: _accentColor,
 						theme: _theme,
 						sampleRate: _sampleRate,
@@ -88,6 +107,9 @@ export function getSettingsState() {
 						autoSampleRate: _autoSampleRate,
 						exclusiveMode: _exclusiveMode,
 						bitPerfect: _bitPerfect,
+						limiterEnabled: _limiterEnabled,
+						ditherEnabled: _ditherEnabled,
+						dsdMode: _dsdMode,
 						...extra,
 					},
 				});
@@ -134,6 +156,39 @@ export function getSettingsState() {
 					await invoke('set_audio_device', { name: device });
 					await this.save();
 				} catch { console.warn('[settings] 切换输出设备失败'); }
+			}
+		},
+
+		async setLimiter(enabled: boolean) {
+			_limiterEnabled = enabled;
+			if (browser) {
+				try {
+					const invoke = await lazyInvoke();
+					await invoke('set_limiter_enabled', { enabled });
+					await this.save();
+				} catch { console.warn('[settings] 限幅器同步失败'); }
+			}
+		},
+
+		async setDither(enabled: boolean) {
+			_ditherEnabled = enabled;
+			if (browser) {
+				try {
+					const invoke = await lazyInvoke();
+					await invoke('set_dither_enabled', { enabled });
+					await this.save();
+				} catch { console.warn('[settings] 抖动同步失败'); }
+			}
+		},
+
+		async setDsdMode(mode: 'to_pcm' | 'dop') {
+			_dsdMode = mode;
+			if (browser) {
+				try {
+					const invoke = await lazyInvoke();
+					await invoke('set_dsd_mode', { mode });
+					await this.save();
+				} catch { console.warn('[settings] DSD 模式同步失败'); }
 			}
 		},
 
