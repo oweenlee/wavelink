@@ -3,7 +3,7 @@
 //! 从 EngineHandle 的 HeadlessOutput ringbuf 拉取 PCM 数据，
 //! 供 iOS AVAudioSourceNode 回调使用。
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use parking_lot::Mutex as ParkingMutex;
@@ -16,10 +16,24 @@ static SPECTRUM: Mutex<[f32; 16]> = Mutex::new([0.0; 16]);
 /// underrun 计数：iOS 回调从 ringbuf 读不到足够数据时递增
 static UNDERRUN_COUNT: AtomicU64 = AtomicU64::new(0);
 
+/// 播放门控：Swift 主线程经 `audio_output_set_playing` 设置，渲染回调无锁读取。
+/// false 时 `fill_buffer_stereo_impl` 直接输出静音。取代 Swift 侧跨线程 Bool 标志，
+/// 消除渲染线程与主线程的数据竞争。
+static PLAYING: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn set_playing_impl(playing: bool) {
+    PLAYING.store(playing, Ordering::Release);
+}
+
+/// 设置硬件采样率记录（遥测 outputRate 依此显示）
+pub(crate) fn set_hw_sample_rate_impl(rate: u32) {
+    HW_SAMPLE_RATE.store(rate, Ordering::Release);
+}
+
 /// 由 Swift 通过 extern "C" 调用，设置硬件采样率
 #[no_mangle]
 pub extern "C" fn set_hw_sample_rate(rate: u32) {
-    HW_SAMPLE_RATE.store(rate, Ordering::Release);
+    set_hw_sample_rate_impl(rate);
 }
 
 pub fn get_hw_sample_rate() -> u32 {
@@ -69,6 +83,16 @@ pub(crate) unsafe fn fill_buffer_stereo_impl(
     frames: u32,
 ) {
     let frames = frames as usize;
+
+    // 播放门控：未播放时直接输出静音（不计 underrun）。
+    // 原子读，渲染线程无锁；暂停即时生效，无需等 ringbuf 排空。
+    if !PLAYING.load(Ordering::Acquire) {
+        for i in 0..frames {
+            *left_out.add(i) = 0.0;
+            *right_out.add(i) = 0.0;
+        }
+        return;
+    }
 
     // 从预分配缓冲区获取引用，避免实时线程 malloc
     let mut rt_buf = RT_BUF.lock();
@@ -211,6 +235,8 @@ mod ios_audio_path_tests {
         set_hw_sample_rate(OUT_RATE);
         engine_init_ex(OUT_RATE, 2, 280, 0, false, false, false, None)
             .expect("引擎初始化失败");
+        // 打开播放门控（真实场景由 Swift 在 play/resume 时设置）
+        set_playing_impl(true);
 
         // ── 嫌疑1：underrun 必须补 0，不能是垃圾内存 ──
         // 引擎刚初始化、尚未播放：ringbuf 为空，此时读取必然 underrun。
@@ -261,6 +287,25 @@ mod ios_audio_path_tests {
             diff_rms < 0.001,
             "[mono] 左右声道差异过大（diff_rms={diff_rms}）——单声道上混错误会把垃圾塞进一个声道造成杂音"
         );
+
+        // ── 播放门控：set_playing(false) → 输出全静音且不计 underrun ──
+        let underruns_before = get_underrun_count();
+        set_playing_impl(false);
+        unsafe {
+            let mut lg = vec![0.5f32; CHUNK]; // 预填非 0，验证确实被覆盖
+            let mut rg = vec![0.5f32; CHUNK];
+            fill_buffer_stereo_impl(lg.as_mut_ptr(), rg.as_mut_ptr(), CHUNK as u32);
+            assert!(
+                lg.iter().all(|&x| x == 0.0) && rg.iter().all(|&x| x == 0.0),
+                "播放门控关闭时输出必须为静音"
+            );
+        }
+        assert_eq!(
+            get_underrun_count(),
+            underruns_before,
+            "门控关闭的静音不应计入 underrun"
+        );
+        set_playing_impl(true);
 
         // 清理临时文件（忽略失败）
         let _ = std::fs::remove_file(&stereo_path);

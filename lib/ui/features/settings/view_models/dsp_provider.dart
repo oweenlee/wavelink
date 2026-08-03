@@ -75,4 +75,83 @@ class DspProvider extends ChangeNotifier {
       dither: _prefsRepo.dspDither,
     );
   }
+
+  // ── 10 段参量 EQ ──
+
+  /// EQ 频段中心频率（Hz），与 audio-core `preset_bands` 一致。
+  static const List<double> eqFrequencies = [
+    31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000,
+  ];
+
+  /// EQ 默认 Q 值（与 audio-core 一致）。
+  static const double eqDefaultQ = 1.41;
+
+  /// 预设增益表（dB）——与 audio-core `dsp::preset_bands` 逐值对齐，
+  /// 引擎是单一事实来源：UI 显示的曲线即听到的曲线。
+  static const Map<String, List<double>> eqPresets = {
+    'Flat':       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    'Rock':       [-1.2, -1.2, -2.4, -6.5, -7.4, -5.8, -2.6, -0.7, 0.0, 0.0],
+    'Pop':        [-5.0, -5.0, -2.4, -1.4, -1.2, -2.2, -4.8, -5.3, -5.3, -5.0],
+    'Dance':      [-0.5, -0.5, -1.4, -3.4, -4.3, -4.3, -6.7, -7.2, -7.2, -4.3],
+    'Classical':  [-4.1, -4.1, -4.1, -4.1, -4.1, -4.1, -4.1, -7.2, -7.2, -8.2],
+    'Soft':       [-2.4, -2.4, -3.6, -4.8, -5.3, -4.8, -2.6, -1.0, -0.5, 0.5],
+    'Full Bass':  [-0.5, -0.5, -0.5, -0.5, -1.9, -3.6, -6.0, -7.7, -8.4, -8.6],
+    'Full Treble':[-8.2, -8.2, -8.2, -8.2, -6.0, -3.1, 0.0, 1.9, 1.9, 2.4],
+    'Techno':     [-1.2, -1.2, -1.9, -4.1, -6.5, -6.2, -4.1, -1.2, -0.5, -0.7],
+    'Vocals':     [-3.0, -3.0, -2.0, -0.5, 1.0, 2.5, 3.0, 1.5, 0.0, 0.0],
+  };
+
+  /// UI 预设名 → Rust 预设名（engine_apply_preset 接受的键）。
+  static const Map<String, String> _rustPresetNames = {
+    'Flat': 'flat',
+    'Rock': 'rock',
+    'Pop': 'pop',
+    'Dance': 'dance',
+    'Classical': 'classical',
+    'Soft': 'soft',
+    'Full Bass': 'full_bass',
+    'Full Treble': 'full_treble',
+    'Techno': 'techno',
+    'Vocals': 'vocals',
+  };
+
+  List<double> _eqValues = List.filled(10, 0.0);
+  String _eqPreset = 'Flat';
+
+  List<double> get eqValues => _eqValues;
+  String get eqPreset => _eqPreset;
+
+  /// 应用 EQ 预设：更新本地曲线并下发引擎。
+  Future<void> applyEqPreset(String name) async {
+    final gains = eqPresets[name];
+    if (gains == null) return;
+    _eqPreset = name;
+    _eqValues = List.from(gains);
+    notifyListeners();
+    if (!_engineRepo.rustAvailable) return;
+    try {
+      await _engineRepo.applyPreset(_rustPresetNames[name] ?? name.toLowerCase());
+    } catch (e) {
+      debugPrint('[EQ] applyPreset 失败: $e');
+    }
+  }
+
+  /// 手动调整单个频段增益：更新本地曲线并下发引擎，取消预设高亮。
+  Future<void> setEqBand(int index, double gainDb) async {
+    if (index < 0 || index >= _eqValues.length) return;
+    _eqValues[index] = gainDb;
+    _eqPreset = ''; // 手动调整后不再是纯预设
+    notifyListeners();
+    if (!_engineRepo.rustAvailable) return;
+    try {
+      await _engineRepo.setPeqBand(
+        index,
+        eqFrequencies[index],
+        gainDb,
+        eqDefaultQ,
+      );
+    } catch (e) {
+      debugPrint('[EQ] setPeqBand 失败: $e');
+    }
+  }
 }

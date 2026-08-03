@@ -205,7 +205,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                     line: player.currentLyricLine,
                     onClose: _closeLyrics,
                     coverUrl: song.coverUrl,
-                    positionMs: (player.position * 1000).round(),
+                    positionMs: player.position.round(),
                     durationMs: song.duration.inMilliseconds,
                   ),
                 ),
@@ -272,8 +272,32 @@ class _InstrumentPanel extends StatelessWidget {
   final PlaybackProvider player;
   const _InstrumentPanel({required this.player});
 
+  /// 44100 → "44.1k"、48000 → "48k"、96000 → "96k"
+  static String _khz(int hz) {
+    if (hz <= 0) return '--';
+    final k = hz / 1000;
+    return (hz % 1000 == 0) ? '${k.round()}k' : '${k.toStringAsFixed(1)}k';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final t = player.telemetry;
+
+    // Output：文件速率 → 输出速率 · direct/resample
+    final String output;
+    if (t.outputRate <= 0) {
+      output = '-- · idle';
+    } else if (t.fileRate > 0) {
+      output =
+          '${_khz(t.fileRate)} → ${_khz(t.outputRate)} · ${t.bitPerfect ? 'direct' : 'resample'}';
+    } else {
+      output = '${_khz(t.outputRate)} · --';
+    }
+
+    final underrun = 'Total ${t.underrunTotal} · ${t.underrunRecent} recent';
+    final buffer = '${t.bufferMs}ms · ${t.bufferStarving ? 'starving' : 'ok'}';
+    final engine = '${t.running ? 'running' : 'idle'} · FFT 1024';
+
     return Container(
       margin: const EdgeInsets.only(top: 18, left: 14, right: 14),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -282,26 +306,26 @@ class _InstrumentPanel extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppTheme.divider, width: 0.5),
       ),
-      child: const Row(
+      child: Row(
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _InstGridRow(label: 'Output', value: '96kHz → 96kHz · direct'),
-                SizedBox(height: 6),
-                _InstGridRow(label: 'Underrun', value: 'Total 3 · 0 recent'),
+                _InstGridRow(label: 'Output', value: output),
+                const SizedBox(height: 6),
+                _InstGridRow(label: 'Underrun', value: underrun),
               ],
             ),
           ),
-          SizedBox(width: 24),
+          const SizedBox(width: 24),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _InstGridRow(label: 'Buffer', value: '5.3ms · ok'),
-                SizedBox(height: 6),
-                _InstGridRow(label: 'Engine', value: 'running · FFT 1024'),
+                _InstGridRow(label: 'Buffer', value: buffer),
+                const SizedBox(height: 6),
+                _InstGridRow(label: 'Engine', value: engine),
               ],
             ),
           ),

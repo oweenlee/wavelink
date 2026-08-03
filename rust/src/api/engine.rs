@@ -3,6 +3,7 @@
 //! 将 audio_core::engine::EngineHandle 包装为 flutter_rust_bridge 可调用的接口。
 //! 引擎在后台管理：解码 → DSP → ringbuf 输出。
 
+use arc_swap::ArcSwapOption;
 use audio_core::dsp::PeqBand;
 use audio_core::engine::{EngineEvent, EngineHandle, PlayMode};
 use audio_core::EngineConfig;
@@ -10,9 +11,11 @@ use flutter_rust_bridge::frb;
 use once_cell::sync::OnceCell;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-static ENGINE: OnceCell<Mutex<Option<EngineHandle>>> = OnceCell::new();
+/// 引擎句柄无锁容器：渲染回调读取路径（with_engine）用 ArcSwap 原子 load，
+/// 不在实时线程上取 std Mutex；handle 仅在 init/deinit 时 swap（极罕见）。
+static ENGINE: ArcSwapOption<EngineHandle> = ArcSwapOption::const_empty();
 static EVENT_RX: OnceCell<Mutex<Option<crossbeam_channel::Receiver<EngineEvent>>>> =
     OnceCell::new();
 
@@ -36,10 +39,7 @@ fn with_engine<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&EngineHandle) -> R,
 {
-    ENGINE
-        .get()
-        .and_then(|mtx| mtx.lock().ok())
-        .and_then(|g| g.as_ref().map(f))
+    ENGINE.load_full().map(|h| f(&h))
 }
 
 // ── 初始化/销毁 ──
@@ -61,19 +61,16 @@ pub fn engine_init_ex(
     exclusive_mode: bool,
     output_device: Option<String>,
 ) -> Result<(), String> {
-    if ENGINE.get().is_some() {
-        // 二次初始化：先停止旧引擎再替换，避免 OnceCell 无法重建
-        if let Some(mtx) = ENGINE.get() {
-            if let Ok(g) = mtx.lock() {
-                if let Some(ref h) = *g {
-                    h.stop();
-                }
-            }
-        }
-        if let Some(mtx) = EVENT_RX.get() {
-            if let Ok(mut g) = mtx.lock() {
-                *g = None;
-            }
+    // 同步 HW 速率记录：Android 无平台侧 setter，引擎以 sr 产出时
+    // 遥测 outputRate 须保持一致；iOS 上 sr 本就取自该记录，幂等。
+    crate::api::audio_output::set_hw_sample_rate_impl(sr);
+    // 二次初始化：先停旧引擎再替换
+    if let Some(old) = ENGINE.load_full() {
+        old.stop();
+    }
+    if let Some(mtx) = EVENT_RX.get() {
+        if let Ok(mut g) = mtx.lock() {
+            *g = None;
         }
     }
     let config = EngineConfig {
@@ -88,12 +85,9 @@ pub fn engine_init_ex(
         ..Default::default()
     };
     let (handle, rx) = EngineHandle::start_with_config(config);
-    if let Some(mtx) = ENGINE.get() {
-        if let Ok(mut g) = mtx.lock() {
-            *g = Some(handle);
-        }
-    } else {
-        let _ = ENGINE.set(Mutex::new(Some(handle)));
+    // swap 入新句柄；若仍有旧句柄（并发重建），停掉它
+    if let Some(old) = ENGINE.swap(Some(Arc::new(handle))) {
+        old.stop();
     }
     if let Some(mtx) = EVENT_RX.get() {
         if let Ok(mut g) = mtx.lock() {
@@ -127,13 +121,8 @@ pub fn engine_read_samples_frames(frames: u32) -> Vec<f32> {
 }
 
 pub fn engine_deinit() {
-    if let Some(mtx) = ENGINE.get() {
-        if let Ok(mut g) = mtx.lock() {
-            if let Some(ref h) = *g {
-                h.stop();
-            }
-            *g = None;
-        }
+    if let Some(h) = ENGINE.swap(None) {
+        h.stop();
     }
     if let Some(mtx) = EVENT_RX.get() {
         if let Ok(mut g) = mtx.lock() {

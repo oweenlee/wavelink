@@ -8,6 +8,8 @@ import MediaPlayer
 class AudioOutputManager {
     let engine = AVAudioEngine()
     private var sourceNode: AVAudioSourceNode?
+    /// 仅主线程读写的播放标志（NowPlaying/resync 判断用）。
+    /// 渲染线程用的是 Rust 侧原子门控（audio_output_set_playing），两者在四个控制点同步更新。
     private var isPlayingFlag = false
     private var eventSink: FlutterEventSink?
     /// source node 当前生效的采样率（路由变化时据此判断是否需重建）
@@ -70,19 +72,15 @@ class AudioOutputManager {
                                 channels: 2,
                                 interleaved: false)!
 
-        let node = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
+        let node = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
             let abl = UnsafeMutableAudioBufferListPointer(audioBufferList)
             guard abl.count >= 2,
                   let leftBuf = abl[0].mData?.assumingMemoryBound(to: Float.self),
                   let rightBuf = abl[1].mData?.assumingMemoryBound(to: Float.self)
             else { return noErr }
 
-            guard let self = self, self.isPlayingFlag else {
-                let n = Int(frameCount)
-                for i in 0..<n { leftBuf[i] = 0; rightBuf[i] = 0 }
-                return noErr
-            }
-
+            // 播放门控在 Rust 侧（audio_output_set_playing，无锁 AtomicBool）：
+            // 未播放时 Rust 直接输出静音。回调不再捕获 self、不读任何 Swift 跨线程状态。
             audio_output_fill_buffer_stereo(leftBuf, rightBuf, UInt32(frameCount))
             return noErr
         }
@@ -199,6 +197,7 @@ class AudioOutputManager {
 
     func play() {
         isPlayingFlag = true
+        audio_output_set_playing(true)
         try? AVAudioSession.sharedInstance().setActive(true)
         if !engine.isRunning {
             do { try engine.start() } catch { return }
@@ -208,11 +207,13 @@ class AudioOutputManager {
 
     func pause() {
         isPlayingFlag = false
+        audio_output_set_playing(false)
         refreshNowPlaying()
     }
 
     func resume() {
         isPlayingFlag = true
+        audio_output_set_playing(true)
         audio_output_clear_ringbuf()
         if !engine.isRunning {
             try? AVAudioSession.sharedInstance().setActive(true)
@@ -223,6 +224,7 @@ class AudioOutputManager {
 
     func stop() {
         isPlayingFlag = false
+        audio_output_set_playing(false)
         refreshNowPlaying()
     }
 

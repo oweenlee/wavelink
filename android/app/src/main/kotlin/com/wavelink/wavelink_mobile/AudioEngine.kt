@@ -58,8 +58,9 @@ class AudioEngine(context: Context) {
                 }
             }
             AudioManager.AUDIOFOCUS_LOSS -> {
-                // 永久丢失（其他音乐 app 抢焦点）：暂停，不自动恢复
+                // 永久丢失（其他音乐 app 抢焦点）：暂停，不自动恢复，同步释放焦点
                 pausedByFocusLoss = false
+                abandonAudioFocus()
                 eventCallback?.invoke("remote:pause")
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
@@ -214,8 +215,10 @@ class AudioEngine(context: Context) {
     }
 
     fun seek(positionMs: Int) {
-        // 流式模式下位置由 Rust 引擎控制，此处只需清掉积压的旧 PCM
+        // 流式模式下位置由 Rust 引擎控制，此处只需清掉积压的旧 PCM，
+        // 并把已写入样本计数器对齐到新位置（供 positionMs 未来被消费时不漂移）
         pcmQueue.clear()
+        writtenSamples = positionMs.toLong() * sampleRate * channels / 1000
         try {
             audioTrack?.pause()
             audioTrack?.flush()

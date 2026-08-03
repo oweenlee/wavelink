@@ -2,6 +2,8 @@ package com.wavelink.wavelink_mobile
 
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
+import android.media.AudioTrack
 import android.net.Uri
 import android.provider.MediaStore
 import android.provider.OpenableColumns
@@ -234,6 +236,9 @@ class MainActivity : FlutterActivity() {
                 result.success(null)
             }
             "isPlaying" -> result.success(audioEngine.isPlaying)
+            "getNativeRate" -> result.success(
+                AudioTrack.getNativeOutputSampleRate(AudioManager.STREAM_MUSIC)
+            )
             else -> result.notImplemented()
         }
     }

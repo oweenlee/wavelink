@@ -11,6 +11,7 @@ import 'package:wavelink_mobile/ui/features/playback/view_models/playback_provid
 import 'package:wavelink_mobile/data/services/preferences_service.dart';
 import 'package:wavelink_mobile/data/repositories/preferences_repository.dart';
 import 'package:wavelink_mobile/ui/features/settings/view_models/locale_provider.dart';
+import 'package:wavelink_mobile/ui/features/library/view_models/library_header_notifier.dart';
 import 'helpers/mock_repositories.dart';
 
 void main() {
@@ -42,6 +43,7 @@ void main() {
         ChangeNotifierProvider.value(value: playback.library),
         ChangeNotifierProvider.value(value: playback.dsp),
         ChangeNotifierProvider.value(value: localeProvider),
+        ChangeNotifierProvider(create: (_) => LibraryHeaderNotifier()),
       ],
       child: const WaveLinkApp(),
     );
@@ -118,6 +120,13 @@ void main() {
       await tester.tap(find.text('设置').last);
       await tester.pumpAndSettle();
       expect(find.text('音频'), findsWidgets);
+      // “外观”分区在较长的“音频”分区下方，需滚动到可见再断言
+      await tester.dragUntilVisible(
+        find.text('外观'),
+        find.byType(Scrollable).last,
+        const Offset(0, -300),
+      );
+      await tester.pumpAndSettle();
       expect(find.text('外观'), findsWidgets);
     });
   });

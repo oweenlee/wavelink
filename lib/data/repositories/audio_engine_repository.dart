@@ -17,6 +17,7 @@ class AudioEngineRepository {
   // ── 生命周期 ──
 
   Future<void> initEngine() => rs.initEngine();
+  Future<void> initEngineAt(int sampleRate) => rs.initEngineAt(sampleRate);
   Future<void> deinitEngine() => rs.deinitEngine();
 
   // ── 播放控制 ──
@@ -45,6 +46,8 @@ class AudioEngineRepository {
 
   Future<void> applyPreset(String name) =>
       rs.engineApplyPreset(presetName: name);
+  Future<void> setPeqBand(int index, double freq, double gainDb, double q) =>
+      rs.engineSetPeqBand(index: index, freq: freq, gainDb: gainDb, q: q);
   Future<void> setCrossfeed(bool enabled) =>
       rs.engineSetCrossfeed(enabled: enabled);
   Future<void> setStereoWidener(bool enabled, double width) =>
@@ -87,4 +90,6 @@ class AudioEngineRepository {
 
   Future<List<double>> getSpectrum() => rs.getSpectrum();
   Future<int> getUnderrunCount() => rs.getUnderrunCount();
+  Future<int> getHwSampleRate() => rs.getHwSampleRate();
+  Future<bool> isPlaying() => rs.engineIsPlaying();
 }

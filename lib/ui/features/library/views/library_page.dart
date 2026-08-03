@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../../domain/models/song.dart';
+import '../../../../data/services/rust_service.dart' as rs;
+import '../../../../data/services/file_picker_service.dart';
 import '../../playback/view_models/playback_provider.dart';
 import '../view_models/library_header_notifier.dart';
 import '../../../core/theme/app_theme.dart';
@@ -571,7 +575,7 @@ class _PlaylistsTab extends StatelessWidget {
                 // Import/Export
                 Expanded(
                   child: GestureDetector(
-                    onTap: () => _showComingSoon(context),
+                    onTap: () => _openPlaylistIo(context, player),
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
@@ -729,10 +733,138 @@ class _PlaylistsTab extends StatelessWidget {
     );
   }
 
-  void _showComingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
+  void _openPlaylistIo(BuildContext context, PlaybackProvider player) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.s2,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(
+                LucideIcons.upload,
+                color: AppTheme.textSecondary,
+              ),
+              title: const Text(
+                '导入播放列表（M3U / PLS）',
+                style: TextStyle(color: AppTheme.textPrimary, fontSize: 15),
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _importPlaylist(context, player);
+              },
+            ),
+            ListTile(
+              leading: const Icon(
+                LucideIcons.download,
+                color: AppTheme.textSecondary,
+              ),
+              title: const Text(
+                '导出当前队列为 M3U',
+                style: TextStyle(color: AppTheme.textPrimary, fontSize: 15),
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _exportPlaylist(context, player);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 导入：选文件 → Rust 解析 M3U/PLS → 转为 Song 队列并播放。
+  Future<void> _importPlaylist(
+    BuildContext context,
+    PlaybackProvider player,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final paths = await FilePickerService.pickFiles(
+      extensions: const ['m3u', 'm3u8', 'pls'],
+      multiple: false,
+    );
+    if (paths.isEmpty) {
+      _toast(messenger, '未选择播放列表文件');
+      return;
+    }
+    if (!rs.rustAvailable) {
+      _toast(messenger, 'Rust 引擎不可用，无法解析');
+      return;
+    }
+    try {
+      final entries = await rs.parsePlaylistFile(paths.first);
+      if (entries.isEmpty) {
+        _toast(messenger, '播放列表为空');
+        return;
+      }
+      final songs = entries.map((e) {
+        final isStream = e.path.startsWith('http://') ||
+            e.path.startsWith('https://');
+        final name = (e.title == null || e.title!.isEmpty)
+            ? e.path.split(RegExp(r'[/\\]')).last
+            : e.title!;
+        return Song(
+          id: e.path,
+          title: name,
+          artist: '',
+          album: '',
+          duration: Duration(seconds: e.durationSecs.round()),
+          dominantColor: AppTheme.brand,
+          path: isStream ? null : e.path,
+          streamUrl: isStream ? e.path : null,
+        );
+      }).toList();
+      player.playAlbum(songs);
+      _toast(messenger, '已导入并播放 ${songs.length} 首');
+    } catch (e) {
+      _toast(messenger, '解析失败: $e');
+    }
+  }
+
+  /// 导出：把当前队列写成 M3U 到 Documents/Playlists/。
+  /// 注：未接入系统分享/另存面板，文件落在应用 Documents 目录（iOS 经 Files 应用可取回）。
+  Future<void> _exportPlaylist(
+    BuildContext context,
+    PlaybackProvider player,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final queue = player.queue;
+    if (queue.isEmpty) {
+      _toast(messenger, '当前队列为空，无可导出');
+      return;
+    }
+    try {
+      final buffer = StringBuffer('#EXTM3U\n');
+      for (final s in queue) {
+        final artist = s.artist.isEmpty ? '' : '${s.artist} - ';
+        buffer.writeln('#EXTINF:${s.duration.inSeconds},$artist${s.title}');
+        buffer.writeln(s.path ?? s.streamUrl ?? '');
+      }
+      final docs = await getApplicationDocumentsDirectory();
+      final outDir = Directory('${docs.path}/Playlists');
+      if (!await outDir.exists()) await outDir.create(recursive: true);
+      final stamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(RegExp(r'[:.]'), '-')
+          .substring(0, 19);
+      final file = File('${outDir.path}/queue_$stamp.m3u');
+      await file.writeAsString(buffer.toString());
+      _toast(messenger, '已导出 ${queue.length} 首：${file.path}');
+    } catch (e) {
+      _toast(messenger, '导出失败: $e');
+    }
+  }
+
+  void _toast(ScaffoldMessengerState messenger, String msg) {
+    messenger.showSnackBar(
       SnackBar(
-        content: const Text('Coming soon'),
+        content: Text(msg),
         backgroundColor: AppTheme.s3,
         behavior: SnackBarBehavior.floating,
       ),

@@ -15,6 +15,14 @@ pub extern "C" fn audio_output_clear_ringbuf() {
     crate::api::audio_output::clear_ringbuf_impl();
 }
 
+/// iOS 播放门控：Swift 主线程在 play/pause/resume/stop 时设置。
+/// 渲染回调在 fill_buffer 内无锁读取（AtomicBool）；false 时输出静音。
+/// 取代 Swift 侧跨线程 Bool 标志，消除音频线程数据竞争。
+#[no_mangle]
+pub extern "C" fn audio_output_set_playing(playing: bool) {
+    crate::api::audio_output::set_playing_impl(playing);
+}
+
 /// iOS 系统运行时改变硬件采样率（键盘音/激活麦克风/路由切换/中断等会触发）：
 /// 把引擎输出速率对齐到新硬件速率。必须与 Swift 侧重建 source node 配套调用，
 /// 否则引擎产出速率与 source node/硬件失配 → 杂音。不走 Dart（系统介入时 Dart 可能被节流）。

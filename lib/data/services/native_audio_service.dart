@@ -84,6 +84,17 @@ class NativeAudioService {
     _methodChannel.invokeMethod('updatePosition', {'positionMs': positionMs}),
   );
 
+  /// 查询 Android 设备原生输出采样率（AudioTrack.getNativeOutputSampleRate）。
+  /// iOS 无此通道实现（MissingPluginException）→ 返回 0。
+  Future<int> getNativeOutputRate() async {
+    try {
+      final rate = await _methodChannel.invokeMethod<int>('getNativeRate');
+      return rate ?? 0;
+    } on MissingPluginException {
+      return 0;
+    }
+  }
+
   /// 切换 iOS 输出采样率（bit-perfect 协调）。
   /// 返回实际生效的采样率（setPreferredSampleRate 是请求非保证，内置输出常固定、外接 DAC 才会切）。
   /// 非 iOS 平台（无原生实现）返回 0。

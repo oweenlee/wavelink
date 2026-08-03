@@ -136,6 +136,9 @@ class PlaybackProvider extends ChangeNotifier {
   DspSettings get dspSettings => dsp.dspSettings;
   bool get dspAvailable => dsp.dspAvailable;
 
+  /// 引擎实时遥测（乐器面板）
+  EngineTelemetry get telemetry => audioPlayer.telemetry;
+
   AnalyzeResult? getAnalysis(String songId) => audioPlayer.getAnalysis(songId);
 
   // ── 外观偏好 ──
@@ -252,6 +255,13 @@ class PlaybackProvider extends ChangeNotifier {
   void toggleWidener() => dsp.toggleWidener();
   void toggleLimiter() => dsp.toggleLimiter();
   void toggleDither() => dsp.toggleDither();
+
+  // ── EQ ──
+  List<double> get eqValues => dsp.eqValues;
+  String get eqPreset => dsp.eqPreset;
+  Future<void> applyEqPreset(String name) => dsp.applyEqPreset(name);
+  Future<void> setEqBand(int index, double gainDb) =>
+      dsp.setEqBand(index, gainDb);
 
   // ── 库操作 ──
   Future<bool> discoverSongs() => library.discoverSongs();

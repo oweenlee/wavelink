@@ -5,7 +5,9 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import '../../../../domain/models/song.dart';
 import '../../../../domain/models/lyric_line.dart';
+import '../../../../domain/models/playback_types.dart';
 import '../../../../data/services/native_audio_service.dart';
+import '../../../../data/services/lrc_parser.dart';
 import '../../../../data/repositories/audio_engine_repository.dart';
 import '../../../../data/services/rust_service.dart' show AnalyzeResult;
 
@@ -23,6 +25,22 @@ class AudioPlayerProvider extends ChangeNotifier {
   double _position = 0.0;
   double _volume = 0.8;
   int _playToken = 0;
+
+  // ── 引擎遥测（乐器面板）──
+  Timer? _telemetryTimer;
+  int _lastUnderrun = 0;
+  int _currentFileRate = 0;
+
+  /// Android 设备原生输出采样率（初始化时查询，默认 44100）。
+  /// 引擎产出速率与 AudioTrack 速率都用它，消掉强制 44.1k 双重重采样。
+  int _nativeOutRate = 44100;
+  EngineTelemetry _telemetry = EngineTelemetry.idle;
+
+  /// 当前曲目的歌词（无歌词时为 null）
+  List<LyricLine>? _lyrics;
+
+  /// 引擎实时遥测（采样率/underrun/播放状态）
+  EngineTelemetry get telemetry => _telemetry;
 
   /// bit-perfect / 采样率跟随（由 PlaybackProvider 从偏好同步）。
   /// 开启后切歌时把输出速率对齐到文件速率（iOS 经 AVAudioSession），相等时不重采样。
@@ -53,8 +71,21 @@ class AudioPlayerProvider extends ChangeNotifier {
     return _position / song.duration.inMilliseconds;
   }
 
-  List<LyricLine>? get currentLyrics => null;
-  int get currentLyricLine => -1;
+  List<LyricLine>? get currentLyrics => _lyrics;
+  int get currentLyricLine {
+    final lyrics = _lyrics;
+    if (lyrics == null || lyrics.isEmpty) return -1;
+    final pos = _position; // ms
+    int idx = -1;
+    for (int i = 0; i < lyrics.length; i++) {
+      if (lyrics[i].timeMs <= pos) {
+        idx = i;
+      } else {
+        break;
+      }
+    }
+    return idx;
+  }
 
   AnalyzeResult? getAnalysis(String songId) => _engineRepo.getAnalysis(songId);
 
@@ -68,7 +99,15 @@ class AudioPlayerProvider extends ChangeNotifier {
         }
       });
       if (_engineRepo.rustAvailable) {
-        await _engineRepo.initEngine();
+        // Android：以设备原生输出采样率初始化引擎（查询返回 0 时走默认路径，
+        // iOS 速率由 Swift 经 set_hw_sample_rate 提供，不受影响）。
+        final nativeRate = await _nativeAudio.getNativeOutputRate();
+        if (nativeRate > 0) {
+          _nativeOutRate = nativeRate;
+          await _engineRepo.initEngineAt(nativeRate);
+        } else {
+          await _engineRepo.initEngine();
+        }
       }
     } catch (e) {
       debugPrint('[Audio] 初始化原生音频失败: $e');
@@ -78,6 +117,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   @override
   void dispose() {
     _progressTimer?.cancel();
+    _telemetryTimer?.cancel();
     _stopPcmPump();
     _eventSub?.cancel();
     _engineRepo.deinitEngine();
@@ -126,19 +166,23 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
     if (token != _playToken) return;
 
-    // bit-perfect 协调：探测文件速率 → iOS 设 AVAudioSession 读回实际速率 → 引擎设输出速率。
-    // 实际速率 == 文件速率时解码器不重采样（bit-perfect）；iOS 未满足时引擎按实际速率重采样保证播放正确。
-    if (bitPerfect && resolvedPath != null && _engineRepo.rustAvailable) {
-      final fileRate = await _engineRepo.probeSampleRate(resolvedPath);
+    // 探测文件采样率（轻量头部读取）：供乐器面板显示信号链，并复用于 bit-perfect 协调。
+    if (resolvedPath != null && _engineRepo.rustAvailable) {
+      _currentFileRate = await _engineRepo.probeSampleRate(resolvedPath);
       if (token != _playToken) return;
-      if (fileRate > 0) {
-        final actualRate = await _nativeAudio.setOutputRate(
-          fileRate.toDouble(),
-        );
-        if (token != _playToken) return;
-        if (actualRate > 0) {
-          await _engineRepo.setOutputSampleRate(actualRate.round());
-        }
+    } else {
+      _currentFileRate = 0;
+    }
+
+    // bit-perfect 协调：iOS 设 AVAudioSession 读回实际速率 → 引擎设输出速率。
+    // 实际速率 == 文件速率时解码器不重采样（bit-perfect）；iOS 未满足时引擎按实际速率重采样保证播放正确。
+    if (bitPerfect && _currentFileRate > 0) {
+      final actualRate = await _nativeAudio.setOutputRate(
+        _currentFileRate.toDouble(),
+      );
+      if (token != _playToken) return;
+      if (actualRate > 0) {
+        await _engineRepo.setOutputSampleRate(actualRate.round());
       }
     }
 
@@ -150,12 +194,13 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (token == _playToken) {
       _isPlaying = true;
       _startProgressTimer();
-      await _nativeAudio.play();
+      await _nativeAudio.play(sampleRate: _nativeOutRate);
       if (_isAndroid && _engineRepo.rustAvailable) {
         _startPcmPump();
       }
       _updateLockScreenMetadata();
       _analyzeCurrent();
+      _loadLyrics(resolvedPath);
       notifyListeners();
     }
   }
@@ -188,7 +233,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   void startPlayback() {
     _isPlaying = true;
     _startProgressTimer();
-    _nativeAudio.play();
+    _nativeAudio.play(sampleRate: _nativeOutRate);
     _updateLockScreenMetadata();
     notifyListeners();
   }
@@ -242,6 +287,74 @@ class AudioPlayerProvider extends ChangeNotifier {
     _progressTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
       _tick();
     });
+    _startTelemetryTimer();
+  }
+
+  // ── 引擎遥测轮询（乐器面板读数）──
+
+  void _startTelemetryTimer() {
+    _telemetryTimer?.cancel();
+    _pollTelemetry(); // 立即来一次，避免面板延迟 500ms 才更新
+    _telemetryTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      _pollTelemetry();
+    });
+  }
+
+  Future<void> _pollTelemetry() async {
+    // 自守护：暂停/停止后置 idle 并停掉计时器（无需在每个 cancel 点手动清理）
+    if (!_isPlaying) {
+      _telemetryTimer?.cancel();
+      _telemetryTimer = null;
+      if (_telemetry.running || _telemetry.underrunRecent != 0) {
+        _telemetry = EngineTelemetry.idle;
+        notifyListeners();
+      }
+      return;
+    }
+    if (!_engineRepo.rustAvailable) return;
+
+    try {
+      final results = await Future.wait([
+        _engineRepo.getHwSampleRate(),
+        _engineRepo.getUnderrunCount(),
+      ]);
+      final outputRate = results[0];
+      final underrunTotal = results[1];
+      final running = await _engineRepo.isPlaying();
+
+      final fileRate = _currentFileRate;
+
+      final recent = (underrunTotal - _lastUnderrun).clamp(0, underrunTotal);
+      _lastUnderrun = underrunTotal;
+
+      final next = EngineTelemetry(
+        outputRate: outputRate,
+        fileRate: fileRate,
+        underrunTotal: underrunTotal,
+        underrunRecent: recent,
+        running: running,
+        bufferMs: EngineTelemetry.idle.bufferMs,
+      );
+
+      // 仅在读数变化时 notify，避免无谓重建
+      if (_telemetryChanged(next)) {
+        _telemetry = next;
+        notifyListeners();
+      } else {
+        _telemetry = next;
+      }
+    } catch (e) {
+      debugPrint('[Audio] 遥测轮询失败: $e');
+    }
+  }
+
+  bool _telemetryChanged(EngineTelemetry n) {
+    final o = _telemetry;
+    return n.outputRate != o.outputRate ||
+        n.fileRate != o.fileRate ||
+        n.underrunTotal != o.underrunTotal ||
+        n.underrunRecent != o.underrunRecent ||
+        n.running != o.running;
   }
 
   // ── Android 流式播放：定时从引擎 ringbuf 拉 PCM 推送原生 AudioTrack ──
@@ -318,6 +431,32 @@ class AudioPlayerProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('[Audio] 分析音频失败: $e');
     }
+  }
+
+  /// 加载与音频文件同目录同名的 `.lrc` 歌词（大小写各试一次）。
+  /// 无歌词时置 null；完成后 notify 以刷新歌词预览/全屏。
+  Future<void> _loadLyrics(String? audioPath) async {
+    _lyrics = null;
+    if (audioPath == null || audioPath.isEmpty) {
+      notifyListeners();
+      return;
+    }
+    try {
+      final base = audioPath.replaceFirst(RegExp(r'\.[^.]+$'), '');
+      for (final ext in const ['.lrc', '.LRC']) {
+        final file = File('$base$ext');
+        if (await file.exists()) {
+          final parsed = parseLrc(await file.readAsString());
+          if (parsed.isNotEmpty) {
+            _lyrics = parsed;
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[Audio] 歌词加载失败: $e');
+    }
+    notifyListeners();
   }
 
   void _handleRemoteCommand(RemoteCommand cmd) {

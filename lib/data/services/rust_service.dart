@@ -122,6 +122,18 @@ Future<List<playlist.PlaylistEntryResult>> parsePlaylistFile(String path) {
 // ── 引擎控制 ──
 
 Future<void> initEngine() => engine.engineInit();
+
+/// 以指定输出采样率初始化引擎（Android 对齐设备原生速率用，
+/// 其余参数与 engine_init 默认值一致：2ch/280ms 缓冲）
+Future<void> initEngineAt(int sampleRate) => engine.engineInitEx(
+      sr: sampleRate,
+      channels: 2,
+      bufferMs: 280,
+      crossfadeMs: 0,
+      bitPerfect: false,
+      autoSampleRate: false,
+      exclusiveMode: false,
+    );
 Future<void> deinitEngine() => engine.engineDeinit();
 
 Future<void> enginePlay(String path) => engine.enginePlay(path: path);
@@ -192,6 +204,17 @@ Future<int> getUnderrunCount() async {
     return (await audio_out.getUnderrunCount()).toInt();
   } catch (e) {
     debugPrint('[Rust] 获取 underrun 失败: $e');
+    return 0;
+  }
+}
+
+/// 当前硬件/输出采样率（Hz）。iOS 由 Swift 经 set_hw_sample_rate 写入。
+Future<int> getHwSampleRate() async {
+  if (!rustAvailable) return 0;
+  try {
+    return await audio_out.getHwSampleRate();
+  } catch (e) {
+    debugPrint('[Rust] 获取硬件采样率失败: $e');
     return 0;
   }
 }

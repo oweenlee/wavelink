@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../features/playback/view_models/playback_provider.dart';
+import '../../features/settings/view_models/dsp_provider.dart';
 import '../theme/app_theme.dart';
 import 'sheet_shell.dart';
 
@@ -90,77 +91,38 @@ class _SectionHeader extends StatelessWidget {
 
 // ── 10 段 EQ ──
 
-/// 10 段参量 EQ：竖滑块 + dB 值 + 预设 chips + 贝塞尔曲线连线
-/// TODO: 接入 Rust 引擎的 EQ 模块，当前为 UI demo（本地状态）
-class _EqSection extends StatefulWidget {
-  @override
-  State<_EqSection> createState() => _EqSectionState();
-}
-
-class _EqSectionState extends State<_EqSection> {
-  // EQ 频段标签
-  static const _bands = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-
-  // 当前 EQ 值（dB），默认全 0
-  List<double> _values = List.filled(10, 0.0);
-  String _activePreset = 'Flat';
-
-  // EQ 预设
-  static const _presets = <String, List<double>>{
-    'Flat': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    'Rock': [4.0, 3.0, 2.0, -1.0, -2.0, -1.0, 2.0, 4.0, 5.0, 5.0],
-    'Pop': [-1.0, 1.0, 3.0, 4.0, 3.0, 0.0, -1.0, -1.0, 2.0, 3.0],
-    'Dance': [5.0, 4.0, 1.0, 0.0, -2.0, -2.0, 0.0, 1.0, 3.0, 4.0],
-    'Classical': [3.0, 2.0, 0.0, -1.0, -1.0, 0.0, 2.0, 3.0, 4.0, 4.0],
-    'Soft': [2.0, 1.0, 0.0, 1.0, 2.0, 2.0, 1.0, 0.0, 0.0, -1.0],
-    'Full Bass': [6.0, 5.0, 4.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    'Full Treble': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 4.0, 5.0, 6.0],
-    'Techno': [4.0, 3.0, 0.0, -2.0, -3.0, -1.0, 1.0, 3.0, 4.0, 5.0],
-    'Vocals': [-2.0, -1.0, 0.0, 2.0, 4.0, 4.0, 3.0, 1.0, 0.0, -1.0],
-  };
-
-  void _applyPreset(String name) {
-    setState(() {
-      _activePreset = name;
-      _values = List.from(_presets[name]!);
-    });
-    // TODO: player.applyEqPreset(name) — 接入引擎
-  }
-
-  void _setBand(int i, double v) {
-    setState(() {
-      _values[i] = v;
-      _activePreset = ''; // 手动调整后取消预设高亮
-    });
-    // TODO: player.setEqBand(i, v) — 接入引擎
-  }
-
-  String _bandLabel(int hz) {
-    if (hz >= 1000) return '${hz ~/ 1000}k';
-    return '$hz';
+/// 10 段参量 EQ：竖滑块 + dB 值 + 预设 chips + 贝塞尔曲线连线。
+/// 状态与预设表均由 [DspProvider] 持有（与 audio-core 引擎对齐），
+/// 调整实时下发引擎出声。直接 watch [DspProvider] 而非 PlaybackProvider，
+/// 避免播放进度 250ms tick 带动滑块重建。
+class _EqSection extends StatelessWidget {
+  String _bandLabel(double hz) {
+    if (hz >= 1000) return '${(hz / 1000).round()}k';
+    return '${hz.round()}';
   }
 
   @override
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
+    final dsp = context.watch<DspProvider>();
+    final values = dsp.eqValues;
+    final activePreset = dsp.eqPreset;
+    final freqs = DspProvider.eqFrequencies;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // header + preset chips
+        // header
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 0, 8),
-          child: Row(
-            children: [
-              Text(
-                'EQUALIZER',
-                style: WlText.mono(
-                  fontSize: 10,
-                  color: AppTheme.textTertiary,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.0,
-                ),
-              ),
-            ],
+          child: Text(
+            'EQUALIZER',
+            style: WlText.mono(
+              fontSize: 10,
+              color: AppTheme.textTertiary,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1.0,
+            ),
           ),
         ),
         // 预设 chips（水平可滚动）
@@ -169,12 +131,12 @@ class _EqSectionState extends State<_EqSection> {
           child: ListView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            children: _presets.keys.map((p) {
-              final active = _activePreset == p;
+            children: DspProvider.eqPresets.keys.map((p) {
+              final active = activePreset == p;
               return Padding(
                 padding: const EdgeInsets.only(right: 6),
                 child: GestureDetector(
-                  onTap: () => _applyPreset(p),
+                  onTap: () => dsp.applyEqPreset(p),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -195,9 +157,7 @@ class _EqSectionState extends State<_EqSection> {
                       p,
                       style: WlText.mono(
                         fontSize: 10,
-                        color: active
-                            ? accent
-                            : AppTheme.textSecondary,
+                        color: active ? accent : AppTheme.textSecondary,
                       ),
                     ),
                   ),
@@ -217,18 +177,18 @@ class _EqSectionState extends State<_EqSection> {
                 // 曲线连线
                 Positioned.fill(
                   child: CustomPaint(
-                    painter: _EqCurvePainter(_values, accent),
+                    painter: _EqCurvePainter(values, accent),
                   ),
                 ),
                 // 滑块
                 Row(
-                  children: List.generate(10, (i) {
+                  children: List.generate(values.length, (i) {
                     return Expanded(
                       child: Column(
                         children: [
                           // dB 值
                           Text(
-                            '${_values[i] >= 0 ? '+' : ''}${_values[i].toStringAsFixed(1)}',
+                            '${values[i] >= 0 ? '+' : ''}${values[i].toStringAsFixed(1)}',
                             style: WlText.mono(
                               fontSize: 8,
                               color: AppTheme.textSecondary,
@@ -251,11 +211,11 @@ class _EqSectionState extends State<_EqSection> {
                                   overlayColor: accent.withValues(alpha: 0.1),
                                 ),
                                 child: Slider(
-                                  value: _values[i].clamp(-12.0, 12.0),
+                                  value: values[i].clamp(-12.0, 12.0),
                                   min: -12,
                                   max: 12,
                                   divisions: 48,
-                                  onChanged: (v) => _setBand(i, v),
+                                  onChanged: (v) => dsp.setEqBand(i, v),
                                 ),
                               ),
                             ),
@@ -263,7 +223,7 @@ class _EqSectionState extends State<_EqSection> {
                           const SizedBox(height: 2),
                           // 频率标签
                           Text(
-                            _bandLabel(_bands[i]),
+                            _bandLabel(freqs[i]),
                             style: WlText.mono(
                               fontSize: 8,
                               color: AppTheme.textTertiary,

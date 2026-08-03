@@ -7,6 +7,9 @@ void audio_output_fill_buffer_stereo(float * _Nonnull left, float * _Nonnull rig
 // 清空 ringbuf 残留（暂停恢复时丢弃积压数据，避免磁带滑）
 void audio_output_clear_ringbuf(void);
 
+// 播放门控（play/pause/resume/stop 时设置；渲染回调无锁读取，false 时输出静音）
+void audio_output_set_playing(bool playing);
+
 // 设置硬件采样率（从 AVAudioSession 获取后传入 Rust）
 void set_hw_sample_rate(unsigned int rate);
 
