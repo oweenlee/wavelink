@@ -24,49 +24,45 @@ class ProgressSliderWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+    // 时间标签左右夹滑块：经典播放器布局，比“滑块+下方标签”省一行垂直空间
+    return Row(
       children: [
-        SliderTheme(
-          data: SliderThemeData(
-            trackHeight: 4,
-            thumbShape: _ThumbShape(accent),
-            activeTrackColor: accent,
-            inactiveTrackColor: AppTheme.textTertiary.withValues(alpha: 0.3),
-            overlayColor: accent.withValues(alpha: 0.1),
-          ),
-          child: Slider(
-            value: progress.clamp(0.0, 1.0),
-            onChanged: (v) {
-              onChanged(v);
-              onDragging?.call(v);
-            },
-            onChangeEnd: onChangeEnd == null
-                ? null
-                : (v) {
-                    onChangeEnd?.call(v);
-                  },
+        Text(
+          current,
+          style: WlText.mono(
+            fontSize: 10,
+            color: AppTheme.textTertiary,
           ),
         ),
-        const SizedBox(height: 6),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              current,
-              style: WlText.mono(
-                fontSize: 10,
-                color: AppTheme.textTertiary,
-              ),
+        Expanded(
+          child: SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 4,
+              thumbShape: _ThumbShape(accent),
+              activeTrackColor: accent,
+              inactiveTrackColor: AppTheme.textTertiary.withValues(alpha: 0.3),
+              overlayColor: accent.withValues(alpha: 0.1),
             ),
-            Text(
-              total,
-              style: WlText.mono(
-                fontSize: 10,
-                color: AppTheme.textTertiary,
-              ),
+            child: Slider(
+              value: progress.clamp(0.0, 1.0),
+              onChanged: (v) {
+                onChanged(v);
+                onDragging?.call(v);
+              },
+              onChangeEnd: onChangeEnd == null
+                  ? null
+                  : (v) {
+                      onChangeEnd?.call(v);
+                    },
             ),
-          ],
+          ),
+        ),
+        Text(
+          total,
+          style: WlText.mono(
+            fontSize: 10,
+            color: AppTheme.textTertiary,
+          ),
         ),
       ],
     );
