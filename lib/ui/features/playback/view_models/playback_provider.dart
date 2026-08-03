@@ -214,6 +214,13 @@ class PlaybackProvider extends ChangeNotifier {
     audioPlayer.playSong(song);
   }
 
+  /// 播放队列指定位置的曲目（队列面板点击行）
+  void playFromQueue(int index) {
+    if (index < 0 || index >= queueProvider.queue.length) return;
+    queueProvider.advanceTo(index);
+    audioPlayer.playSong(queueProvider.currentSong!);
+  }
+
   void playAlbum(List<Song> songs, {int startIndex = 0}) {
     queueProvider.setQueue(songs, startIndex: startIndex);
     audioPlayer.playSong(queueProvider.currentSong!);

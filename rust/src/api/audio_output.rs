@@ -16,6 +16,33 @@ static SPECTRUM: Mutex<[f32; 16]> = Mutex::new([0.0; 16]);
 /// underrun 计数：iOS 回调从 ringbuf 读不到足够数据时递增
 static UNDERRUN_COUNT: AtomicU64 = AtomicU64::new(0);
 
+/// 【临时诊断】underrun 爆发日志：打印爆发起止与时长，定位阵发卡顿用
+mod underrun_probe {
+    use once_cell::sync::Lazy;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::time::Instant;
+
+    static T0: Lazy<Instant> = Lazy::new(Instant::now);
+    static IN_BURST: AtomicBool = AtomicBool::new(false);
+    static BURST_START_MS: AtomicU64 = AtomicU64::new(0);
+
+    pub fn on_fill(filled: bool) {
+        let now = T0.elapsed().as_millis() as u64;
+        if filled {
+            if IN_BURST.swap(false, Ordering::AcqRel) {
+                let start = BURST_START_MS.load(Ordering::Acquire);
+                eprintln!(
+                    "[underrun-probe] burst 结束：缺口持续 ~{}ms",
+                    now.saturating_sub(start)
+                );
+            }
+        } else if !IN_BURST.swap(true, Ordering::AcqRel) {
+            BURST_START_MS.store(now, Ordering::Release);
+            eprintln!("[underrun-probe] burst 开始 @ t={}ms", now);
+        }
+    }
+}
+
 /// 播放门控：Swift 主线程经 `audio_output_set_playing` 设置，渲染回调无锁读取。
 /// false 时 `fill_buffer_stereo_impl` 直接输出静音。取代 Swift 侧跨线程 Bool 标志，
 /// 消除渲染线程与主线程的数据竞争。
@@ -96,6 +123,9 @@ pub(crate) fn fill_interleaved_impl(out: &mut [f32], max_frames: u32) -> u32 {
             *s = 0.0;
         }
         UNDERRUN_COUNT.fetch_add(1, Ordering::AcqRel);
+        underrun_probe::on_fill(false);
+    } else {
+        underrun_probe::on_fill(true);
     }
     (n / 2) as u32
 }
@@ -138,6 +168,9 @@ pub(crate) unsafe fn fill_buffer_stereo_impl(
             *right_out.add(i) = 0.0;
         }
         UNDERRUN_COUNT.fetch_add(1, Ordering::AcqRel);
+        underrun_probe::on_fill(false);
+    } else {
+        underrun_probe::on_fill(true);
     }
 }
 

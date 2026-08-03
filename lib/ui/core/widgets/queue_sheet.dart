@@ -1,9 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../domain/models/song.dart';
 import '../../features/playback/view_models/playback_provider.dart';
 import '../theme/app_theme.dart';
+import 'album_cover.dart';
 import 'sheet_shell.dart';
 import 'now_playing_indicator.dart';
 
@@ -31,6 +35,11 @@ class QueueSheet extends StatelessWidget {
           itemCount: player.queue.length,
           onReorderItem: (o, n) => player.reorderQueue(o, n),
           itemBuilder: (ctx, i) {
+            // 边界保护：删除/重排队列后 provider 立即 notify，而 ReorderableListView
+            // 的拖动/消失动画还没走完，会以旧 itemCount 回调 itemBuilder → 越界
+            if (i < 0 || i >= player.queue.length) {
+              return SizedBox(key: ValueKey('stale_$i'));
+            }
             final s = player.queue[i];
             final isCurrent = i == player.currentIndex;
             return Dismissible(
@@ -46,36 +55,17 @@ class QueueSheet extends StatelessWidget {
                 ),
               ),
               onDismissed: (_) => player.removeFromQueue(i),
-              child: Container(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => player.playFromQueue(i),
+                child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
                   vertical: 6,
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      LucideIcons.gripHorizontal,
-                      size: 18,
-                      color: AppTheme.textTertiary,
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: AppTheme.s2,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: isCurrent
-                          ? const Center(
-                              child: NowPlayingIndicator(
-                                baseHeight: 4,
-                                barScale: 8,
-                                maxHeight: 12,
-                              ),
-                            )
-                          : null,
-                    ),
+                    _QueueCover(song: s, isCurrent: isCurrent),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
@@ -113,25 +103,62 @@ class QueueSheet extends StatelessWidget {
                         color: AppTheme.textTertiary,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: () => player.removeFromQueue(i),
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: Icon(
-                          LucideIcons.x,
-                          size: 16,
-                          color: AppTheme.textTertiary,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
+              ),
               ),
             );
           },
         );
       },
+    );
+  }
+}
+
+/// 队列行封面：有封面文件则显示缩略图（当前曲叠加播放指示），
+/// 无封面用占位符——与曲库行 _AlbumArt 同一套逻辑
+class _QueueCover extends StatelessWidget {
+  final Song song;
+  final bool isCurrent;
+  const _QueueCover({required this.song, required this.isCurrent});
+
+  @override
+  Widget build(BuildContext context) {
+    final f = song.coverUrl != null ? File(song.coverUrl!) : null;
+    final hasCover = f != null && f.existsSync();
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: hasCover ? song.dominantColor : AppTheme.s2,
+        borderRadius: BorderRadius.circular(8),
+        border: hasCover ? null : Border.all(color: AppTheme.s4, width: 0.5),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (hasCover)
+            Image.file(
+              f,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const CoverPlaceholder(size: 36),
+            )
+          else
+            const CoverPlaceholder(size: 36),
+          if (isCurrent)
+            Container(
+              color: Colors.black26,
+              child: const Center(
+                child: NowPlayingIndicator(
+                  baseHeight: 4,
+                  barScale: 8,
+                  maxHeight: 12,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

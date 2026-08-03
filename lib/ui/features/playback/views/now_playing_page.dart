@@ -293,74 +293,90 @@ class _InstrumentPanel extends StatelessWidget {
 
     final underrun = 'Total ${t.underrunTotal} · ${t.underrunRecent} recent';
     final buffer = '${t.bufferMs}ms · ${t.bufferStarving ? 'starving' : 'ok'}';
-    final engine = '${t.running ? 'running' : 'idle'} · FFT 1024';
+    final engineState = t.running ? 'running' : (player.hasSong ? 'paused' : 'idle');
+    final engine = '$engineState · FFT 1024';
 
     return Container(
-      margin: const EdgeInsets.only(top: 18, left: 14, right: 14),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      margin: const EdgeInsets.only(top: 12, left: 14, right: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
         color: AppTheme.s1.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppTheme.divider, width: 0.5),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      // 双行仪表条 + 横向滚动：两行同步滑动列对齐，内容永不裁切
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                _InstGridRow(label: 'Output', value: output),
-                const SizedBox(height: 6),
-                _InstGridRow(label: 'Underrun', value: underrun),
+                _InstChip(label: 'OUTPUT', value: output),
+                const _ChipGap(),
+                _InstChip(label: 'UNDERRUN', value: underrun),
               ],
             ),
-          ),
-          const SizedBox(width: 24),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            const SizedBox(height: 6),
+            Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                _InstGridRow(label: 'Buffer', value: buffer),
-                const SizedBox(height: 6),
-                _InstGridRow(label: 'Engine', value: engine),
+                _InstChip(label: 'BUFFER', value: buffer),
+                const _ChipGap(),
+                _InstChip(label: 'ENGINE', value: engine),
               ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-class _InstGridRow extends StatelessWidget {
+/// 仪表条分隔符
+class _ChipGap extends StatelessWidget {
+  const _ChipGap();
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Container(
+        width: 1,
+        height: 12,
+        color: AppTheme.divider,
+      ),
+    );
+  }
+}
+
+/// 仪表条单项：小标签 + 值，单行不截断
+class _InstChip extends StatelessWidget {
   final String label;
   final String value;
-  const _InstGridRow({required this.label, required this.value});
+  const _InstChip({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          label.toUpperCase(),
+          label,
           style: WlText.mono(
-            fontSize: 9,
+            fontSize: 8,
             color: AppTheme.textTertiary,
             fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.end,
-            style: WlText.mono(
-              fontSize: 10,
-              color: AppTheme.textPrimary,
-              fontWeight: FontWeight.w500,
-            ),
+        const SizedBox(width: 6),
+        Text(
+          value,
+          maxLines: 1,
+          style: WlText.mono(
+            fontSize: 10,
+            color: AppTheme.textPrimary,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],
