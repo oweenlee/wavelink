@@ -168,10 +168,26 @@ pub fn run_consumer_loop(
                 // 直通模式（DoP）：原样推入，不过任何处理（保护标记比特不被篡改）
                 if config.passthrough {
                     let mut remaining: &[f32] = &buf;
+                    let mut spin_count = 0u32;
+                    let mut stalled = 0u32;
                     while !remaining.is_empty() && !stop.load(Ordering::SeqCst) {
                         let n = (cb.push_samples)(remaining);
                         if n == 0 {
-                            std::thread::yield_now();
+                            // 满：先短暂 spin 抗抖动，随后退避 sleep。
+                            // 输出停摆（如 AVAudioEngine 被系统停止）时旧 yield_now
+                            // 会变成 100% CPU 死循环，触发 iOS cpu_resource 看门狗杀进程。
+                            spin_count += 1;
+                            if spin_count < 64 {
+                                std::hint::spin_loop();
+                            } else if stalled < 50 {
+                                stalled += 1;
+                                std::thread::sleep(Duration::from_millis(1));
+                            } else {
+                                std::thread::sleep(Duration::from_millis(10));
+                            }
+                        } else {
+                            spin_count = 0;
+                            stalled = 0;
                         }
                         remaining = &remaining[n..];
                     }
@@ -249,22 +265,27 @@ pub fn run_consumer_loop(
                     }
                 };
 
-                // 6) 推入 ringbuf（ringbuf 无阻塞 API，满时短暂让出 CPU）
+                // 6) 推入 ringbuf（ringbuf 无阻塞 API：满时先短暂 spin 抗抖动，
+                //    随后退避 sleep。输出停摆（如 AVAudioEngine 被系统停止）时
+                //    旧 yield_now 会变成 100% CPU 死循环，触发 iOS cpu_resource 看门狗杀进程）
                 let mut remaining: &[f32] = output_buf;
                 let mut spin_count = 0u32;
+                let mut stalled = 0u32;
                 while !remaining.is_empty() && !stop.load(Ordering::SeqCst) {
                     let n = (cb.push_samples)(remaining);
                     if n == 0 {
-                        // 先 spin 几次，避免 sleep 导致 underrun；连续满才 yield
                         spin_count += 1;
                         if spin_count < 64 {
                             std::hint::spin_loop();
+                        } else if stalled < 50 {
+                            stalled += 1;
+                            std::thread::sleep(Duration::from_millis(1));
                         } else {
-                            std::thread::yield_now();
-                            spin_count = 0;
+                            std::thread::sleep(Duration::from_millis(10));
                         }
                     } else {
                         spin_count = 0;
+                        stalled = 0;
                     }
                     remaining = &remaining[n..];
                 }
