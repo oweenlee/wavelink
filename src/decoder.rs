@@ -91,6 +91,7 @@ impl Decoder {
         let p = path.to_path_buf();
         let pos_clone = position.clone();
         let handle = thread::spawn(move || {
+            crate::engine::thread_priority::elevate_audio_thread();
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 run(&p, target_rate, target_channels, tx, srx, position, seek_pos, end_secs)
             }));
@@ -129,6 +130,7 @@ impl Decoder {
         let p = path.to_path_buf();
         let pos_clone = position.clone();
         let handle = thread::spawn(move || {
+            crate::engine::thread_priority::elevate_audio_thread();
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 run_dsd_dop(&p, left_justify, target_channels, tx, srx, seek_pos, end_secs)
             }));
@@ -170,6 +172,7 @@ impl Decoder {
         let (err_tx, err_rx) = bounded::<EngineError>(1);
         let pos_clone = position.clone();
         let handle = thread::spawn(move || {
+            crate::engine::thread_priority::elevate_audio_thread();
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 run_from_stream(source, target_rate, target_channels, tx, srx, position, format_hint)
             }));
