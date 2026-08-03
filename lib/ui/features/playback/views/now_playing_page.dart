@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -165,8 +164,6 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                               _SongInfo(song: song),
                               const SizedBox(height: 12),
                               _Tags(player: player, song: song),
-                              const SizedBox(height: 16),
-                              _Spectrum(isPlaying: player.isPlaying),
                             ],
                           ),
                         ),
@@ -1011,86 +1008,6 @@ class _Backdrop extends StatelessWidget {
           end: Alignment.bottomCenter,
           colors: [AppTheme.s2, AppTheme.s1, AppTheme.background],
           stops: [0.0, 0.3, 1.0],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Spectrum Visualizer ──
-
-/// 48 条频谱可视化器 — 对齐 HTML prototype `.spectrum`
-class _Spectrum extends StatefulWidget {
-  final bool isPlaying;
-  const _Spectrum({required this.isPlaying});
-
-  @override
-  State<_Spectrum> createState() => _SpectrumState();
-}
-
-class _SpectrumState extends State<_Spectrum>
-    with SingleTickerProviderStateMixin {
-  final _rng = Random();
-  final _heights = List.filled(48, 2.0);
-  late AnimationController _ac;
-
-  @override
-  void initState() {
-    super.initState();
-    _ac = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 80),
-    )..addListener(_tick);
-    if (widget.isPlaying) _ac.repeat();
-  }
-
-  @override
-  void didUpdateWidget(covariant _Spectrum oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isPlaying && !oldWidget.isPlaying) {
-      _ac.repeat();
-    } else if (!widget.isPlaying && oldWidget.isPlaying) {
-      _ac.stop();
-    }
-  }
-
-  void _tick() {
-    for (int i = 0; i < 48; i++) {
-      final shape = pow(1 - i / 48, 0.5).toDouble();
-      _heights[i] = widget.isPlaying
-          ? (shape * 24 + _rng.nextDouble() * 4).clamp(2.0, 28.0)
-          : 2.0;
-    }
-    setState(() {});
-  }
-
-  @override
-  void dispose() {
-    _ac.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = AccentScope.of(context);
-    return SizedBox(
-      height: 28,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        child: Row(
-          children: List.generate(48, (i) {
-            return Expanded(
-              child: Container(
-                width: 1.5,
-                height: _heights[i],
-                decoration: BoxDecoration(
-                  color: accent
-                      .withValues(alpha: widget.isPlaying ? 0.85 : 0.2),
-                  borderRadius: BorderRadius.circular(1),
-                ),
-              ),
-            );
-          }),
         ),
       ),
     );
