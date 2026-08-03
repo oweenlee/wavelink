@@ -807,6 +807,9 @@ impl EngineState {
         self.decoder = None;
         self.next_decoder = None;
         self.next_entry = None;
+        // 清除残留的预加载接收端：否则其中的残余帧会在后续
+        // on_end_of_track 被误切换播放（如文件不存在跳过后）
+        *self.next_rx.lock() = None;
         self.consumer_stop = None;
         self.dsp = None;
     }

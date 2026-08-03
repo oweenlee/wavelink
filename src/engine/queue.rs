@@ -100,6 +100,10 @@ impl EngineState {
                 self.play_entry(&next);
             }
         } else {
+            // 队列为空：彻底停止播放。不清理的话 playing 会卡在 true、
+            // 输出回调持续空转 underrun，ringbuf 残留数据可能被播出
+            self.stop_playback();
+            self.position.store(0, std::sync::atomic::Ordering::SeqCst);
             self.emit(EngineEvent::PlaybackStopped);
         }
     }
@@ -129,6 +133,9 @@ impl EngineState {
 
     pub(crate) fn advance_shuffle(&mut self) {
         if self.queue.is_empty() {
+            // 同 advance_normal：彻底停止，避免 playing 卡死 + underrun 空转
+            self.stop_playback();
+            self.position.store(0, std::sync::atomic::Ordering::SeqCst);
             self.emit(EngineEvent::PlaybackStopped);
             return;
         }
