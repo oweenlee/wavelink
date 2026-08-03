@@ -60,11 +60,6 @@ class NativeAudioService {
     _methodChannel.invokeMethod('seek', {'positionMs': positionMs}),
   );
 
-  /// Android 推送引擎输出的交错立体声 PCM 数据（iOS 无此通道，静默）
-  Future<void> pushPcm(Float32List samples) => _safeCall(
-    _methodChannel.invokeMethod('pushPcm', {'samples': samples}),
-  );
-
   // ── 锁屏信息更新 ──
 
   /// 更新锁屏显示的曲目元数据（含封面）

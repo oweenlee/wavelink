@@ -76,6 +76,30 @@ pub(crate) fn clear_ringbuf_impl() {
 /// iOS AVAudioSourceNode 单次回调最大 4096 帧，首次回调时自动分配
 static RT_BUF: ParkingMutex<Vec<f32>> = ParkingMutex::new(Vec::new());
 
+/// 从 engine 的 HeadlessOutput ringbuf 拉取交错立体声 PCM 写入连续 buffer
+/// （Android Kotlin 原生泵使用）。
+///
+/// 返回实际读取的帧数；播放门控关闭时返回 0（调用方应等待而非忙转）。
+/// 数据不足时剩余部分清零并计入 underrun，与 iOS 回调行为一致。
+pub(crate) fn fill_interleaved_impl(out: &mut [f32], max_frames: u32) -> u32 {
+    let frames = max_frames as usize;
+    let need = frames * 2;
+    if out.len() < need {
+        return 0;
+    }
+    if !PLAYING.load(Ordering::Acquire) {
+        return 0;
+    }
+    let n = crate::api::engine::engine_read_samples(&mut out[..need]);
+    if n < need {
+        for s in &mut out[n..need] {
+            *s = 0.0;
+        }
+        UNDERRUN_COUNT.fetch_add(1, Ordering::AcqRel);
+    }
+    (n / 2) as u32
+}
+
 /// 从 engine 的 HeadlessOutput ringbuf 拉取 PCM 填入左右声道 buffer
 pub(crate) unsafe fn fill_buffer_stereo_impl(
     left_out: *mut f32,

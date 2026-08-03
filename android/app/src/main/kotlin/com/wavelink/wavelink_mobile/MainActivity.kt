@@ -28,6 +28,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val FILE_PICK_REQUEST_CODE = 0x1001
         private const val MEDIA_PERMISSION_REQUEST_CODE = 0x1002
+        private const val NOTIF_PERMISSION_REQUEST_CODE = 0x1003
     }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
@@ -50,11 +51,19 @@ class MainActivity : FlutterActivity() {
                             else -> sink.success(event)
                         }
                     }
+                    // MediaSession（锁屏/通知栏/蓝牙）命令也走同一 remote:* 协议
+                    PlaybackService.remoteCallback = { event ->
+                        when (event) {
+                            "completed" -> sink.success("completed")
+                            else -> sink.success(event)
+                        }
+                    }
                 }
 
                 override fun onCancel(arguments: Any?) {
                     eventSink = null
                     audioEngine.eventCallback = null
+                    PlaybackService.remoteCallback = null
                 }
             }
         )
@@ -145,6 +154,23 @@ class MainActivity : FlutterActivity() {
         return ContextCompat.checkSelfPermission(this, perm) == PackageManager.PERMISSION_GRANTED
     }
 
+    /// Android 13+ 播放前申请通知权限（拒绝则通知不显示，前台服务仍正常）
+    private fun requestNotificationPermissionIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                    NOTIF_PERMISSION_REQUEST_CODE
+                )
+            }
+        }
+    }
+
     private fun requestMediaPermission() {
         val perm = if (android.os.Build.VERSION.SDK_INT >= 33)
             android.Manifest.permission.READ_MEDIA_AUDIO
@@ -203,29 +229,29 @@ class MainActivity : FlutterActivity() {
                 val sampleRate = (args?.get("sampleRate") as? Number)?.toInt() ?: 44100
                 val channels = (args?.get("channels") as? Number)?.toInt() ?: 2
 
-                // 流式播放：不再整体传 PCM，由 Dart 侧定时从 Rust 引擎 ringbuf 拉取推送
+                // 原生泵直读 Rust ringbuf：Dart 不再推 PCM
                 audioEngine.start(sampleRate, channels)
-                result.success(null)
-            }
-
-            "pushPcm" -> {
-                @Suppress("UNCHECKED_CAST")
-                val args = arguments as? Map<String, Any>
-                val samples = (args?.get("samples") as? FloatArray) ?: FloatArray(0)
-                audioEngine.pushPcm(samples)
+                // 前台服务 + MediaSession（后台播放 + 锁屏控制）
+                requestNotificationPermissionIfNeeded()
+                PlaybackService.start(this)
+                PlaybackService.instance?.setPlaying(true)
                 result.success(null)
             }
 
             "pause" -> {
                 audioEngine.pause()
+                PlaybackService.instance?.setPlaying(false)
                 result.success(null)
             }
             "resume" -> {
                 audioEngine.resume()
+                PlaybackService.instance?.setPlaying(true)
                 result.success(null)
             }
             "stop" -> {
                 audioEngine.stop()
+                PlaybackService.instance?.setPlaying(false)
+                PlaybackService.stop(this)
                 result.success(null)
             }
             "seek" -> {
@@ -233,6 +259,25 @@ class MainActivity : FlutterActivity() {
                 val args = arguments as? Map<String, Any>
                 val posMs = (args?.get("positionMs") as? Number)?.toInt() ?: 0
                 audioEngine.seek(posMs)
+                result.success(null)
+            }
+            "updateMetadata" -> {
+                @Suppress("UNCHECKED_CAST")
+                val args = arguments as? Map<String, Any>
+                PlaybackService.instance?.updateMetadata(
+                    title = (args?.get("title") as? String) ?: "",
+                    artist = (args?.get("artist") as? String) ?: "",
+                    album = (args?.get("album") as? String) ?: "",
+                    durationSec = (args?.get("duration") as? Number)?.toDouble() ?: 0.0,
+                    coverPath = (args?.get("filePath") as? String)?.takeIf { it.isNotEmpty() }
+                )
+                result.success(null)
+            }
+            "updatePosition" -> {
+                @Suppress("UNCHECKED_CAST")
+                val args = arguments as? Map<String, Any>
+                val posMs = (args?.get("positionMs") as? Number)?.toDouble() ?: 0.0
+                PlaybackService.instance?.updatePosition(posMs, audioEngine.isActive)
                 result.success(null)
             }
             "isPlaying" -> result.success(audioEngine.isPlaying)

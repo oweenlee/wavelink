@@ -18,7 +18,6 @@ class AudioPlayerProvider extends ChangeNotifier {
   final NativeAudioService _nativeAudio = NativeAudioService();
   StreamSubscription<AudioEvent>? _eventSub;
   Timer? _progressTimer;
-  Timer? _pcmTimer;
   bool _nativeReady = false;
 
   bool _isPlaying = false;
@@ -45,11 +44,6 @@ class AudioPlayerProvider extends ChangeNotifier {
   /// bit-perfect / 采样率跟随（由 PlaybackProvider 从偏好同步）。
   /// 开启后切歌时把输出速率对齐到文件速率（iOS 经 AVAudioSession），相等时不重采样。
   bool bitPerfect = false;
-
-  /// 是否 Android 平台（流式播放走 Dart 定时拉取引擎 PCM 推送）
-  static bool get _isAndroid {
-    return !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
-  }
 
   Future<void> Function(Song) startDecoderHook = (_) async {};
   VoidCallback? onTrackEnd;
@@ -118,7 +112,6 @@ class AudioPlayerProvider extends ChangeNotifier {
   void dispose() {
     _progressTimer?.cancel();
     _telemetryTimer?.cancel();
-    _stopPcmPump();
     _eventSub?.cancel();
     _engineRepo.deinitEngine();
     _nativeAudio.dispose();
@@ -147,7 +140,6 @@ class AudioPlayerProvider extends ChangeNotifier {
     final token = ++_playToken;
 
     _progressTimer?.cancel();
-    _stopPcmPump();
     _position = 0;
 
     await _nativeAudio.stop();
@@ -195,9 +187,6 @@ class AudioPlayerProvider extends ChangeNotifier {
       _isPlaying = true;
       _startProgressTimer();
       await _nativeAudio.play(sampleRate: _nativeOutRate);
-      if (_isAndroid && _engineRepo.rustAvailable) {
-        _startPcmPump();
-      }
       _updateLockScreenMetadata();
       _analyzeCurrent();
       _loadLyrics(resolvedPath);
@@ -208,7 +197,6 @@ class AudioPlayerProvider extends ChangeNotifier {
   void pause() {
     _isPlaying = false;
     _progressTimer?.cancel();
-    _stopPcmPump();
     _engineRepo.pause();
     _nativeAudio.pause();
     notifyListeners();
@@ -223,9 +211,6 @@ class AudioPlayerProvider extends ChangeNotifier {
       _startProgressTimer();
       _engineRepo.resume();
       _nativeAudio.resume();
-      if (_isAndroid && _engineRepo.rustAvailable) {
-        _startPcmPump();
-      }
       notifyListeners();
     }
   }
@@ -274,11 +259,9 @@ class AudioPlayerProvider extends ChangeNotifier {
     notifyListeners();
     if (!_nativeReady || !_engineRepo.rustAvailable) return;
     _engineRepo.seek(_position / 1000.0);
-    // Android：引擎 seek 换新 ringbuf 后，再清原生侧积压的旧 PCM（pcmQueue+AudioTrack），
-    // 否则 seek 前的声音会先播出来造成几百毫秒错位。iOS 无中间队列，不需要。
-    if (_isAndroid) {
-      _nativeAudio.seek(_position);
-    }
+    // 原生侧清 AudioTrack/ringbuf 里 seek 前的旧 PCM，避免旧声音先播出造成错位。
+    // iOS 无 seek 通道实现 → MissingPluginException 被 _safeCall 静默吞掉。
+    _nativeAudio.seek(_position);
   }
 
   void setVolume(double v) {
@@ -362,30 +345,6 @@ class AudioPlayerProvider extends ChangeNotifier {
         n.running != o.running;
   }
 
-  // ── Android 流式播放：定时从引擎 ringbuf 拉 PCM 推送原生 AudioTrack ──
-
-  static const int _pcmChunkFrames = 2048;
-
-  void _startPcmPump() {
-    _pcmTimer?.cancel();
-    _pcmTimer = Timer.periodic(const Duration(milliseconds: 40), (_) async {
-      if (!_isPlaying) return;
-      try {
-        final samples = await _engineRepo.readPcm(_pcmChunkFrames);
-        if (samples.isNotEmpty) {
-          await _nativeAudio.pushPcm(samples);
-        }
-      } catch (e) {
-        debugPrint('[Audio] PCM 推送失败: $e');
-      }
-    });
-  }
-
-  void _stopPcmPump() {
-    _pcmTimer?.cancel();
-    _pcmTimer = null;
-  }
-
   Future<void> _tick() async {
     if (!_isPlaying) return;
     try {
@@ -393,7 +352,6 @@ class AudioPlayerProvider extends ChangeNotifier {
       if (event == 'stopped') {
         debugPrint('[Audio] 收到引擎 stopped 事件 → 队列结束，触发切歌/停止');
         _progressTimer?.cancel();
-        _stopPcmPump();
         _isPlaying = false;
         notifyListeners();
         onTrackEnd?.call();
@@ -427,7 +385,6 @@ class AudioPlayerProvider extends ChangeNotifier {
         '${song.duration.inMilliseconds}ms）→ 视为曲终',
       );
       _progressTimer?.cancel();
-      _stopPcmPump();
       _isPlaying = false;
       notifyListeners();
       onTrackEnd?.call();

@@ -11,14 +11,15 @@ import android.media.AudioManager
 import android.media.AudioTrack
 import android.os.Build
 import android.util.Log
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 /**
- * 流式音频引擎：与 iOS 一致，从 Rust 引擎 ringbuf 拉取 PCM。
+ * 流式音频引擎：与 iOS 一致，从 Rust 引擎 ringbuf 直读 PCM。
  *
- * Dart 侧定期调用 [pushPcm] 推送交错立体声 float 数据，
- * 本类写入 AudioTrack 播放，数据不足时静默等待（underrun 由引擎缓冲吸收）。
+ * 不再由 Dart 定时推送（旧架构 40ms Timer + FRB + MethodChannel 三重 hop，
+ * 后台被节流即 underrun）。改为本类原生 writeThread 通过 JNI 直读 Rust ringbuf
+ * （`nativeFillInterleaved`，与 iOS AVAudioSourceNode 同一条 HeadlessOutput 通路），
+ * 写入 AudioTrack。数据不足时静默等待（underrun 由引擎缓冲吸收）。
  *
  * 音频焦点：播放时请求 AUDIOFOCUS_GAIN。焦点变化时：
  * - 永久丢失（其他音乐 app）→ 发 remote:pause，不自动恢复
@@ -27,7 +28,7 @@ import java.util.concurrent.TimeUnit
  * - 拔耳机（ACTION_AUDIO_BECOMING_NOISY）→ 发 remote:pause，避免声音从扬声器爆出
  * 事件经 eventCallback 走与 iOS 锁屏命令同一套 remote:* 协议，Dart 统一处理。
  */
-class AudioEngine(context: Context) {
+class AudioEngine(private val context: Context) {
     private val appContext = context.applicationContext
     private val audioManager: AudioManager by lazy {
         appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -74,9 +75,6 @@ class AudioEngine(context: Context) {
     @Volatile private var playing = false
     @Volatile private var paused = false
     private var writeThread: Thread? = null
-
-    // 流式 PCM 队列（每项为交错立体声 float）
-    private val pcmQueue = LinkedBlockingQueue<FloatArray>(512)
 
     // 已写入样本总数（交错），用于 positionMs
     @Volatile private var writtenSamples = 0L
@@ -146,6 +144,8 @@ class AudioEngine(context: Context) {
     }
 
     val isPlaying: Boolean get() = playing
+    /** 正在播放（含暂停=false；用于 MediaSession 状态上报） */
+    val isActive: Boolean get() = playing && !paused
     val positionMs: Int get() {
         if (sampleRate <= 0 || channels <= 0) return 0
         val framesPerMs = (sampleRate * channels) / 1000.0
@@ -159,7 +159,6 @@ class AudioEngine(context: Context) {
         sampleRate = rate
         channels = ch
         writtenSamples = 0
-        pcmQueue.clear()
         playing = true
         paused = false
 
@@ -187,55 +186,42 @@ class AudioEngine(context: Context) {
 
         audioTrack?.play()
 
-        writeThread = Thread {
-            try {
-                val chunk = FloatArray(4096)
-                while (playing && !Thread.interrupted()) {
-                    if (paused) {
-                        try { Thread.sleep(50) } catch (_: InterruptedException) { break }
-                        continue
-                    }
-                    // 阻塞取一块；超时无数据则回到循环顶部继续检查 playing
-                    val block = pcmQueue.poll(200, TimeUnit.MILLISECONDS)
-                        ?: continue
-                    var off = 0
-                    while (off < block.size && playing && !Thread.interrupted()) {
-                        if (paused) {
-                            try { Thread.sleep(50) } catch (_: InterruptedException) { break }
-                            continue
-                        }
-                        val n = minOf(chunk.size, block.size - off)
-                        System.arraycopy(block, off, chunk, 0, n)
-                        audioTrack?.write(chunk, 0, n, AudioTrack.WRITE_BLOCKING)
-                        writtenSamples += n
-                        off += n
-                    }
-                }
-            } catch (_: InterruptedException) {
-                // stop() 中断了 sleep——安全退出
-            }
-        }
-        writeThread?.start()
-    }
+        // 播放门控：让 Rust 侧 ringbuf 开始产出（false 时 fill 直接返回 0）
+        nativeSetPlaying(true)
 
-    /** Dart 侧推送引擎输出的交错立体声 float 数据 */
-    fun pushPcm(samples: FloatArray) {
-        if (!playing || paused || samples.isEmpty()) return
-        if (!pcmQueue.offer(samples)) {
-            // 队列满时丢弃最旧的块，避免播放延迟不断累积
-            pcmQueue.poll()
-            pcmQueue.offer(samples)
+        // 原生泵线程：JNI 直读 Rust ringbuf → AudioTrack
+        writeThread = thread(name = "WaveLinkPump") {
+            val chunk = FloatArray(4096 * channels)
+            while (playing && !Thread.interrupted()) {
+                if (paused) {
+                    try { Thread.sleep(50) } catch (_: InterruptedException) { break }
+                    continue
+                }
+                val frames = nativeFillInterleaved(chunk, 4096)
+                if (frames <= 0) {
+                    // 门控关闭或 ringbuf 空：稍候再试，避免忙转
+                    try { Thread.sleep(20) } catch (_: InterruptedException) { break }
+                    continue
+                }
+                val n = frames * channels
+                val written = audioTrack?.write(
+                    chunk, 0, n, AudioTrack.WRITE_BLOCKING
+                ) ?: 0
+                if (written > 0) writtenSamples += written
+            }
         }
     }
 
     fun pause() {
         paused = true
+        nativeSetPlaying(false)
         audioTrack?.pause()
     }
 
     fun resume() {
         requestAudioFocus()
         paused = false
+        nativeSetPlaying(true)
         audioTrack?.play()
     }
 
@@ -243,9 +229,9 @@ class AudioEngine(context: Context) {
         abandonAudioFocus()
         unregisterNoisyReceiver()
         playing = false
+        nativeSetPlaying(false)
         writeThread?.interrupt()
         writeThread = null
-        pcmQueue.clear()
         try { audioTrack?.stop() } catch (_: Exception) {}
         try { audioTrack?.release() } catch (_: Exception) {}
         audioTrack = null
@@ -253,14 +239,14 @@ class AudioEngine(context: Context) {
     }
 
     fun seek(positionMs: Int) {
-        // 流式模式下位置由 Rust 引擎控制，此处只需清掉积压的旧 PCM，
-        // 并把已写入样本计数器对齐到新位置（供 positionMs 未来被消费时不漂移）
-        pcmQueue.clear()
+        // 清掉 Rust ringbuf 积压（seek 时引擎本会 swap_consumer 换新 ringbuf，
+        // 这里再兜底一次），并把已写入样本计数器对齐到新位置，供 positionMs 不漂移。
+        nativeClearRingbuf()
         writtenSamples = positionMs.toLong() * sampleRate * channels / 1000
         try {
             audioTrack?.pause()
             audioTrack?.flush()
-            // 暂停态 seek 不应误启动 AudioTrack（避免空转的“已播放”状态）
+            // 暂停态 seek 不应误启动 AudioTrack（避免空转的"已播放"状态）
             if (!paused) {
                 audioTrack?.play()
             }
@@ -269,5 +255,24 @@ class AudioEngine(context: Context) {
 
     companion object {
         private const val TAG = "AudioEngine"
+
+        init {
+            // 确保 so 被 JVM 加载：Java_ 前缀的 JNI 符号才能经 dlsym 解析
+            System.loadLibrary("rust_lib_wavelink_mobile")
+        }
+
+        // ── JNI 直读 Rust ringbuf（与 iOS 同一 HeadlessOutput 通路）──
+
+        /// 拉取最多 maxFrames 帧交错立体声 PCM 填入 out，返回实际帧数
+        @JvmStatic
+        private external fun nativeFillInterleaved(out: FloatArray, maxFrames: Int): Int
+
+        /// 播放门控：play/resume 设 true，pause/stop 设 false
+        @JvmStatic
+        private external fun nativeSetPlaying(playing: Boolean)
+
+        /// 清空 ringbuf 积压
+        @JvmStatic
+        private external fun nativeClearRingbuf()
     }
 }
