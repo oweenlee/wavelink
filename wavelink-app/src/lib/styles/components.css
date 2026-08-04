@@ -1,0 +1,143 @@
+/* ══════════════════════════════════════════════
+   Components — reusable utility styles
+   ══════════════════════════════════════════════ */
+
+/* ── Panel utilities (solid, not glass) ── */
+.glass {
+  background: var(--bg-surface);
+}
+
+.glass-l1 { background: var(--bg-surface); }
+.glass-l2 { background: var(--bg-elevated); }
+.glass-l3 { background: #222222; }
+
+/* ── Scrollbar ── */
+* { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.08) transparent; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.15); }
+
+::selection { background: var(--accent-dim); color: white; }
+
+/* ── Card ── */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-md);
+  padding: var(--space-5) var(--space-6);
+}
+
+/* ── Button base ── */
+.btn-base {
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-secondary);
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.btn-base:hover { background: var(--bg-hover); color: var(--fg-primary); }
+.btn-base:active { background: var(--bg-active); }
+.btn-base:disabled { opacity: 0.2; cursor: default; }
+
+/* ── Icon button ── */
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.icon-btn:hover { background: var(--bg-hover); color: var(--fg-primary); }
+.icon-btn:active { background: var(--bg-active); }
+.icon-btn:disabled { opacity: 0.2; cursor: default; }
+.icon-btn.active { color: var(--accent); }
+
+/* ── Input ── */
+.input-base {
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--fg-primary);
+  font-size: var(--font-size-md);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.input-base:focus { border-color: var(--accent); }
+.input-base::placeholder { color: var(--fg-tertiary); }
+
+/* ── Toggle switch ── */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1);
+  border: none;
+  background: #2a2a2a;
+  border-radius: var(--space-5);
+  cursor: pointer;
+  transition: background 0.2s;
+  width: 52px;
+  position: relative;
+}
+
+.toggle.active { background: var(--accent); }
+
+.toggle-knob {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s;
+}
+
+.toggle.active .toggle-knob { transform: translateX(26px); }
+
+/* ── Range slider ── */
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  border-radius: 2px;
+  background: #2a2a2a;
+  outline: none;
+  cursor: pointer;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+/* ── Backdrop ── */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  animation: backdropFade 0.2s;
+}
+
+@keyframes backdropFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

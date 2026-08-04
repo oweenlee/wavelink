@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="w1" x1="0" y1="0" x2="512" y2="0">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+    <linearGradient id="w2" x1="0" y1="0" x2="512" y2="0">
+      <stop offset="0%" stop-color="#7ec8e3"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="#0a0a14"/>
+  <rect width="512" height="512" rx="112" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="4"/>
+
+  <!-- Subtle glow -->
+  <path d="M56 144 C180 96, 180 384, 256 384 C332 384, 332 96, 456 144"
+        fill="none" stroke="rgba(129,140,248,0.12)" stroke-width="120" stroke-linecap="round"/>
+  <path d="M56 368 C180 416, 180 128, 256 128 C332 128, 332 416, 456 368"
+        fill="none" stroke="rgba(126,200,227,0.10)" stroke-width="112" stroke-linecap="round"/>
+
+  <!-- Purple wave -->
+  <path d="M56 144 C180 96, 180 384, 256 384 C332 384, 332 96, 456 144"
+        fill="none" stroke="url(#w1)" stroke-width="96" stroke-linecap="round"/>
+
+  <!-- Cyan wave -->
+  <path d="M56 368 C180 416, 180 128, 256 128 C332 128, 332 416, 456 368"
+        fill="none" stroke="url(#w2)" stroke-width="88" stroke-linecap="round"/>
+
+  <!-- Link nodes -->
+  <circle cx="180" cy="256" r="22" fill="#a78bfa"/>
+  <circle cx="332" cy="256" r="22" fill="#67e8f9"/>
+  <circle cx="180" cy="256" r="9" fill="white" opacity="0.6"/>
+  <circle cx="332" cy="256" r="9" fill="white" opacity="0.6"/>
+</svg>

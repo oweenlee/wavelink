@@ -1,0 +1,50 @@
+[package]
+name = "wavelink"
+version = "1.0.0"
+description = "WaveLink - 果味玻璃风格高级音乐播放器"
+authors = ["you"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 音频内核 / 曲库（本地 sdk，间接依赖 wavelink-core git tag）
+sdk = { path = "crates/sdk" }
+
+# 引擎事件接收
+crossbeam-channel = "0.5"
+
+# 结构化日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# 文件系统事件监听（替代定时轮询）
+notify = { version = "7", features = ["macos_fsevent"] }
+
+# 文件编码检测
+encoding_rs = "0.8"
+
+# 窗口句柄获取（用于 Windows DWM 标题栏设置）
+raw-window-handle = "0.6"
+
+# NAS 网络共享挂载
+keyring = "3"
+uuid = { version = "1", features = ["v4"] }
+rusqlite = { version = "0.34", features = ["bundled"] }
+
+# ── 平台特定：系统媒体控制 ──
+[target.'cfg(target_os = "windows")'.dependencies]
+smtc-tokio = "0.1"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Dwm"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+
+[workspace]

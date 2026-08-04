@@ -1,0 +1,79 @@
+/* ══════════════════════════════════════════════
+   Design Tokens — Obsidian & Amber
+   Pure black · Warm amber accent · Analog HiFi soul
+   ══════════════════════════════════════════════ */
+
+:root {
+  /* ── Background — near-black with subtle layering ── */
+  --bg: #0f0f11;
+  --bg-gradient: none;
+  --bg-surface: #111113;
+  --bg-elevated: #141417;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-active: rgba(255, 255, 255, 0.08);
+
+  /* ── Panels — solid, not glass ── */
+  --glass-bg: #111111;
+  --glass-blur: none;
+  --glass-border: 1px solid rgba(255, 255, 255, 0.06);
+
+  /* ── Foreground ── */
+  --fg-primary: #f5f5f3;
+  --fg-secondary: #9a9a96;
+  --fg-tertiary: #5c5c58;
+  --fg-quaternary: rgba(255, 255, 255, 0.10);
+
+  /* ── Separator ── */
+  --separator: rgba(255, 255, 255, 0.06);
+
+  /* ── Accent — Amber (VU meter / tube glow) ── */
+  --accent: #e2a63d;
+  --accent-dim: rgba(226, 166, 61, 0.15);
+  --accent-glow: rgba(226, 166, 61, 0.10);
+
+  /* ── Semantic ── */
+  --danger: #d94f4f;
+  --danger-dim: rgba(217, 79, 79, 0.12);
+  --success: #5daa72;
+  --success-dim: rgba(93, 170, 114, 0.12);
+
+  /* ── Radius — tighter, hardware-like ── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* ── Spacing ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* ── Typography ──
+     ui:      系统字体（中文主力，CJK 可读性）
+     display: Space Grotesk（标题/logo/大数字，拉丁字符有性格）
+     mono:    JetBrains Mono（技术读数 kHz/kbps/时间，仪表面板感） */
+  --font-ui: -apple-system, 'SF Pro Text', 'PingFang SC', 'Segoe UI Variable', 'Segoe UI', 'Inter', sans-serif;
+  --font-display: 'Space Grotesk Variable', -apple-system, 'SF Pro Display', 'PingFang SC', 'Segoe UI Variable', 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'SF Mono', 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+
+  --font-size-xs: 10px;
+  --font-size-sm: 12px;
+  --font-size-md: 14px;
+  --font-size-lg: 18px;
+  --font-size-xl: 24px;
+  --font-size-2xl: 28px;
+
+  /* ── Shadow — subtle, no tint ── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.7);
+
+  /* ── Easing ── */
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.25, 0.1, 0.25, 1);
+}
