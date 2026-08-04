@@ -21,11 +21,11 @@ parking_lot = "0.12"
 # 注意: oboe crate 仅支持 Android，故必须在 target 级声明依赖，
 # 否则 iOS/macOS 编译会在音频引擎依赖图上引入 oboe 而失败。
 [target.'cfg(target_os = "android")'.dependencies]
-audio-core = { path = "../../wavelink-audio-core", default-features = false, features = ["oboe-backend"] }
+audio-core = { path = "../../core", default-features = false, features = ["oboe-backend"] }
 
 # 其他平台（iOS/macOS/desktop）保持无 oboe 的默认特性
 [target.'cfg(not(target_os = "android"))'.dependencies]
-audio-core = { path = "../../wavelink-audio-core", default-features = false }
+audio-core = { path = "../../core", default-features = false }
 
 [dev-dependencies]
 # 仅测试用：生成正弦 WAV 以驱动 iOS 音频通路集成测试

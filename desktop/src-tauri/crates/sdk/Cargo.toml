@@ -5,7 +5,7 @@ edition = "2021"
 description = "音乐播放器 SDK：曲库管理 + audio-core 封装"
 
 [dependencies]
-audio-core = { path = "../../../../wavelink-audio-core" }
+audio-core = { path = "../../../../core" }
 serde = { version = "1", features = ["derive"] }
 
 # 曲库

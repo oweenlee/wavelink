@@ -1,4 +1,4 @@
-# wavelink-audio-core API Reference
+# audio-core API Reference
 
 > Source hash: `084c2f14d64a` | Generated: 2026-08-03 14:04
 > AI 助手优先读此文件，而非读 `src/` 源码。若 AI 返回的代码与当前签名不匹配，请重新运行 `bash doc-api.sh`。

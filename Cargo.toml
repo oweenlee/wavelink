@@ -1,12 +1,12 @@
 # WaveLink 统一开发工作区（virtual manifest）
 #
-# 各端都通过 path 依赖直接引用本地 wavelink-audio-core，
+# 各端都通过 path 依赖直接引用本地 core（音频引擎），
 # 不依赖 git tag / 远端仓库。
 
 [workspace]
 members = [
-    "wavelink-audio-core",
-    "wavelink_mobile/rust",
+    "core",
+    "mobile/rust",
 ]
 resolver = "2"
 

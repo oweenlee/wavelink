@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_NAME="WaveLink"
-ENGINE_DIR="../wavelink-audio-core"
+ENGINE_DIR="../core"
 
 usage() {
     echo "用法: ./build.sh <command>"
