@@ -41,6 +41,9 @@ symphonia-adapter-oporus = "0.1"
 rubato = "0.10"
 dsd-reader = "0.3"
 
+# APE (Monkey's Audio) 纯 Rust 解码器
+ape-decoder = "0.3"
+
 # 视频容器封面提取（MKV/WebM）
 matroska = "0.30"
 

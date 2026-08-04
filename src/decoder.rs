@@ -294,6 +294,10 @@ fn run(
                 reason: "暂不支持 WavPack (.wv) 格式".into(),
             });
         }
+        // APE (Monkey's Audio)：Symphonia 不支持，用纯 Rust ape-decoder 直解
+        if ext.eq_ignore_ascii_case("ape") {
+            return run_ape(path, target_rate, target_ch, tx, stop_rx, seek_pos, end_secs);
+        }
     }
 
     let file = File::open(path)
@@ -916,6 +920,140 @@ fn run_dsd(
     Ok(())
 }
 
+/// APE (Monkey's Audio) 直解：纯 Rust ape-decoder，输出统一小端交错 PCM 字节。
+/// 与 run_dsd 同构：逐帧解码 → 字节转 f32 → 混音 → 重采样 → 发送。
+fn run_ape(
+    path: &Path, target_rate: u32, target_ch: u32,
+    tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
+    seek_pos: Option<f64>,
+    end_secs: Option<f64>,
+) -> Result<(), EngineError> {
+    use ape_decoder::ApeDecoder;
+
+    let file = File::open(path)
+        .map_err(|_| EngineError::FileNotFound(path.to_path_buf()))?;
+    let mut decoder = ApeDecoder::new(file)
+        .map_err(|e| EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("APE 打开失败: {e}") })?;
+    let info = decoder.info().clone();
+
+    // 老版本 APE (< 3.95) 不支持
+    if info.version < 3950 {
+        return Err(EngineError::DecodeFailed {
+            path: path.to_path_buf(),
+            reason: format!("APE 版本过旧 (v{})，需 3.95+", info.version),
+        });
+    }
+
+    let src_rate = info.sample_rate;
+    let src_ch = info.channels as usize;
+    let bits = info.bits_per_sample as usize;
+    let out_ch = target_ch as usize;
+    let bytes_per_sample = bits.div_ceil(8);
+    let is_float = info.is_floating_point;
+
+    info!("APE 直解: {} ({}Hz, {}ch, {}bit)", path.display(), src_rate, src_ch, bits);
+
+    // Seek：定位到目标样本（APE 按样本 seek，天然精确）
+    if let Some(secs) = seek_pos {
+        let sample = (secs * src_rate as f64) as u64;
+        let _ = decoder.seek(sample);
+    }
+
+    // end_secs 截止：跟踪已输出的 PCM 帧数（输出帧率 = src_rate，重采样前）
+    let max_output_frames: Option<u64> = if let Some(end) = end_secs {
+        let start = seek_pos.unwrap_or(0.0);
+        let dur = end - start;
+        if dur > 0.0 { Some((dur * src_rate as f64) as u64) } else { None }
+    } else {
+        None
+    };
+    let mut output_frames: u64 = 0;
+
+    // 重采样器（如需要）
+    let mut resampler = create_resampler(src_rate, target_rate, out_ch);
+    let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
+    let mut pts = 0.0f64;
+
+    // 主循环：逐帧解码 → 字节转 f32 → 混音 → 重采样 → 发送
+    for frame_result in decoder.frames() {
+        if stop_rx.try_recv().is_ok() { return Ok(()); }
+
+        let raw = match frame_result {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("APE 帧解码失败: {e:?}");
+                continue;
+            }
+        };
+        if raw.is_empty() { continue; }
+
+        // 字节 → 交错 f32（小端；8bit 无符号已 +128 偏置，float 已变换为 IEEE 位模式）
+        let pcm = bytes_to_interleaved_f32(&raw, bytes_per_sample, is_float);
+
+        // 声道混音
+        let mixed = mix_channels(&pcm, src_ch, out_ch);
+
+        // end_secs 截断
+        let mixed = if let Some(max_frames) = max_output_frames {
+            let remaining = max_frames.saturating_sub(output_frames);
+            let allowed_samples = remaining as usize * out_ch;
+            if mixed.len() > allowed_samples {
+                mixed[..allowed_samples].to_vec()
+            } else {
+                mixed
+            }
+        } else {
+            mixed
+        };
+        if mixed.is_empty() { break; }
+
+        // 重采样或直发
+        pts = resample_and_send(&mixed, &mut resampler, &mut rubato_buf,
+            out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
+
+        output_frames += (mixed.len() / out_ch) as u64;
+        if let Some(max_frames) = max_output_frames {
+            if output_frames >= max_frames { break; }
+        }
+    }
+
+    Ok(())
+}
+
+/// 将 ape-decoder 输出的统一小端交错 PCM 字节转为 f32 交错样本。
+fn bytes_to_interleaved_f32(raw: &[u8], bytes_per_sample: usize, is_float: bool) -> Vec<f32> {
+    let n_samples = raw.len() / bytes_per_sample;
+    let mut out = Vec::with_capacity(n_samples);
+    let mut i = 0usize;
+    for _ in 0..n_samples {
+        let s = if is_float && bytes_per_sample == 4 {
+            // 浮点 APE：位模式直接还原（输出已是 IEEE 754 小端）
+            let bits = u32::from_le_bytes([raw[i], raw[i + 1], raw[i + 2], raw[i + 3]]);
+            f32::from_bits(bits)
+        } else {
+            match bytes_per_sample {
+                1 => (raw[i] as f32 - 128.0) / 128.0, // 无符号 8bit → [-1,1)
+                2 => {
+                    let v = i16::from_le_bytes([raw[i], raw[i + 1]]) as f32;
+                    v / 32768.0
+                }
+                3 => {
+                    // 24bit 有符号（小端），左移 8 位后算术右移实现符号扩展
+                    let v = ((raw[i] as i32) | ((raw[i + 1] as i32) << 8) | ((raw[i + 2] as i32) << 16)) << 8 >> 8;
+                    v as f32 / 8388608.0
+                }
+                _ => {
+                    let v = i32::from_le_bytes([raw[i], raw[i + 1], raw[i + 2], raw[i + 3]]) as f32;
+                    v / 2147483648.0
+                }
+            }
+        };
+        out.push(s);
+        i += bytes_per_sample;
+    }
+    out
+}
+
 /// 将累积的 DSD 字节打包为 DoP 帧并发送（按偶数字节消费，奇数尾部保留）
 #[allow(clippy::too_many_arguments)]
 fn flush_pack_dop(
@@ -1214,4 +1352,67 @@ mod tests {
             assert!(delta < 0.03, "seek 时间偏差过大: 期望 0.1s, 实际: {}", first.pts_secs);
         }
     }
+
+    // ── APE (Monkey's Audio) 直解 ──
+
+    #[test]
+    fn test_decode_ape_multiframe() {
+        // 需要真实 APE 样本（ape-decoder 官方 fixtures 之一），缺失则跳过
+        if !std::path::Path::new("/tmp/_test_multiframe.ape").exists() {
+            eprintln!("跳过：缺少 APE 测试样本");
+            return;
+        }
+        let samples = test_decode("/tmp/_test_multiframe.ape").unwrap_or(0);
+        assert!(samples > 100, "APE 解码样本数过少: {samples}");
+    }
+
+    #[test]
+    fn test_decode_ape_seek() {
+        if !std::path::Path::new("/tmp/_test_multiframe.ape").exists() {
+            eprintln!("跳过：缺少 APE 测试样本");
+            return;
+        }
+        let (rx, _dec) = Decoder::start(
+            std::path::Path::new("/tmp/_test_multiframe.ape"),
+            TARGET_SAMPLE_RATE, TARGET_CHANNELS,
+            Arc::new(AtomicU64::new(0)), Some(0.1), None,
+        ).unwrap();
+        let mut frames = Vec::new();
+        while let Ok(f) = rx.recv_timeout(Duration::from_secs(5)) {
+            frames.push(f);
+        }
+        assert!(!frames.is_empty(), "APE seek 后应有帧输出");
+    }
+
+    #[test]
+    fn test_bytes_to_interleaved_f32() {
+        // 16bit 小端: -32768 → -1.0, 32767 → ~0.99997
+        let raw = vec![0x00, 0x80, 0xFF, 0x7F];
+        let out = bytes_to_interleaved_f32(&raw, 2, false);
+        assert_eq!(out.len(), 2);
+        assert!((out[0] + 1.0).abs() < 1e-6, "16bit min 应映射到 -1.0: {}", out[0]);
+        assert!((out[1] - (32767.0 / 32768.0)).abs() < 1e-6, "16bit max 映射错误: {}", out[1]);
+
+        // 8bit 无符号: 0 → -1.0, 255 → ~0.992
+        let raw = vec![0x00, 0xFF];
+        let out = bytes_to_interleaved_f32(&raw, 1, false);
+        assert!((out[0] + 1.0).abs() < 1e-6);
+        assert!((out[1] - (127.0 / 128.0)).abs() < 1e-6);
+
+        // 24bit 小端符号扩展: 0x000000 → 0, 0x800000 → -1.0(满幅负)
+        let raw = vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x80];
+        let out = bytes_to_interleaved_f32(&raw, 3, false);
+        assert!((out[0]).abs() < 1e-6);
+        assert!((out[1] + 1.0).abs() < 1e-6, "24bit -1 映射错误: {}", out[1]);
+        // 0xFFFFFF = 补码 -1 LSB ≈ -1.19e-7
+        let raw = vec![0xFF, 0xFF, 0xFF];
+        let out = bytes_to_interleaved_f32(&raw, 3, false);
+        assert!((out[0] + 1.0 / 8388608.0).abs() < 1e-6, "24bit 补码 -1 映射错误: {}", out[0]);
+
+        // 32bit float: 1.0 的 IEEE 位模式
+        let raw = 1.0f32.to_le_bytes().to_vec();
+        let out = bytes_to_interleaved_f32(&raw, 4, true);
+        assert!((out[0] - 1.0).abs() < 1e-6);
+    }
 }
+
