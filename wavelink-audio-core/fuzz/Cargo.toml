@@ -1,0 +1,31 @@
+[package]
+name = "audio-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+symphonia = { version = "0.6", default-features = false, features = [
+    "mp3", "flac", "pcm", "vorbis", "aac", "isomp4", "ogg", "wav", "aiff"
+] }
+
+[dependencies.audio-core]
+path = ".."
+
+[[bin]]
+name = "symphonia"
+path = "fuzz_targets/symphonia.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dsp"
+path = "fuzz_targets/dsp.rs"
+test = false
+doc = false
+bench = false
