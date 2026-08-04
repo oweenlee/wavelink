@@ -3,7 +3,67 @@
 
 use jni::objects::{JFloatArray, JObject, ReleaseMode};
 use jni::sys::{jboolean, jint};
-use jni::JNIEnv;
+use jni::{JNIEnv, JavaVM};
+
+// ── JVM 引用与音频线程提权钩子 ──
+
+static JAVA_VM: std::sync::OnceLock<JavaVM> = std::sync::OnceLock::new();
+
+/// 只存 JavaVM，不做类加载（无时序风险）。FRB/JNI 静态注册不受影响。
+#[no_mangle]
+pub extern "system" fn JNI_OnLoad(
+    vm: JavaVM,
+    _reserved: *mut std::ffi::c_void,
+) -> jint {
+    let _ = JAVA_VM.set(vm);
+    jni::sys::JNI_VERSION_1_6
+}
+
+/// 音频线程（Rust 解码/consumer 线程）提权钩子：
+/// attach 到 JVM 后调 android.os.Process.setThreadPriority(myTid(), URGENT_AUDIO)。
+/// 普通应用用 setpriority 设负 nice 必失败，这是 Android 上有权限的正路。
+fn android_elevate_current_thread() -> i32 {
+    let Some(vm) = JAVA_VM.get() else {
+        crate::api::audio_output::probe_log("提权失败: 无 JavaVM");
+        return -1;
+    };
+    let Ok(mut env) = vm.attach_current_thread() else {
+        crate::api::audio_output::probe_log("提权失败: attach 失败");
+        return -2;
+    };
+    let Ok(cls) = env.find_class("android/os/Process") else {
+        crate::api::audio_output::probe_log("提权失败: 找不到 Process 类");
+        return -3;
+    };
+    let Ok(tid_val) = env.call_static_method(&cls, "myTid", "()I", &[]) else {
+        return -4;
+    };
+    let Ok(tid) = tid_val.i() else {
+        return -5;
+    };
+    // THREAD_PRIORITY_URGENT_AUDIO = -19
+    let r = env.call_static_method(
+        &cls,
+        "setThreadPriority",
+        "(II)V",
+        &[jni::objects::JValue::Int(tid), jni::objects::JValue::Int(-19)],
+    );
+    if r.is_err() {
+        crate::api::audio_output::probe_log(&format!("提权失败: setThreadPriority tid={tid}"));
+        return -6;
+    }
+    0
+}
+
+/// Kotlin 启动时调用：注册提权钩子到 audio-core（此后所有音频线程启动时自动提权）
+#[no_mangle]
+pub extern "system" fn Java_com_wavelink_wavelink_1mobile_AudioEngine_nativeRegisterElevateHook(
+    _env: JNIEnv,
+    _this: JObject,
+) {
+    audio_core::engine::thread_priority::set_elevate_hook(android_elevate_current_thread);
+    crate::api::audio_output::probe_log("提权钩子已注册");
+}
 
 /// iOS AVAudioSourceNode 回调：从 ringbuf 拉取 PCM 数据填入左右声道 buffer
 #[no_mangle]
@@ -55,11 +115,11 @@ pub extern "C" fn engine_sync_output_rate(rate: u32) {
 // 采用 `Java_` 前缀静态绑定：只要 so 被 JVM 加载（System.loadLibrary），
 // native 方法符号即可经 dlsym 解析，无需 JNI_OnLoad/RegisterNatives，
 // 规避了 JNI_OnLoad 阶段 find_class 的类加载时序问题。
-// 注意函数名必须与 Kotlin 类包名/方法名完全一致。
+// 注意函数名必须按 JNI 规范转义：包名 wavelink_mobile 的下划线 → _1。
 
 /// Kotlin AudioEngine.nativeFillInterleaved：拉取交错 PCM 填入 Kotlin 侧 FloatArray
 #[no_mangle]
-pub unsafe extern "system" fn Java_com_wavelink_wavelink_mobile_AudioEngine_nativeFillInterleaved(
+pub unsafe extern "system" fn Java_com_wavelink_wavelink_1mobile_AudioEngine_nativeFillInterleaved(
     mut env: JNIEnv,
     _this: JObject,
     arr: JFloatArray,
@@ -80,17 +140,25 @@ pub unsafe extern "system" fn Java_com_wavelink_wavelink_mobile_AudioEngine_nati
 
 /// Kotlin AudioEngine.nativeSetPlaying：播放门控（与 iOS 同一标志）
 #[no_mangle]
-pub unsafe extern "system" fn Java_com_wavelink_wavelink_mobile_AudioEngine_nativeSetPlaying(
+pub unsafe extern "system" fn Java_com_wavelink_wavelink_1mobile_AudioEngine_nativeSetPlaying(
     _env: JNIEnv,
     _this: JObject,
     playing: jboolean,
 ) {
-    crate::api::audio_output::set_playing_impl(playing != 0);
+    let p = playing != 0;
+    // 验证 stderr 是否进 logcat（若可见，audio-core 内部日志可用 eprintln）
+    eprintln!("[probe-stderr] gate={p}");
+    crate::api::audio_output::probe_log(&format!(
+        "[underrun-probe] 门控 → {}，{}",
+        if p { "开" } else { "关" },
+        crate::api::engine::engine_probe()
+    ));
+    crate::api::audio_output::set_playing_impl(p);
 }
 
 /// Kotlin AudioEngine.nativeClearRingbuf：清空 ringbuf 积压（seek/pause 用）
 #[no_mangle]
-pub unsafe extern "system" fn Java_com_wavelink_wavelink_mobile_AudioEngine_nativeClearRingbuf(
+pub unsafe extern "system" fn Java_com_wavelink_wavelink_1mobile_AudioEngine_nativeClearRingbuf(
     _env: JNIEnv,
     _this: JObject,
 ) {

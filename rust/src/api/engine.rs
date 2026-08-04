@@ -320,6 +320,18 @@ pub fn engine_is_playing() -> bool {
     with_engine(|h| h.is_playing()).unwrap_or(false)
 }
 
+/// 【临时诊断】探测当前库实例看到的 ENGINE 状态（验证 JNI/Dart FFI 是否同一实例）
+pub(crate) fn engine_probe() -> String {
+    match ENGINE.load_full() {
+        Some(h) => format!(
+            "ENGINE=Some({:p}, playing={})",
+            std::sync::Arc::as_ptr(&h),
+            h.is_playing()
+        ),
+        None => "ENGINE=None".to_string(),
+    }
+}
+
 pub fn engine_current_path() -> String {
     CURRENT_PATH.lock().unwrap().clone()
 }

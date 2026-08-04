@@ -82,6 +82,7 @@ class AudioEngine(private val context: Context) {
     var eventCallback: ((String) -> Unit)? = null
 
     private val focusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        Log.i("WaveLinkDiag", "音频焦点变化: $focusChange")
         when (focusChange) {
             AudioManager.AUDIOFOCUS_GAIN -> {
                 // 恢复音量（若之前 duck）；若因瞬时焦点丢失而暂停，则恢复播放
@@ -164,9 +165,10 @@ class AudioEngine(private val context: Context) {
 
         val channelMask = if (channels >= 2) AudioFormat.CHANNEL_OUT_STEREO
                           else AudioFormat.CHANNEL_OUT_MONO
+        // 缓冲 ~200ms：泵按帧供给且偶有空读间隙，旧 ~21ms 小缓冲必欠载爆音
         val bufferSize = maxOf(
             AudioTrack.getMinBufferSize(sampleRate, channelMask, AudioFormat.ENCODING_PCM_FLOAT),
-            8192
+            sampleRate * channels * 4 / 5 // float=4B，200ms
         )
 
         audioTrack = AudioTrack(
@@ -184,14 +186,35 @@ class AudioEngine(private val context: Context) {
             AudioManager.AUDIO_SESSION_ID_GENERATE
         )
 
-        audioTrack?.play()
-
         // 播放门控：让 Rust 侧 ringbuf 开始产出（false 时 fill 直接返回 0）
         nativeSetPlaying(true)
 
         // 原生泵线程：JNI 直读 Rust ringbuf → AudioTrack
         writeThread = thread(name = "WaveLinkPump") {
+            // 泵线程进音频调度组，避免被 MIUI 等调度策略饿死
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
             val chunk = FloatArray(4096 * channels)
+            // 预缓冲：开播前先往 AudioTrack 填 ~120ms，避免起播瞬间空窗
+            // （ringbuf 从零开始填，直接开播会在前几百 ms 内反复欠载）
+            var prefill = 0
+            val prefillTarget = sampleRate * channels * 120 / 1000 // 样本数
+            val deadline = System.currentTimeMillis() + 600
+            while (playing && !Thread.interrupted() &&
+                   prefill < prefillTarget && System.currentTimeMillis() < deadline) {
+                val frames = nativeFillInterleaved(chunk, 4096)
+                if (frames <= 0) {
+                    try { Thread.sleep(5) } catch (_: InterruptedException) { break }
+                    continue
+                }
+                val n = frames * channels
+                val w = audioTrack?.write(chunk, 0, n, AudioTrack.WRITE_NON_BLOCKING) ?: 0
+                if (w > 0) {
+                    prefill += w
+                    writtenSamples += w
+                }
+            }
+            audioTrack?.play()
+
             while (playing && !Thread.interrupted()) {
                 if (paused) {
                     try { Thread.sleep(50) } catch (_: InterruptedException) { break }
@@ -199,8 +222,8 @@ class AudioEngine(private val context: Context) {
                 }
                 val frames = nativeFillInterleaved(chunk, 4096)
                 if (frames <= 0) {
-                    // 门控关闭或 ringbuf 空：稍候再试，避免忙转
-                    try { Thread.sleep(20) } catch (_: InterruptedException) { break }
+                    // 门控关闭或 ringbuf 空：短睡眠再试（5ms，200ms 缓冲足以吸收）
+                    try { Thread.sleep(5) } catch (_: InterruptedException) { break }
                     continue
                 }
                 val n = frames * channels
@@ -213,6 +236,7 @@ class AudioEngine(private val context: Context) {
     }
 
     fun pause() {
+        Log.i("WaveLinkDiag", "AudioEngine.pause()")
         paused = true
         nativeSetPlaying(false)
         audioTrack?.pause()
@@ -220,6 +244,8 @@ class AudioEngine(private val context: Context) {
 
     fun resume() {
         requestAudioFocus()
+        // 清掉暂停前积压（与 iOS 一致），防恢复时先播旧声（磁带滑）
+        nativeClearRingbuf()
         paused = false
         nativeSetPlaying(true)
         audioTrack?.play()
@@ -259,6 +285,9 @@ class AudioEngine(private val context: Context) {
         init {
             // 确保 so 被 JVM 加载：Java_ 前缀的 JNI 符号才能经 dlsym 解析
             System.loadLibrary("rust_lib_wavelink_mobile")
+            // 注册音频线程提权钩子（解码/consumer 线程启动时自动走
+            // Process.setThreadPriority URGENT_AUDIO，否则生产侧会被调度饿死）
+            nativeRegisterElevateHook()
         }
 
         // ── JNI 直读 Rust ringbuf（与 iOS 同一 HeadlessOutput 通路）──
@@ -274,5 +303,9 @@ class AudioEngine(private val context: Context) {
         /// 清空 ringbuf 积压
         @JvmStatic
         private external fun nativeClearRingbuf()
+
+        /// 注册音频线程提权钩子到 audio-core
+        @JvmStatic
+        private external fun nativeRegisterElevateHook()
     }
 }

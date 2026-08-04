@@ -3,6 +3,7 @@ package com.wavelink.wavelink_mobile
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.util.Log
 import android.media.AudioTrack
 import android.net.Uri
 import android.provider.MediaStore
@@ -18,7 +19,10 @@ import io.flutter.plugin.common.MethodChannel.Result
 import java.io.File
 
 class MainActivity : FlutterActivity() {
-    private val audioEngine = AudioEngine(this)
+    // 不能在字段初始化时创建：此时 Activity 尚未 attach()，
+    // context.getApplicationContext() 会因 mBase 为 null 抛 NPE。
+    // 延迟到 configureFlutterEngine（Activity 已完全初始化）时再创建。
+    private val audioEngine: AudioEngine by lazy { AudioEngine(this) }
     private var eventSink: EventChannel.EventSink? = null
     private var filePickerResult: Result? = null
 
@@ -239,6 +243,7 @@ class MainActivity : FlutterActivity() {
             }
 
             "pause" -> {
+                Log.i("WaveLinkDiag", "通道 pause：Dart 调用")
                 audioEngine.pause()
                 PlaybackService.instance?.setPlaying(false)
                 result.success(null)

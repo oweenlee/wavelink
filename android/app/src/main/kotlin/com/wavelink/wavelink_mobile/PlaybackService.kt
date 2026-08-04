@@ -73,14 +73,17 @@ class PlaybackService : Service() {
             )
             setCallback(object : MediaSession.Callback() {
                 override fun onPlay() {
+                    Log.i(TAG, "MediaSession onPlay")
                     remoteCallback?.invoke("remote:play")
                 }
 
                 override fun onPause() {
+                    Log.i(TAG, "MediaSession onPause")
                     remoteCallback?.invoke("remote:pause")
                 }
 
                 override fun onStop() {
+                    Log.i(TAG, "MediaSession onStop")
                     remoteCallback?.invoke("remote:pause")
                 }
 
@@ -104,7 +107,10 @@ class PlaybackService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_PLAY_PAUSE -> remoteCallback?.invoke("remote:togglePlayPause")
+            ACTION_PLAY_PAUSE -> {
+                Log.i(TAG, "通知按钮 PLAY_PAUSE")
+                remoteCallback?.invoke("remote:togglePlayPause")
+            }
             ACTION_NEXT -> remoteCallback?.invoke("remote:next")
             ACTION_PREV -> remoteCallback?.invoke("remote:previous")
             ACTION_STOP -> {

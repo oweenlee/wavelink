@@ -179,7 +179,10 @@ class AudioPlayerProvider extends ChangeNotifier {
     }
 
     if (resolvedPath != null && _engineRepo.rustAvailable) {
+      debugPrint('[Audio] engine play: $resolvedPath');
       await _engineRepo.play(resolvedPath);
+    } else {
+      debugPrint('[Audio] engine play 跳过: resolvedPath=$resolvedPath rust=${_engineRepo.rustAvailable}');
     }
     if (token != _playToken) return;
 
@@ -195,6 +198,7 @@ class AudioPlayerProvider extends ChangeNotifier {
   }
 
   void pause() {
+    debugPrint('[Audio] Dart pause() 被调用');
     _isPlaying = false;
     _progressTimer?.cancel();
     _engineRepo.pause();
@@ -364,6 +368,9 @@ class AudioPlayerProvider extends ChangeNotifier {
     if (!_isPlaying) return;
     try {
       final event = await _engineRepo.pollEvents();
+      if (event != null) {
+        debugPrint('[Audio] engine event: $event');
+      }
       if (event == 'stopped') {
         debugPrint('[Audio] 收到引擎 stopped 事件 → 队列结束，触发切歌/停止');
         _progressTimer?.cancel();

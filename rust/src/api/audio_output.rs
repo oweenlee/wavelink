@@ -16,6 +16,25 @@ static SPECTRUM: Mutex<[f32; 16]> = Mutex::new([0.0; 16]);
 /// underrun 计数：iOS 回调从 ringbuf 读不到足够数据时递增
 static UNDERRUN_COUNT: AtomicU64 = AtomicU64::new(0);
 
+/// 【临时诊断】平台日志：Android 进 logcat（tag WaveLinkRust），iOS 进 stderr
+#[cfg(target_os = "android")]
+#[link(name = "log")]
+extern "C" {
+    fn __android_log_write(prio: i32, tag: *const u8, text: *const u8) -> i32;
+}
+
+pub(crate) fn probe_log(msg: &str) {
+    #[cfg(target_os = "android")]
+    {
+        let mut buf = Vec::with_capacity(msg.len() + 1);
+        buf.extend_from_slice(msg.as_bytes());
+        buf.push(0);
+        unsafe { __android_log_write(4, b"WaveLinkRust\0".as_ptr(), buf.as_ptr()) };
+    }
+    #[cfg(not(target_os = "android"))]
+    eprintln!("{msg}");
+}
+
 /// 【临时诊断】underrun 爆发日志：打印爆发起止与时长，定位阵发卡顿用
 mod underrun_probe {
     use once_cell::sync::Lazy;
@@ -25,20 +44,38 @@ mod underrun_probe {
     static T0: Lazy<Instant> = Lazy::new(Instant::now);
     static IN_BURST: AtomicBool = AtomicBool::new(false);
     static BURST_START_MS: AtomicU64 = AtomicU64::new(0);
+    static LAST_STARVE_LOG: AtomicU64 = AtomicU64::new(0);
 
     pub fn on_fill(filled: bool) {
         let now = T0.elapsed().as_millis() as u64;
         if filled {
             if IN_BURST.swap(false, Ordering::AcqRel) {
                 let start = BURST_START_MS.load(Ordering::Acquire);
-                eprintln!(
+                super::probe_log(&format!(
                     "[underrun-probe] burst 结束：缺口持续 ~{}ms",
                     now.saturating_sub(start)
-                );
+                ));
             }
         } else if !IN_BURST.swap(true, Ordering::AcqRel) {
             BURST_START_MS.store(now, Ordering::Release);
-            eprintln!("[underrun-probe] burst 开始 @ t={}ms", now);
+            super::probe_log(&format!("[underrun-probe] burst 开始 @ t={}ms", now));
+        }
+    }
+
+    /// 门控开着但 ringbuf 完全空（限流 1s 一条，防爆日志）
+    pub fn starve() {
+        let now = T0.elapsed().as_millis() as u64;
+        let last = LAST_STARVE_LOG.load(Ordering::Acquire);
+        if now.saturating_sub(last) > 1000
+            && LAST_STARVE_LOG
+                .compare_exchange(last, now, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+        {
+            super::probe_log(&format!(
+                "[underrun-probe] starve：门控开但 ringbuf 空 @ t={}ms，{}",
+                now,
+                crate::api::engine::engine_probe()
+            ));
         }
     }
 }
@@ -119,6 +156,9 @@ pub(crate) fn fill_interleaved_impl(out: &mut [f32], max_frames: u32) -> u32 {
     }
     let n = crate::api::engine::engine_read_samples(&mut out[..need]);
     if n < need {
+        if n == 0 {
+            underrun_probe::starve();
+        }
         for s in &mut out[n..need] {
             *s = 0.0;
         }
