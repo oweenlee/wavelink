@@ -9,9 +9,14 @@
 //! - 动态采样率切换（重建 stream）
 //! - 低延迟回调
 
+use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use oboe::{
+    AudioOutputCallback, AudioOutputStreamSafe, DataCallbackResult, Mono, Stereo,
+};
+use parking_lot::Mutex;
 use ringbuf::traits::{Consumer, Split};
 use ringbuf::HeapRb;
 use tracing::{error, info, warn};
@@ -21,22 +26,124 @@ use crate::output::{AudioOutput, AudioOutputInner, PcmProducer};
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum OboeFormat {
     I16,
-    I32,
     F32,
 }
 
-impl OboeFormat {
-    fn bits_per_sample(self) -> u16 {
-        match self {
-            OboeFormat::I16 => 16,
-            OboeFormat::I32 | OboeFormat::F32 => 32,
+/// Oboe 实时数据回调。
+///
+/// oboe 0.6 不支持闭包回调，必须手动实现 `AudioOutputCallback`。
+/// 泛型参数 `T` = 采样类型（i16/f32），`C` = 声道数标记（Mono/Stereo）。
+struct OboeOutputCallback<T, C> {
+    inner: Arc<AudioOutputInner>,
+    playing: Arc<AtomicBool>,
+    tmp: Vec<f32>,
+    _marker: PhantomData<(T, C)>,
+}
+
+impl<T, C> OboeOutputCallback<T, C> {
+    fn new(inner: Arc<AudioOutputInner>, playing: Arc<AtomicBool>) -> Self {
+        Self {
+            inner,
+            playing,
+            tmp: Vec::new(),
+            _marker: PhantomData,
         }
+    }
+}
+
+/// 从 ringbuf 拉取交织 f32，不足补零；拿不到锁时按 underrun 处理。
+fn read_samples(inner: &AudioOutputInner, playing: &AtomicBool, out: &mut [f32]) {
+    if !playing.load(Ordering::Acquire) {
+        out.fill(0.0);
+        return;
+    }
+    let Some(mut guard) = inner.consumer.try_lock() else {
+        inner.underrun_count.fetch_add(1, Ordering::Relaxed);
+        out.fill(0.0);
+        return;
+    };
+    let n = guard.pop_slice(out);
+    if n < out.len() {
+        inner.underrun_count.fetch_add(1, Ordering::Relaxed);
+        out[n..].fill(0.0);
+    }
+}
+
+impl AudioOutputCallback for OboeOutputCallback<f32, Stereo> {
+    type FrameType = (f32, Stereo);
+
+    fn on_audio_ready(
+        &mut self,
+        _stream: &mut dyn AudioOutputStreamSafe,
+        data: &mut [(f32, f32)],
+    ) -> DataCallbackResult {
+        self.tmp.resize(data.len() * 2, 0.0);
+        read_samples(&self.inner, &self.playing, &mut self.tmp);
+        for (i, frame) in data.iter_mut().enumerate() {
+            frame.0 = self.tmp[i * 2];
+            frame.1 = self.tmp[i * 2 + 1];
+        }
+        DataCallbackResult::Continue
+    }
+}
+
+impl AudioOutputCallback for OboeOutputCallback<i16, Stereo> {
+    type FrameType = (i16, Stereo);
+
+    fn on_audio_ready(
+        &mut self,
+        _stream: &mut dyn AudioOutputStreamSafe,
+        data: &mut [(i16, i16)],
+    ) -> DataCallbackResult {
+        self.tmp.resize(data.len() * 2, 0.0);
+        read_samples(&self.inner, &self.playing, &mut self.tmp);
+        for (i, frame) in data.iter_mut().enumerate() {
+            frame.0 = (self.tmp[i * 2].clamp(-1.0, 1.0) * 32768.0)
+                .round()
+                .clamp(-32768.0, 32767.0) as i16;
+            frame.1 = (self.tmp[i * 2 + 1].clamp(-1.0, 1.0) * 32768.0)
+                .round()
+                .clamp(-32768.0, 32767.0) as i16;
+        }
+        DataCallbackResult::Continue
+    }
+}
+
+impl AudioOutputCallback for OboeOutputCallback<f32, Mono> {
+    type FrameType = (f32, Mono);
+
+    fn on_audio_ready(
+        &mut self,
+        _stream: &mut dyn AudioOutputStreamSafe,
+        data: &mut [f32],
+    ) -> DataCallbackResult {
+        read_samples(&self.inner, &self.playing, data);
+        DataCallbackResult::Continue
+    }
+}
+
+impl AudioOutputCallback for OboeOutputCallback<i16, Mono> {
+    type FrameType = (i16, Mono);
+
+    fn on_audio_ready(
+        &mut self,
+        _stream: &mut dyn AudioOutputStreamSafe,
+        data: &mut [i16],
+    ) -> DataCallbackResult {
+        self.tmp.resize(data.len(), 0.0);
+        read_samples(&self.inner, &self.playing, &mut self.tmp);
+        for (i, s) in data.iter_mut().enumerate() {
+            *s = (self.tmp[i].clamp(-1.0, 1.0) * 32768.0)
+                .round()
+                .clamp(-32768.0, 32767.0) as i16;
+        }
+        DataCallbackResult::Continue
     }
 }
 
 /// Oboe 音频输出句柄
 pub struct AudioOutputOboe {
-    stream: Option<oboe::AudioStream>,
+    stream: Mutex<Option<Box<dyn oboe::AudioStream>>>,
     inner: Arc<AudioOutputInner>,
     playing: Arc<AtomicBool>,
     sample_rate: u32,
@@ -59,106 +166,66 @@ fn build_stream(
     sample_rate: i32,
     exclusive: bool,
     oboe_format: OboeFormat,
-) -> Result<(oboe::AudioStream, OboeFormat), String> {
-    use oboe::{AudioStreamBuilder, AudioOutputStreamSafe, PerformanceMode, SharingMode};
+) -> Result<(Box<dyn oboe::AudioStream>, OboeFormat), String> {
+    use oboe::{AudioStreamBuilder, PerformanceMode, SharingMode};
 
     let sharing = if exclusive { SharingMode::Exclusive } else { SharingMode::Shared };
-    let mut builder = AudioStreamBuilder::default()
+    let base = AudioStreamBuilder::default()
         .set_output()
-        .set_channels(channels)
         .set_sample_rate(sample_rate)
         .set_sharing_mode(sharing)
         .set_performance_mode(PerformanceMode::LowLatency);
 
-    match oboe_format {
-        OboeFormat::I16 => {
-            let mut tmp_buf: Vec<f32> = Vec::new();
-            let cb_inner = inner.clone();
-            let cb_playing = playing.clone();
-            let stream = builder
-                .set_i16()
-                .set_callback(move |_, buffer: &mut [i16]| {
-                    if !cb_playing.load(Ordering::Acquire) {
-                        buffer.fill(0);
-                        return;
-                    }
-                    tmp_buf.resize(buffer.len(), 0.0);
-                    let mut guard = cb_inner.consumer.lock();
-                    let n = guard.pop_slice(&mut tmp_buf);
-                    for i in 0..n {
-                        buffer[i] = (tmp_buf[i].clamp(-1.0, 1.0) * 32768.0).round().clamp(-32768.0, 32767.0) as i16;
-                    }
-                    if n < buffer.len() {
-                        cb_inner.underrun_count.fetch_add(1, Ordering::Relaxed);
-                        buffer[n..].fill(0);
-                    }
-                })
-                .open_stream()
-                .map_err(|e| format!("Oboe I16 打开失败: {e:?}"))?;
-            Ok((stream, OboeFormat::I16))
+    let stream: Box<dyn oboe::AudioStream> = if channels >= 2 {
+        let b = base.set_stereo();
+        match oboe_format {
+            OboeFormat::I16 => Box::new(
+                b.set_i16()
+                    .set_callback(OboeOutputCallback::<i16, Stereo>::new(inner.clone(), playing.clone()))
+                    .open_stream()
+                    .map_err(|e| format!("Oboe I16 打开失败: {e:?}"))?,
+            ),
+            OboeFormat::F32 => Box::new(
+                b.set_f32()
+                    .set_callback(OboeOutputCallback::<f32, Stereo>::new(inner.clone(), playing.clone()))
+                    .open_stream()
+                    .map_err(|e| format!("Oboe F32 打开失败: {e:?}"))?,
+            ),
         }
-        OboeFormat::I32 => {
-            let mut tmp_buf: Vec<f32> = Vec::new();
-            let cb_inner = inner.clone();
-            let cb_playing = playing.clone();
-            let stream = builder
-                .set_i32()
-                .set_callback(move |_, buffer: &mut [i32]| {
-                    if !cb_playing.load(Ordering::Acquire) {
-                        buffer.fill(0);
-                        return;
-                    }
-                    tmp_buf.resize(buffer.len(), 0.0);
-                    let mut guard = cb_inner.consumer.lock();
-                    let n = guard.pop_slice(&mut tmp_buf);
-                    for i in 0..n {
-                        buffer[i] = (tmp_buf[i].clamp(-1.0, 1.0) * 2147483648.0).round().clamp(-2147483648.0, 2147483647.0) as i32;
-                    }
-                    if n < buffer.len() {
-                        cb_inner.underrun_count.fetch_add(1, Ordering::Relaxed);
-                        buffer[n..].fill(0);
-                    }
-                })
-                .open_stream()
-                .map_err(|e| format!("Oboe I32 打开失败: {e:?}"))?;
-            Ok((stream, OboeFormat::I32))
+    } else {
+        let b = base.set_mono();
+        match oboe_format {
+            OboeFormat::I16 => Box::new(
+                b.set_i16()
+                    .set_callback(OboeOutputCallback::<i16, Mono>::new(inner.clone(), playing.clone()))
+                    .open_stream()
+                    .map_err(|e| format!("Oboe I16(mono) 打开失败: {e:?}"))?,
+            ),
+            OboeFormat::F32 => Box::new(
+                b.set_f32()
+                    .set_callback(OboeOutputCallback::<f32, Mono>::new(inner.clone(), playing.clone()))
+                    .open_stream()
+                    .map_err(|e| format!("Oboe F32(mono) 打开失败: {e:?}"))?,
+            ),
         }
-        OboeFormat::F32 => {
-            let cb_inner = inner.clone();
-            let cb_playing = playing.clone();
-            let stream = builder
-                .set_f32()
-                .set_callback(move |_, buffer: &mut [f32]| {
-                    if !cb_playing.load(Ordering::Acquire) {
-                        buffer.fill(0.0);
-                        return;
-                    }
-                    let mut guard = cb_inner.consumer.lock();
-                    let n = guard.pop_slice(buffer);
-                    if n < buffer.len() {
-                        cb_inner.underrun_count.fetch_add(1, Ordering::Relaxed);
-                        buffer[n..].fill(0.0);
-                    }
-                })
-                .open_stream()
-                .map_err(|e| format!("Oboe F32 打开失败: {e:?}"))?;
-            Ok((stream, OboeFormat::F32))
-        }
-    }
+    };
+
+    let mut stream = stream;
+    stream.start().map_err(|e| format!("Oboe start 失败: {e:?}"))?;
+    Ok((stream, oboe_format))
 }
 
 // ─── 格式协商 ────────────────────────────────────────────────
 
-fn negotiate_formats(channels: u16, sample_rate: u32, bit_depth: u16) -> Vec<OboeFormat> {
+fn negotiate_formats(_channels: u16, _sample_rate: u32, bit_depth: u16) -> Vec<OboeFormat> {
     let mut order = Vec::new();
     // 源位深优先
     match bit_depth {
         16 => order.push(OboeFormat::I16),
-        24 | 32 => order.push(OboeFormat::I32),
-        _ => order.push(OboeFormat::I32),
+        _ => order.push(OboeFormat::F32),
     }
     // fallback（去重）
-    for fmt in [OboeFormat::I32, OboeFormat::I16, OboeFormat::F32] {
+    for fmt in [OboeFormat::F32, OboeFormat::I16] {
         if !order.contains(&fmt) {
             order.push(fmt);
         }
@@ -171,9 +238,15 @@ fn negotiate_formats(channels: u16, sample_rate: u32, bit_depth: u16) -> Vec<Obo
 impl AudioOutput for AudioOutputOboe {
     fn pause(&self) {
         self.playing.store(false, Ordering::Release);
+        if let Some(s) = self.stream.lock().as_mut() {
+            let _ = s.request_stop();
+        }
     }
 
     fn resume(&self) {
+        if let Some(s) = self.stream.lock().as_mut() {
+            let _ = s.request_start();
+        }
         self.playing.store(true, Ordering::Release);
     }
 
@@ -205,7 +278,7 @@ impl AudioOutput for AudioOutputOboe {
         let mut last_err = String::new();
 
         for &fmt in &formats {
-            self.stream = None;
+            *self.stream.lock() = None;
             match build_stream(
                 self.inner.clone(),
                 self.playing.clone(),
@@ -215,7 +288,7 @@ impl AudioOutput for AudioOutputOboe {
                 fmt,
             ) {
                 Ok((stream, actual_fmt)) => {
-                    self.stream = Some(stream);
+                    *self.stream.lock() = Some(stream);
                     self.oboe_format = actual_fmt;
                     let actual = rate;
                     self.sample_rate = actual;
@@ -300,13 +373,13 @@ pub(crate) fn open_inner(
                 fmt,
             ) {
                 Ok((stream, _actual_fmt)) => {
-                    let actual_rate = stream.sample_rate() as u32;
+                    let actual_rate = stream.get_sample_rate() as u32;
                     info!(
                         "Oboe 输出: {}Hz {}ch, {:?}, exclusive={}",
                         actual_rate, channels, fmt, exclusive,
                     );
                     let output = AudioOutputOboe {
-                        stream: Some(stream),
+                        stream: Mutex::new(Some(stream)),
                         inner: inner.clone(),
                         playing,
                         sample_rate: actual_rate,
@@ -338,7 +411,7 @@ fn rebuild_stream(output: &mut AudioOutputOboe) -> Result<(), String> {
     let formats = negotiate_formats(output.channels as u16, output.sample_rate, output.bit_depth);
     let mut last_err = String::new();
 
-    output.stream = None;
+    output.stream = Mutex::new(None);
     for &fmt in &formats {
         match build_stream(
             output.inner.clone(),
@@ -349,7 +422,7 @@ fn rebuild_stream(output: &mut AudioOutputOboe) -> Result<(), String> {
             fmt,
         ) {
             Ok((stream, actual_fmt)) => {
-                output.stream = Some(stream);
+                *output.stream.lock() = Some(stream);
                 output.oboe_format = actual_fmt;
                 info!("Oboe stream 重建成功: {}Hz {:?} exclusive={}", output.sample_rate, actual_fmt, output.exclusive);
                 return Ok(());
@@ -397,7 +470,7 @@ pub(crate) fn enumerate_devices() -> Vec<crate::output::OutputDeviceInfo> {
                     oboe::AudioDeviceType::UsbHeadset
                 );
                 // 内置扬声器 or 唯一设备标记为默认
-                let is_default = info.device_type == oboe::AudioDeviceType::BuiltinSpeaker || devices.is_empty();
+                let is_default = matches!(info.device_type, oboe::AudioDeviceType::BuiltinSpeaker) || devices.is_empty();
 
                 let mut configs = Vec::new();
                 for &sr in &sample_rates {

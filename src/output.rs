@@ -39,7 +39,7 @@ pub enum SampleFormat {
 }
 
 /// 设备支持的单个配置（采样率/位深/声道/独占组合）
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DeviceConfig {
     /// 采样率 Hz
     pub sample_rate: u32,
@@ -347,7 +347,7 @@ pub fn enumerate_devices() -> Vec<OutputDeviceInfo> {
         return output_oboe::enumerate_devices();
     }
 
-    #[cfg(feature = "cpal-backend")]
+    #[cfg(all(feature = "cpal-backend", not(all(feature = "oboe-backend", target_os = "android"))))]
     {
         output_cpal::enumerate_devices()
     }
