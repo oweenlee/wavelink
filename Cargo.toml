@@ -9,3 +9,12 @@ members = [
     "wavelink_mobile/rust",
 ]
 resolver = "2"
+
+# Flutter debug（flutter run）走 cargo dev profile，默认 O0 + overflow-checks，
+# 音频 DSP（解码/重采样/PEQ/FFT）跑不过 48kHz 实时消费 → ringbuf underrun 爆音
+# （release O3 正常）。dev 提优化对齐音频性能，debug-assertions 仍保留。
+[profile.dev]
+opt-level = 2
+
+[profile.dev.package."*"]
+opt-level = 3
