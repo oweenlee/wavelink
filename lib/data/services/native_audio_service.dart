@@ -63,13 +63,15 @@ class NativeAudioService {
   // ── 锁屏信息更新 ──
 
   /// 更新锁屏显示的曲目元数据（含封面）
-  /// [filePath] 传音频文件路径，iOS 原生提取封面图
+  /// [coverPath] 优先：Dart 侧已提取的封面图片文件（jpg），原生直接读图
+  /// [filePath] 兼容回退：音频文件路径，原生提取内嵌封面
   Future<void> updateMetadata({
     required String title,
     required String artist,
     String album = '',
     double duration = 0,
     String? filePath,
+    String? coverPath,
   }) => _safeCall(
     _methodChannel.invokeMethod('updateMetadata', {
       'title': title,
@@ -77,6 +79,7 @@ class NativeAudioService {
       'album': album,
       'duration': duration,
       'filePath': filePath ?? '',
+      'coverPath': coverPath ?? '',
     }),
   );
 

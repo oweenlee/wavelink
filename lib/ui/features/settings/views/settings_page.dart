@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/wl_toggle.dart';
 import '../../playback/view_models/playback_controller.dart';
 import '../view_models/dsp_provider.dart';
 import '../view_models/locale_provider.dart';
@@ -118,7 +119,9 @@ class SettingsPage extends ConsumerWidget {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(ok ? l10n.scanDone : l10n.scanNoPermission),
-                      backgroundColor: ok ? AppTheme.brand : AppTheme.danger,
+                      backgroundColor: ok
+                          ? AccentScope.of(context)
+                          : AppTheme.danger,
                     ),
                   );
                 }
@@ -166,6 +169,7 @@ class _LanguageSelector extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final localeMode = ref.watch(localeProvider);
+    final accent = AccentScope.of(context);
 
     // 跟随系统项的显示名需要本地化
     String labelFor(String mode, AppLocalizations l) {
@@ -191,9 +195,9 @@ class _LanguageSelector extends ConsumerWidget {
             selected: selected,
             onSelected: (_) =>
                 ref.read(localeProvider.notifier).setMode(opt.$1),
-            selectedColor: AppTheme.surfaceHigh,
+            selectedColor: accent.withValues(alpha: 0.12),
             labelStyle: TextStyle(
-              color: selected ? AppTheme.textPrimary : AppTheme.textSecondary,
+              color: selected ? accent : AppTheme.textSecondary,
               fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
             ),
             backgroundColor: AppTheme.surfaceDark,
@@ -201,7 +205,7 @@ class _LanguageSelector extends ConsumerWidget {
               borderRadius: BorderRadius.circular(20),
               side: BorderSide(
                 color: selected
-                    ? AppTheme.textSecondary
+                    ? accent.withValues(alpha: 0.5)
                     : AppTheme.textTertiary.withValues(alpha: 0.2),
               ),
             ),
@@ -322,10 +326,10 @@ class _SwitchItem extends StatelessWidget {
         label,
         style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
       ),
-      trailing: Switch(
+      trailing: WlToggle(
         value: value,
-        onChanged: onChanged,
-        activeThumbColor: AppTheme.textPrimary,
+        // 与音效面板同一组件，开关视觉全局一致
+        onChanged: () => onChanged(!value),
       ),
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -348,6 +352,7 @@ class _SliderItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = AccentScope.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
@@ -367,12 +372,13 @@ class _SliderItem extends StatelessWidget {
                 ),
                 SliderTheme(
                   data: SliderThemeData(
-                    activeTrackColor: AppTheme.textPrimary,
+                    // 与特效面板滑杆同款配色
+                    activeTrackColor: accent,
                     inactiveTrackColor: AppTheme.textTertiary.withValues(
                       alpha: 0.3,
                     ),
-                    thumbColor: AppTheme.textPrimary,
-                    overlayColor: AppTheme.textPrimary.withValues(alpha: 0.08),
+                    thumbColor: accent,
+                    overlayColor: accent.withValues(alpha: 0.08),
                   ),
                   child: Slider(value: value, onChanged: onChanged),
                 ),
@@ -398,11 +404,12 @@ class _ActionItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = AccentScope.of(context);
     return ListTile(
-      leading: Icon(icon, color: AppTheme.brand, size: 22),
+      leading: Icon(icon, color: accent, size: 22),
       title: Text(
         label,
-        style: const TextStyle(fontSize: 15, color: AppTheme.brand),
+        style: TextStyle(fontSize: 15, color: accent),
       ),
       onTap: onTap,
       dense: true,

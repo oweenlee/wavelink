@@ -23,7 +23,9 @@ import android.util.Log
  * - 前台服务（mediaPlayback 类型）：进程在后台不被回收，播放不中断。
  * - 常驻 MediaStyle 通知：上一首 / 播放暂停 / 下一首按钮。
  *
- * 生命周期：MainActivity 在 play 时 startForegroundService，stop 时 stopService。
+ * 生命周期：MainActivity 在 play/resume 时 startForegroundService；Dart 的 stop
+ * 只作切歌前 reset（置暂停态），不销毁服务——销毁会导致 MediaSession/通知每首歌
+ * 重建、锁屏卡片闪断且播放状态竞态丢失。真正停止走通知 ACTION_STOP。
  */
 class PlaybackService : Service() {
 
@@ -37,6 +39,9 @@ class PlaybackService : Service() {
         const val ACTION_PREV = "com.wavelink.wavelink_mobile.PREV"
         const val ACTION_STOP = "com.wavelink.wavelink_mobile.STOP"
 
+        /** start() 携带的期望播放状态（消除服务创建完成前 setPlaying 丢失的竞态） */
+        const val EXTRA_PLAYING = "com.wavelink.wavelink_mobile.EXTRA_PLAYING"
+
         @Volatile
         var instance: PlaybackService? = null
 
@@ -44,8 +49,9 @@ class PlaybackService : Service() {
         @Volatile
         var remoteCallback: ((String) -> Unit)? = null
 
-        fun start(context: Context) {
+        fun start(context: Context, playing: Boolean) {
             val intent = Intent(context, PlaybackService::class.java)
+                .putExtra(EXTRA_PLAYING, playing)
             if (Build.VERSION.SDK_INT >= 26) {
                 context.startForegroundService(intent)
             } else {
@@ -121,7 +127,18 @@ class PlaybackService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
+            else -> {
+                // Dart play/resume 驱动（首次启动或服务已运行时刷新）：
+                // 播放状态经 intent 传入并在建通知前落定——旧实现依赖
+                // instance?.setPlaying(true)，但服务 onCreate 前 instance 为 null，
+                // 状态丢失导致通知/锁屏停在“播放”图标，与播放页不同步。
+                if (intent?.hasExtra(EXTRA_PLAYING) == true) {
+                    isPlaying = intent.getBooleanExtra(EXTRA_PLAYING, false)
+                }
+            }
         }
+        // 立即把播放状态写入 MediaSession（锁屏/系统媒体面板），不等 Dart 250ms tick
+        mediaSession?.let { updatePosition(lastPositionMs, isPlaying) }
         // 进前台 + 发常驻通知（首次进入时系统要求 5s 内调用，否则抛 ForegroundServiceDidNotStartInTimeException）
         startForegroundCompat(buildNotification())
         return START_STICKY
@@ -138,10 +155,10 @@ class PlaybackService : Service() {
 
     // ── MediaSession 元数据 / 播放状态 ──
 
-    fun updateMetadata(title: String, artist: String, album: String, durationSec: Double, coverPath: String?) {
+    fun updateMetadata(title: String, artist: String, album: String, durationSec: Double, coverPath: String?, coverImagePath: String? = null) {
         this.title = title
         this.artist = artist
-        lastCoverPath = coverPath
+        lastCoverPath = coverImagePath ?: coverPath
         val session = mediaSession ?: return
         val md = android.media.MediaMetadata.Builder()
             .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, title)
@@ -152,26 +169,30 @@ class PlaybackService : Service() {
                 durationSec.toLong() * 1000L
             )
             .apply {
-                coverPath?.let { p ->
+                // 封面优先：Dart 侧已提取的封面图片文件直接解码（兼容 content:// 等
+                // 无法 setDataSource 的路径）；失败再按音频文件提取内嵌封面（与 iOS 对齐）
+                var bmp: Bitmap? = coverImagePath
+                    ?.takeIf { java.io.File(it).exists() }
+                    ?.let { BitmapFactory.decodeFile(it) }
+                if (bmp == null) coverPath?.let { p ->
                     try {
-                        // filePath 是音频文件路径：提取内嵌封面（与 iOS 行为对齐）
                         val retriever = android.media.MediaMetadataRetriever()
                         retriever.setDataSource(p)
                         val bytes = retriever.embeddedPicture
                         retriever.release()
-                        var bmp = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
-                        if (bmp != null) {
-                            // 缩到长边 ≤600，避免大封面占内存/拖慢锁屏渲染
-                            val long = maxOf(bmp.width, bmp.height)
-                            if (long > 600) {
-                                val scale = 600.0 / long
-                                bmp = Bitmap.createScaledBitmap(
-                                    bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true
-                                )
-                            }
-                            putBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART, bmp)
-                        }
+                        bmp = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
                     } catch (_: Exception) {}
+                }
+                bmp?.let {
+                    // 缩到长边 ≤600，避免大封面占内存/拖慢锁屏渲染
+                    val long = maxOf(it.width, it.height)
+                    val scaled = if (long > 600) {
+                        val scale = 600.0 / long
+                        Bitmap.createScaledBitmap(
+                            it, (it.width * scale).toInt(), (it.height * scale).toInt(), true
+                        )
+                    } else it
+                    putBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART, scaled)
                 }
             }
             .build()

@@ -611,14 +611,30 @@ class PlayerNotifier extends Notifier<PlayerState> {
     if (!_nativeReady) return;
     final song = state.currentSong;
     if (song == null) return;
-    await _ensureCoverCached(song);
+    // 立即推送基础信息（不等封面提取）；有缓存封面直接带图，
+    // 否则原生先按音频文件回退提取，封面就绪后再补推一次。
     await _nativeAudio.updateMetadata(
       title: song.title,
       artist: song.artist,
       album: song.album,
       duration: song.duration.inMilliseconds / 1000.0,
       filePath: song.path,
+      coverPath: song.coverUrl,
     );
+    if (song.coverUrl == null) {
+      await _ensureCoverCached(song);
+      // 仍是当前曲且封面刚就绪 → 补推带图元数据
+      if (state.currentSong?.id == song.id && song.coverUrl != null) {
+        await _nativeAudio.updateMetadata(
+          title: song.title,
+          artist: song.artist,
+          album: song.album,
+          duration: song.duration.inMilliseconds / 1000.0,
+          filePath: song.path,
+          coverPath: song.coverUrl,
+        );
+      }
+    }
   }
 
   Future<void> _ensureCoverCached(Song song) async {

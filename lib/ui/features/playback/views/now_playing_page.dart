@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -987,12 +988,15 @@ class _Backdrop extends StatelessWidget {
     return RepaintBoundary(
       child: Stack(
         children: [
-          // 模糊封面
+          // 模糊封面（coverUrl 为本地缓存文件；异步就绪后 fade-in，切歌不闪变）
           if (coverUrl != null && coverUrl!.isNotEmpty)
             Positioned.fill(
-              child: Image.network(
-                coverUrl!,
+              child: Image.file(
+                File(coverUrl!),
                 fit: BoxFit.cover,
+                gaplessPlayback: true,
+                frameBuilder: (context, child, frame, _) =>
+                    frame == null ? _fallbackGradient() : child,
                 errorBuilder: (_, e, s) => _fallbackGradient(),
               ),
             )

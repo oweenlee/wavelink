@@ -152,7 +152,9 @@ class _AlbumCoverState extends State<AlbumCover>
   late final AnimationController _tiltCtrl;
   late Animation<double> _tiltX;
   late Animation<double> _tiltY;
-  late final WlCover _cover;
+  // 封面是整棵子树最重的部分，构建一次缓存，手势/回弹只重绘 transform 层；
+  // 切歌（coverUrl/color 变化）时在 didUpdateWidget 重建
+  late WlCover _cover;
 
   @override
   void initState() {
@@ -169,6 +171,18 @@ class _AlbumCoverState extends State<AlbumCover>
       fallbackColor: widget.color,
       borderRadius: 20,
     );
+  }
+
+  @override
+  void didUpdateWidget(covariant AlbumCover oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.coverUrl != oldWidget.coverUrl || widget.color != oldWidget.color) {
+      _cover = WlCover(
+        coverUrl: widget.coverUrl,
+        fallbackColor: widget.color,
+        borderRadius: 20,
+      );
+    }
   }
 
   @override

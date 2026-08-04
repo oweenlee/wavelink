@@ -6,6 +6,7 @@ import '../../features/playback/view_models/playback_controller.dart';
 import '../../features/settings/view_models/dsp_provider.dart';
 import '../theme/app_theme.dart';
 import 'sheet_shell.dart';
+import 'wl_toggle.dart';
 
 class EffectsSheet extends ConsumerWidget {
   const EffectsSheet({super.key});
@@ -346,7 +347,7 @@ class _EffectItem extends StatelessWidget {
               ],
             ),
           ),
-          _Toggle(value: enabled, onChanged: onToggle),
+          WlToggle(value: enabled, onChanged: onToggle),
         ],
       ),
     );
@@ -363,46 +364,6 @@ class _Divider extends StatelessWidget {
       // 对齐 label 文字起点：20(左距) + 24(图标区) + 14(间距)
       indent: 58,
       color: AppTheme.textTertiary.withValues(alpha: 0.15),
-    );
-  }
-}
-
-class _Toggle extends StatelessWidget {
-  final bool value;
-  final VoidCallback onChanged;
-
-  const _Toggle({required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = AccentScope.of(context);
-    return SizedBox(
-      width: 44,
-      height: 24,
-      child: GestureDetector(
-        onTap: onChanged,
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            color: value
-                ? accent
-                : AppTheme.textTertiary.withValues(alpha: 0.3),
-          ),
-          padding: const EdgeInsets.all(2),
-          child: AnimatedAlign(
-            duration: const Duration(milliseconds: 200),
-            alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-            child: Container(
-              width: 20,
-              height: 20,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

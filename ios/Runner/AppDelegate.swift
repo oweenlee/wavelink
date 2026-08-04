@@ -26,6 +26,9 @@ class AudioOutputManager {
     private var nowAlbum = ""
     private var nowDuration: Double = 0
     private var nowPosition: Double = 0
+    // 缓存当前曲封面：每次进度刷新都会重建 nowPlayingInfo，
+    // 不缓存的话 artwork 会被不带图的 refresh 覆盖丢失
+    private var lastCover: UIImage?
 
     init() {
         rebuildSourceNode(sampleRate: AVAudioSession.sharedInstance().sampleRate)
@@ -169,23 +172,29 @@ class AudioOutputManager {
     }
 
     /// 更新锁屏显示信息（含封面图）
-    /// filePath 传音频文件路径，iOS 用 AVAsset 提取内嵌封面
-    func updateNowPlaying(title: String, artist: String, album: String, duration: Double, filePath: String = "") {
+    /// coverPath 优先：Dart 侧已提取的封面图片文件，直接读图（兼容 ipod-library:// 等无法解析的路径）
+    /// filePath 回退：音频文件路径，用 AVAsset 提取内嵌封面
+    func updateNowPlaying(title: String, artist: String, album: String, duration: Double, filePath: String = "", coverPath: String = "") {
         nowTitle = title
         nowArtist = artist
         nowAlbum = album
         nowDuration = duration
 
-        // 提取封面图
+        // 提取封面图：缓存图片优先，音频文件内嵌提取回退
         var coverImage: UIImage? = nil
-        if !filePath.isEmpty {
+        if !coverPath.isEmpty, FileManager.default.fileExists(atPath: coverPath) {
+            coverImage = UIImage(contentsOfFile: coverPath)
+        }
+        if coverImage == nil && !filePath.isEmpty {
             let asset = AVAsset(url: URL(fileURLWithPath: filePath))
             let items = AVMetadataItem.metadataItems(from: asset.commonMetadata, filteredByIdentifier: .commonIdentifierArtwork)
             if let data = items.first?.dataValue {
                 coverImage = UIImage(data: data)
             }
         }
-        refreshNowPlaying(cover: coverImage)
+        // 新曲目刷新封面（可能为 nil，清掉上一曲的图）
+        lastCover = coverImage
+        refreshNowPlaying()
     }
 
     /// 更新播放进度
@@ -194,8 +203,8 @@ class AudioOutputManager {
         refreshNowPlaying()
     }
 
-    /// 刷新锁屏显示
-    func refreshNowPlaying(cover: UIImage? = nil) {
+    /// 刷新锁屏显示（artwork 始终取自 lastCover，避免进度刷新把封面覆盖丢）
+    func refreshNowPlaying() {
         var info = [String: Any]()
         info[MPMediaItemPropertyTitle] = nowTitle
         info[MPMediaItemPropertyArtist] = nowArtist
@@ -203,7 +212,7 @@ class AudioOutputManager {
         info[MPMediaItemPropertyPlaybackDuration] = nowDuration
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = nowPosition
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlayingFlag ? 1.0 : 0.0
-        if let image = cover {
+        if let image = lastCover {
             let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
             info[MPMediaItemPropertyArtwork] = artwork
         }
@@ -411,7 +420,8 @@ class AudioOutputManager {
                let album = args["album"] as? String,
                let duration = args["duration"] as? Double {
                 let filePath = args["filePath"] as? String ?? ""
-                audio.updateNowPlaying(title: title, artist: artist, album: album, duration: duration, filePath: filePath)
+                let coverPath = args["coverPath"] as? String ?? ""
+                audio.updateNowPlaying(title: title, artist: artist, album: album, duration: duration, filePath: filePath, coverPath: coverPath)
             }
             result(nil)
         case "updatePosition":

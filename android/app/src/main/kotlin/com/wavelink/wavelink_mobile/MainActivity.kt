@@ -235,9 +235,11 @@ class MainActivity : FlutterActivity() {
 
                 // 原生泵直读 Rust ringbuf：Dart 不再推 PCM
                 audioEngine.start(sampleRate, channels)
-                // 前台服务 + MediaSession（后台播放 + 锁屏控制）
+                // 前台服务 + MediaSession（后台播放 + 锁屏控制）。
+                // 播放态经 intent 传入：服务尚未创建时由 onStartCommand 落定，
+                // 不依赖 instance?.setPlaying(true)（创建完成前 instance 为 null 会丢失）
                 requestNotificationPermissionIfNeeded()
-                PlaybackService.start(this)
+                PlaybackService.start(this, playing = true)
                 PlaybackService.instance?.setPlaying(true)
                 result.success(null)
             }
@@ -250,13 +252,19 @@ class MainActivity : FlutterActivity() {
             }
             "resume" -> {
                 audioEngine.resume()
+                // 防御：服务被系统回收时以播放态重建，避免锁屏/通知缺席
+                if (PlaybackService.instance == null) {
+                    PlaybackService.start(this, playing = true)
+                }
                 PlaybackService.instance?.setPlaying(true)
                 result.success(null)
             }
             "stop" -> {
                 audioEngine.stop()
                 PlaybackService.instance?.setPlaying(false)
-                PlaybackService.stop(this)
+                // 不销毁服务：Dart 每次切歌前都会先 stop 再 play，销毁会让
+                // MediaSession/通知按首歌周期重建（锁屏卡片闪断、状态竞态丢失）。
+                // 常驻暂停态通知是音乐 app 标准行为；真正停止走通知 ACTION_STOP。
                 result.success(null)
             }
             "seek" -> {
@@ -274,7 +282,8 @@ class MainActivity : FlutterActivity() {
                     artist = (args?.get("artist") as? String) ?: "",
                     album = (args?.get("album") as? String) ?: "",
                     durationSec = (args?.get("duration") as? Number)?.toDouble() ?: 0.0,
-                    coverPath = (args?.get("filePath") as? String)?.takeIf { it.isNotEmpty() }
+                    coverPath = (args?.get("filePath") as? String)?.takeIf { it.isNotEmpty() },
+                    coverImagePath = (args?.get("coverPath") as? String)?.takeIf { it.isNotEmpty() }
                 )
                 result.success(null)
             }
