@@ -2,10 +2,13 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../domain/models/lyric_line.dart';
 import '../../../../domain/models/song.dart';
-import '../view_models/playback_provider.dart';
+import '../view_models/playback_controller.dart';
+import '../view_models/audio_player_provider.dart';
+import '../view_models/queue_provider.dart';
+import '../../library/view_models/library_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/progress_slider_widget.dart';
 import '../../../core/widgets/album_cover.dart';
@@ -13,14 +16,14 @@ import '../../../core/widgets/lyrics_overlay.dart';
 import '../../../core/widgets/queue_sheet.dart';
 import '../../../core/widgets/effects_sheet.dart';
 
-class NowPlayingPage extends StatefulWidget {
+class NowPlayingPage extends ConsumerStatefulWidget {
   const NowPlayingPage({super.key});
 
   @override
-  State<NowPlayingPage> createState() => _NowPlayingPageState();
+  ConsumerState<NowPlayingPage> createState() => _NowPlayingPageState();
 }
 
-class _NowPlayingPageState extends State<NowPlayingPage>
+class _NowPlayingPageState extends ConsumerState<NowPlayingPage>
     with SingleTickerProviderStateMixin {
   bool _lyricsOverlay = false;
   late AnimationController _lyricsAc;
@@ -77,8 +80,11 @@ class _NowPlayingPageState extends State<NowPlayingPage>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final player = context.watch<PlaybackProvider>();
-    final song = player.currentSong;
+    final player = ref.watch(playbackControllerProvider);
+    final playerState = ref.watch(playerProvider);
+    final queueState = ref.watch(queueProvider);
+    ref.watch(libraryProvider); // 收藏变化驱动 _Tags / _BottomToolbar 重建
+    final song = queueState.currentSong;
 
     if (song == null) {
       return Scaffold(
@@ -146,7 +152,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                         _TopBar(
                         onClose: () => Navigator.of(context).pop(),
                         formatInfo: fmtInfo,
-                        isPlaying: player.isPlaying,
+                        isPlaying: playerState.isPlaying,
                       ),
                       Expanded(
                         child: Center(
@@ -154,7 +160,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               _PauseAwareCover(
-                                isPlaying: player.isPlaying,
+                                isPlaying: playerState.isPlaying,
                                 child: AlbumCover(
                                   color: song.dominantColor,
                                   coverUrl: song.coverUrl,
@@ -184,8 +190,8 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                       ),
                       const SizedBox(height: 4),
                       _LyricsPreview(
-                        lyrics: player.currentLyrics ?? [],
-                        line: player.currentLyricLine,
+                        lyrics: playerState.lyrics ?? [],
+                        line: playerState.currentLyricLine,
                         onTap: _openLyrics,
                       ),
                       _InstrumentPanel(player: player),
@@ -198,11 +204,11 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                 SlideTransition(
                   position: _lyricsSlide,
                   child: LyricsOverlay(
-                    lyrics: player.currentLyrics ?? [],
-                    line: player.currentLyricLine,
+                    lyrics: playerState.lyrics ?? [],
+                    line: playerState.currentLyricLine,
                     onClose: _closeLyrics,
                     coverUrl: song.coverUrl,
-                    positionMs: player.position.round(),
+                    positionMs: playerState.position.round(),
                     durationMs: song.duration.inMilliseconds,
                   ),
                 ),
@@ -266,7 +272,7 @@ String _buildFormatInfo(Song song, bool bitPerfect) {
 /// 仪器读数面板：输出链 / 缓冲 / 丢帧 / 引擎状态
 /// 对齐 HTML prototype 2×2 网格布局
 class _InstrumentPanel extends StatelessWidget {
-  final PlaybackProvider player;
+  final PlaybackController player;
   const _InstrumentPanel({required this.player});
 
   /// 44100 → "44.1k"、48000 → "48k"、96000 → "96k"
@@ -564,7 +570,7 @@ class _SongInfo extends StatelessWidget {
 // ── Tags ──
 
 class _Tags extends StatelessWidget {
-  final PlaybackProvider player;
+  final PlaybackController player;
   final Song song;
   const _Tags({required this.player, required this.song});
 
@@ -630,7 +636,7 @@ class _TechTag extends StatelessWidget {
 // ── Progress Row ──
 
 class _ProgressRow extends StatelessWidget {
-  final PlaybackProvider player;
+  final PlaybackController player;
   final Song song;
   const _ProgressRow({required this.player, required this.song});
 
@@ -649,7 +655,7 @@ class _ProgressRow extends StatelessWidget {
 // ── Transport ──
 
 class _TransportRow extends StatelessWidget {
-  final PlaybackProvider player;
+  final PlaybackController player;
   const _TransportRow({required this.player});
 
   @override
@@ -847,7 +853,7 @@ class _LyricsPreview extends StatelessWidget {
 // ── Bottom Toolbar ──
 
 class _BottomToolbar extends StatelessWidget {
-  final PlaybackProvider player;
+  final PlaybackController player;
   final bool lyricsActive;
   final VoidCallback onQueue;
   final VoidCallback onEffects;

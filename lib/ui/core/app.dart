@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
 import '../../l10n/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'theme/app_theme.dart';
 import '../features/settings/view_models/locale_provider.dart';
@@ -14,14 +14,14 @@ import '../features/library/views/import_page.dart';
 import 'widgets/mini_player_bar.dart';
 import 'routes.dart';
 
-class WaveLinkApp extends StatelessWidget {
+class WaveLinkApp extends ConsumerWidget {
   const WaveLinkApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final localeProvider = Provider.of<LocaleProvider>(context);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(localeProvider);
     final deviceLocale = PlatformDispatcher.instance.locale;
-    final locale = localeProvider.resolve(deviceLocale);
+    final locale = LocaleNotifier.resolve(mode, deviceLocale);
     return MaterialApp.router(
       title: 'WaveLink Mobile',
       debugShowCheckedModeBanner: false,
@@ -38,22 +38,22 @@ class WaveLinkApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: LocaleProvider.supported,
+      supportedLocales: LocaleNotifier.supported,
       routerConfig: goRouter,
     );
   }
 }
 
-class AppShell extends StatefulWidget {
+class AppShell extends ConsumerStatefulWidget {
   final StatefulNavigationShell navigationShell;
 
   const AppShell({super.key, required this.navigationShell});
 
   @override
-  State<AppShell> createState() => _AppShellState();
+  ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends ConsumerState<AppShell> {
   @override
   void initState() {
     super.initState();
@@ -72,7 +72,7 @@ class _AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final currentTab = widget.navigationShell.currentIndex;
-    final headerNotifier = context.watch<LibraryHeaderNotifier>();
+    final headerState = ref.watch(libraryHeaderProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -110,8 +110,9 @@ class _AppShellState extends State<AppShell> {
                     // Search toggle
                     _HeaderIconButton(
                       icon: LucideIcons.search,
-                      onTap: () => headerNotifier.toggleSearch(),
-                      active: headerNotifier.isSearchVisible,
+                      onTap: () =>
+                          ref.read(libraryHeaderProvider.notifier).toggleSearch(),
+                      active: headerState.isSearchVisible,
                     ),
                     const SizedBox(width: 4),
                     // Import

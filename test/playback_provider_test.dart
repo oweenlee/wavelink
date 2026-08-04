@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wavelink_mobile/domain/models/song.dart';
-import 'package:wavelink_mobile/domain/models/playback_types.dart';
-import 'package:wavelink_mobile/ui/features/playback/view_models/playback_provider.dart';
+import 'package:wavelink_mobile/ui/features/playback/view_models/playback_controller.dart';
+import 'package:wavelink_mobile/ui/core/providers/repositories.dart';
 import 'package:wavelink_mobile/data/services/preferences_service.dart';
 import 'helpers/mock_repositories.dart';
 import 'package:wavelink_mobile/data/repositories/preferences_repository.dart';
@@ -33,12 +34,22 @@ void main() {
         );
   });
 
-  PlaybackProvider buildProvider({bool autoPlay = false}) {
-    final p = PlaybackProvider(
-      engineRepo: MockAudioEngineRepository(),
-      songRepo: MockSongRepository(),
-      prefsRepo: PreferencesRepository(),
+  PlaybackController buildProvider({bool autoPlay = false}) {
+    final container = ProviderContainer(
+      overrides: [
+        audioEngineRepositoryProvider.overrideWith(
+          (_) => MockAudioEngineRepository(),
+        ),
+        songRepositoryProvider.overrideWith((_) => MockSongRepository()),
+        preferencesRepositoryProvider.overrideWith(
+          (_) => PreferencesRepository(),
+        ),
+      ],
     );
+    addTearDown(container.dispose);
+    final p = container.read(playbackControllerProvider);
+    // 与旧 PlaybackProvider 构造行为对齐：触发偏好加载/引擎 init/扫描
+    p.bootstrap();
     p.autoPlayOnQueueSet = autoPlay;
     // 注入测试歌曲，绕过 Documents 扫描结果
     p.setQueue([
@@ -49,7 +60,7 @@ void main() {
     return p;
   }
 
-  group('PlaybackProvider 队列逻辑', () {
+  group('PlaybackController 队列逻辑', () {
     test('setQueue 设置队列并重置索引', () {
       final p = buildProvider();
       check(p.queue.length).equals(3);
@@ -141,7 +152,7 @@ void main() {
     });
   });
 
-  group('PlaybackProvider 收藏与偏好', () {
+  group('PlaybackController 收藏与偏好', () {
     test('toggleFavorite 增删并持久化', () async {
       final p = buildProvider();
       check(p.isSongFavorite('s1')).isFalse();
@@ -187,7 +198,7 @@ void main() {
     });
   });
 
-  group('PlaybackProvider 播放列表', () {
+  group('PlaybackController 播放列表', () {
     test('saveCurrentQueueAsPlaylist 后可读出', () async {
       final p = buildProvider();
       await p.saveCurrentQueueAsPlaylist('测试列表');
@@ -197,7 +208,7 @@ void main() {
     });
   });
 
-  group('PlaybackProvider 解码/播放时序（刺啦修复回归）', () {
+  group('PlaybackController 解码/播放时序（刺啦修复回归）', () {
     // 注：audio-core 迁移（b26c796）后，旧的显式防爆音流程（stopDecoder/startDecoder/
     // _waitFirstFrame/_bufferRingbuf + startDecoderHook）已移除，改由引擎内部管理解码。
     // 当前架构保留的时序保证是：native play 必在 native stop 完成之后（_playCurrent 中

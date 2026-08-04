@@ -1,78 +1,109 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../domain/models/playback_types.dart';
-import '../../../../data/repositories/audio_engine_repository.dart';
-import '../../../../data/repositories/preferences_repository.dart';
+import '../../../core/providers/repositories.dart';
 
-class DspProvider extends ChangeNotifier {
-  DspProvider({required this._engineRepo, required this._prefsRepo});
+class DspState {
+  final DspSettings dspSettings;
+  final List<double> eqValues;
+  final String eqPreset;
 
-  final AudioEngineRepository _engineRepo;
-  final PreferencesRepository _prefsRepo;
-  DspSettings _dspSettings = DspSettings();
+  DspState({
+    DspSettings? dspSettings,
+    List<double>? eqValues,
+    this.eqPreset = 'Flat',
+  }) : dspSettings = dspSettings ?? DspSettings(),
+       eqValues = eqValues ?? List.filled(10, 0.0);
 
-  DspSettings get dspSettings => _dspSettings;
+  DspState copyWith({
+    DspSettings? dspSettings,
+    List<double>? eqValues,
+    String? eqPreset,
+  }) {
+    return DspState(
+      dspSettings: dspSettings ?? this.dspSettings,
+      eqValues: eqValues ?? this.eqValues,
+      eqPreset: eqPreset ?? this.eqPreset,
+    );
+  }
+}
+
+class DspNotifier extends Notifier<DspState> {
+  @override
+  DspState build() => DspState();
+
   bool get dspAvailable => true;
 
-  Future<List<double>> getSpectrum() => _engineRepo.getSpectrum();
-  Future<int> getUnderrunCount() => _engineRepo.getUnderrunCount();
+  Future<List<double>> getSpectrum() =>
+      ref.read(audioEngineRepositoryProvider).getSpectrum();
+
+  Future<int> getUnderrunCount() =>
+      ref.read(audioEngineRepositoryProvider).getUnderrunCount();
 
   void toggleDspEnabled() {
-    _dspSettings = _dspSettings.copyWith(enabled: !_dspSettings.enabled);
-    _prefsRepo.setDspEnabled(_dspSettings.enabled);
+    final s = state.dspSettings.copyWith(enabled: !state.dspSettings.enabled);
+    state = state.copyWith(dspSettings: s);
+    ref.read(preferencesRepositoryProvider).setDspEnabled(s.enabled);
     applyDsp();
-    notifyListeners();
   }
 
   void toggleCrossfeed() {
-    _dspSettings = _dspSettings.copyWith(crossfeed: !_dspSettings.crossfeed);
-    _prefsRepo.setDspCrossfeed(_dspSettings.crossfeed);
+    final s = state.dspSettings.copyWith(
+      crossfeed: !state.dspSettings.crossfeed,
+    );
+    state = state.copyWith(dspSettings: s);
+    ref.read(preferencesRepositoryProvider).setDspCrossfeed(s.crossfeed);
     applyDsp();
-    notifyListeners();
   }
 
   void toggleWidener() {
-    _dspSettings = _dspSettings.copyWith(widener: !_dspSettings.widener);
-    _prefsRepo.setDspWidener(_dspSettings.widener);
+    final s = state.dspSettings.copyWith(widener: !state.dspSettings.widener);
+    state = state.copyWith(dspSettings: s);
+    ref.read(preferencesRepositoryProvider).setDspWidener(s.widener);
     applyDsp();
-    notifyListeners();
   }
 
   void toggleLimiter() {
-    _dspSettings = _dspSettings.copyWith(limiter: !_dspSettings.limiter);
-    _prefsRepo.setDspLimiter(_dspSettings.limiter);
+    final s = state.dspSettings.copyWith(limiter: !state.dspSettings.limiter);
+    state = state.copyWith(dspSettings: s);
+    ref.read(preferencesRepositoryProvider).setDspLimiter(s.limiter);
     applyDsp();
-    notifyListeners();
   }
 
   void toggleDither() {
-    _dspSettings = _dspSettings.copyWith(dither: !_dspSettings.dither);
-    _prefsRepo.setDspDither(_dspSettings.dither);
+    final s = state.dspSettings.copyWith(dither: !state.dspSettings.dither);
+    state = state.copyWith(dspSettings: s);
+    ref.read(preferencesRepositoryProvider).setDspDither(s.dither);
     applyDsp();
-    notifyListeners();
   }
 
   /// 把当前 DSP 设置同步到引擎。
   /// enabled 为总开关：关闭时全部子开关置 false，打开时恢复各子开关状态。
   Future<void> applyDsp() async {
-    if (!_engineRepo.rustAvailable) return;
-    final on = _dspSettings.enabled;
+    final engineRepo = ref.read(audioEngineRepositoryProvider);
+    if (!engineRepo.rustAvailable) return;
+    final dsp = state.dspSettings;
+    final on = dsp.enabled;
     try {
-      await _engineRepo.setCrossfeed(on && _dspSettings.crossfeed);
-      await _engineRepo.setStereoWidener(on && _dspSettings.widener, 0.5);
-      await _engineRepo.setLimiter(on && _dspSettings.limiter);
-      await _engineRepo.setDither(on && _dspSettings.dither);
+      await engineRepo.setCrossfeed(on && dsp.crossfeed);
+      await engineRepo.setStereoWidener(on && dsp.widener, 0.5);
+      await engineRepo.setLimiter(on && dsp.limiter);
+      await engineRepo.setDither(on && dsp.dither);
     } catch (e) {
       debugPrint('[DSP] 应用设置失败: $e');
     }
   }
 
   void loadDspPrefs() {
-    _dspSettings = DspSettings(
-      enabled: _prefsRepo.dspEnabled,
-      crossfeed: _prefsRepo.dspCrossfeed,
-      widener: _prefsRepo.dspWidener,
-      limiter: _prefsRepo.dspLimiter,
-      dither: _prefsRepo.dspDither,
+    final prefs = ref.read(preferencesRepositoryProvider);
+    state = state.copyWith(
+      dspSettings: DspSettings(
+        enabled: prefs.dspEnabled,
+        crossfeed: prefs.dspCrossfeed,
+        widener: prefs.dspWidener,
+        limiter: prefs.dspLimiter,
+        dither: prefs.dspDither,
+      ),
     );
   }
 
@@ -115,22 +146,15 @@ class DspProvider extends ChangeNotifier {
     'Vocals': 'vocals',
   };
 
-  List<double> _eqValues = List.filled(10, 0.0);
-  String _eqPreset = 'Flat';
-
-  List<double> get eqValues => _eqValues;
-  String get eqPreset => _eqPreset;
-
   /// 应用 EQ 预设：更新本地曲线并下发引擎。
   Future<void> applyEqPreset(String name) async {
     final gains = eqPresets[name];
     if (gains == null) return;
-    _eqPreset = name;
-    _eqValues = List.from(gains);
-    notifyListeners();
-    if (!_engineRepo.rustAvailable) return;
+    state = state.copyWith(eqPreset: name, eqValues: List.from(gains));
+    final engineRepo = ref.read(audioEngineRepositoryProvider);
+    if (!engineRepo.rustAvailable) return;
     try {
-      await _engineRepo.applyPreset(_rustPresetNames[name] ?? name.toLowerCase());
+      await engineRepo.applyPreset(_rustPresetNames[name] ?? name.toLowerCase());
     } catch (e) {
       debugPrint('[EQ] applyPreset 失败: $e');
     }
@@ -138,13 +162,15 @@ class DspProvider extends ChangeNotifier {
 
   /// 手动调整单个频段增益：更新本地曲线并下发引擎，取消预设高亮。
   Future<void> setEqBand(int index, double gainDb) async {
-    if (index < 0 || index >= _eqValues.length) return;
-    _eqValues[index] = gainDb;
-    _eqPreset = ''; // 手动调整后不再是纯预设
-    notifyListeners();
-    if (!_engineRepo.rustAvailable) return;
+    if (index < 0 || index >= state.eqValues.length) return;
+    final values = List<double>.from(state.eqValues);
+    values[index] = gainDb;
+    // 手动调整后不再是纯预设（eqPreset 置空）
+    state = state.copyWith(eqValues: values, eqPreset: '');
+    final engineRepo = ref.read(audioEngineRepositoryProvider);
+    if (!engineRepo.rustAvailable) return;
     try {
-      await _engineRepo.setPeqBand(
+      await engineRepo.setPeqBand(
         index,
         eqFrequencies[index],
         gainDb,
@@ -155,3 +181,5 @@ class DspProvider extends ChangeNotifier {
     }
   }
 }
+
+final dspProvider = NotifierProvider<DspNotifier, DspState>(DspNotifier.new);

@@ -1,137 +1,158 @@
-import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:math' as math;
 import '../../../../domain/models/song.dart';
 import '../../../../domain/models/playback_types.dart';
-import '../../../../data/repositories/preferences_repository.dart';
+import '../../../core/providers/repositories.dart';
 
-class QueueProvider extends ChangeNotifier {
-  QueueProvider({required this._prefsRepo});
+class QueueState {
+  final List<Song> queue;
+  final int currentIndex;
+  final LoopMode loopMode;
+  final bool shuffle;
 
-  final PreferencesRepository _prefsRepo;
-  List<Song> _queue = [];
-  int _currentIndex = 0;
-  LoopMode _loopMode = LoopMode.list;
-  bool _shuffle = false;
+  const QueueState({
+    this.queue = const [],
+    this.currentIndex = 0,
+    this.loopMode = LoopMode.list,
+    this.shuffle = false,
+  });
+
+  bool get hasSong => queue.isNotEmpty;
+  Song? get currentSong => queue.isNotEmpty ? queue[currentIndex] : null;
+
+  QueueState copyWith({
+    List<Song>? queue,
+    int? currentIndex,
+    LoopMode? loopMode,
+    bool? shuffle,
+  }) {
+    return QueueState(
+      queue: queue ?? this.queue,
+      currentIndex: currentIndex ?? this.currentIndex,
+      loopMode: loopMode ?? this.loopMode,
+      shuffle: shuffle ?? this.shuffle,
+    );
+  }
+}
+
+class QueueNotifier extends Notifier<QueueState> {
   final math.Random _random = math.Random();
 
-  List<Song> get queue => _queue;
-  int get currentIndex => _currentIndex;
-  LoopMode get loopMode => _loopMode;
-  bool get shuffle => _shuffle;
-
-  bool get hasSong => _queue.isNotEmpty;
-  Song? get currentSong => _queue.isNotEmpty ? _queue[_currentIndex] : null;
+  @override
+  QueueState build() => const QueueState();
 
   void setQueue(List<Song> songs, {int startIndex = 0}) {
-    _queue = List.from(songs);
+    final queue = List<Song>.from(songs);
     // 空队列时 length-1 == -1，clamp(0,-1) 会抛 ArgumentError，需先判空
-    _currentIndex =
-        _queue.isEmpty ? 0 : startIndex.clamp(0, _queue.length - 1);
-    notifyListeners();
+    final index = queue.isEmpty ? 0 : startIndex.clamp(0, queue.length - 1);
+    state = state.copyWith(queue: queue, currentIndex: index);
   }
 
   void addToQueue(Song song) {
-    _queue.add(song);
-    notifyListeners();
+    state = state.copyWith(queue: [...state.queue, song]);
   }
 
   void playNext(Song song) {
-    _queue.insert(_currentIndex + 1, song);
-    notifyListeners();
+    final queue = List<Song>.from(state.queue)..insert(
+      state.currentIndex + 1,
+      song,
+    );
+    state = state.copyWith(queue: queue);
   }
 
   void removeFromQueue(int index) {
-    if (index < 0 || index >= _queue.length) return;
-    if (index == _currentIndex) {
-      _queue.removeAt(index);
-      if (_currentIndex >= _queue.length) _currentIndex = 0;
+    if (index < 0 || index >= state.queue.length) return;
+    final queue = List<Song>.from(state.queue);
+    var currentIndex = state.currentIndex;
+    if (index == currentIndex) {
+      queue.removeAt(index);
+      if (currentIndex >= queue.length) currentIndex = 0;
     } else {
-      if (index < _currentIndex) _currentIndex--;
-      _queue.removeAt(index);
+      if (index < currentIndex) currentIndex--;
+      queue.removeAt(index);
     }
-    notifyListeners();
+    state = state.copyWith(queue: queue, currentIndex: currentIndex);
   }
 
   void reorderQueue(int oldIndex, int newIndex) {
     if (newIndex > oldIndex) newIndex--;
-    final item = _queue.removeAt(oldIndex);
-    _queue.insert(newIndex, item);
-    if (_currentIndex == oldIndex) {
-      _currentIndex = newIndex;
-    } else if (oldIndex < _currentIndex && newIndex >= _currentIndex) {
-      _currentIndex--;
-    } else if (oldIndex > _currentIndex && newIndex <= _currentIndex) {
-      _currentIndex++;
+    final queue = List<Song>.from(state.queue);
+    final item = queue.removeAt(oldIndex);
+    queue.insert(newIndex, item);
+    var currentIndex = state.currentIndex;
+    if (currentIndex == oldIndex) {
+      currentIndex = newIndex;
+    } else if (oldIndex < currentIndex && newIndex >= currentIndex) {
+      currentIndex--;
+    } else if (oldIndex > currentIndex && newIndex <= currentIndex) {
+      currentIndex++;
     }
-    notifyListeners();
+    state = state.copyWith(queue: queue, currentIndex: currentIndex);
   }
 
   void playSongById(Song song) {
-    final idx = _queue.indexWhere((s) => s.id == song.id);
+    final idx = state.queue.indexWhere((s) => s.id == song.id);
     if (idx >= 0) {
-      _currentIndex = idx;
+      state = state.copyWith(currentIndex: idx);
     } else {
-      _queue.add(song);
-      _currentIndex = _queue.length - 1;
+      state = state.copyWith(
+        queue: [...state.queue, song],
+        currentIndex: state.queue.length,
+      );
     }
-    notifyListeners();
   }
 
   void advanceTo(int index) {
-    if (index >= 0 && index < _queue.length) {
-      _currentIndex = index;
+    if (index >= 0 && index < state.queue.length) {
+      state = state.copyWith(currentIndex: index);
     }
   }
 
   int findNextIndex() {
-    if (_queue.isEmpty) return 0;
-    final shouldShuffle = _shuffle || _loopMode == LoopMode.shuffle;
-    if (shouldShuffle && _queue.length > 1) {
-      return (_currentIndex + 1 + _random.nextInt(_queue.length - 1)) %
-          _queue.length;
+    final s = state;
+    if (s.queue.isEmpty) return 0;
+    final shouldShuffle = s.shuffle || s.loopMode == LoopMode.shuffle;
+    if (shouldShuffle && s.queue.length > 1) {
+      return (s.currentIndex + 1 + _random.nextInt(s.queue.length - 1)) %
+          s.queue.length;
     }
-    return (_currentIndex + 1) % _queue.length;
+    return (s.currentIndex + 1) % s.queue.length;
   }
 
   void setLoopMode(LoopMode mode) {
-    _loopMode = mode;
-    _prefsRepo.setLoopMode(_loopMode.name);
-    notifyListeners();
+    state = state.copyWith(loopMode: mode);
+    ref.read(preferencesRepositoryProvider).setLoopMode(mode.name);
   }
 
   void toggleLoopMode() {
     const modes = [LoopMode.list, LoopMode.single, LoopMode.shuffle];
-    final idx = modes.indexOf(_loopMode);
-    _loopMode = modes[(idx + 1) % modes.length];
-    _prefsRepo.setLoopMode(_loopMode.name);
-    notifyListeners();
+    final idx = modes.indexOf(state.loopMode);
+    setLoopMode(modes[(idx + 1) % modes.length]);
   }
 
   void toggleShuffle() {
-    _shuffle = !_shuffle;
-    _prefsRepo.setShuffle(_shuffle);
-    notifyListeners();
+    state = state.copyWith(shuffle: !state.shuffle);
+    ref.read(preferencesRepositoryProvider).setShuffle(state.shuffle);
   }
 
+  /// 库加载完成后以导入歌曲初始化队列（不触发 UI 通知风暴，直接整体替换）。
   void onImportedSongsLoaded(List<Song> songs) {
-    _queue = List.from(songs);
-    _currentIndex = 0;
+    state = state.copyWith(queue: List<Song>.from(songs), currentIndex: 0);
   }
 
   void onImportAdded(List<Song> songs) {
-    final existingPaths = _queue.map((s) => s.path).whereType<String>().toSet();
+    final existingPaths = state.queue
+        .map((s) => s.path)
+        .whereType<String>()
+        .toSet();
     final newSongs = songs
         .where((s) => s.path != null && !existingPaths.contains(s.path))
         .toList();
     if (newSongs.isEmpty) return;
-    _queue.addAll(newSongs);
-    notifyListeners();
-  }
-
-  void onRescan(List<Song> songs) {
-    for (final s in songs) {
-      final idx = _queue.indexWhere((q) => q.path == s.path);
-      if (idx >= 0) _queue[idx] = s;
-    }
+    state = state.copyWith(queue: [...state.queue, ...newSongs]);
   }
 }
+
+final queueProvider = NotifierProvider<QueueNotifier, QueueState>(
+  QueueNotifier.new,
+);

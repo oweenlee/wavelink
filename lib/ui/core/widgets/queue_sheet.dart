@@ -1,27 +1,29 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:provider/provider.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../domain/models/song.dart';
-import '../../features/playback/view_models/playback_provider.dart';
+import '../../features/playback/view_models/playback_controller.dart';
+import '../../features/playback/view_models/queue_provider.dart';
 import '../theme/app_theme.dart';
 import 'album_cover.dart';
 import 'sheet_shell.dart';
 import 'now_playing_indicator.dart';
 
-class QueueSheet extends StatelessWidget {
+class QueueSheet extends ConsumerWidget {
   const QueueSheet({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final player = context.watch<PlaybackProvider>();
+    final player = ref.watch(playbackControllerProvider);
+    final queueState = ref.watch(queueProvider);
     return SheetShell(
       title: l10n.queueTitle,
       builder: (scroll) {
-        if (player.queue.isEmpty) {
+        if (queueState.queue.isEmpty) {
           return Center(
             child: Text(
               l10n.queueEmpty,
@@ -32,16 +34,16 @@ class QueueSheet extends StatelessWidget {
         return ReorderableListView.builder(
           scrollController: scroll,
           padding: const EdgeInsets.only(top: 8, bottom: 80),
-          itemCount: player.queue.length,
+          itemCount: queueState.queue.length,
           onReorderItem: (o, n) => player.reorderQueue(o, n),
           itemBuilder: (ctx, i) {
             // 边界保护：删除/重排队列后 provider 立即 notify，而 ReorderableListView
             // 的拖动/消失动画还没走完，会以旧 itemCount 回调 itemBuilder → 越界
-            if (i < 0 || i >= player.queue.length) {
+            if (i < 0 || i >= queueState.queue.length) {
               return SizedBox(key: ValueKey('stale_$i'));
             }
-            final s = player.queue[i];
-            final isCurrent = i == player.currentIndex;
+            final s = queueState.queue[i];
+            final isCurrent = i == queueState.currentIndex;
             return Dismissible(
               key: ValueKey('q_${s.id}_$i'),
               direction: DismissDirection.endToStart,

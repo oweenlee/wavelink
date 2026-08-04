@@ -1,20 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
-import 'package:provider/provider.dart';
 import '../../../../domain/models/song.dart';
-import '../../playback/view_models/playback_provider.dart';
+import '../../playback/view_models/playback_controller.dart';
+import '../../playback/view_models/audio_player_provider.dart';
+import '../../playback/view_models/queue_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/now_playing_indicator.dart';
 import '../../../core/widgets/album_cover.dart';
 
-class AlbumDetailPage extends StatelessWidget {
+class AlbumDetailPage extends ConsumerWidget {
   final Album album;
   const AlbumDetailPage({super.key, required this.album});
 
   @override
-  Widget build(BuildContext context) {
-    final player = context.watch<PlaybackProvider>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final player = ref.watch(playbackControllerProvider);
+    final playerState = ref.watch(playerProvider);
+    final queueState = ref.watch(queueProvider);
     return Scaffold(
       backgroundColor: AppTheme.background,
       extendBodyBehindAppBar: true,
@@ -76,7 +80,7 @@ class AlbumDetailPage extends StatelessWidget {
             delegate: SliverChildBuilderDelegate((ctx, i) {
               final s = album.songs[i];
               final isCurrent =
-                  player.isPlaying && player.currentSong?.id == s.id;
+                  playerState.isPlaying && queueState.currentSong?.id == s.id;
               return _TrackTile(
                 index: i + 1,
                 song: s,
@@ -117,7 +121,7 @@ class _AlbumCover extends StatelessWidget {
 
 class _AlbumInfo extends StatelessWidget {
   final Album album;
-  final PlaybackProvider player;
+  final PlaybackController player;
   const _AlbumInfo({required this.album, required this.player});
 
   @override

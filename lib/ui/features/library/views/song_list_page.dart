@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
-import 'package:provider/provider.dart';
 import '../../../../domain/models/song.dart';
-import '../../playback/view_models/playback_provider.dart';
+import '../../playback/view_models/playback_controller.dart';
+import '../../playback/view_models/audio_player_provider.dart';
+import '../../playback/view_models/queue_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/song_tile.dart';
 import '../../../core/widgets/album_cover.dart';
 
 /// 通用歌曲列表页（用于「我喜欢的音乐」、已保存播放列表等）
-class SongListPage extends StatelessWidget {
+class SongListPage extends ConsumerWidget {
   final String title;
   final List<Song> songs;
   final Color accentColor;
@@ -24,9 +26,11 @@ class SongListPage extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final player = context.watch<PlaybackProvider>();
+    final player = ref.watch(playbackControllerProvider);
+    final playerState = ref.watch(playerProvider);
+    final queueState = ref.watch(queueProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -135,7 +139,7 @@ class SongListPage extends StatelessWidget {
               delegate: SliverChildBuilderDelegate((ctx, i) {
                 final song = songs[i];
                 final isPlaying =
-                    player.isPlaying && player.currentSong?.id == song.id;
+                    playerState.isPlaying && queueState.currentSong?.id == song.id;
                 return SongTile(
                   song: song,
                   isPlaying: isPlaying,
@@ -154,7 +158,7 @@ class SongListPage extends StatelessWidget {
   void _showContextMenu(
     BuildContext context,
     Song song,
-    PlaybackProvider player,
+    PlaybackController player,
   ) {
     final l10n = AppLocalizations.of(context);
     showModalBottomSheet(

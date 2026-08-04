@@ -1,28 +1,46 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Shared state for the Library page header — search bar visibility and query.
 /// Used by both AppShell (icon buttons) and LibraryPage (search bar, filtering).
-class LibraryHeaderNotifier extends ChangeNotifier {
-  bool _isSearchVisible = false;
-  String _searchQuery = '';
+class LibraryHeaderState {
+  final bool isSearchVisible;
+  final String searchQuery;
 
-  bool get isSearchVisible => _isSearchVisible;
-  String get searchQuery => _searchQuery;
+  const LibraryHeaderState({
+    this.isSearchVisible = false,
+    this.searchQuery = '',
+  });
+
+  LibraryHeaderState copyWith({bool? isSearchVisible, String? searchQuery}) {
+    return LibraryHeaderState(
+      isSearchVisible: isSearchVisible ?? this.isSearchVisible,
+      searchQuery: searchQuery ?? this.searchQuery,
+    );
+  }
+}
+
+class LibraryHeaderNotifier extends Notifier<LibraryHeaderState> {
+  @override
+  LibraryHeaderState build() => const LibraryHeaderState();
 
   void toggleSearch() {
-    _isSearchVisible = !_isSearchVisible;
-    if (!_isSearchVisible) _searchQuery = '';
-    notifyListeners();
+    final visible = !state.isSearchVisible;
+    state = LibraryHeaderState(
+      isSearchVisible: visible,
+      searchQuery: visible ? state.searchQuery : '',
+    );
   }
 
   void setQuery(String q) {
-    _searchQuery = q;
-    notifyListeners();
+    state = state.copyWith(searchQuery: q);
   }
 
   void closeSearch() {
-    _isSearchVisible = false;
-    _searchQuery = '';
-    notifyListeners();
+    state = const LibraryHeaderState();
   }
 }
+
+final libraryHeaderProvider =
+    NotifierProvider<LibraryHeaderNotifier, LibraryHeaderState>(
+      LibraryHeaderNotifier.new,
+    );

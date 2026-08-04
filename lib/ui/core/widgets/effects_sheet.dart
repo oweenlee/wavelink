@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:provider/provider.dart';
 import '../../../l10n/app_localizations.dart';
-import '../../features/playback/view_models/playback_provider.dart';
+import '../../features/playback/view_models/playback_controller.dart';
 import '../../features/settings/view_models/dsp_provider.dart';
 import '../theme/app_theme.dart';
 import 'sheet_shell.dart';
 
-class EffectsSheet extends StatelessWidget {
+class EffectsSheet extends ConsumerWidget {
   const EffectsSheet({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final player = context.watch<PlaybackProvider>();
-    final dsp = player.dspSettings;
+    final player = ref.watch(playbackControllerProvider);
+    final dsp = ref.watch(dspProvider).dspSettings;
     return SheetShell(
       title: l10n.soundSettings,
       builder: (scroll) {
@@ -91,22 +91,23 @@ class _SectionHeader extends StatelessWidget {
 // ── 10 段 EQ ──
 
 /// 10 段参量 EQ：竖滑块 + dB 值 + 预设 chips + 贝塞尔曲线连线。
-/// 状态与预设表均由 [DspProvider] 持有（与 audio-core 引擎对齐），
-/// 调整实时下发引擎出声。直接 watch [DspProvider] 而非 PlaybackProvider，
+/// 状态与预设表均由 [DspNotifier] 持有（与 audio-core 引擎对齐），
+/// 调整实时下发引擎出声。直接 watch [dspProvider] 而非播放器状态，
 /// 避免播放进度 250ms tick 带动滑块重建。
-class _EqSection extends StatelessWidget {
+class _EqSection extends ConsumerWidget {
   String _bandLabel(double hz) {
     if (hz >= 1000) return '${(hz / 1000).round()}k';
     return '${hz.round()}';
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final accent = AccentScope.of(context);
-    final dsp = context.watch<DspProvider>();
-    final values = dsp.eqValues;
-    final activePreset = dsp.eqPreset;
-    final freqs = DspProvider.eqFrequencies;
+    final dspState = ref.watch(dspProvider);
+    final dsp = ref.read(dspProvider.notifier);
+    final values = dspState.eqValues;
+    final activePreset = dspState.eqPreset;
+    final freqs = DspNotifier.eqFrequencies;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -119,7 +120,7 @@ class _EqSection extends StatelessWidget {
           child: ListView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            children: DspProvider.eqPresets.keys.map((p) {
+            children: DspNotifier.eqPresets.keys.map((p) {
               final active = activePreset == p;
               return Padding(
                 padding: const EdgeInsets.only(right: 8),

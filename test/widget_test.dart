@@ -1,18 +1,24 @@
 import 'package:checks/checks.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wavelink_mobile/ui/core/app.dart';
 import 'package:wavelink_mobile/domain/models/song.dart';
 import 'package:wavelink_mobile/domain/models/lyric_line.dart';
-import 'package:wavelink_mobile/ui/features/playback/view_models/playback_provider.dart';
+import 'package:wavelink_mobile/ui/features/playback/view_models/playback_controller.dart';
+import 'package:wavelink_mobile/ui/core/providers/repositories.dart';
 import 'package:wavelink_mobile/data/services/preferences_service.dart';
 import 'package:wavelink_mobile/data/repositories/preferences_repository.dart';
 import 'package:wavelink_mobile/ui/features/settings/view_models/locale_provider.dart';
-import 'package:wavelink_mobile/ui/features/library/view_models/library_header_notifier.dart';
 import 'helpers/mock_repositories.dart';
+
+/// 测试用：强制中文（测试设备语言为 en，断言文案为中文）
+class _TestLocaleNotifier extends LocaleNotifier {
+  @override
+  String build() => 'zh';
+}
 
 void main() {
   setUp(() async {
@@ -27,24 +33,24 @@ void main() {
   });
 
   Widget buildApp() {
-    final playback = PlaybackProvider(
-      engineRepo: MockAudioEngineRepository(),
-      songRepo: MockSongRepository(),
-      prefsRepo: PreferencesRepository(),
-    );
-    // 测试环境设备语言为 en，强制中文以匹配断言文案
-    final localeProvider = LocaleProvider()..setMode('zh');
-    // 镜像 main.dart 的 Provider 树（WaveLinkApp 需要 playback 及其子 provider + LocaleProvider）
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider.value(value: playback),
-        ChangeNotifierProvider.value(value: playback.queueProvider),
-        ChangeNotifierProvider.value(value: playback.audioPlayer),
-        ChangeNotifierProvider.value(value: playback.library),
-        ChangeNotifierProvider.value(value: playback.dsp),
-        ChangeNotifierProvider.value(value: localeProvider),
-        ChangeNotifierProvider(create: (_) => LibraryHeaderNotifier()),
+    // 镜像 main.dart：mock repos + 强制中文（测试设备语言为 en，断言文案为中文）
+    final container = ProviderContainer(
+      overrides: [
+        audioEngineRepositoryProvider.overrideWith(
+          (_) => MockAudioEngineRepository(),
+        ),
+        songRepositoryProvider.overrideWith((_) => MockSongRepository()),
+        preferencesRepositoryProvider.overrideWith(
+          (_) => PreferencesRepository(),
+        ),
+        localeProvider.overrideWith(_TestLocaleNotifier.new),
       ],
+    );
+    addTearDown(container.dispose);
+    // 触发编排层接线并启动副作用（与 main.dart 一致）
+    container.read(playbackControllerProvider).bootstrap();
+    return UncontrolledProviderScope(
+      container: container,
       child: const WaveLinkApp(),
     );
   }

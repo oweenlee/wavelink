@@ -2,136 +2,137 @@ import 'dart:ui' as ui;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../features/playback/view_models/playback_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../features/playback/view_models/playback_controller.dart';
+import '../../features/playback/view_models/audio_player_provider.dart';
+import '../../features/playback/view_models/queue_provider.dart';
 import '../theme/app_theme.dart';
 import 'album_cover.dart';
 
-class MiniPlayerBar extends StatelessWidget {
+class MiniPlayerBar extends ConsumerWidget {
   final VoidCallback? onTap;
 
   const MiniPlayerBar({super.key, this.onTap});
 
   @override
-  Widget build(BuildContext context) {
-    return Consumer<PlaybackProvider>(
-      builder: (context, player, _) {
-        final song = player.currentSong;
-        if (song == null) return const SizedBox.shrink();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final player = ref.watch(playbackControllerProvider);
+    final playerState = ref.watch(playerProvider);
+    final queueState = ref.watch(queueProvider);
+    final song = queueState.currentSong;
+    if (song == null) return const SizedBox.shrink();
 
-        final accent = AppTheme.accentFallback;
-        return AccentScope(
-          accent: accent,
-          child: GestureDetector(
-            onTap: onTap,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  height: 2,
-                  width: double.infinity,
-                  child: Stack(
-                    children: [
-                      Container(
-                        height: 2,
-                        color: AppTheme.textTertiary.withValues(alpha: 0.2),
+    final accent = AppTheme.accentFallback;
+    return AccentScope(
+      accent: accent,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 2,
+              width: double.infinity,
+              child: Stack(
+                children: [
+                  Container(
+                    height: 2,
+                    color: AppTheme.textTertiary.withValues(alpha: 0.2),
+                  ),
+                  FractionallySizedBox(
+                    widthFactor: playerState.progress.clamp(0.0, 1.0),
+                    heightFactor: 1,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: accent,
+                        borderRadius: BorderRadius.circular(1),
                       ),
-                      FractionallySizedBox(
-                        widthFactor: player.progress.clamp(0.0, 1.0),
-                        heightFactor: 1,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: accent,
-                            borderRadius: BorderRadius.circular(1),
-                          ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ClipRRect(
+              child: BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                child: Container(
+                  height: 56,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.s2,
+                    border: Border(
+                      top: BorderSide(
+                        color: AppTheme.edgeHighlight,
+                        width: 0.5,
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      WlCover(
+                        coverUrl: song.coverUrl,
+                        fallbackColor: song.dominantColor,
+                        borderRadius: 6,
+                        width: 36,
+                        height: 36,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              song.title,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: AppTheme.textPrimary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              song.artist,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppTheme.textSecondary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          playerState.isPlaying
+                              ? LucideIcons.pause300
+                              : LucideIcons.play300,
+                          color: AppTheme.textPrimary,
+                          size: 28,
+                        ),
+                        onPressed: () => player.togglePlay(),
+                        splashRadius: 20,
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(
+                          LucideIcons.skipForward300,
+                          color: AppTheme.textPrimary,
+                          size: 24,
+                        ),
+                        onPressed: () => player.next(),
+                        splashRadius: 20,
                       ),
                     ],
                   ),
                 ),
-                ClipRRect(
-                  child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                    child: Container(
-                      height: 56,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: AppTheme.s2,
-                        border: Border(
-                          top: BorderSide(
-                            color: AppTheme.edgeHighlight,
-                            width: 0.5,
-                          ),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          WlCover(
-                            coverUrl: song.coverUrl,
-                            fallbackColor: song.dominantColor,
-                            borderRadius: 6,
-                            width: 36,
-                            height: 36,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  song.title,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    color: AppTheme.textPrimary,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                Text(
-                                  song.artist,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: AppTheme.textSecondary,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              player.isPlaying
-                                  ? LucideIcons.pause300
-                                  : LucideIcons.play300,
-                              color: AppTheme.textPrimary,
-                              size: 28,
-                            ),
-                            onPressed: () => player.togglePlay(),
-                            splashRadius: 20,
-                          ),
-                          const SizedBox(width: 4),
-                          IconButton(
-                            icon: const Icon(
-                              LucideIcons.skipForward300,
-                              color: AppTheme.textPrimary,
-                              size: 24,
-                            ),
-                            onPressed: () => player.next(),
-                            splashRadius: 20,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
 }

@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../playback/view_models/playback_provider.dart';
+import '../../playback/view_models/playback_controller.dart';
+import '../view_models/dsp_provider.dart';
 import '../view_models/locale_provider.dart';
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final player = context.watch<PlaybackProvider>();
-    final dsp = player.dspSettings;
+    final player = ref.watch(playbackControllerProvider);
+    final dsp = ref.watch(dspProvider).dspSettings;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
@@ -112,7 +112,7 @@ class SettingsPage extends StatelessWidget {
               icon: LucideIcons.library,
               label: l10n.discoverSongs,
               onTap: () async {
-                final player = context.read<PlaybackProvider>();
+                final player = ref.read(playbackControllerProvider);
                 final ok = await player.discoverSongs();
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -128,7 +128,7 @@ class SettingsPage extends StatelessWidget {
               icon: LucideIcons.folder,
               label: l10n.scanDir,
               onTap: () async {
-                final player = context.read<PlaybackProvider>();
+                final player = ref.read(playbackControllerProvider);
                 await player.importFromPicker();
               },
             ),
@@ -157,15 +157,15 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
-class _LanguageSelector extends StatelessWidget {
+class _LanguageSelector extends ConsumerWidget {
   const _LanguageSelector();
 
   static const _options = [('system', ''), ('zh', ''), ('en', '')];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final locale = context.watch<LocaleProvider>();
+    final localeMode = ref.watch(localeProvider);
 
     // 跟随系统项的显示名需要本地化
     String labelFor(String mode, AppLocalizations l) {
@@ -184,12 +184,13 @@ class _LanguageSelector extends StatelessWidget {
       child: Wrap(
         spacing: 8,
         children: _options.map((opt) {
-          final selected = locale.mode == opt.$1;
+          final selected = localeMode == opt.$1;
           final label = labelFor(opt.$1, l10n);
           return ChoiceChip(
             label: Text(label),
             selected: selected,
-            onSelected: (_) => locale.setMode(opt.$1),
+            onSelected: (_) =>
+                ref.read(localeProvider.notifier).setMode(opt.$1),
             selectedColor: AppTheme.surfaceHigh,
             labelStyle: TextStyle(
               color: selected ? AppTheme.textPrimary : AppTheme.textSecondary,

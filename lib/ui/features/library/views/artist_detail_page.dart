@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../domain/models/song.dart';
-import '../../playback/view_models/playback_provider.dart';
+import '../../playback/view_models/playback_controller.dart';
+import '../../playback/view_models/audio_player_provider.dart';
+import '../../playback/view_models/queue_provider.dart';
+import '../view_models/library_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/now_playing_indicator.dart';
 import '../../../core/widgets/album_cover.dart';
 
-class ArtistDetailPage extends StatelessWidget {
+class ArtistDetailPage extends ConsumerWidget {
   final String artistName;
   final Color artistColor;
   const ArtistDetailPage({
@@ -18,9 +21,12 @@ class ArtistDetailPage extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final player = context.watch<PlaybackProvider>();
+    final player = ref.watch(playbackControllerProvider);
+    final playerState = ref.watch(playerProvider);
+    final queueState = ref.watch(queueProvider);
+    ref.watch(libraryProvider);
     final songs = player.allSongs.where((s) => s.artist == artistName).toList();
     final albums = songs.map((s) => s.album).toSet().toList();
 
@@ -121,7 +127,7 @@ class ArtistDetailPage extends StatelessWidget {
                 final ss = songs.where((s) => s.album == album).toList();
                 final s = ss[i];
                 final isCurrent =
-                    player.isPlaying && player.currentSong?.id == s.id;
+                    playerState.isPlaying && queueState.currentSong?.id == s.id;
                 return _TrackTile(
                   song: s,
                   isCurrent: isCurrent,

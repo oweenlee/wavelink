@@ -1,87 +1,99 @@
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../../domain/models/song.dart';
-import '../../../../data/repositories/song_repository.dart';
-import '../../../../data/repositories/audio_engine_repository.dart';
-import '../../../../data/repositories/preferences_repository.dart';
+import '../../../core/providers/repositories.dart';
+import '../../playback/view_models/queue_provider.dart';
 
-class LibraryProvider extends ChangeNotifier {
-  LibraryProvider({
-    required this._songRepo,
-    required this._engineRepo,
-    required this._prefsRepo,
+class LibraryState {
+  final List<Song> importedSongs;
+  final bool scanDone;
+  final Set<String> favoriteIds;
+
+  const LibraryState({
+    this.importedSongs = const [],
+    this.scanDone = false,
+    this.favoriteIds = const {},
   });
 
-  final SongRepository _songRepo;
-  final AudioEngineRepository _engineRepo;
-  final PreferencesRepository _prefsRepo;
-  final Set<String> _favoriteIds = {};
-  List<Song> _importedSongs = [];
-  bool _scanDone = false;
+  List<Song> get allSongs => importedSongs;
+
+  bool isSongFavorite(String songId) => favoriteIds.contains(songId);
+
+  LibraryState copyWith({
+    List<Song>? importedSongs,
+    bool? scanDone,
+    Set<String>? favoriteIds,
+  }) {
+    return LibraryState(
+      importedSongs: importedSongs ?? this.importedSongs,
+      scanDone: scanDone ?? this.scanDone,
+      favoriteIds: favoriteIds ?? this.favoriteIds,
+    );
+  }
+}
+
+class LibraryNotifier extends Notifier<LibraryState> {
   bool _isScanning = false;
 
-  List<Song> Function() queueSupplier = () => [];
-  Song? Function() currentSongSupplier = () => null;
+  /// 曲目加载/新增后的编排回调（由 PlaybackController 接线）。
+  VoidCallback? onSongsLoaded;
+  VoidCallback? onSongsAdded;
 
-  List<Song> get importedSongs => _importedSongs;
-  List<Song> get allSongs => _importedSongs;
-  bool get scanDone => _scanDone;
+  @override
+  LibraryState build() => const LibraryState();
 
-  List<Song> get favoriteSongs =>
-      allKnownSongs.where((s) => _favoriteIds.contains(s.id)).toList();
-
-  bool get isFavorite {
-    final song = currentSongSupplier();
-    return song != null && _favoriteIds.contains(song.id);
-  }
-
-  bool isSongFavorite(String songId) => _favoriteIds.contains(songId);
-
-  List<Song> get allKnownSongs {
+  /// 导入歌曲 + 播放队列合并去重后的全集（收藏/播放列表查找用）。
+  List<Song> allKnownSongs() {
     final ids = <String>{};
     final out = <Song>[];
-    for (final s in [..._importedSongs, ...queueSupplier()]) {
+    final queue = ref.read(queueProvider).queue;
+    for (final s in [...state.importedSongs, ...queue]) {
       if (ids.add(s.id)) out.add(s);
     }
     return out;
   }
 
-  VoidCallback? onSongsLoaded;
-  VoidCallback? onSongsAdded;
-  VoidCallback? onSongsRescanned;
+  List<Song> favoriteSongs() =>
+      allKnownSongs().where((s) => state.favoriteIds.contains(s.id)).toList();
+
+  bool isFavorite(Song? song) =>
+      song != null && state.favoriteIds.contains(song.id);
 
   // ── 收藏 ──
 
-  void toggleFavorite() {
-    final song = currentSongSupplier();
+  void toggleFavoriteFor(Song? song) {
     if (song == null) return;
     final id = song.id;
-    if (_favoriteIds.contains(id)) {
-      _favoriteIds.remove(id);
+    final ids = Set<String>.from(state.favoriteIds);
+    if (ids.contains(id)) {
+      ids.remove(id);
     } else {
-      _favoriteIds.add(id);
+      ids.add(id);
     }
+    state = state.copyWith(favoriteIds: ids);
     _persistFavorites();
-    notifyListeners();
   }
 
   void setFavorite(String songId, bool favorite) {
+    final ids = Set<String>.from(state.favoriteIds);
     if (favorite) {
-      _favoriteIds.add(songId);
+      ids.add(songId);
     } else {
-      _favoriteIds.remove(songId);
+      ids.remove(songId);
     }
+    state = state.copyWith(favoriteIds: ids);
     _persistFavorites();
-    notifyListeners();
   }
 
   void _persistFavorites() {
-    _prefsRepo.setFavorites(_favoriteIds);
+    ref.read(preferencesRepositoryProvider).setFavorites(state.favoriteIds);
   }
 
   void loadFavoritesPrefs() {
-    _favoriteIds.addAll(_prefsRepo.favorites);
+    final favorites = ref.read(preferencesRepositoryProvider).favorites;
+    state = state.copyWith(favoriteIds: {...state.favoriteIds, ...favorites});
   }
 
   // ── 导入与扫描 ──
@@ -90,8 +102,9 @@ class LibraryProvider extends ChangeNotifier {
     if (_isScanning) return false;
     _isScanning = true;
     try {
-      final mediaSongs = await _songRepo.scanMediaStore();
-      final docSongs = await _songRepo.scanDocuments();
+      final songRepo = ref.read(songRepositoryProvider);
+      final mediaSongs = await songRepo.scanMediaStore();
+      final docSongs = await songRepo.scanDocuments();
       final scannedSongs = [...mediaSongs, ...docSongs];
 
       // 按 path 去重（扫描结果内部）
@@ -108,17 +121,16 @@ class LibraryProvider extends ChangeNotifier {
           .where((s) => s.path != null)
           .map((s) => s.path!)
           .toSet();
-      _importedSongs = [
+      final merged = [
         ...scannedSongs,
-        ..._importedSongs.where(
+        ...state.importedSongs.where(
           (s) => s.path == null || !scannedPaths.contains(s.path),
         ),
       ];
 
-      _songRepo.setCachedSongs(_importedSongs);
-      onImportedSongsLoaded(_importedSongs);
-      _scanDone = true;
-      notifyListeners();
+      state = state.copyWith(importedSongs: merged, scanDone: true);
+      songRepo.setCachedSongs(merged);
+      onSongsLoaded?.call();
       return true;
     } finally {
       _isScanning = false;
@@ -129,21 +141,22 @@ class LibraryProvider extends ChangeNotifier {
     if (_isScanning) return false;
     _isScanning = true;
     try {
-      final songs = await _songRepo.scanSubsonic();
+      final songRepo = ref.read(songRepositoryProvider);
+      final songs = await songRepo.scanSubsonic();
       if (songs.isEmpty) return false;
       final newPaths = songs
           .where((s) => s.path != null)
           .map((s) => s.path!)
           .toSet();
-      _importedSongs = [
+      final merged = [
         ...songs,
-        ..._importedSongs.where(
+        ...state.importedSongs.where(
           (s) => s.path == null || !newPaths.contains(s.path),
         ),
       ];
-      _songRepo.setCachedSongs(_importedSongs);
-      onImportedSongsLoaded(_importedSongs);
-      notifyListeners();
+      state = state.copyWith(importedSongs: merged);
+      songRepo.setCachedSongs(merged);
+      onSongsLoaded?.call();
       return true;
     } finally {
       _isScanning = false;
@@ -154,33 +167,31 @@ class LibraryProvider extends ChangeNotifier {
     if (_isScanning) return false;
     _isScanning = true;
     try {
-      final songs = await _songRepo.scanSmb(sharePath);
+      final songRepo = ref.read(songRepositoryProvider);
+      final songs = await songRepo.scanSmb(sharePath);
       if (songs.isEmpty) return false;
       final newPaths = songs
           .where((s) => s.path != null)
           .map((s) => s.path!)
           .toSet();
-      _importedSongs = [
+      final merged = [
         ...songs,
-        ..._importedSongs.where(
+        ...state.importedSongs.where(
           (s) => s.path == null || !newPaths.contains(s.path),
         ),
       ];
-      _songRepo.setCachedSongs(_importedSongs);
-      onImportedSongsLoaded(_importedSongs);
-      notifyListeners();
+      state = state.copyWith(importedSongs: merged);
+      songRepo.setCachedSongs(merged);
+      onSongsLoaded?.call();
       return true;
     } finally {
       _isScanning = false;
     }
   }
 
-  void onImportedSongsLoaded(List<Song> songs) {
-    onSongsLoaded?.call();
-  }
-
   Future<void> batchExtractCovers(List<Song> songs) async {
-    if (!_engineRepo.rustAvailable) return;
+    final engineRepo = ref.read(audioEngineRepositoryProvider);
+    if (!engineRepo.rustAvailable) return;
     final appDir = await getApplicationDocumentsDirectory();
     final cacheDir = Directory('${appDir.path}/.covers');
     if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
@@ -209,7 +220,7 @@ class LibraryProvider extends ChangeNotifier {
           return;
         }
         try {
-          final bytes = await _engineRepo.getCoverBytes(song.path!);
+          final bytes = await engineRepo.getCoverBytes(song.path!);
           await cacheFile.writeAsBytes(bytes);
           song.coverUrl = cacheFile.path;
           changed = true;
@@ -218,13 +229,17 @@ class LibraryProvider extends ChangeNotifier {
         }
       }));
     }
-    if (changed) notifyListeners();
+    if (changed) {
+      // Song.coverUrl 是可变字段，触发一次状态更新以刷新 UI
+      state = state.copyWith(importedSongs: List<Song>.from(state.importedSongs));
+    }
   }
 
   Future<int> importFromPicker() async {
-    final songs = await _songRepo.pickAndImport();
+    final songRepo = ref.read(songRepositoryProvider);
+    final songs = await songRepo.pickAndImport();
     if (songs.isEmpty) return 0;
-    final existingPaths = _importedSongs
+    final existingPaths = state.importedSongs
         .where((s) => s.path != null)
         .map((s) => s.path!)
         .toSet();
@@ -232,38 +247,40 @@ class LibraryProvider extends ChangeNotifier {
         .where((s) => s.path == null || !existingPaths.contains(s.path))
         .toList();
     if (newSongs.isEmpty) return 0;
-    _importedSongs = [..._importedSongs, ...newSongs];
-    _songRepo.addSongs(newSongs);
-    onImportAdded(newSongs);
-    notifyListeners();
-    return newSongs.length;
-  }
-
-  void onImportAdded(List<Song> songs) {
+    state = state.copyWith(
+      importedSongs: [...state.importedSongs, ...newSongs],
+    );
+    songRepo.addSongs(newSongs);
     onSongsAdded?.call();
+    return newSongs.length;
   }
 
   // ── 播放列表 ──
 
-  Map<String, List<String>> get playlists => _prefsRepo.playlists;
+  Map<String, List<String>> get playlists =>
+      ref.read(preferencesRepositoryProvider).playlists;
 
   Future<void> saveCurrentQueueAsPlaylist(String name) async {
-    final ids = queueSupplier().map((s) => s.id).toList();
-    await _prefsRepo.savePlaylist(name, ids);
-    notifyListeners();
+    final ids = ref.read(queueProvider).queue.map((s) => s.id).toList();
+    await ref.read(preferencesRepositoryProvider).savePlaylist(name, ids);
+    state = state.copyWith(); // 触发 UI 刷新播放列表区域
   }
 
   Future<void> savePlaylist(String name, List<String> songIds) async {
-    await _prefsRepo.savePlaylist(name, songIds);
-    notifyListeners();
+    await ref.read(preferencesRepositoryProvider).savePlaylist(name, songIds);
+    state = state.copyWith(); // 触发 UI 刷新播放列表区域
   }
 
   List<Song> playlistSongs(String name) {
     final ids = playlists[name] ?? [];
-    final byId = {for (final s in allKnownSongs) s.id: s};
+    final byId = {for (final s in allKnownSongs()) s.id: s};
     return ids
         .where((id) => byId.containsKey(id))
         .map((id) => byId[id]!)
         .toList();
   }
 }
+
+final libraryProvider = NotifierProvider<LibraryNotifier, LibraryState>(
+  LibraryNotifier.new,
+);

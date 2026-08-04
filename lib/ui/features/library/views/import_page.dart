@@ -1,10 +1,10 @@
 import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:provider/provider.dart';
 import '../../../../data/services/preferences_service.dart';
 import '../../../../l10n/app_localizations.dart';
-import '../../playback/view_models/playback_provider.dart';
+import '../../playback/view_models/playback_controller.dart';
 import '../../../core/theme/app_theme.dart';
 import 'nas_settings_sheet.dart';
 
@@ -18,21 +18,20 @@ void showImportSheet(BuildContext context) {
   );
 }
 
-class _ImportSheet extends StatefulWidget {
+class _ImportSheet extends ConsumerStatefulWidget {
   const _ImportSheet();
 
   @override
-  State<_ImportSheet> createState() => _ImportSheetState();
+  ConsumerState<_ImportSheet> createState() => _ImportSheetState();
 }
 
-class _ImportSheetState extends State<_ImportSheet> {
+class _ImportSheetState extends ConsumerState<_ImportSheet> {
   bool _scanning = false;
   String? _scanResult;
   bool _showNasForm = false;
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final prefs = PreferencesService.instance;
     final nasConnected = prefs.nasEnabled;
 
@@ -131,7 +130,7 @@ class _ImportSheetState extends State<_ImportSheet> {
   // ── Handlers ──
 
   Future<void> _handleDiscover(BuildContext context) async {
-    final player = context.read<PlaybackProvider>();
+    final player = ref.read(playbackControllerProvider);
     setState(() {
       _scanning = true;
       _scanResult = null;
@@ -145,7 +144,7 @@ class _ImportSheetState extends State<_ImportSheet> {
   }
 
   Future<void> _handlePickFiles(BuildContext context) async {
-    final player = context.read<PlaybackProvider>();
+    final player = ref.read(playbackControllerProvider);
     final count = await player.importFromPicker();
     if (!mounted) return;
     final l10n = AppLocalizations.of(context);
@@ -161,7 +160,7 @@ class _ImportSheetState extends State<_ImportSheet> {
   }
 
   Future<void> _handleSubsonic(BuildContext context) async {
-    final player = context.read<PlaybackProvider>();
+    final player = ref.read(playbackControllerProvider);
     final ok = await player.scanSubsonic();
     if (!mounted) return;
     _showToast(context, ok ? 'Connected' : 'Failed');

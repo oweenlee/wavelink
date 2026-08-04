@@ -1,14 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'data/services/rust_service.dart';
 import 'data/services/preferences_service.dart';
-import 'data/repositories/audio_engine_repository.dart';
-import 'data/repositories/song_repository.dart';
-import 'data/repositories/preferences_repository.dart';
-import 'ui/features/playback/view_models/playback_provider.dart';
-import 'ui/features/settings/view_models/locale_provider.dart';
-import 'ui/features/library/view_models/library_header_notifier.dart';
+import 'ui/features/playback/view_models/playback_controller.dart';
 import 'ui/core/app.dart';
 
 Future<void> main() async {
@@ -25,27 +20,13 @@ Future<void> main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  // 创建 Repository 层
-  final engineRepo = AudioEngineRepository();
-  final songRepo = SongRepository();
-  final prefsRepo = PreferencesRepository();
+  final container = ProviderContainer();
+  // 触发编排层接线，随后启动副作用（偏好加载、播放器 init、曲库扫描）
+  container.read(playbackControllerProvider).bootstrap();
 
-  final playback = PlaybackProvider(
-    engineRepo: engineRepo,
-    songRepo: songRepo,
-    prefsRepo: prefsRepo,
-  );
   runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider.value(value: playback),
-        ChangeNotifierProvider.value(value: playback.queueProvider),
-        ChangeNotifierProvider.value(value: playback.audioPlayer),
-        ChangeNotifierProvider.value(value: playback.library),
-        ChangeNotifierProvider.value(value: playback.dsp),
-        ChangeNotifierProvider(create: (_) => LocaleProvider()),
-        ChangeNotifierProvider(create: (_) => LibraryHeaderNotifier()),
-      ],
+    UncontrolledProviderScope(
+      container: container,
       child: const WaveLinkApp(),
     ),
   );

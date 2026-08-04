@@ -1,28 +1,31 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../../domain/models/song.dart';
 import '../../../../data/services/rust_service.dart' as rs;
 import '../../../../data/services/file_picker_service.dart';
-import '../../playback/view_models/playback_provider.dart';
+import '../../playback/view_models/playback_controller.dart';
+import '../../playback/view_models/audio_player_provider.dart';
+import '../../playback/view_models/queue_provider.dart';
+import '../view_models/library_provider.dart';
 import '../view_models/library_header_notifier.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/song_tile.dart';
 import '../../../core/widgets/album_cover.dart';
 
 
-class LibraryPage extends StatefulWidget {
+class LibraryPage extends ConsumerStatefulWidget {
   const LibraryPage({super.key});
 
   @override
-  State<LibraryPage> createState() => _LibraryPageState();
+  ConsumerState<LibraryPage> createState() => _LibraryPageState();
 }
 
-class _LibraryPageState extends State<LibraryPage>
+class _LibraryPageState extends ConsumerState<LibraryPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final _searchController = TextEditingController();
@@ -43,12 +46,13 @@ class _LibraryPageState extends State<LibraryPage>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final headerNotifier = context.watch<LibraryHeaderNotifier>();
+    final headerState = ref.watch(libraryHeaderProvider);
+    final headerNotifier = ref.read(libraryHeaderProvider.notifier);
 
     return Column(
       children: [
         // ── Search bar (toggled from AppShell top-right icon) ──
-        if (headerNotifier.isSearchVisible)
+        if (headerState.isSearchVisible)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
             child: Container(
@@ -117,8 +121,8 @@ class _LibraryPageState extends State<LibraryPage>
               ],
               onTap: (_) {
                 // Close search when switching tabs
-                if (headerNotifier.isSearchVisible) {
-                  headerNotifier.closeSearch();
+                if (ref.read(libraryHeaderProvider).isSearchVisible) {
+                  ref.read(libraryHeaderProvider.notifier).closeSearch();
                   _searchController.clear();
                 }
               },
@@ -181,17 +185,20 @@ class _EmptyLibrary extends StatelessWidget {
 
 // ── Songs Tab ──
 
-class _SongsTab extends StatelessWidget {
+class _SongsTab extends ConsumerWidget {
   const _SongsTab();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final player = context.watch<PlaybackProvider>();
-    final headerNotifier = context.watch<LibraryHeaderNotifier>();
-    final allSongs = player.allSongs;
+    final player = ref.watch(playbackControllerProvider);
+    final playerState = ref.watch(playerProvider);
+    final queueState = ref.watch(queueProvider);
+    final libraryState = ref.watch(libraryProvider);
+    final headerState = ref.watch(libraryHeaderProvider);
+    final allSongs = libraryState.allSongs;
 
-    final query = headerNotifier.searchQuery;
+    final query = headerState.searchQuery;
     final displayed = query.isEmpty
         ? allSongs
         : allSongs
@@ -213,7 +220,7 @@ class _SongsTab extends StatelessWidget {
       itemBuilder: (context, index) {
         final song = displayed[index];
         final isPlaying =
-            player.isPlaying && player.currentSong?.id == song.id;
+            playerState.isPlaying && queueState.currentSong?.id == song.id;
         return SongTile(
           song: song,
           isPlaying: isPlaying,
@@ -235,12 +242,13 @@ class _SongsTab extends StatelessWidget {
 
 // ── Albums Tab ──
 
-class _AlbumsTab extends StatelessWidget {
+class _AlbumsTab extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final player = context.watch<PlaybackProvider>();
-    final songs = player.allSongs;
+    final playerState = ref.watch(playerProvider);
+    final queueState = ref.watch(queueProvider);
+    final songs = ref.watch(libraryProvider).allSongs;
 
     // group by album
     final albumNames = songs.map((s) => s.album).toSet().toList();
@@ -267,7 +275,7 @@ class _AlbumsTab extends StatelessWidget {
         final albumSongs = songs.where((s) => s.album == name).toList();
         final color = albumSongs.first.dominantColor;
         final isPlayingAlbum =
-            player.currentSong?.album == name && player.isPlaying;
+            queueState.currentSong?.album == name && playerState.isPlaying;
 
         return GestureDetector(
           onTap: () => context.push(
@@ -349,12 +357,12 @@ class _AlbumsTab extends StatelessWidget {
 
 // ── Artists Tab ──
 
-class _ArtistsTab extends StatelessWidget {
+class _ArtistsTab extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final player = context.watch<PlaybackProvider>();
-    final songs = player.allSongs;
+    final player = ref.watch(playbackControllerProvider);
+    final songs = ref.watch(libraryProvider).allSongs;
 
     final artistNames = songs.map((s) => s.artist).toSet().toList();
     if (artistNames.isEmpty) {
@@ -503,11 +511,12 @@ class _ArtistsTab extends StatelessWidget {
 
 // ── Playlists Tab ──
 
-class _PlaylistsTab extends StatelessWidget {
+class _PlaylistsTab extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final player = context.watch<PlaybackProvider>();
+    final player = ref.watch(playbackControllerProvider);
+    ref.watch(libraryProvider); // 收藏/播放列表变化时刷新
     final favorites = player.favoriteSongs;
     final saved = player.playlists;
 
@@ -681,7 +690,7 @@ class _PlaylistsTab extends StatelessWidget {
     );
   }
 
-  void _showCreatePlaylist(BuildContext context, PlaybackProvider player) {
+  void _showCreatePlaylist(BuildContext context, PlaybackController player) {
     final l10n = AppLocalizations.of(context);
     final ctrl = TextEditingController();
     showDialog(
@@ -733,7 +742,7 @@ class _PlaylistsTab extends StatelessWidget {
     );
   }
 
-  void _openPlaylistIo(BuildContext context, PlaybackProvider player) {
+  void _openPlaylistIo(BuildContext context, PlaybackController player) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.s2,
@@ -782,7 +791,7 @@ class _PlaylistsTab extends StatelessWidget {
   /// 导入：选文件 → Rust 解析 M3U/PLS → 转为 Song 队列并播放。
   Future<void> _importPlaylist(
     BuildContext context,
-    PlaybackProvider player,
+    PlaybackController player,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
     final paths = await FilePickerService.pickFiles(
@@ -831,7 +840,7 @@ class _PlaylistsTab extends StatelessWidget {
   /// 注：未接入系统分享/另存面板，文件落在应用 Documents 目录（iOS 经 Files 应用可取回）。
   Future<void> _exportPlaylist(
     BuildContext context,
-    PlaybackProvider player,
+    PlaybackController player,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
     final queue = player.queue;
@@ -892,7 +901,7 @@ class _PlaylistEntry {
 void _showContextMenu(
   BuildContext context,
   Song song,
-  PlaybackProvider player,
+  PlaybackController player,
 ) {
   final l10n = AppLocalizations.of(context);
   showModalBottomSheet(
@@ -1029,7 +1038,7 @@ class _MenuItem extends StatelessWidget {
 void _showAddToPlaylist(
   BuildContext context,
   Song song,
-  PlaybackProvider player,
+  PlaybackController player,
 ) {
   final l10n = AppLocalizations.of(context);
   final saved = player.playlists;
