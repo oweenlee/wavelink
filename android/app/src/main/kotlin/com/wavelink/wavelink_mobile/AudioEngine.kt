@@ -6,27 +6,22 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
-import android.media.AudioFormat
 import android.media.AudioManager
-import android.media.AudioTrack
 import android.os.Build
 import android.util.Log
-import kotlin.concurrent.thread
 
 /**
- * 流式音频引擎：与 iOS 一致，从 Rust 引擎 ringbuf 直读 PCM。
+ * Android 音频引擎宿主。
  *
- * 不再由 Dart 定时推送（旧架构 40ms Timer + FRB + MethodChannel 三重 hop，
- * 后台被节流即 underrun）。改为本类原生 writeThread 通过 JNI 直读 Rust ringbuf
- * （`nativeFillInterleaved`，与 iOS AVAudioSourceNode 同一条 HeadlessOutput 通路），
- * 写入 AudioTrack。数据不足时静默等待（underrun 由引擎缓冲吸收）。
+ * 自 v2 起音频输出由 Rust 引擎通过 Oboe/AAudio 直接驱动（engine_init 时打开
+ * Exclusive/Shared 流，解码 → DSP → 回调线程直出设备），本类不再持有
+ * AudioTrack，也不再运行 Kotlin 泵线程（WaveLinkPump 已移除）。
  *
- * 音频焦点：播放时请求 AUDIOFOCUS_GAIN。焦点变化时：
- * - 永久丢失（其他音乐 app）→ 发 remote:pause，不自动恢复
- * - 瞬时丢失（来电/语音搜索 TTS）→ 发 remote:pause，焦点恢复后自动续播
- * - 可降音 → 本地 setVolume(0.3) 压低，不暂停引擎
- * - 拔耳机（ACTION_AUDIO_BECOMING_NOISY）→ 发 remote:pause，避免声音从扬声器爆出
- * 事件经 eventCallback 走与 iOS 锁屏命令同一套 remote:* 协议，Dart 统一处理。
+ * 本类职责缩减为：
+ * - 音频焦点管理（永久丢失/瞬时丢失/可降音）
+ * - 拔耳机（ACTION_AUDIO_BECOMING_NOISY）处理
+ * - 焦点事件经 eventCallback 走与 iOS 相同的 remote:* 协议到 Dart，
+ *   Dart 统一调 Rust 引擎命令（play/pause/resume/seek）。
  */
 class AudioEngine(private val context: Context) {
     private val appContext = context.applicationContext
@@ -69,15 +64,8 @@ class AudioEngine(private val context: Context) {
     /// 是否因瞬时焦点丢失而暂停（用于焦点恢复时判断是否自动续播）
     @Volatile private var pausedByFocusLoss = false
 
-    private var audioTrack: AudioTrack? = null
-    private var sampleRate: Int = 44100
-    private var channels: Int = 2
     @Volatile private var playing = false
     @Volatile private var paused = false
-    private var writeThread: Thread? = null
-
-    // 已写入样本总数（交错），用于 positionMs
-    @Volatile private var writtenSamples = 0L
 
     var eventCallback: ((String) -> Unit)? = null
 
@@ -86,7 +74,7 @@ class AudioEngine(private val context: Context) {
         when (focusChange) {
             AudioManager.AUDIOFOCUS_GAIN -> {
                 // 恢复音量（若之前 duck）；若因瞬时焦点丢失而暂停，则恢复播放
-                audioTrack?.setVolume(1.0f)
+                nativeSetVolume(1.0f)
                 if (pausedByFocusLoss) {
                     pausedByFocusLoss = false
                     eventCallback?.invoke("remote:play")
@@ -104,8 +92,8 @@ class AudioEngine(private val context: Context) {
                 eventCallback?.invoke("remote:pause")
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                // 可降音：本地压低音量，不暂停引擎
-                audioTrack?.setVolume(0.3f)
+                // 可降音：压低引擎音量，不暂停
+                nativeSetVolume(0.3f)
             }
         }
     }
@@ -119,7 +107,7 @@ class AudioEngine(private val context: Context) {
             val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(attrs)
                 .setOnAudioFocusChangeListener(focusChangeListener)
-                .setWillPauseWhenDucked(false) // duck 由本地 setVolume 处理
+                .setWillPauseWhenDucked(false) // duck 由引擎音量处理
                 .build()
             focusRequest = req
             audioManager.requestAudioFocus(req)
@@ -147,136 +135,45 @@ class AudioEngine(private val context: Context) {
     val isPlaying: Boolean get() = playing
     /** 正在播放（含暂停=false；用于 MediaSession 状态上报） */
     val isActive: Boolean get() = playing && !paused
-    val positionMs: Int get() {
-        if (sampleRate <= 0 || channels <= 0) return 0
-        val framesPerMs = (sampleRate * channels) / 1000.0
-        return (writtenSamples / framesPerMs).toInt()
-    }
 
+    /**
+     * 启动音频宿主。音频输出流由 Rust 引擎在 engine_init 时通过 Oboe 打开，
+     * 本方法只请求音频焦点 + 注册拔耳机监听，不再创建 AudioTrack / 泵线程。
+     * [rate] / [ch] 参数保留仅为兼容旧调用方（引擎速率由 Rust 侧决定）。
+     */
     fun start(rate: Int, ch: Int) {
         stop()
         requestAudioFocus()
         registerNoisyReceiver()
-        sampleRate = rate
-        channels = ch
-        writtenSamples = 0
         playing = true
         paused = false
-
-        val channelMask = if (channels >= 2) AudioFormat.CHANNEL_OUT_STEREO
-                          else AudioFormat.CHANNEL_OUT_MONO
-        // 缓冲 ~200ms：泵按帧供给且偶有空读间隙，旧 ~21ms 小缓冲必欠载爆音
-        val bufferSize = maxOf(
-            AudioTrack.getMinBufferSize(sampleRate, channelMask, AudioFormat.ENCODING_PCM_FLOAT),
-            sampleRate * channels * 4 / 5 // float=4B，200ms
-        )
-
-        audioTrack = AudioTrack(
-            AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_MEDIA)
-                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                .build(),
-            AudioFormat.Builder()
-                .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                .setSampleRate(sampleRate)
-                .setChannelMask(channelMask)
-                .build(),
-            bufferSize,
-            AudioTrack.MODE_STREAM,
-            AudioManager.AUDIO_SESSION_ID_GENERATE
-        )
-
-        // 播放门控：让 Rust 侧 ringbuf 开始产出（false 时 fill 直接返回 0）
-        nativeSetPlaying(true)
-
-        // 原生泵线程：JNI 直读 Rust ringbuf → AudioTrack
-        writeThread = thread(name = "WaveLinkPump") {
-            // 泵线程进音频调度组，避免被 MIUI 等调度策略饿死
-            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
-            val chunk = FloatArray(4096 * channels)
-            // 预缓冲：开播前先往 AudioTrack 填 ~120ms，避免起播瞬间空窗
-            // （ringbuf 从零开始填，直接开播会在前几百 ms 内反复欠载）
-            var prefill = 0
-            val prefillTarget = sampleRate * channels * 120 / 1000 // 样本数
-            val deadline = System.currentTimeMillis() + 600
-            while (playing && !Thread.interrupted() &&
-                   prefill < prefillTarget && System.currentTimeMillis() < deadline) {
-                val frames = nativeFillInterleaved(chunk, 4096)
-                if (frames <= 0) {
-                    try { Thread.sleep(5) } catch (_: InterruptedException) { break }
-                    continue
-                }
-                val n = frames * channels
-                val w = audioTrack?.write(chunk, 0, n, AudioTrack.WRITE_NON_BLOCKING) ?: 0
-                if (w > 0) {
-                    prefill += w
-                    writtenSamples += w
-                }
-            }
-            audioTrack?.play()
-
-            while (playing && !Thread.interrupted()) {
-                if (paused) {
-                    try { Thread.sleep(50) } catch (_: InterruptedException) { break }
-                    continue
-                }
-                val frames = nativeFillInterleaved(chunk, 4096)
-                if (frames <= 0) {
-                    // 门控关闭或 ringbuf 空：短睡眠再试（5ms，200ms 缓冲足以吸收）
-                    try { Thread.sleep(5) } catch (_: InterruptedException) { break }
-                    continue
-                }
-                val n = frames * channels
-                val written = audioTrack?.write(
-                    chunk, 0, n, AudioTrack.WRITE_BLOCKING
-                ) ?: 0
-                if (written > 0) writtenSamples += written
-            }
-        }
     }
 
     fun pause() {
         Log.i("WaveLinkDiag", "AudioEngine.pause()")
         paused = true
-        nativeSetPlaying(false)
-        audioTrack?.pause()
+        // 引擎暂停由 Dart 侧调 Rust 命令完成（engine_pause）
     }
 
     fun resume() {
         requestAudioFocus()
-        // 清掉暂停前积压（与 iOS 一致），防恢复时先播旧声（磁带滑）
-        nativeClearRingbuf()
         paused = false
-        nativeSetPlaying(true)
-        audioTrack?.play()
+        // 引擎恢复由 Dart 侧调 Rust 命令完成（engine_resume）
     }
 
     fun stop() {
         abandonAudioFocus()
         unregisterNoisyReceiver()
         playing = false
-        nativeSetPlaying(false)
-        writeThread?.interrupt()
-        writeThread = null
-        try { audioTrack?.stop() } catch (_: Exception) {}
-        try { audioTrack?.release() } catch (_: Exception) {}
-        audioTrack = null
-        writtenSamples = 0
+        paused = false
     }
 
+    /**
+     * seek 无需原生处理：Rust 引擎 seek 时会 swap_consumer 换新 ringbuf，
+     * Oboe 回调自动读新缓冲，不存在旧 PCM 残留问题。
+     */
     fun seek(positionMs: Int) {
-        // 清掉 Rust ringbuf 积压（seek 时引擎本会 swap_consumer 换新 ringbuf，
-        // 这里再兜底一次），并把已写入样本计数器对齐到新位置，供 positionMs 不漂移。
-        nativeClearRingbuf()
-        writtenSamples = positionMs.toLong() * sampleRate * channels / 1000
-        try {
-            audioTrack?.pause()
-            audioTrack?.flush()
-            // 暂停态 seek 不应误启动 AudioTrack（避免空转的"已播放"状态）
-            if (!paused) {
-                audioTrack?.play()
-            }
-        } catch (_: Exception) {}
+        // no-op（Rust 侧已处理）
     }
 
     companion object {
@@ -290,19 +187,9 @@ class AudioEngine(private val context: Context) {
             nativeRegisterElevateHook()
         }
 
-        // ── JNI 直读 Rust ringbuf（与 iOS 同一 HeadlessOutput 通路）──
-
-        /// 拉取最多 maxFrames 帧交错立体声 PCM 填入 out，返回实际帧数
+        /// 设置引擎音量（0~1，用于焦点 duck/恢复）
         @JvmStatic
-        private external fun nativeFillInterleaved(out: FloatArray, maxFrames: Int): Int
-
-        /// 播放门控：play/resume 设 true，pause/stop 设 false
-        @JvmStatic
-        private external fun nativeSetPlaying(playing: Boolean)
-
-        /// 清空 ringbuf 积压
-        @JvmStatic
-        private external fun nativeClearRingbuf()
+        private external fun nativeSetVolume(volume: Float)
 
         /// 注册音频线程提权钩子到 audio-core
         @JvmStatic

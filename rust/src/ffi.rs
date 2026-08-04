@@ -1,8 +1,8 @@
 //! iOS/Android FFI 回调函数。此模块不被 flutter_rust_bridge 扫描，
 //! 避免 `*mut f32` 参数导致生成失败。
 
-use jni::objects::{JFloatArray, JObject, ReleaseMode};
-use jni::sys::{jboolean, jint};
+use jni::objects::JObject;
+use jni::sys::{jfloat, jint};
 use jni::{JNIEnv, JavaVM};
 
 // ── JVM 引用与音频线程提权钩子 ──
@@ -117,50 +117,12 @@ pub extern "C" fn engine_sync_output_rate(rate: u32) {
 // 规避了 JNI_OnLoad 阶段 find_class 的类加载时序问题。
 // 注意函数名必须按 JNI 规范转义：包名 wavelink_mobile 的下划线 → _1。
 
-/// Kotlin AudioEngine.nativeFillInterleaved：拉取交错 PCM 填入 Kotlin 侧 FloatArray
+/// Kotlin AudioEngine.nativeSetVolume：设置引擎音量（音频焦点 duck/恢复用）
 #[no_mangle]
-pub unsafe extern "system" fn Java_com_wavelink_wavelink_1mobile_AudioEngine_nativeFillInterleaved(
-    mut env: JNIEnv,
-    _this: JObject,
-    arr: JFloatArray,
-    max_frames: jint,
-) -> jint {
-    if max_frames <= 0 {
-        return 0;
-    }
-    match env.get_array_elements(&arr, ReleaseMode::CopyBack) {
-        Ok(mut elements) => {
-            let len = ((max_frames as usize) * 2).min(elements.len());
-            let buf = &mut elements[..len];
-            crate::api::audio_output::fill_interleaved_impl(buf, max_frames as u32) as jint
-        }
-        Err(_) => 0,
-    }
-}
-
-/// Kotlin AudioEngine.nativeSetPlaying：播放门控（与 iOS 同一标志）
-#[no_mangle]
-pub unsafe extern "system" fn Java_com_wavelink_wavelink_1mobile_AudioEngine_nativeSetPlaying(
+pub unsafe extern "system" fn Java_com_wavelink_wavelink_1mobile_AudioEngine_nativeSetVolume(
     _env: JNIEnv,
     _this: JObject,
-    playing: jboolean,
+    volume: jfloat,
 ) {
-    let p = playing != 0;
-    // 验证 stderr 是否进 logcat（若可见，audio-core 内部日志可用 eprintln）
-    eprintln!("[probe-stderr] gate={p}");
-    crate::api::audio_output::probe_log(&format!(
-        "[underrun-probe] 门控 → {}，{}",
-        if p { "开" } else { "关" },
-        crate::api::engine::engine_probe()
-    ));
-    crate::api::audio_output::set_playing_impl(p);
-}
-
-/// Kotlin AudioEngine.nativeClearRingbuf：清空 ringbuf 积压（seek/pause 用）
-#[no_mangle]
-pub unsafe extern "system" fn Java_com_wavelink_wavelink_1mobile_AudioEngine_nativeClearRingbuf(
-    _env: JNIEnv,
-    _this: JObject,
-) {
-    crate::api::audio_output::clear_ringbuf_impl();
+    crate::api::engine::engine_set_volume(volume);
 }
