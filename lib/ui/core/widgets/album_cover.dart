@@ -147,44 +147,73 @@ class AlbumCover extends StatefulWidget {
   State<AlbumCover> createState() => _AlbumCoverState();
 }
 
-class _AlbumCoverState extends State<AlbumCover> {
-  double _tiltX = 0, _tiltY = 0;
+class _AlbumCoverState extends State<AlbumCover>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _tiltCtrl;
+  late Animation<double> _tiltX;
+  late Animation<double> _tiltY;
+  late final WlCover _cover;
+
+  @override
+  void initState() {
+    super.initState();
+    _tiltCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
+    );
+    _tiltX = Tween(begin: 0.0, end: 0.0).animate(_tiltCtrl);
+    _tiltY = Tween(begin: 0.0, end: 0.0).animate(_tiltCtrl);
+    // 封面是整棵子树最重的部分，构建一次缓存，手势/回弹只重绘 transform 层
+    _cover = WlCover(
+      coverUrl: widget.coverUrl,
+      fallbackColor: widget.color,
+      borderRadius: 20,
+    );
+  }
+
+  @override
+  void dispose() {
+    _tiltCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onPanUpdate(Offset local, double size) {
+    final x = ((local.dx - size / 2) / size * 0.06).clamp(-0.03, 0.03);
+    final y = ((local.dy - size / 2) / size * 0.06).clamp(-0.03, 0.03);
+    // 从当前值平滑追向手指，由 controller 驱动重建，避免 setState 整树重绘
+    _tiltX = Tween(begin: _tiltX.value, end: x).animate(_tiltCtrl);
+    _tiltY = Tween(begin: _tiltY.value, end: y).animate(_tiltCtrl);
+    _tiltCtrl.forward(from: 0);
+  }
+
+  void _onPanEnd() {
+    _tiltX = Tween(begin: _tiltX.value, end: 0.0).animate(
+      CurvedAnimation(parent: _tiltCtrl, curve: Curves.easeOutBack),
+    );
+    _tiltY = Tween(begin: _tiltY.value, end: 0.0).animate(
+      CurvedAnimation(parent: _tiltCtrl, curve: Curves.easeOutBack),
+    );
+    _tiltCtrl.forward(from: 0);
+  }
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size.width * 0.5;
+    final cover = SizedBox(width: size, height: size, child: _cover);
 
     return GestureDetector(
-      onPanUpdate: (d) {
-        setState(() {
-          _tiltX = ((d.localPosition.dx - size / 2) / size * 0.06).clamp(
-            -0.03,
-            0.03,
-          );
-          _tiltY = ((d.localPosition.dy - size / 2) / size * 0.06).clamp(
-            -0.03,
-            0.03,
-          );
-        });
-      },
-      onPanEnd: (_) => setState(() {
-        _tiltX = 0;
-        _tiltY = 0;
-      }),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeOut,
-        transform: Matrix4.identity()
-          ..setEntry(3, 2, 0.001)
-          ..rotateX(_tiltY)
-          ..rotateY(_tiltX),
-        child: WlCover(
-          coverUrl: widget.coverUrl,
-          fallbackColor: widget.color,
-          borderRadius: 20,
-          width: size,
-          height: size,
+      onPanUpdate: (d) => _onPanUpdate(d.localPosition, size),
+      onPanEnd: (_) => _onPanEnd(),
+      child: AnimatedBuilder(
+        animation: _tiltCtrl,
+        builder: (context, child) => Transform(
+          transform: Matrix4.identity()
+            ..setEntry(3, 2, 0.001)
+            ..rotateX(_tiltY.value)
+            ..rotateY(_tiltX.value),
+          child: child,
         ),
+        child: cover,
       ),
     );
   }

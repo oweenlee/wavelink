@@ -978,41 +978,43 @@ class _Backdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        // 模糊封面
-        if (coverUrl != null && coverUrl!.isNotEmpty)
+    return RepaintBoundary(
+      child: Stack(
+        children: [
+          // 模糊封面
+          if (coverUrl != null && coverUrl!.isNotEmpty)
+            Positioned.fill(
+              child: Image.network(
+                coverUrl!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, e, s) => _fallbackGradient(),
+              ),
+            )
+          else
+            _fallbackGradient(),
+          // 模糊层（静态背景用 RepaintBoundary 隔离，避免上层动画触发整屏重模糊）
           Positioned.fill(
-            child: Image.network(
-              coverUrl!,
-              fit: BoxFit.cover,
-              errorBuilder: (_, e, s) => _fallbackGradient(),
-            ),
-          )
-        else
-          _fallbackGradient(),
-        // 模糊层
-        Positioned.fill(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color.fromRGBO(8, 9, 10, 0.55),
-                    Color.fromRGBO(8, 9, 10, 0.3),
-                    Color.fromRGBO(8, 9, 10, 0.7),
-                    Color.fromRGBO(8, 9, 10, 0.95),
-                  ],
-                  stops: [0.0, 0.4, 0.8, 1.0],
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color.fromRGBO(8, 9, 10, 0.55),
+                      Color.fromRGBO(8, 9, 10, 0.3),
+                      Color.fromRGBO(8, 9, 10, 0.7),
+                      Color.fromRGBO(8, 9, 10, 0.95),
+                    ],
+                    stops: [0.0, 0.4, 0.8, 1.0],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

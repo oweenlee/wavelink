@@ -134,7 +134,7 @@ class _Backdrop extends StatelessWidget {
           ),
           ClipRect(
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
               child: Container(
                 color: Colors.black.withValues(alpha: 0.75),
               ),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../domain/models/song.dart';
 import '../theme/app_theme.dart';
 import 'album_cover.dart';
+import 'now_playing_indicator.dart';
 
 class SongTile extends StatelessWidget {
   final Song song;
@@ -203,67 +204,15 @@ class _AlbumArt extends StatelessWidget {
                 if (isPlaying)
                   Container(
                     color: Colors.black26,
-                    child: const Center(child: _EqualizerBars()),
+                    child: const Center(
+                      child: NowPlayingIndicator(baseHeight: 4, barScale: 6),
+                    ),
                   ),
               ],
             )
           : isPlaying
-              ? const Center(child: _EqualizerBars())
+              ? const Center(child: NowPlayingIndicator(baseHeight: 4, barScale: 6))
               : const CoverPlaceholder(size: 40),
-    );
-  }
-}
-
-class _EqualizerBars extends StatefulWidget {
-  const _EqualizerBars();
-
-  @override
-  State<_EqualizerBars> createState() => _EqualizerBarsState();
-}
-
-class _EqualizerBarsState extends State<_EqualizerBars>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(3, (i) {
-            final phase = i * 0.3;
-            final h = 6 + (_controller.value + phase).abs() % 1.0 * 10;
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 1),
-              child: Container(
-                width: 2,
-                height: h.clamp(4.0, 16.0),
-                decoration: BoxDecoration(
-                  color: AccentScope.of(context),
-                  borderRadius: BorderRadius.circular(1),
-                ),
-              ),
-            );
-          }),
-        );
-      },
     );
   }
 }
