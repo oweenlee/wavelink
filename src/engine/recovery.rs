@@ -18,6 +18,7 @@ use crate::dsp::DspPipeline;
 impl EngineState {
     /// 设备断开后自动恢复：保存当前位置 → 重建输出 → 从断点继续播放
     pub(crate) fn recover_output(&mut self) {
+        crate::diag::log("recover_output: 触发！开始重建输出");
         // 保存当前播放状态
         let entry = match self.current_entry.clone() {
             Some(e) => e,

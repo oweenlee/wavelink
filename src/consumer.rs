@@ -148,6 +148,10 @@ pub fn run_consumer_loop(
 
     loop {
         if stop.load(Ordering::SeqCst) {
+            crate::diag::log(&format!(
+                "seq: consumer[{:?}] 循环终止（stop 标志），已处理 {frame_count} 帧",
+                std::thread::current().id()
+            ));
             break;
         }
         match current_rx.recv_timeout(timeout) {
@@ -299,6 +303,7 @@ pub fn run_consumer_loop(
                 continue;
             }
             Err(RecvTimeoutError::Disconnected) => {
+                crate::diag::log("consumer: 解码通道断开（曲目结束/解码器退出）");
                 // 解码器 channel 断开 → 曲目播完
                 if let Some(new_rx) = (cb.on_end_of_track)() {
                     current_rx = new_rx;

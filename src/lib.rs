@@ -12,6 +12,9 @@
 
 /// 音频分析（BPM 检测 / 调性识别 / 能量计算）
 pub mod analysis;
+
+/// 【临时诊断】Android logcat 诊断日志（结案后删）
+pub mod diag;
 /// 音频输入捕获抽象层
 pub mod capture;
 /// 平台无关的解码→DSP→ringbuf 循环（PC 和 Mobile 共享）

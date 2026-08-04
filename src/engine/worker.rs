@@ -188,6 +188,7 @@ pub(crate) fn run_engine(
                     // 设备断开检测
                     if let Some(ref inner) = state.output_inner {
                         if inner.stream_failed.load(Ordering::Acquire) {
+                            crate::diag::log("worker: stream_failed=true，触发恢复");
                             warn!("检测到音频设备断开，尝试恢复...");
                             state.recover_output();
                         }

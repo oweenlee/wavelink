@@ -79,6 +79,17 @@ pub(crate) fn resolve_entries(paths: Vec<String>) -> Vec<QueueEntry> {
 
 impl EngineState {
     pub(crate) fn advance_queue(&mut self) {
+        let _qi = self
+            .current_entry
+            .as_ref()
+            .and_then(|c| self.queue.iter().position(|e| e.display == c.display))
+            .map(|i| i.to_string())
+            .unwrap_or_else(|| "-".into());
+        crate::diag::log(&format!(
+            "seq: advance_queue mode={:?} queue_len={} idx={_qi}",
+            self.play_mode,
+            self.queue.len()
+        ));
         match self.play_mode {
             PlayMode::Normal => self.advance_normal(),
             PlayMode::RepeatOne => self.advance_repeat_one(),

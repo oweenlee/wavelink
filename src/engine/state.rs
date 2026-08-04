@@ -139,6 +139,7 @@ impl EngineState {
     }
 
     pub(crate) fn play_entry(&mut self, entry: &QueueEntry) {
+        crate::diag::log(&format!("seq: play_entry 开始: {}", entry.display));
         info!("播放: {} (file={}, start={}s, end={}s)",
             entry.display, entry.audio_file, entry.start_secs, entry.end_secs);
         // 记录历史（用于"上一首"）
@@ -264,6 +265,12 @@ impl EngineState {
             Ok(true) => {
                 output.resume();
                 info!("播放: {}", entry.display);
+                if let Some(inner) = self.output_inner.as_ref() {
+                    crate::diag::log(&format!(
+                        "play_entry ready: inner={:p}",
+                        std::sync::Arc::as_ptr(inner)
+                    ));
+                }
                 self.playing.store(true, Ordering::Release);
                 let _ = self.external_tx.send(EngineEvent::TrackChanged(entry.display.clone()));
                 let _ = self.external_tx.send(EngineEvent::DopActive(dop_active));
@@ -791,6 +798,7 @@ impl EngineState {
     }
 
     pub(crate) fn stop_playback(&mut self) {
+        crate::diag::log("seq: stop_playback 开始");
         self.playing.store(false, Ordering::Release);
         if let Some(flag) = &self.consumer_stop { flag.store(true, Ordering::SeqCst); }
         if let Some(d) = &self.decoder { d.stop(); }
@@ -801,7 +809,10 @@ impl EngineState {
             let (done_tx, done_rx) = crossbeam_channel::bounded::<()>(1);
             std::thread::spawn(move || { let _ = t.join(); let _ = done_tx.send(()); });
             if done_rx.recv_timeout(Duration::from_secs(2)).is_err() {
+                crate::diag::log("seq: !!! 消费者线程 join 超时，被丢弃（僵尸）");
                 warn!("消费者线程 join 超时（2s），放弃等待");
+            } else {
+                crate::diag::log("seq: 消费者线程已退出回收");
             }
         }
         self.decoder = None;

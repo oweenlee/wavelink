@@ -8,7 +8,7 @@ mod queue;
 pub(crate) mod output_setup;
 pub(crate) mod recovery;
 pub(crate) mod state;
-pub(crate) mod thread_priority;
+pub mod thread_priority;
 pub(crate) mod worker;
 
 // ── 公开类型 re-export ──

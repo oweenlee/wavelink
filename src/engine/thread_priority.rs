@@ -3,11 +3,24 @@
 //! 在实时音频回调线程和解码线程中调用，降低被系统调度器抢占的概率，
 //! 减少音频 glitch。
 
+/// 平台提权钩子：返回 0 = 成功。
+/// Android 上用 setpriority 设负 nice 需要特权（普通应用必失败），
+/// 由宿主（mobile crate）注册 JNI 钩子走 android.os.Process.setThreadPriority
+/// （应用对自身线程有权限，且会进音频调度组）。
+type ElevateHook = fn() -> i32;
+static ELEVATE_HOOK: std::sync::OnceLock<ElevateHook> = std::sync::OnceLock::new();
+
+/// 注册平台提权钩子（应在任何音频线程启动前调用）
+pub fn set_elevate_hook(hook: ElevateHook) {
+    let _ = ELEVATE_HOOK.set(hook);
+}
+
 /// 提升当前线程为高优先级音频线程。
 ///
 /// 各平台策略：
 /// - macOS / iOS: QOS_CLASS_USER_INTERACTIVE
-/// - Android: setpriority(PRIO_PROCESS, 0, -16)
+/// - Android: 宿主注册的 JNI 钩子（Process.setThreadPriority URGENT_AUDIO），
+///   失败回退 setpriority(PRIO_PROCESS, 0, -16)（大概率失败，仅保底）
 /// - Linux: SCHED_FIFO priority 80
 /// - Windows: THREAD_PRIORITY_TIME_CRITICAL
 ///
@@ -27,6 +40,12 @@ pub fn elevate_audio_thread() {
 
     #[cfg(target_os = "android")]
     {
+        // 优先走宿主 JNI 钩子（有权限、进音频调度组）
+        if let Some(hook) = ELEVATE_HOOK.get() {
+            if hook() == 0 {
+                return;
+            }
+        }
         extern "C" {
             fn setpriority(which: i32, who: u32, prio: i32) -> i32;
         }
