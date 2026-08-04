@@ -170,8 +170,36 @@ pub(crate) fn fill_interleaved_impl(out: &mut [f32], max_frames: u32) -> u32 {
     (n / 2) as u32
 }
 
-/// 从 engine 的 HeadlessOutput ringbuf 拉取 PCM 填入左右声道 buffer
+/// 从 engine 的 HeadlessOutput ringbuf 拉取 PCM 填入左右声道 buffer。
+/// iOS 渲染线程调用：任何 panic 都会跨 extern "C" 边界 abort 掉整个 app，
+/// 因此用 catch_unwind 兜住，panic 时输出静音并记录 panic 消息（供定位）。
 pub(crate) unsafe fn fill_buffer_stereo_impl(
+    left_out: *mut f32,
+    right_out: *mut f32,
+    frames: u32,
+) {
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        unsafe { fill_buffer_stereo_inner(left_out, right_out, frames) }
+    }));
+    if let Err(payload) = r {
+        // 渲染线程 panic 定位：提取 panic 消息打日志（release 下崩溃报告拿不到）
+        let msg = if let Some(s) = payload.downcast_ref::<&str>() {
+            (*s).to_string()
+        } else if let Some(s) = payload.downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "unknown panic payload".to_string()
+        };
+        probe_log(&format!("[panic] iOS 渲染回调 panic: {msg}"));
+        // 输出静音，避免 panic 后 buffer 残留垃圾数据
+        for i in 0..frames as usize {
+            *left_out.add(i) = 0.0;
+            *right_out.add(i) = 0.0;
+        }
+    }
+}
+
+unsafe fn fill_buffer_stereo_inner(
     left_out: *mut f32,
     right_out: *mut f32,
     frames: u32,

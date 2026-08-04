@@ -82,8 +82,22 @@ pub unsafe extern "C" fn audio_output_fill_interleaved(
     if out.is_null() || max_frames == 0 {
         return 0;
     }
+    // catch_unwind：panic 跨 extern "C" 边界会 abort 整个 app，兜住并返回 0
     let buf = std::slice::from_raw_parts_mut(out, max_frames as usize * 2);
-    crate::api::audio_output::fill_interleaved_impl(buf, max_frames)
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::api::audio_output::fill_interleaved_impl(buf, max_frames)
+    }))
+    .unwrap_or_else(|payload| {
+        let msg = if let Some(s) = payload.downcast_ref::<&str>() {
+            (*s).to_string()
+        } else if let Some(s) = payload.downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "unknown panic payload".to_string()
+        };
+        crate::api::audio_output::probe_log(&format!("[panic] Android 泵回调 panic: {msg}"));
+        0
+    })
 }
 
 /// iOS 恢复播放时清空 ringbuf 积压，避免"磁带滑"
