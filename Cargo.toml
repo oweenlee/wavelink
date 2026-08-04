@@ -13,7 +13,7 @@ wasapi-backend = []
 
 [dependencies]
 cpal = { version = "0.15", optional = true }
-oboe = { version = "0.6", features = ["java-interface"], optional = true }
+oboe = { path = "vendor/oboe", features = ["java-interface"], optional = true }
 coreaudio-sys = { version = "0.2", optional = true }
 crossbeam-channel = "0.5"
 ringbuf = "0.4"
