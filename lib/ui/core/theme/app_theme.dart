@@ -185,6 +185,7 @@ class WlText {
     Color? color,
     FontWeight? fontWeight,
     double? letterSpacing,
+    double? height,
   }) {
     return TextStyle(
       fontFamily: _mono,
@@ -192,6 +193,7 @@ class WlText {
       color: color ?? AppTheme.textSecondary,
       fontWeight: fontWeight ?? FontWeight.w500,
       letterSpacing: letterSpacing ?? 0.3,
+      height: height,
     );
   }
 

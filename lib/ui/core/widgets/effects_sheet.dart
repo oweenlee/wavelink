@@ -24,7 +24,6 @@ class EffectsSheet extends StatelessWidget {
           children: [
             // ── 10 段 EQ 区 ──
             _EqSection(),
-            const SizedBox(height: 8),
             // ── DSP 效果列表 ──
             _SectionHeader(label: 'EFFECTS'),
             _EffectItem(
@@ -112,36 +111,24 @@ class _EqSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // header
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 0, 8),
-          child: Text(
-            'EQUALIZER',
-            style: WlText.mono(
-              fontSize: 10,
-              color: AppTheme.textTertiary,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 1.0,
-            ),
-          ),
-        ),
+        // header（与 EFFECTS 标题统一样式与左对齐）
+        const _SectionHeader(label: 'EQUALIZER'),
         // 预设 chips（水平可滚动）
         SizedBox(
           height: 32,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             children: DspProvider.eqPresets.keys.map((p) {
               final active = activePreset == p;
               return Padding(
-                padding: const EdgeInsets.only(right: 6),
+                padding: const EdgeInsets.only(right: 8),
                 child: GestureDetector(
                   onTap: () => dsp.applyEqPreset(p),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
+                    // alignment 居中：chips 被 ListView 拉满高度时文字不再偏上
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
                       color: active
                           ? accent.withValues(alpha: 0.15)
@@ -166,78 +153,82 @@ class _EqSection extends StatelessWidget {
             }).toList(),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         // 10 条竖滑块 + 曲线
-        SizedBox(
-          height: 180,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Stack(
-              children: [
-                // 曲线连线
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: _EqCurvePainter(values, accent),
+
+         SizedBox(
+
+            height: 180,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 12,right: 12,top: 4,bottom: 4),
+              child: Stack(
+                children: [
+                  // 曲线连线
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _EqCurvePainter(values, accent),
+                    ),
                   ),
-                ),
-                // 滑块
-                Row(
-                  children: List.generate(values.length, (i) {
-                    return Expanded(
-                      child: Column(
-                        children: [
-                          // dB 值
-                          Text(
-                            '${values[i] >= 0 ? '+' : ''}${values[i].toStringAsFixed(1)}',
-                            style: WlText.mono(
-                              fontSize: 8,
-                              color: AppTheme.textSecondary,
-                            ),
+                  // 滑块
+                  Row(
+                    children: List.generate(values.length, (i) {
+                  return Expanded(
+                    child: Column(
+                      children: [
+                        // dB 值
+                        Text(
+                          '${values[i] >= 0 ? '+' : ''}${values[i].toStringAsFixed(1)}',
+                          style: WlText.mono(
+                            fontSize: 9,
+                            height: 1.1,
+                            color: AppTheme.textSecondary,
                           ),
-                          const SizedBox(height: 2),
-                          // 竖滑块
-                          Expanded(
-                            child: RotatedBox(
-                              quarterTurns: 3, // 竖直方向
-                              child: SliderTheme(
-                                data: SliderThemeData(
-                                  trackHeight: 3,
-                                  thumbShape: const RoundSliderThumbShape(
-                                    enabledThumbRadius: 6,
-                                  ),
-                                  activeTrackColor: accent,
-                                  inactiveTrackColor: AppTheme.s4
-                                      .withValues(alpha: 0.5),
-                                  overlayColor: accent.withValues(alpha: 0.1),
+                        ),
+                        const SizedBox(height: 3),
+                        // 竖滑块
+                        Expanded(
+                          child: RotatedBox(
+                            quarterTurns: 3, // 竖直方向
+                            child: SliderTheme(
+                              data: SliderThemeData(
+                                trackHeight: 3,
+                                thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 6,
                                 ),
-                                child: Slider(
-                                  value: values[i].clamp(-12.0, 12.0),
-                                  min: -12,
-                                  max: 12,
-                                  divisions: 48,
-                                  onChanged: (v) => dsp.setEqBand(i, v),
-                                ),
+                                activeTrackColor: accent,
+                                inactiveTrackColor: AppTheme.s4
+                                    .withValues(alpha: 0.5),
+                                overlayColor: accent.withValues(alpha: 0.1),
+                              ),
+                              child: Slider(
+                                value: values[i].clamp(-12.0, 12.0),
+                                min: -12,
+                                max: 12,
+                                divisions: 48,
+                                onChanged: (v) => dsp.setEqBand(i, v),
                               ),
                             ),
                           ),
-                          const SizedBox(height: 2),
-                          // 频率标签
-                          Text(
-                            _bandLabel(freqs[i]),
-                            style: WlText.mono(
-                              fontSize: 8,
-                              color: AppTheme.textTertiary,
-                            ),
+                        ),
+                        const SizedBox(height: 3),
+                        // 频率标签
+                        Text(
+                          _bandLabel(freqs[i]),
+                          style: WlText.mono(
+                            fontSize: 9,
+                            height: 1.1,
+                            color: AppTheme.textTertiary,
                           ),
-                        ],
-                      ),
-                    );
-                  }),
-                ),
-              ],
+                        ),
+                      ],
+                    ),
+                  );
+                    }),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
         const Divider(height: 1, color: AppTheme.divider),
       ],
     );
@@ -320,10 +311,15 @@ class _EffectItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: AppTheme.textSecondary),
+          // 图标在图标区内垂直居中，与文字起点严格对齐
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: Icon(icon, size: 20, color: AppTheme.textSecondary),
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -333,14 +329,16 @@ class _EffectItem extends StatelessWidget {
                   label,
                   style: const TextStyle(
                     fontSize: 15,
+                    height: 1.2,
                     color: AppTheme.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 3),
                 Text(
                   enabled ? '${l10n.enabled} · $subtitle' : subtitle,
                   style: const TextStyle(
                     fontSize: 12,
+                    height: 1.2,
                     color: AppTheme.textTertiary,
                   ),
                 ),
@@ -361,7 +359,8 @@ class _Divider extends StatelessWidget {
   Widget build(BuildContext context) {
     return Divider(
       height: 1,
-      indent: 54,
+      // 对齐 label 文字起点：20(左距) + 24(图标区) + 14(间距)
+      indent: 58,
       color: AppTheme.textTertiary.withValues(alpha: 0.15),
     );
   }
