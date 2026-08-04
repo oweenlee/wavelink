@@ -1,0 +1,266 @@
+export '../../../../domain/models/playback_types.dart';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../domain/models/song.dart';
+import '../../../../domain/models/lyric_line.dart';
+import '../../../../domain/models/playback_types.dart';
+import '../../../../data/repositories/preferences_repository.dart';
+import '../../../../data/services/rust_service.dart' show AnalyzeResult;
+import '../../../core/providers/repositories.dart';
+import 'audio_player_provider.dart';
+import 'queue_provider.dart';
+import '../../library/view_models/library_provider.dart';
+import '../../settings/view_models/dsp_provider.dart';
+
+/// 播放编排门面：跨 Notifier 协作（曲终切歌、库加载同步队列、偏好加载）。
+/// 自身不持有状态，状态全部位于 player/queue/library/dsp 各 Notifier。
+class PlaybackController {
+  PlaybackController(this._ref) {
+    // 接线为纯回调赋值，构造期同步执行安全
+    _wire();
+  }
+
+  /// 启动副作用：偏好加载、引擎初始化、曲库扫描。
+  /// 必须在 playbackControllerProvider 构建完成后由调用方显式触发
+  /// （Riverpod 禁止在 provider 初始化期间修改其它 provider）。
+  void bootstrap() {
+    _loadPreferences();
+    _player.init();
+    _library.discoverSongs();
+  }
+
+  final Ref _ref;
+
+  PlayerNotifier get _player => _ref.read(playerProvider.notifier);
+  QueueNotifier get _queue => _ref.read(queueProvider.notifier);
+  LibraryNotifier get _library => _ref.read(libraryProvider.notifier);
+  DspNotifier get _dsp => _ref.read(dspProvider.notifier);
+  PreferencesRepository get _prefsRepo =>
+      _ref.read(preferencesRepositoryProvider);
+
+  void _wire() {
+    _library.onSongsLoaded = _onLibrarySongsLoaded;
+    _library.onSongsAdded = _onLibrarySongsAdded;
+
+    _player.onTrackEnd = () {
+      next();
+    };
+    // 锁屏/控制中心 next/previous 命令 → 复用播放器切歌逻辑
+    _player.onNext = () {
+      next();
+    };
+    _player.onPrevious = () {
+      previous();
+    };
+  }
+
+  void _onLibrarySongsLoaded() {
+    final songs = _ref.read(libraryProvider).importedSongs;
+    _queue.onImportedSongsLoaded(songs);
+    _player.setCurrentSong(_ref.read(queueProvider).currentSong);
+    _library.batchExtractCovers(songs);
+  }
+
+  void _onLibrarySongsAdded() {
+    _queue.onImportAdded(_ref.read(libraryProvider).importedSongs);
+  }
+
+  void _loadPreferences() {
+    _player.setVolume(_prefsRepo.volume);
+    _player.setBitPerfect(_prefsRepo.bitPerfect);
+    if (_prefsRepo.shuffle) _queue.toggleShuffle();
+    _queue.setLoopMode(
+      LoopMode.values.firstWhere(
+        (m) => m.name == _prefsRepo.loopMode,
+        orElse: () => LoopMode.list,
+      ),
+    );
+    _dsp.loadDspPrefs();
+    // 引擎初始化后应用已持久化的 DSP 状态（含总开关与 limiter/dither）
+    _dsp.applyDsp();
+    _library.loadFavoritesPrefs();
+  }
+
+  // ── 门面 getter ──
+
+  List<Song> get queue => _ref.read(queueProvider).queue;
+  int get currentIndex => _ref.read(queueProvider).currentIndex;
+  Song? get currentSong => _ref.read(queueProvider).currentSong;
+  bool get hasSong => _ref.read(queueProvider).hasSong;
+  bool get isPlaying => _ref.read(playerProvider).isPlaying;
+  double get position => _ref.read(playerProvider).position;
+  double get volume => _ref.read(playerProvider).volume;
+  LoopMode get loopMode => _ref.read(queueProvider).loopMode;
+  bool get shuffle => _ref.read(queueProvider).shuffle;
+
+  double get progress => _ref.read(playerProvider).progress;
+  List<LyricLine>? get currentLyrics => _ref.read(playerProvider).lyrics;
+  int get currentLyricLine => _ref.read(playerProvider).currentLyricLine;
+
+  List<Song> get allSongs => _ref.read(libraryProvider).allSongs;
+  List<Song> get importedSongs => _ref.read(libraryProvider).importedSongs;
+  bool get scanDone => _ref.read(libraryProvider).scanDone;
+  List<Song> get favoriteSongs => _library.favoriteSongs();
+  bool get isFavorite => _library.isFavorite(currentSong);
+  bool isSongFavorite(String songId) =>
+      _ref.read(libraryProvider).isSongFavorite(songId);
+  Map<String, List<String>> get playlists => _library.playlists;
+  List<Song> get allKnownSongs => _library.allKnownSongs();
+
+  DspSettings get dspSettings => _ref.read(dspProvider).dspSettings;
+  bool get dspAvailable => _dsp.dspAvailable;
+
+  /// 引擎实时遥测（乐器面板）
+  EngineTelemetry get telemetry => _ref.read(playerProvider).telemetry;
+
+  AnalyzeResult? getAnalysis(String songId) => _player.getAnalysis(songId);
+
+  // ── 外观偏好 ──
+
+  bool get replayGain => _prefsRepo.replayGain;
+  bool get dynamicColor => _prefsRepo.dynamicColor;
+  double get coverBlur => _prefsRepo.coverBlur;
+  bool get bitPerfect => _prefsRepo.bitPerfect;
+
+  void setReplayGain(bool v) => _prefsRepo.setReplayGain(v);
+  void setDynamicColor(bool v) => _prefsRepo.setDynamicColor(v);
+  void setCoverBlur(double v) => _prefsRepo.setCoverBlur(v);
+  void setBitPerfect(bool v) {
+    _prefsRepo.setBitPerfect(v);
+    _player.setBitPerfect(v);
+  }
+
+  // ── 门面方法 ──
+
+  bool autoPlayOnQueueSet = true;
+
+  Future<void> Function(Song) get startDecoderHook =>
+      _player.startDecoderHook;
+  set startDecoderHook(Future<void> Function(Song) hook) {
+    _player.startDecoderHook = hook;
+  }
+
+  void play() => _player.play();
+  void pause() => _player.pause();
+  void togglePlay() => _player.togglePlay();
+  void startPlayback() => _player.startPlayback();
+  void seek(double value, {bool immediate = false}) =>
+      _player.seek(value, immediate: immediate);
+  void skipForward() => _player.skipForward();
+  void skipBackward() => _player.skipBackward();
+  set volume(double v) => _player.setVolume(v);
+
+  void next() {
+    if (!hasSong) return;
+    final q = _ref.read(queueProvider);
+    if (q.loopMode == LoopMode.single) {
+      _player.playSong(q.currentSong!);
+      return;
+    }
+    final nextIdx = _queue.findNextIndex();
+    _queue.advanceTo(nextIdx);
+    _player.playSong(_ref.read(queueProvider).currentSong!);
+  }
+
+  void previous() {
+    if (!hasSong) return;
+    if (_ref.read(playerProvider).position > 3000) {
+      _player.seekToStart();
+    } else {
+      final q = _ref.read(queueProvider);
+      final prevIdx = (q.currentIndex - 1 + q.queue.length) % q.queue.length;
+      _queue.advanceTo(prevIdx);
+      _player.playSong(_ref.read(queueProvider).currentSong!);
+    }
+  }
+
+  void toggleLoopMode() => _queue.toggleLoopMode();
+  void setLoopMode(LoopMode mode) => _queue.setLoopMode(mode);
+
+  void setVolume(double v) {
+    _player.setVolume(v);
+    // 持久化夹紧后的音量（之前只设内存值，重启后丢失；其它设置均有持久化）
+    _prefsRepo.setVolume(_ref.read(playerProvider).volume);
+  }
+
+  void playSong(Song song) {
+    _queue.playSongById(song);
+    _player.playSong(song);
+  }
+
+  /// 播放队列指定位置的曲目（队列面板点击行）
+  void playFromQueue(int index) {
+    final q = _ref.read(queueProvider);
+    if (index < 0 || index >= q.queue.length) return;
+    _queue.advanceTo(index);
+    _player.playSong(_ref.read(queueProvider).currentSong!);
+  }
+
+  void playAlbum(List<Song> songs, {int startIndex = 0}) {
+    _queue.setQueue(songs, startIndex: startIndex);
+    _player.playSong(_ref.read(queueProvider).currentSong!);
+  }
+
+  void addToQueue(Song song) => _queue.addToQueue(song);
+  void playNext(Song song) => _queue.playNext(song);
+  void removeFromQueue(int index) {
+    final wasCurrent = index == _ref.read(queueProvider).currentIndex;
+    _queue.removeFromQueue(index);
+    if (wasCurrent) {
+      final q = _ref.read(queueProvider);
+      if (q.hasSong) {
+        _player.playSong(q.currentSong!);
+      } else {
+        _player.pause();
+        _player.setCurrentSong(null);
+      }
+    }
+  }
+
+  void reorderQueue(int oldIndex, int newIndex) =>
+      _queue.reorderQueue(oldIndex, newIndex);
+  void setQueue(List<Song> songs) {
+    _queue.setQueue(songs);
+    _player.setCurrentSong(_ref.read(queueProvider).currentSong);
+    if (songs.isNotEmpty && autoPlayOnQueueSet) {
+      _player.playSong(_ref.read(queueProvider).currentSong!);
+    }
+  }
+
+  int findNextIndex() => _queue.findNextIndex();
+
+  // ── 频谱 ──
+  Future<List<double>> getSpectrum() => _dsp.getSpectrum();
+
+  // ── DSP ──
+  void toggleDspEnabled() => _dsp.toggleDspEnabled();
+  void toggleCrossfeed() => _dsp.toggleCrossfeed();
+  void toggleWidener() => _dsp.toggleWidener();
+  void toggleLimiter() => _dsp.toggleLimiter();
+  void toggleDither() => _dsp.toggleDither();
+
+  // ── EQ ──
+  List<double> get eqValues => _ref.read(dspProvider).eqValues;
+  String get eqPreset => _ref.read(dspProvider).eqPreset;
+  Future<void> applyEqPreset(String name) => _dsp.applyEqPreset(name);
+  Future<void> setEqBand(int index, double gainDb) =>
+      _dsp.setEqBand(index, gainDb);
+
+  // ── 库操作 ──
+  Future<bool> discoverSongs() => _library.discoverSongs();
+  Future<int> importFromPicker() => _library.importFromPicker();
+  Future<bool> scanSubsonic() => _library.scanSubsonic();
+  Future<bool> scanSmb(String sharePath) => _library.scanSmb(sharePath);
+  void toggleFavorite() => _library.toggleFavoriteFor(currentSong);
+  void setFavorite(String songId, bool favorite) =>
+      _library.setFavorite(songId, favorite);
+  Future<void> saveCurrentQueueAsPlaylist(String name) =>
+      _library.saveCurrentQueueAsPlaylist(name);
+  Future<void> savePlaylist(String name, List<String> songIds) =>
+      _library.savePlaylist(name, songIds);
+  List<Song> playlistSongs(String name) => _library.playlistSongs(name);
+}
+
+final playbackControllerProvider = Provider<PlaybackController>((ref) {
+  return PlaybackController(ref);
+});

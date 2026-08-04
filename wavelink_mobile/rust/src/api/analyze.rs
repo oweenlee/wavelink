@@ -1,0 +1,36 @@
+use std::path::Path;
+
+/// 音频分析结果
+pub struct AnalyzeResult {
+    pub bpm: Option<f32>,
+    pub key: Option<String>,
+    pub energy: Option<f32>,
+}
+
+/// 分析音频文件（BPM + 调性 + 能量）
+pub fn analyze_file(path: String) -> Result<AnalyzeResult, String> {
+    let result = audio_core::analysis::analyze_file(Path::new(&path))
+        .map_err(|e| format!("音频分析失败: {e}"))?;
+
+    Ok(AnalyzeResult {
+        bpm: result.bpm,
+        key: result.key,
+        energy: result.energy,
+    })
+}
+
+/// 分析 PCM 样本数据
+pub fn analyze_pcm_samples(
+    samples: Vec<f32>,
+    sample_rate: u32,
+    channels: u32,
+) -> AnalyzeResult {
+    let result =
+        audio_core::analysis::analyze_from_samples(&samples, sample_rate, channels);
+
+    AnalyzeResult {
+        bpm: result.bpm,
+        key: result.key,
+        energy: result.energy,
+    }
+}

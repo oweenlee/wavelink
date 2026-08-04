@@ -1,0 +1,32 @@
+[package]
+name = "rust_lib_wavelink_mobile"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib", "cdylib", "lib"]
+
+[dependencies]
+flutter_rust_bridge = "=2.13.0-beta.5"
+jni = "0.21"
+crossbeam-channel = "0.5"
+ringbuf = "0.4"
+once_cell = "1"
+arc-swap = "1"
+realfft = "3.5"
+lofty = "0.24"
+parking_lot = "0.12"
+
+# Android: 启用 Oboe 后端（Rust 引擎直驱 AAudio，替代 Kotlin 泵线程 + AudioTrack + Headless）
+# 注意: oboe crate 仅支持 Android，故必须在 target 级声明依赖，
+# 否则 iOS/macOS 编译会在音频引擎依赖图上引入 oboe 而失败。
+[target.'cfg(target_os = "android")'.dependencies]
+audio-core = { path = "../../wavelink-audio-core", default-features = false, features = ["oboe-backend"] }
+
+# 其他平台（iOS/macOS/desktop）保持无 oboe 的默认特性
+[target.'cfg(not(target_os = "android"))'.dependencies]
+audio-core = { path = "../../wavelink-audio-core", default-features = false }
+
+[dev-dependencies]
+# 仅测试用：生成正弦 WAV 以驱动 iOS 音频通路集成测试
+hound = "3"

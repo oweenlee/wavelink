@@ -1,0 +1,439 @@
+//! 平台音频输出桥接
+//!
+//! 从 EngineHandle 的 HeadlessOutput ringbuf 拉取 PCM 数据，
+//! 供 iOS AVAudioSourceNode 回调使用。
+
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::Mutex;
+
+use parking_lot::Mutex as ParkingMutex;
+
+/// 硬件采样率（由 Swift 启动时通过 `set_hw_sample_rate` 设置）
+static HW_SAMPLE_RATE: AtomicU32 = AtomicU32::new(44100);
+
+/// 最近一帧 16 频段频谱，由 engine 事件轮询写入、Dart 读取
+static SPECTRUM: Mutex<[f32; 16]> = Mutex::new([0.0; 16]);
+/// underrun 计数：iOS 回调从 ringbuf 读不到足够数据时递增
+static UNDERRUN_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// 【临时诊断】平台日志：Android 进 logcat（tag WaveLinkRust），iOS 进 stderr
+#[cfg(target_os = "android")]
+#[link(name = "log")]
+extern "C" {
+    fn __android_log_write(prio: i32, tag: *const u8, text: *const u8) -> i32;
+}
+
+pub(crate) fn probe_log(msg: &str) {
+    #[cfg(target_os = "android")]
+    {
+        let mut buf = Vec::with_capacity(msg.len() + 1);
+        buf.extend_from_slice(msg.as_bytes());
+        buf.push(0);
+        unsafe { __android_log_write(4, b"WaveLinkRust\0".as_ptr(), buf.as_ptr()) };
+    }
+    #[cfg(not(target_os = "android"))]
+    eprintln!("{msg}");
+}
+
+/// 【临时诊断】underrun 爆发日志：打印爆发起止与时长，定位阵发卡顿用
+mod underrun_probe {
+    use once_cell::sync::Lazy;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::time::Instant;
+
+    static T0: Lazy<Instant> = Lazy::new(Instant::now);
+    static IN_BURST: AtomicBool = AtomicBool::new(false);
+    static BURST_START_MS: AtomicU64 = AtomicU64::new(0);
+    static LAST_STARVE_LOG: AtomicU64 = AtomicU64::new(0);
+
+    pub fn on_fill(filled: bool) {
+        let now = T0.elapsed().as_millis() as u64;
+        if filled {
+            if IN_BURST.swap(false, Ordering::AcqRel) {
+                let start = BURST_START_MS.load(Ordering::Acquire);
+                super::probe_log(&format!(
+                    "[underrun-probe] burst 结束：缺口持续 ~{}ms",
+                    now.saturating_sub(start)
+                ));
+            }
+        } else if !IN_BURST.swap(true, Ordering::AcqRel) {
+            BURST_START_MS.store(now, Ordering::Release);
+            super::probe_log(&format!("[underrun-probe] burst 开始 @ t={}ms", now));
+        }
+    }
+
+    /// 门控开着但 ringbuf 完全空（限流 1s 一条，防爆日志）
+    pub fn starve() {
+        let now = T0.elapsed().as_millis() as u64;
+        let last = LAST_STARVE_LOG.load(Ordering::Acquire);
+        if now.saturating_sub(last) > 1000
+            && LAST_STARVE_LOG
+                .compare_exchange(last, now, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+        {
+            super::probe_log(&format!(
+                "[underrun-probe] starve：门控开但 ringbuf 空 @ t={}ms，{}",
+                now,
+                crate::api::engine::engine_probe()
+            ));
+        }
+    }
+}
+
+/// 播放门控：Swift 主线程经 `audio_output_set_playing` 设置，渲染回调无锁读取。
+/// false 时 `fill_buffer_stereo_impl` 直接输出静音。取代 Swift 侧跨线程 Bool 标志，
+/// 消除渲染线程与主线程的数据竞争。
+static PLAYING: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn set_playing_impl(playing: bool) {
+    PLAYING.store(playing, Ordering::Release);
+}
+
+/// 设置硬件采样率记录（遥测 outputRate 依此显示）
+pub(crate) fn set_hw_sample_rate_impl(rate: u32) {
+    HW_SAMPLE_RATE.store(rate, Ordering::Release);
+}
+
+/// 由 Swift 通过 extern "C" 调用，设置硬件采样率
+#[no_mangle]
+pub extern "C" fn set_hw_sample_rate(rate: u32) {
+    set_hw_sample_rate_impl(rate);
+}
+
+pub fn get_hw_sample_rate() -> u32 {
+    HW_SAMPLE_RATE.load(Ordering::Acquire)
+}
+
+/// 读取当前频谱（16 频段，0~1）
+pub fn get_spectrum() -> Vec<f32> {
+    SPECTRUM.lock().map(|g| g.to_vec()).unwrap_or_default()
+}
+
+/// 供 engine 事件轮询更新频谱
+pub(crate) fn update_spectrum(bands: &[f32; 16]) {
+    if let Ok(mut g) = SPECTRUM.lock() {
+        *g = *bands;
+    }
+}
+
+/// 读取 underrun 计数
+pub fn get_underrun_count() -> u64 {
+    UNDERRUN_COUNT.load(Ordering::Acquire)
+}
+
+/// 清空 ringbuf 残留数据（平台音频流 start/stop 时调用）
+///
+/// 虽然 EngineHandle 在 seek/切歌时自动 swap_consumer 创建新 ringbuf，
+/// 但 pause/resume 或 iOS 中断恢复时会残留暂停前的数据，必须真正清空，
+/// 否则恢复播放会先听到旧数据造成"跳音"。
+pub(crate) fn clear_ringbuf_impl() {
+    let mut buf = vec![0.0f32; 4096 * 2];
+    loop {
+        let n = crate::api::engine::engine_read_samples(&mut buf);
+        if n == 0 {
+            break;
+        }
+    }
+}
+
+/// 预分配的实时回调缓冲区（避免在音频线程中做堆分配）
+/// iOS AVAudioSourceNode 单次回调最大 4096 帧，首次回调时自动分配
+static RT_BUF: ParkingMutex<Vec<f32>> = ParkingMutex::new(Vec::new());
+
+/// 从 engine 的 HeadlessOutput ringbuf 拉取交错立体声 PCM 写入连续 buffer
+/// （Android Kotlin 原生泵使用）。
+///
+/// 返回实际读取的帧数；播放门控关闭时返回 0（调用方应等待而非忙转）。
+/// 数据不足时剩余部分清零并计入 underrun，与 iOS 回调行为一致。
+pub(crate) fn fill_interleaved_impl(out: &mut [f32], max_frames: u32) -> u32 {
+    let frames = max_frames as usize;
+    let need = frames * 2;
+    if out.len() < need {
+        return 0;
+    }
+    if !PLAYING.load(Ordering::Acquire) {
+        return 0;
+    }
+    let n = crate::api::engine::engine_read_samples(&mut out[..need]);
+    if n < need {
+        if n == 0 {
+            underrun_probe::starve();
+        }
+        for s in &mut out[n..need] {
+            *s = 0.0;
+        }
+        UNDERRUN_COUNT.fetch_add(1, Ordering::AcqRel);
+        underrun_probe::on_fill(false);
+    } else {
+        underrun_probe::on_fill(true);
+    }
+    (n / 2) as u32
+}
+
+/// 从 engine 的 HeadlessOutput ringbuf 拉取 PCM 填入左右声道 buffer。
+/// iOS 渲染线程调用：任何 panic 都会跨 extern "C" 边界 abort 掉整个 app，
+/// 因此用 catch_unwind 兜住，panic 时输出静音并记录 panic 消息（供定位）。
+pub(crate) unsafe fn fill_buffer_stereo_impl(
+    left_out: *mut f32,
+    right_out: *mut f32,
+    frames: u32,
+) {
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        unsafe { fill_buffer_stereo_inner(left_out, right_out, frames) }
+    }));
+    if let Err(payload) = r {
+        // 渲染线程 panic 定位：提取 panic 消息打日志（release 下崩溃报告拿不到）
+        let msg = if let Some(s) = payload.downcast_ref::<&str>() {
+            (*s).to_string()
+        } else if let Some(s) = payload.downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "unknown panic payload".to_string()
+        };
+        probe_log(&format!("[panic] iOS 渲染回调 panic: {msg}"));
+        // 输出静音，避免 panic 后 buffer 残留垃圾数据
+        for i in 0..frames as usize {
+            *left_out.add(i) = 0.0;
+            *right_out.add(i) = 0.0;
+        }
+    }
+}
+
+unsafe fn fill_buffer_stereo_inner(
+    left_out: *mut f32,
+    right_out: *mut f32,
+    frames: u32,
+) {
+    let frames = frames as usize;
+
+    // 播放门控：未播放时直接输出静音（不计 underrun）。
+    // 原子读，渲染线程无锁；暂停即时生效，无需等 ringbuf 排空。
+    if !PLAYING.load(Ordering::Acquire) {
+        for i in 0..frames {
+            *left_out.add(i) = 0.0;
+            *right_out.add(i) = 0.0;
+        }
+        return;
+    }
+
+    // 从预分配缓冲区获取引用，避免实时线程 malloc
+    let mut rt_buf = RT_BUF.lock();
+    if rt_buf.len() < frames * 2 {
+        rt_buf.resize(frames * 2, 0.0);
+    }
+    let buf: &mut [f32] = &mut (*rt_buf)[..frames * 2];
+
+    let n = crate::api::engine::engine_read_samples(buf);
+
+    let fc = n / 2;
+    for i in 0..fc.min(frames) {
+        *left_out.add(i) = buf[i * 2];
+        *right_out.add(i) = buf[i * 2 + 1];
+    }
+    if fc < frames {
+        for i in fc..frames {
+            *left_out.add(i) = 0.0;
+            *right_out.add(i) = 0.0;
+        }
+        UNDERRUN_COUNT.fetch_add(1, Ordering::AcqRel);
+        underrun_probe::on_fill(false);
+    } else {
+        underrun_probe::on_fill(true);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// iOS 音频输出通路集成测试
+//
+// 目的：在无法"听"的情况下，用数据断言判定 iOS 杂音是否来自 audio-core
+// 的数据损坏。本 crate 以 `default-features=false` 编译 audio-core，走的是
+// HeadlessOutput（ringbuf）路径——与 iOS 生产环境完全一致；并直接调用 iOS
+// AVAudioSourceNode 回调使用的 `fill_buffer_stereo_impl`。
+//
+// 断言覆盖的杂音嫌疑：
+//   1. underrun 补的是干净 0（静音 dropout），而非未初始化垃圾内存（→ 爆裂声）
+//   2. 数据无 NaN/inf（解码/DSP 异常）
+//   3. 无削波溢出（|sample| <= 1.0，格式/增益错误会越界）
+//   4. 单声道源正确上混为立体声（L≈R），无"垃圾声道"
+//   5. 44.1k 源经重采样到 48k 后仍是干净正弦（重采样器伪影）
+//
+// 注意：本模块所有测试共享进程级全局状态（ENGINE / RT_BUF / UNDERRUN_COUNT），
+// 故合并为单个 #[test] 顺序执行，避免并行竞态。新增用例请追加到此函数内。
+#[cfg(test)]
+mod ios_audio_path_tests {
+    use super::*;
+    use crate::api::engine::{engine_init_ex, engine_is_playing, engine_play};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    const OUT_RATE: u32 = 48000; // iOS 典型硬件采样率
+    const CHUNK: usize = 1024; // 单次回调帧数（AVAudioSourceNode 常见量级）
+
+    /// 生成正弦 WAV（所有声道写相同样本；channels=1 即单声道）
+    fn write_sine_wav(path: &str, channels: u16, sample_rate: u32, freq: f32, amp: f32, secs: f32) {
+        let spec = hound::WavSpec {
+            channels,
+            sample_rate,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(path, spec).unwrap();
+        let n = (sample_rate as f32 * secs) as u32;
+        for i in 0..n {
+            let t = i as f32 / sample_rate as f32;
+            let s = (t * freq * 2.0 * std::f32::consts::PI).sin() * amp;
+            let v = (s * i16::MAX as f32) as i16;
+            for _ in 0..channels {
+                w.write_sample(v).unwrap();
+            }
+        }
+        w.finalize().unwrap();
+    }
+
+    fn rms(v: &[f32]) -> f32 {
+        if v.is_empty() {
+            return 0.0;
+        }
+        (v.iter().map(|&x| x * x).sum::<f32>() / v.len() as f32).sqrt()
+    }
+
+    /// 从 iOS 回调路径采集 `target` 帧"真实音频"（跳过全 0 的 underrun 块）。
+    /// 返回 (左声道, 右声道, 遇到的 underrun 块数)。
+    unsafe fn collect_real_frames(target: usize, timeout: Duration) -> (Vec<f32>, Vec<f32>, usize) {
+        let mut l = vec![0f32; CHUNK];
+        let mut r = vec![0f32; CHUNK];
+        let mut la = Vec::new();
+        let mut ra = Vec::new();
+        let mut underrun_chunks = 0usize;
+        let start = Instant::now();
+        while la.len() < target && start.elapsed() < timeout {
+            fill_buffer_stereo_impl(l.as_mut_ptr(), r.as_mut_ptr(), CHUNK as u32);
+            let silence = l.iter().all(|&x| x == 0.0) && r.iter().all(|&x| x == 0.0);
+            if silence {
+                underrun_chunks += 1;
+            } else {
+                la.extend_from_slice(&l);
+                ra.extend_from_slice(&r);
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        (la, ra, underrun_chunks)
+    }
+
+    /// 对采集到的真实音频做数据完整性断言（无 NaN / 无削波 / 有信号）。
+    fn assert_clean_audio(la: &[f32], ra: &[f32], label: &str) {
+        assert!(
+            la.len() >= CHUNK * 4,
+            "[{label}] 采集到的真实音频过少（{} 帧），引擎可能未正常产出 PCM",
+            la.len()
+        );
+        assert!(
+            la.iter().chain(ra.iter()).all(|x| x.is_finite()),
+            "[{label}] 检测到 NaN/inf 样本——解码或 DSP 产出了非法数据"
+        );
+        let peak = la
+            .iter()
+            .chain(ra.iter())
+            .fold(0.0f32, |m, &x| m.max(x.abs()));
+        assert!(
+            peak <= 1.0 + 1e-3,
+            "[{label}] 样本越界（peak={peak} > 1.0）——格式/增益错误会导致削波杂音"
+        );
+        let level = rms(la);
+        assert!(
+            (0.02..0.9).contains(&level),
+            "[{label}] 信号电平异常（RMS={level}）——可能全是静音或接近满量程"
+        );
+    }
+
+    #[test]
+    fn ios_audio_path_data_integrity() {
+        let dir = std::env::temp_dir();
+        let stereo_path = format!("{}/wavelink_ios_test_stereo.wav", dir.display());
+        let mono_path = format!("{}/wavelink_ios_test_mono.wav", dir.display());
+
+        // 44.1kHz 源 → 引擎 48kHz 输出（顺带覆盖重采样器）；0.3 峰值留足余量
+        write_sine_wav(&stereo_path, 2, 44100, 440.0, 0.3, 3.0);
+        write_sine_wav(&mono_path, 1, 44100, 440.0, 0.3, 3.0);
+
+        // ── 初始化引擎（镜像 iOS：engine_init = 48k/2ch/280ms/无 bit-perfect）──
+        set_hw_sample_rate(OUT_RATE);
+        engine_init_ex(OUT_RATE, 2, 280, 0, false, false, false, None)
+            .expect("引擎初始化失败");
+        // 打开播放门控（真实场景由 Swift 在 play/resume 时设置）
+        set_playing_impl(true);
+
+        // ── 嫌疑1：underrun 必须补 0，不能是垃圾内存 ──
+        // 引擎刚初始化、尚未播放：ringbuf 为空，此时读取必然 underrun。
+        unsafe {
+            let mut l0 = vec![0f32; CHUNK];
+            let mut r0 = vec![0f32; CHUNK];
+            fill_buffer_stereo_impl(l0.as_mut_ptr(), r0.as_mut_ptr(), CHUNK as u32);
+            assert!(
+                l0.iter().all(|&x| x == 0.0) && r0.iter().all(|&x| x == 0.0),
+                "underrun 补了非 0 数据（垃圾内存）——这会直接造成爆裂杂音"
+            );
+        }
+        assert!(get_underrun_count() > 0, "空 ringbuf 读取应计入 underrun");
+
+        // ── 嫌疑2/3/5：立体声 44.1k 正弦 → 48k，数据应干净 ──
+        engine_play(stereo_path.clone());
+        let mut waited = 0;
+        while !engine_is_playing() && waited < 100 {
+            thread::sleep(Duration::from_millis(10));
+            waited += 1;
+        }
+        assert!(engine_is_playing(), "引擎未进入播放状态");
+
+        let (la, ra, _ur) =
+            unsafe { collect_real_frames(CHUNK * 24, Duration::from_secs(10)) };
+        assert_clean_audio(&la, &ra, "stereo-44.1k→48k");
+        // 立体声两声道都应有信号（本测试源 L=R，故右声道 RMS 也应达标）
+        assert!(rms(&ra) > 0.02, "[stereo] 右声道近乎静音，疑似解交织丢声道");
+
+        // ── 嫌疑4：单声道源应正确上混为立体声（L≈R，无垃圾声道）──
+        engine_play(mono_path.clone());
+        thread::sleep(Duration::from_millis(150)); // 等切歌 swap_consumer 生效
+        // 丢弃切换瞬间的残留帧
+        let _ = unsafe { collect_real_frames(CHUNK * 2, Duration::from_secs(2)) };
+        let (ml, mr, _ur2) =
+            unsafe { collect_real_frames(CHUNK * 24, Duration::from_secs(10)) };
+        assert_clean_audio(&ml, &mr, "mono→stereo");
+
+        let n = ml.len().min(mr.len());
+        let diff_rms = rms(
+            &ml[..n]
+                .iter()
+                .zip(&mr[..n])
+                .map(|(a, b)| a - b)
+                .collect::<Vec<f32>>(),
+        );
+        assert!(
+            diff_rms < 0.001,
+            "[mono] 左右声道差异过大（diff_rms={diff_rms}）——单声道上混错误会把垃圾塞进一个声道造成杂音"
+        );
+
+        // ── 播放门控：set_playing(false) → 输出全静音且不计 underrun ──
+        let underruns_before = get_underrun_count();
+        set_playing_impl(false);
+        unsafe {
+            let mut lg = vec![0.5f32; CHUNK]; // 预填非 0，验证确实被覆盖
+            let mut rg = vec![0.5f32; CHUNK];
+            fill_buffer_stereo_impl(lg.as_mut_ptr(), rg.as_mut_ptr(), CHUNK as u32);
+            assert!(
+                lg.iter().all(|&x| x == 0.0) && rg.iter().all(|&x| x == 0.0),
+                "播放门控关闭时输出必须为静音"
+            );
+        }
+        assert_eq!(
+            get_underrun_count(),
+            underruns_before,
+            "门控关闭的静音不应计入 underrun"
+        );
+        set_playing_impl(true);
+
+        // 清理临时文件（忽略失败）
+        let _ = std::fs::remove_file(&stereo_path);
+        let _ = std::fs::remove_file(&mono_path);
+    }
+}
