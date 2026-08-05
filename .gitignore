@@ -3,6 +3,3 @@
 
 # macOS
 .DS_Store
-
-# monorepo 迁移暂存区（旧仓库副本，确认无误后手动删除）
-/.staging/
