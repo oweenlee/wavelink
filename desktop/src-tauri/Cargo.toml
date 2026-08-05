@@ -15,7 +15,7 @@ tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# 音频内核 / 曲库（本地 sdk，间接依赖 wavelink-core git tag）
+# 音频内核 / 曲库（本地 sdk，path 依赖 monorepo 内的 core）
 sdk = { path = "crates/sdk" }
 
 # 引擎事件接收

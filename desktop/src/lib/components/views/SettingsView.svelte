@@ -103,7 +103,7 @@
 				deviceEvents = [{ type: event.payload.type, name: event.payload.name, time: Date.now() }, ...deviceEvents].slice(0, 20);
 			});
 			_underrunTimer = setInterval(async () => {
-				try { underrunCount = await _invoke!('get_underrun_count'); } catch {}
+				try { underrunCount = await _invoke!('get_underrun_count'); } catch { /* 轮询瞬时失败忽略 */ }
 			}, 2000);
 		}
 	}

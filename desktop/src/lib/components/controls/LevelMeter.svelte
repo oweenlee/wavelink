@@ -1,5 +1,5 @@
 <script lang="ts">
-  let { rms = 0, peak = 0, clip = false }: { rms?: number; peak?: number; clip?: boolean } = $props();
+  let { peak = 0, clip = false }: { peak?: number; clip?: boolean } = $props();
 
   let segments = $derived.by(() => {
     const count = 12;
@@ -17,7 +17,7 @@
 </script>
 
 <div class="meter" class:clip>
-  {#each segments as seg}
+  {#each segments as seg, i (i)}
     <div class={seg.cls}></div>
   {/each}
 </div>

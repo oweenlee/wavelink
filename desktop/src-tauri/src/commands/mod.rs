@@ -28,12 +28,10 @@ pub(crate) fn apply_replaygain(state: &AppState) {
     if rg {
         if let Some(ref cur) = *lock_or_die(&state.current_track) {
             if let Ok(db) = state.library.lock() {
-                if let Ok(tracks) = db.search(cur, 1, 0) {
-                    if let Some(t) = tracks.first() {
-                        if let Some(gain) = t.track_gain {
-                            state.engine.set_replaygain_gain_db(gain as f32);
-                            return;
-                        }
+                if let Ok(Some(t)) = db.get_track_by_path(cur) {
+                    if let Some(gain) = t.track_gain {
+                        state.engine.set_replaygain_gain_db(gain as f32);
+                        return;
                     }
                 }
             }

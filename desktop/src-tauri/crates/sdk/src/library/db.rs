@@ -55,6 +55,12 @@ const LIST_COLUMNS: &str = "id, path, title, artist, album, album_artist, \
     sample_rate, channels, format, file_size, file_modified, \
     date_added, play_count, last_played, rating, missing, track_gain";
 
+/// 完整列（含 cover），列序必须与 row_to_track 的位置映射一致
+const FULL_COLUMNS: &str = "id, path, title, artist, album, album_artist, \
+    track_number, disc_number, year, genre, duration, \
+    sample_rate, channels, format, file_size, file_modified, \
+    date_added, play_count, last_played, rating, missing, cover, track_gain";
+
 impl LibraryDb {
     /// 打开（或创建）数据库
     pub fn open(path: &Path) -> SqlResult<Self> {
@@ -454,17 +460,17 @@ impl LibraryDb {
             Ok((track_id, result))
         })?;
         let mut map = std::collections::HashMap::new();
-        for row in rows {
-            if let Ok((id, result)) = row {
-                map.insert(id, result);
-            }
+        for (id, result) in rows.flatten() {
+            map.insert(id, result);
         }
         Ok(map)
     }
 
     /// 按文件路径查找曲目
     pub fn get_track_by_path(&self, path: &str) -> SqlResult<Option<Track>> {
-        let mut stmt = self.conn.prepare("SELECT * FROM tracks WHERE path=?1")?;
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {FULL_COLUMNS} FROM tracks WHERE path=?1"
+        ))?;
         let mut rows = stmt.query_map(params![path], Self::row_to_track)?;
         match rows.next() {
             Some(r) => Ok(Some(r?)),

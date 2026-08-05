@@ -169,6 +169,8 @@ pub fn clear_ir(state: State<AppState>) {
 }
 
 #[tauri::command]
+// Tauri 命令参数直接映射前端调用字段，不为此引入中间结构体
+#[allow(clippy::too_many_arguments)]
 pub fn set_engine_config(
     sample_rate: u32,
     channels: u32,

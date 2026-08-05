@@ -118,6 +118,9 @@
 		return eqBands.map(b => b.gain_db);
 	}
 
+	// eq10 除从 eqBands 同步外，预设切换动画期间还会被 rAF 写入中间值，
+	// 因此不能用纯 $derived，保留 $state + $effect。
+	// eslint-disable-next-line svelte/prefer-writable-derived
 	let eq10 = $state<number[]>([]);
 
 	$effect(() => {

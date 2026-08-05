@@ -7,6 +7,7 @@ extern "C" {
     fn __android_log_write(prio: i32, tag: *const u8, text: *const u8) -> i32;
 }
 
+/// 输出一条诊断日志（Android → logcat，其余平台 stderr）
 pub fn log(msg: &str) {
     #[cfg(target_os = "android")]
     {

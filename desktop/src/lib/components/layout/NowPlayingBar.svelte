@@ -121,7 +121,7 @@
 		</div>
 
 		<div class="bar-right">
-			<LevelMeter rms={playback.levels?.rms ?? 0} peak={playback.levels?.peak ?? 0} clip={playback.levels?.clip ?? false} />
+			<LevelMeter peak={playback.levels?.peak ?? 0} clip={playback.levels?.clip ?? false} />
 			<button class="speed-btn" onclick={cycleSpeed} title={t('nowplaying_bar.speed')}>
 				<span class="speed-label">{SPEED_PRESETS[speedIndex]}x</span>
 			</button>

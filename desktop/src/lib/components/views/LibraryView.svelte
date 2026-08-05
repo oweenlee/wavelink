@@ -21,7 +21,8 @@
 	let albumTracks = $state<Track[]>([]);
 	let browsingLoading = $state(false);
 	let albumBriefs = $state<AlbumBrief[]>([]);
-	let albumCovers = $state(new SvelteMap<number, string>());
+	// SvelteMap 自身即响应式，无需再包 $state
+	let albumCovers = new SvelteMap<number, string>();
 
 	let editTrack = $state<Track | null>(null);
 	let deleteTarget = $state<Track | null>(null);
@@ -185,7 +186,8 @@
 		mode = 'albums_grid';
 		browsingLoading = true;
 		albumBriefs = await library.loadAllAlbums();
-		albumCovers = new SvelteMap();
+		// 用 .clear() 而非重新赋值（albumCovers 无 $state 包裹，重赋不触发响应式）
+		albumCovers.clear();
 		// 用已缓存的封面预填, 进入网格即显示
 		for (const { first_track_id } of albumBriefs) {
 			const cached = library.getAlbumCoverCached(first_track_id);

@@ -1,3 +1,4 @@
+import { SvelteMap } from 'svelte/reactivity';
 import { browser, lazyInvoke } from '$lib/tauri';
 import type { Track, AlbumBrief } from '$lib/audio/types';
 
@@ -8,12 +9,12 @@ let _sortBy = $state<'title' | 'artist' | 'album' | 'duration'>('title');
 let _loading = $state(false);
 
 // 浏览数据缓存：艺术家 / 专辑列表 / 专辑曲目，避免每次切换视图都重新查库
-const _artistsCache = new Map<string, string[]>();
-const _albumsByArtistCache = new Map<string, string[]>();
-const _tracksByAlbumCache = new Map<string, Track[]>();
+const _artistsCache = new SvelteMap<string, string[]>();
+const _albumsByArtistCache = new SvelteMap<string, string[]>();
+const _tracksByAlbumCache = new SvelteMap<string, Track[]>();
 let _allAlbumsCache: AlbumBrief[] | null = null;
 // 专辑封面缓存（key = first_track_id）：避免每次进入专辑网格都重新从磁盘读封面
-const _albumCoverCache = new Map<number, string>();
+const _albumCoverCache = new SvelteMap<number, string>();
 
 /** Sorted tracks — recomputed only when _tracks or _sortBy change */
 const _sortedTracks = $derived.by(() => {

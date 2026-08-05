@@ -80,8 +80,7 @@ fn fix_gbk_tag(s: &str) -> String {
 fn infer_from_filename(stem: &str) -> InferredInfo {
     // 清理: 替换常见分隔符为空格
     let cleaned = stem
-        .replace('_', " ")
-        .replace('.', " ")
+        .replace(['_', '.'], " ")
         .replace('-', " - ");
     let parts: Vec<&str> = cleaned.split(" - ").map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
 
@@ -195,7 +194,7 @@ fn scan_directory_inner(db: &LibraryDb, dir: &Path) -> Result<ScannerResult, Str
                 .map(|e| e.to_lowercase());
             if let Some(ref ext) = ext {
                 if AUDIO_EXTENSIONS.contains(&ext.as_str()) {
-                    match scan_file(&path) {
+                    match scan_file(path) {
                         Ok(Some(track)) => {
                             if let Err(e) = db.upsert_track(&track) {
                                 warn!("写入数据库失败 {}: {e}", path.display());
@@ -321,17 +320,15 @@ mod tests {
     fn test_get_file_cover_id3v2() {
         // 构造一个最小 ID3v2 文件：ID3v2.3 头 + APIC 帧（1×1 红色像素 PNG）
         // 委托给 audio_core::read_cover（内部使用 lofty）
-        let png_data: &[u8] = &[
-            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
-            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
-            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1×1
-            0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
-            0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
-            0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
-            0x00, 0x00, 0x03, 0x00, 0x01, 0x36, 0x28, 0x19,
-            0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, // IEND
-            0xAE, 0x42, 0x60, 0x82,
-        ];
+        // PNG 用 image crate 现场编码生成（手写字节容易 CRC 不合法）
+        let mut png_data: Vec<u8> = Vec::new();
+        {
+            use image::ImageEncoder as _;
+            let encoder = image::codecs::png::PngEncoder::new(std::io::Cursor::new(&mut png_data));
+            encoder
+                .write_image(&[0xFFu8, 0x00, 0x00], 1, 1, image::ExtendedColorType::Rgb8)
+                .unwrap();
+        }
 
         // APIC 帧体: encoding(1) + MIME("image/png" + null) + pic_type(3) + desc(null) + img_data
         let mut apic_body = Vec::new();
@@ -339,7 +336,7 @@ mod tests {
         apic_body.extend_from_slice(b"image/png\x00");
         apic_body.push(3); // front cover
         apic_body.push(0); // empty description (null)
-        apic_body.extend_from_slice(png_data);
+        apic_body.extend_from_slice(&png_data);
 
         let frame_size = apic_body.len() as u32;
         // ID3v2.3 frame header: 4-byte ID + 4-byte size (BE) + 2-byte flags
@@ -367,6 +364,17 @@ mod tests {
         file.extend_from_slice(&syncsafe(tag_data_len));
         file.extend_from_slice(&frame);
 
+        // 追加几帧真实的 MPEG1 Layer III 音频帧（lofty 需要音频帧才能识别文件类型）：
+        // 128kbps / 44.1kHz / 无 padding，帧长 = 144 * 128000 / 44100 = 417 字节
+        for _ in 0..4 {
+            let mut mpeg_frame = vec![0u8; 417];
+            mpeg_frame[0] = 0xFF;
+            mpeg_frame[1] = 0xFB; // MPEG1 Layer III, 无 CRC
+            mpeg_frame[2] = 0x90; // 128kbps, 44100Hz, 无 padding
+            mpeg_frame[3] = 0x00;
+            file.extend_from_slice(&mpeg_frame);
+        }
+
         // 写入临时文件
         let tmp = Path::new("/tmp/test_cover_synthetic.mp3");
         std::fs::write(tmp, &file).unwrap();
@@ -375,7 +383,8 @@ mod tests {
         assert!(result.is_ok(), "get_file_cover failed: {:?}", result);
         let cover = result.unwrap();
         assert!(cover.is_some(), "should have found a cover");
-        assert!(cover.unwrap().starts_with("data:image;base64,"));
+        // 封面经解码缩放后统一编码为 JPEG
+        assert!(cover.unwrap().starts_with("data:image/jpeg;base64,"));
 
         let _ = std::fs::remove_file(tmp);
     }

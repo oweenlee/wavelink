@@ -13,6 +13,8 @@ on:
     tags:
       - "v*"
 
+# monorepo 布局：音频引擎在 core/，桌面端在 desktop/（src-tauri 通过 path 依赖 core）。
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -20,6 +22,9 @@ jobs:
   build:
     runs-on: windows-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: desktop
 
     steps:
       - uses: actions/checkout@v4
@@ -29,6 +34,8 @@ jobs:
         with:
           node-version: 22
           cache: "npm"
+          cache-dependency-path: desktop/package-lock.json
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -37,7 +44,7 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "wavelink-engine"
+          workspaces: "desktop/src-tauri -> target"
 
       - name: Install dependencies
         run: npm ci
@@ -52,7 +59,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wavelink-msi
-          path: src-tauri/target/release/bundle/msi/*.msi
+          path: desktop/src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: error
 
       - name: Init tauri-windows-bundle
@@ -91,14 +98,15 @@ jobs:
         with:
           name: wavelink-msix
           path: |
-            *.msix
-            *.msixbundle
-            src-tauri/target/msix/*.msix
+            desktop/*.msix
+            desktop/*.msixbundle
+            desktop/src-tauri/target/msix/*.msix
           if-no-files-found: warn
 
       - name: 创建 Release 并上传
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
+        working-directory: .
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
         run: |
@@ -106,7 +114,6 @@ jobs:
             --title "${{ github.ref_name }}" \
             --generate-notes
           gh release upload "${{ github.ref_name }}" \
-            src-tauri/target/release/bundle/msi/*.msi \
-            src-tauri/target/msix/*.msix \
+            desktop/src-tauri/target/release/bundle/msi/*.msi \
+            desktop/src-tauri/target/msix/*.msix \
             --clobber
-      

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,9 +18,9 @@ pub struct NasManager {
 }
 
 impl NasManager {
-    pub fn new(db_path: &PathBuf) -> Self {
+    pub fn new(db_path: &Path) -> Self {
         let mgr = Self {
-            db_path: db_path.clone(),
+            db_path: db_path.to_path_buf(),
         };
         if let Err(e) = mgr.migrate() {
             tracing::warn!("NAS table migration failed: {e}");

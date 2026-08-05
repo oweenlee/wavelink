@@ -1,5 +1,4 @@
-/// 引擎事件 → Tauri 前端事件转发
-
+//! 引擎事件 → Tauri 前端事件转发
 use crossbeam_channel::Receiver;
 use tauri::{Emitter, Manager};
 use sdk::EngineEvent;
