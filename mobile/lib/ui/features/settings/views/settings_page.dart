@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/sheet_shell.dart';
 import '../../../core/widgets/wl_toggle.dart';
 import '../../playback/view_models/playback_controller.dart';
 import '../view_models/dsp_provider.dart';
@@ -21,16 +22,7 @@ class SettingsPage extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
       children: [
         const SizedBox(height: 4),
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 24),
-          child: Text(
-            'SETTINGS',
-            style: WlText.display(
-              fontSize: 28,
-              letterSpacing: 0.18 * 28,
-            ),
-          ),
-        ),
+
         _Section(
           title: l10n.settingsAudio,
           children: [
@@ -143,7 +135,7 @@ class SettingsPage extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 24),
-        _Section(title: l10n.language, children: [_LanguageSelector()]),
+        _Section(title: l10n.language, children: [_LanguageItem()]),
         const SizedBox(height: 24),
         _Section(
           title: l10n.settingsAbout,
@@ -160,16 +152,15 @@ class SettingsPage extends ConsumerWidget {
   }
 }
 
-class _LanguageSelector extends ConsumerWidget {
-  const _LanguageSelector();
+class _LanguageItem extends ConsumerWidget {
+  const _LanguageItem();
 
-  static const _options = [('system', ''), ('zh', ''), ('en', '')];
+  static const _options = ['system', 'zh', 'en'];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final localeMode = ref.watch(localeProvider);
-    final accent = AccentScope.of(context);
 
     // 跟随系统项的显示名需要本地化
     String labelFor(String mode, AppLocalizations l) {
@@ -183,34 +174,65 @@ class _LanguageSelector extends ConsumerWidget {
       }
     }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Wrap(
-        spacing: 8,
-        children: _options.map((opt) {
-          final selected = localeMode == opt.$1;
-          final label = labelFor(opt.$1, l10n);
-          return ChoiceChip(
-            label: Text(label),
-            selected: selected,
-            onSelected: (_) =>
-                ref.read(localeProvider.notifier).setMode(opt.$1),
-            selectedColor: accent.withValues(alpha: 0.12),
-            labelStyle: TextStyle(
-              color: selected ? accent : AppTheme.textSecondary,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-            ),
-            backgroundColor: AppTheme.surfaceDark,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-              side: BorderSide(
-                color: selected
-                    ? accent.withValues(alpha: 0.5)
-                    : AppTheme.textTertiary.withValues(alpha: 0.2),
+    return _SettingItem(
+      icon: LucideIcons.globe,
+      label: l10n.language,
+      trailing: labelFor(localeMode, l10n),
+      onTap: () => _showLanguageSheet(context, ref),
+    );
+  }
+
+  Future<void> _showLanguageSheet(
+    BuildContext context,
+    WidgetRef ref,
+  ) {
+    final l10n = AppLocalizations.of(context);
+    final localeMode = ref.read(localeProvider);
+    final accent = AccentScope.of(context);
+
+    String labelFor(String mode) {
+      switch (mode) {
+        case 'zh':
+          return '中文';
+        case 'en':
+          return 'English';
+        default:
+          return l10n.systemDefault;
+      }
+    }
+
+    return showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => SheetShell(
+        title: l10n.language,
+        builder: (scroll) => ListView(
+          controller: scroll,
+          padding: const EdgeInsets.only(top: 8, bottom: 32),
+          children: _options.map((mode) {
+            final selected = localeMode == mode;
+            return ListTile(
+              leading: Icon(
+                selected ? LucideIcons.checkCircle2 : LucideIcons.circle,
+                color: selected ? accent : AppTheme.textTertiary,
+                size: 20,
               ),
-            ),
-          );
-        }).toList(),
+              title: Text(
+                labelFor(mode),
+                style: TextStyle(
+                  fontSize: 15,
+                  color: selected ? accent : AppTheme.textPrimary,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+              dense: true,
+              onTap: () {
+                ref.read(localeProvider.notifier).setMode(mode);
+                Navigator.of(context).pop();
+              },
+            );
+          }).toList(),
+        ),
       ),
     );
   }

@@ -1,5 +1,4 @@
 import 'dart:ui' as ui;
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -104,26 +103,49 @@ class MiniPlayerBar extends ConsumerWidget {
                           ],
                         ),
                       ),
-                      IconButton(
-                        icon: Icon(
-                          playerState.isPlaying
-                              ? LucideIcons.pause300
-                              : LucideIcons.play300,
-                          color: AppTheme.textPrimary,
-                          size: 28,
+                      // 播放/暂停 — 对齐播放页 _PlayBtn：accent 填充圆形 + 白色 Material 图标
+                      GestureDetector(
+                        onTap: () => player.togglePlay(),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: accent,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: accent.withValues(alpha: 0.35),
+                                blurRadius: 10,
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            playerState.isPlaying
+                                ? Icons.pause
+                                : Icons.play_arrow,
+                            color: Colors.white,
+                            size: 22,
+                          ),
                         ),
-                        onPressed: () => player.togglePlay(),
-                        splashRadius: 20,
                       ),
                       const SizedBox(width: 4),
-                      IconButton(
-                        icon: const Icon(
-                          LucideIcons.skipForward300,
-                          color: AppTheme.textPrimary,
-                          size: 24,
+                      // 下一曲 — 对齐播放页 _TransportBtn：圆形 + 灰色 Material 填充图标
+                      GestureDetector(
+                        onTap: () => player.next(),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Icon(
+                              Icons.skip_next,
+                              color: AppTheme.textSecondary,
+                              size: 22,
+                            ),
+                          ),
                         ),
-                        onPressed: () => player.next(),
-                        splashRadius: 20,
                       ),
                     ],
                   ),

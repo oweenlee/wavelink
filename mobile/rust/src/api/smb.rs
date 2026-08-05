@@ -9,8 +9,10 @@ use smb2::rpc::srvsvc::ShareInfo;
 use smb2::ClientConfig;
 use tokio::sync::{Mutex, Semaphore};
 
+use crate::frb_generated::StreamSink;
+
 /// 读取连接池大小：多条独立 SMB 连接并行下载，打满 Wi-Fi 带宽
-const READ_POOL_SIZE: usize = 4;
+const READ_POOL_SIZE: usize = 8;
 
 /// 一次 SMB 会话：底层连接 + 已挂载的共享（tree）
 struct SmbSession {
@@ -157,15 +159,29 @@ pub async fn smb_connect_share(share_name: String) -> Result<(), String> {
 ///
 /// 过滤 "."/".." 条目：smb2 crate 会返回它们，
 /// 递归扫描时若不剔除会无限进入 "." 导致路径爆炸。
+/// 优先从读取池借独立连接，使多个目录可并行列出（避免主会话串行排队）；
+/// 池空时回退主会话。
 pub async fn smb_list_directory(path: String) -> Result<Vec<SmbDirEntry>, String> {
-    let mut guard = SESSION.lock().await;
-    let sess = guard.as_mut().ok_or("not connected")?;
-    let tree = sess.tree.as_mut().ok_or("no share connected")?;
-    let entries: Vec<DirectoryEntry> = sess
-        .client
-        .list_directory(tree, &path)
-        .await
-        .map_err(err_str)?;
+    let permit = POOL_SEM.acquire().await.map_err(err_str)?;
+    let pooled = POOL.lock().await.pop();
+    let entries: Vec<DirectoryEntry> = match pooled {
+        Some(mut sess) => {
+            let r = if let Some(tree) = sess.tree.as_mut() {
+                sess.client.list_directory(tree, &path).await.map_err(err_str)
+            } else {
+                Err("no share connected".to_string())
+            };
+            POOL.lock().await.push(sess);
+            r
+        }
+        None => {
+            let mut guard = SESSION.lock().await;
+            let sess = guard.as_mut().ok_or("not connected")?;
+            let tree = sess.tree.as_mut().ok_or("no share connected")?;
+            sess.client.list_directory(tree, &path).await.map_err(err_str)
+        }
+    }?;
+    drop(permit);
     Ok(entries
         .into_iter()
         .filter(|e| e.name != "." && e.name != "..")
@@ -203,6 +219,57 @@ pub async fn smb_read_file(path: String) -> Result<Vec<u8>, String> {
         }
     };
     drop(permit);
+    result
+}
+
+/// 流式读取远端文件（相对共享根目录的路径），分块经 FRB sink 推给 Dart。
+///
+/// 复用读取池连接打开文件句柄后立即归还，reader 持有独立连接克隆并行下载；
+/// 每块 512KB 推送一次，Dart 端逐块追加写入，避免整文件跨 FFI 一次性拷贝。
+pub async fn smb_read_file_stream(
+    path: String,
+    sink: StreamSink<Vec<u8>>,
+) -> Result<(), String> {
+    let permit = POOL_SEM.acquire().await.map_err(err_str)?;
+    let pooled = POOL.lock().await.pop();
+    let reader = match pooled {
+        Some(sess) => {
+            let r = {
+                let tree = sess.tree.as_ref().ok_or("no share connected")?;
+                sess.client.open_file_reader(tree, &path).await.map_err(err_str)
+            };
+            POOL.lock().await.push(sess);
+            r
+        }
+        None => {
+            let mut guard = SESSION.lock().await;
+            let sess = guard.as_mut().ok_or("not connected")?;
+            let tree = sess.tree.as_ref().ok_or("no share connected")?;
+            sess.client.open_file_reader(tree, &path).await.map_err(err_str)
+        }
+    };
+    drop(permit);
+    let reader = reader?;
+
+    let total = reader.size();
+    let mut offset = 0u64;
+    const CHUNK: u64 = 512 * 1024;
+    let result: Result<(), String> = async {
+        while offset < total {
+            let data = reader.read_at(offset, CHUNK).await.map_err(err_str)?;
+            let n = data.len() as u64;
+            if n == 0 {
+                break;
+            }
+            sink.add(data).map_err(|e| e.to_string())?;
+            offset += n;
+        }
+        Ok(())
+    }
+    .await;
+
+    // 显式关闭句柄释放服务端资源（直接 drop 会泄漏句柄）
+    let _ = reader.close().await;
     result
 }
 

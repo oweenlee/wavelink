@@ -1,12 +1,12 @@
 import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../data/services/preferences_service.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../playback/view_models/playback_controller.dart';
 import '../../../core/theme/app_theme.dart';
-import 'nas_settings_sheet.dart';
 
 /// Shows the import music bottom sheet (aligned with HTML prototype).
 void showImportSheet(BuildContext context) {
@@ -28,7 +28,6 @@ class _ImportSheet extends ConsumerStatefulWidget {
 class _ImportSheetState extends ConsumerState<_ImportSheet> {
   bool _scanning = false;
   String? _scanResult;
-  bool _showNasForm = false;
 
   @override
   Widget build(BuildContext context) {
@@ -107,19 +106,23 @@ class _ImportSheetState extends ConsumerState<_ImportSheet> {
 
             // ── Body ──
             Flexible(
-              child: _showNasForm
-                  ? _NasFormView(onBack: () => setState(() => _showNasForm = false))
-                  : _SourceList(
-                      scanning: _scanning,
-                      scanResult: _scanResult,
-                      nasConnected: nasConnected,
-                      onDiscover: () => _handleDiscover(context),
-                      onPickFiles: () => _handlePickFiles(context),
-                      onServer: () => _handleSubsonic(context),
-                      onNas: () => setState(() => _showNasForm = true),
-                      onAirDrop: () => _handleAirDrop(context),
-                      onWebDav: () => _showComingSoon(context),
-                    ),
+              child: _SourceList(
+                  scanning: _scanning,
+                  scanResult: _scanResult,
+                  nasConnected: nasConnected,
+                  onDiscover: () => _handleDiscover(context),
+                  onPickFiles: () => _handlePickFiles(context),
+                  onServer: () => _handleSubsonic(context),
+                  // 进入 NAS 配置页；保存成功返回 true 时关闭导入 sheet，回到曲库
+                  onNas: () async {
+                    final saved = await context.push<bool>('/nas');
+                    if (saved == true && context.mounted) {
+                      Navigator.of(context, rootNavigator: true).pop();
+                    }
+                  },
+                  onAirDrop: () => _handleAirDrop(context),
+                  onWebDav: () => _showComingSoon(context),
+            ),
             ),
           ],
         ),
@@ -466,61 +469,3 @@ class _SourceRow extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════
-// NAS Form Sub-view
-// ═══════════════════════════════════════════════════════════
-
-class _NasFormView extends StatefulWidget {
-  final VoidCallback onBack;
-
-  const _NasFormView({required this.onBack});
-
-  @override
-  State<_NasFormView> createState() => _NasFormViewState();
-}
-
-class _NasFormViewState extends State<_NasFormView> {
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      shrinkWrap: true,
-      padding: EdgeInsets.zero,
-      children: [
-        // Back button
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 20, 12),
-          child: Row(
-            children: [
-              GestureDetector(
-                onTap: widget.onBack,
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: AppTheme.s2,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    LucideIcons.arrowLeft,
-                    color: AppTheme.textSecondary,
-                    size: 18,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'NAS (SMB)',
-                style: WlText.display(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const NasSettingsSheet(),
-      ],
-    );
-  }
-}

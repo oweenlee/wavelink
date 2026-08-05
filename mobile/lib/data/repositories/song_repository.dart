@@ -1,5 +1,7 @@
+import 'dart:async';
 import '../../domain/models/song.dart';
 import '../services/import_service.dart';
+import '../services/library_cache_service.dart';
 
 /// 歌曲数据的单一来源
 ///
@@ -12,11 +14,18 @@ class SongRepository {
 
   void setCachedSongs(List<Song> songs) {
     _cachedSongs = List.from(songs);
+    unawaited(LibraryCacheService.saveSongs(songs));
   }
 
-  void addSongs(List<Song> songs) => _cachedSongs.addAll(songs);
+  void addSongs(List<Song> songs) {
+    _cachedSongs.addAll(songs);
+    unawaited(LibraryCacheService.saveSongs(_cachedSongs));
+  }
 
-  void clearCache() => _cachedSongs = [];
+  void clearCache() {
+    _cachedSongs = [];
+    unawaited(LibraryCacheService.saveSongs([]));
+  }
 
   // ── 扫描来源 ──
 

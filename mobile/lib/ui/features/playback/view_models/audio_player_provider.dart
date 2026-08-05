@@ -246,11 +246,16 @@ class PlayerNotifier extends Notifier<PlayerState> {
     if (state.currentSong == null) return;
     if (state.isPlaying) {
       pause();
-    } else {
+    } else if (state.position > 0) {
+      // 暂停恢复播放（不从头开始）
       _startProgressTimer();
       _engineRepo.resume();
       _nativeAudio.resume();
       state = state.copyWith(isPlaying: true);
+    } else {
+      // 从未真正播放过（如程序启动后曲库当前曲尚未载入引擎）：
+      // resume 对空引擎无效，需走完整装载/播放流程
+      _playCurrent();
     }
   }
 

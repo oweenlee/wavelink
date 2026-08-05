@@ -155,9 +155,6 @@ class SmbService {
         }
       }
       // 子目录串行递归（层级浅），文件并行下载（与 Rust 读取池大小对齐）
-      for (final d in dirs) {
-        await _scanDirectory(d, songs, onBatch);
-      }
       final buffer = <Song>[];
       void flush() {
         if (buffer.isNotEmpty) {
@@ -180,7 +177,11 @@ class SmbService {
         }
       }
 
-      await Future.wait(List.generate(4, (_) => worker()));
+      // 子目录递归与文件下载并行进行；连接并发由 Rust 读取池信号量统一控制为 8
+      await Future.wait([
+        ...dirs.map((d) => _scanDirectory(d, songs, onBatch)),
+        ...List.generate(8, (_) => worker()),
+      ]);
       flush();
     } catch (e) {
       debugPrint('[SMB] scan directory $relPath failed: $e');
@@ -214,9 +215,15 @@ class SmbService {
       if (cached && cachedSize > 0 && cachedSize == remoteSize) {
         localPath = localFile.path;
       } else {
-        // 从 SMB 下载到本地
-        final bytes = await smb.smbReadFile(path: smbPath);
-        await localFile.writeAsBytes(bytes);
+        // 流式下载到本地（Rust 分块经 FRB stream 推送，边收边写，避免整文件进内存）
+        final sink = localFile.openWrite();
+        try {
+          await for (final chunk in smb.smbReadFileStream(path: smbPath)) {
+            sink.add(chunk);
+          }
+        } finally {
+          await sink.close();
+        }
         localPath = localFile.path;
       }
 
@@ -284,8 +291,14 @@ class SmbService {
 
       if (await dest.exists()) return dest.path;
 
-      final bytes = await smb.smbReadFile(path: smbPath);
-      await dest.writeAsBytes(bytes);
+      final sink = dest.openWrite();
+      try {
+        await for (final chunk in smb.smbReadFileStream(path: smbPath)) {
+          sink.add(chunk);
+        }
+      } finally {
+        await sink.close();
+      }
       return dest.path;
     } catch (e) {
       debugPrint('[SMB] copyToLocal failed: $e');

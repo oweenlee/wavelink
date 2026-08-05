@@ -6,6 +6,7 @@
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
 
+use flutter_rust_bridge::frb;
 use parking_lot::Mutex as ParkingMutex;
 
 /// 硬件采样率（由 Swift 启动时通过 `set_hw_sample_rate` 设置）
@@ -36,6 +37,7 @@ pub(crate) fn probe_log(msg: &str) {
 }
 
 /// 【临时诊断】underrun 爆发日志：打印爆发起止与时长，定位阵发卡顿用
+#[frb(ignore)]
 mod underrun_probe {
     use once_cell::sync::Lazy;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

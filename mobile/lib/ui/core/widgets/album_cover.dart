@@ -81,6 +81,9 @@ class CoverPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 调用方可能传入 double.infinity（如 WlCover 的 width 为无限大时），
+    // 直接使用会导致 Icon 内部 fontSize 为无穷，绘制时触发 fontSize.isFinite 断言
+    final s = (size == null || !size!.isFinite) ? 80.0 : size!;
     return Container(
       decoration: BoxDecoration(
         color: AppTheme.s2,
@@ -88,14 +91,14 @@ class CoverPlaceholder extends StatelessWidget {
       ),
       child: Center(
         child: CustomPaint(
-          size: Size.square((size ?? 80) * 0.52),
+          size: Size.square(s * 0.52),
           painter: _VinylPainter(),
           child: SizedBox.expand(
             child: Center(
               child: Icon(
                 LucideIcons.disc3,
                 color: AppTheme.textTertiary.withValues(alpha: 0.35),
-                size: (size ?? 80) * 0.16,
+                size: s * 0.16,
               ),
             ),
           ),

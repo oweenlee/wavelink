@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `push_event`, `with_engine`
+// These functions are ignored because they are not marked as `pub`: `engine_probe`, `push_event`, `with_engine`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `engine_read_samples`
 
 /// 初始化引擎，使用 HW_SAMPLE_RATE（由 Swift 设 set_hw_sample_rate 传入）

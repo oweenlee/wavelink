@@ -6,8 +6,9 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `err_str`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `SmbSession`
+// These functions are ignored because they are not marked as `pub`: `err_str`, `to_config`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ConnectParams`, `SmbSession`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `fmt`, `fmt`
 
 /// 连接 SMB 服务器（host 为裸 IP/域名，内部拼 :port）
 Future<void> smbConnect({
@@ -24,7 +25,7 @@ Future<void> smbConnect({
   domain: domain,
 );
 
-/// 断开 SMB 连接
+/// 断开 SMB 连接（含读取池）
 Future<void> smbDisconnect() => RustLib.instance.api.crateApiSmbSmbDisconnect();
 
 /// 列出服务器所有共享
@@ -32,16 +33,32 @@ Future<List<SmbShareInfo>> smbListShares() =>
     RustLib.instance.api.crateApiSmbSmbListShares();
 
 /// 挂载指定共享（后续 list/read 均相对该共享根目录）
+///
+/// 同时在读取池的每条连接上挂载，保证并行下载可用。
 Future<void> smbConnectShare({required String shareName}) =>
     RustLib.instance.api.crateApiSmbSmbConnectShare(shareName: shareName);
 
 /// 列出目录内容；path 空串表示共享根目录，子路径如 "Music/Album"
+///
+/// 过滤 "."/".." 条目：smb2 crate 会返回它们，
+/// 递归扫描时若不剔除会无限进入 "." 导致路径爆炸。
 Future<List<SmbDirEntry>> smbListDirectory({required String path}) =>
     RustLib.instance.api.crateApiSmbSmbListDirectory(path: path);
 
 /// 读取远端文件完整内容（相对共享根目录的路径）
+///
+/// 用 read_file_pipelined 而非 read_file：后者单次读取上限 65536 字节，
+/// 大于该值的文件（几乎所有音频）会报错。
+/// 优先从读取池借独立连接（并行下载），池空时回退主会话。
 Future<Uint8List> smbReadFile({required String path}) =>
     RustLib.instance.api.crateApiSmbSmbReadFile(path: path);
+
+/// 流式读取远端文件（相对共享根目录的路径），分块经 FRB sink 推给 Dart。
+///
+/// 复用读取池连接打开文件句柄后立即归还，reader 持有独立连接克隆并行下载；
+/// 每块 512KB 推送一次，Dart 端逐块追加写入，避免整文件跨 FFI 一次性拷贝。
+Stream<Uint8List> smbReadFileStream({required String path}) =>
+    RustLib.instance.api.crateApiSmbSmbReadFileStream(path: path);
 
 /// 远端文件大小（扫描时判断是否有变化，避免重复下载）
 Future<BigInt> smbFileSize({required String path}) =>

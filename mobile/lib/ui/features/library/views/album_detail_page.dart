@@ -79,12 +79,12 @@ class AlbumDetailPage extends ConsumerWidget {
           SliverList(
             delegate: SliverChildBuilderDelegate((ctx, i) {
               final s = album.songs[i];
-              final isCurrent =
-                  playerState.isPlaying && queueState.currentSong?.id == s.id;
+              final isCurrent = queueState.currentSong?.id == s.id;
               return _TrackTile(
                 index: i + 1,
                 song: s,
                 isCurrent: isCurrent,
+                isPlaying: playerState.isPlaying && isCurrent,
                 onTap: () {
                   player.playAlbum(album.songs, startIndex: i);
                   Navigator.pop(context);
@@ -286,11 +286,13 @@ class _TrackTile extends StatelessWidget {
   final int index;
   final Song song;
   final bool isCurrent;
+  final bool isPlaying;
   final VoidCallback onTap;
   const _TrackTile({
     required this.index,
     required this.song,
     required this.isCurrent,
+    required this.isPlaying,
     required this.onTap,
   });
 
@@ -305,11 +307,17 @@ class _TrackTile extends StatelessWidget {
             SizedBox(
               width: 24,
               child: isCurrent
-                  ? const NowPlayingIndicator(
-                      baseHeight: 4,
-                      barScale: 8,
-                      maxHeight: 12,
-                    )
+                  ? isPlaying
+                      ? const NowPlayingIndicator(
+                          baseHeight: 4,
+                          barScale: 8,
+                          maxHeight: 12,
+                        )
+                      : Icon(
+                          Icons.pause,
+                          size: 14,
+                          color: AppTheme.brand,
+                        )
                   : Text(
                       '$index',
                       style: const TextStyle(

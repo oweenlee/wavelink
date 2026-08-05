@@ -8,7 +8,13 @@ import 'now_playing_indicator.dart';
 
 class SongTile extends StatelessWidget {
   final Song song;
+
+  /// 是否为当前曲目（选择态：暂停也保留高亮）。
+  final bool isCurrent;
+
+  /// 是否正在播放（驱动封面上的跳动指示器动画）。
   final bool isPlaying;
+
   final VoidCallback? onTap;
   final VoidCallback? onMore;
   final Widget? trailing;
@@ -17,6 +23,7 @@ class SongTile extends StatelessWidget {
   const SongTile({
     super.key,
     required this.song,
+    this.isCurrent = false,
     this.isPlaying = false,
     this.onTap,
     this.onMore,
@@ -31,7 +38,7 @@ class SongTile extends StatelessWidget {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: isPlaying
+        decoration: isCurrent
             ? BoxDecoration(
                 border: Border(
                   left: BorderSide(
@@ -60,7 +67,11 @@ class SongTile extends StatelessWidget {
               const SizedBox(width: 4),
             ],
             // Album art
-            _AlbumArt(song: song, isPlaying: isPlaying),
+            _AlbumArt(
+              song: song,
+              isCurrent: isCurrent,
+              isPlaying: isPlaying,
+            ),
             const SizedBox(width: 12),
             // Title & artist
             Expanded(
@@ -71,8 +82,10 @@ class SongTile extends StatelessWidget {
                     song.title,
                     style: TextStyle(
                       fontSize: 15,
-                      fontWeight: isPlaying ? FontWeight.w600 : FontWeight.w400,
-                      color: isPlaying ? accent : AppTheme.textPrimary,
+                      fontWeight: isCurrent
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                      color: isCurrent ? accent : AppTheme.textPrimary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -163,9 +176,14 @@ class _FormatBadge extends StatelessWidget {
 /// 专辑封面组件：有缓存封面则显示图片，否则显示纯色占位
 class _AlbumArt extends StatelessWidget {
   final Song song;
+  final bool isCurrent;
   final bool isPlaying;
 
-  const _AlbumArt({required this.song, required this.isPlaying});
+  const _AlbumArt({
+    required this.song,
+    required this.isCurrent,
+    required this.isPlaying,
+  });
 
   /// 获取封面缓存文件（coverUrl 优先，否则按 path hash 查找）
   File? _coverFile() {
@@ -180,6 +198,11 @@ class _AlbumArt extends StatelessWidget {
   Widget build(BuildContext context) {
     final coverFile = _coverFile();
     final hasCover = coverFile != null && coverFile.existsSync();
+
+    // 当前曲目且未在播放：静态暂停图标（保留选择态，不跳动画）
+    final pausedIndicator = !isPlaying && isCurrent
+        ? Icon(Icons.pause, size: 14, color: AccentScope.of(context))
+        : null;
 
     return Container(
       width: 40,
@@ -207,12 +230,18 @@ class _AlbumArt extends StatelessWidget {
                     child: const Center(
                       child: NowPlayingIndicator(baseHeight: 4, barScale: 6),
                     ),
+                  )
+                else if (pausedIndicator != null)
+                  Container(
+                    color: Colors.black26,
+                    child: Center(child: pausedIndicator),
                   ),
               ],
             )
           : isPlaying
-              ? const Center(child: NowPlayingIndicator(baseHeight: 4, barScale: 6))
-              : const CoverPlaceholder(size: 40),
+              ? const Center(
+                  child: NowPlayingIndicator(baseHeight: 4, barScale: 6))
+              : pausedIndicator ?? const CoverPlaceholder(size: 40),
     );
   }
 }

@@ -36,6 +36,42 @@ class Song {
     this.hasCover = false,
   });
 
+  /// 序列化为 JSON（轻量持久化：曲库缓存）
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'artist': artist,
+        'album': album,
+        'durationMs': duration.inMilliseconds,
+        'color': dominantColor.toARGB32(),
+        'hasLyrics': hasLyrics,
+        'bpm': bpm,
+        'key': key,
+        'coverUrl': coverUrl,
+        'path': path,
+        'streamUrl': streamUrl,
+        'lyricsPath': lyricsPath,
+        'hasCover': hasCover,
+      };
+
+  /// 从 JSON 还原（与 [toJson] 对称）
+  factory Song.fromJson(Map<String, dynamic> json) => Song(
+        id: json['id'] as String,
+        title: json['title'] as String,
+        artist: json['artist'] as String,
+        album: json['album'] as String,
+        duration: Duration(milliseconds: json['durationMs'] as int),
+        dominantColor: Color(json['color'] as int),
+        hasLyrics: json['hasLyrics'] as bool? ?? false,
+        bpm: json['bpm'] as int?,
+        key: json['key'] as String?,
+        coverUrl: json['coverUrl'] as String?,
+        path: json['path'] as String?,
+        streamUrl: json['streamUrl'] as String?,
+        lyricsPath: json['lyricsPath'] as String?,
+        hasCover: json['hasCover'] as bool? ?? false,
+      );
+
   String get formattedDuration {
     final m = duration.inMinutes;
     final s = duration.inSeconds % 60;

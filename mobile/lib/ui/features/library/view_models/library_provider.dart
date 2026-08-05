@@ -1,20 +1,41 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import '../../../../data/services/preferences_service.dart';
+import '../../../../data/services/smb_service.dart';
 import '../../../../domain/models/song.dart';
 import '../../../core/providers/repositories.dart';
 import '../../playback/view_models/queue_provider.dart';
+
+/// copyWith 哨兵值：区分「未传入」与「显式传 null 清空」
+const _unset = Object();
+
+/// 取消 NAS 导入的哨兵异常，由 [_runNasImport] 捕获并静默结束
+class NASImportCancelled implements Exception {
+  const NASImportCancelled();
+}
 
 class LibraryState {
   final List<Song> importedSongs;
   final bool scanDone;
   final Set<String> favoriteIds;
 
+  /// NAS 后台导入是否进行中（曲库顶部展示进度条）
+  final bool nasImporting;
+  /// NAS 后台导入已入库的首批歌曲数增量
+  final int nasImportedCount;
+  /// NAS 后台导入失败信息（空表示无错误）
+  final String? nasImportError;
+
   const LibraryState({
     this.importedSongs = const [],
     this.scanDone = false,
     this.favoriteIds = const {},
+    this.nasImporting = false,
+    this.nasImportedCount = 0,
+    this.nasImportError,
   });
 
   List<Song> get allSongs => importedSongs;
@@ -25,11 +46,18 @@ class LibraryState {
     List<Song>? importedSongs,
     bool? scanDone,
     Set<String>? favoriteIds,
+    bool? nasImporting,
+    int? nasImportedCount,
+    Object? nasImportError = _unset,
   }) {
     return LibraryState(
       importedSongs: importedSongs ?? this.importedSongs,
       scanDone: scanDone ?? this.scanDone,
       favoriteIds: favoriteIds ?? this.favoriteIds,
+      nasImporting: nasImporting ?? this.nasImporting,
+      nasImportedCount: nasImportedCount ?? this.nasImportedCount,
+      nasImportError:
+          identical(nasImportError, _unset) ? this.nasImportError : nasImportError as String?,
     );
   }
 }
@@ -98,6 +126,16 @@ class LibraryNotifier extends Notifier<LibraryState> {
 
   // ── 导入与扫描 ──
 
+  /// App 启动时恢复上次持久化的曲库（在系统扫描前调用，
+  /// 后续 discoverSongs 增量合并不丢失这些歌曲）。
+  void restoreCachedSongs(List<Song> songs) {
+    if (songs.isEmpty) return;
+    state = state.copyWith(
+      importedSongs: [...songs, ...state.importedSongs],
+      scanDone: true,
+    );
+  }
+
   Future<bool> discoverSongs() async {
     if (_isScanning) return false;
     _isScanning = true;
@@ -163,48 +201,107 @@ class LibraryNotifier extends Notifier<LibraryState> {
     }
   }
 
-  Future<bool> scanSmb(String sharePath) async {
-    if (_isScanning) return false;
-    _isScanning = true;
-    try {
-      final songRepo = ref.read(songRepositoryProvider);
-      // 增量合并：每批下载完立即入库+持久化，
-      // UI 实时可见、中途退出也保留已扫部分
-      final songs = await songRepo.scanSmb(sharePath, onBatch: (batch) {
-        final batchPaths = batch
-            .where((s) => s.path != null)
-            .map((s) => s.path!)
-            .toSet();
-        final merged = [
-          ...batch,
-          ...state.importedSongs.where(
-            (s) => s.path == null || !batchPaths.contains(s.path),
-          ),
-        ];
-        state = state.copyWith(importedSongs: merged);
-        songRepo.setCachedSongs(merged);
-        onSongsLoaded?.call();
-      });
-      if (songs.isEmpty) return false;
-      // 最终一致性合并（与增量幂等），保证返回值统计准确
-      final newPaths = songs
+/// 取消 NAS 后台导入（下次扫描批次检查到此标志即中止）
+bool _nasImportCancelled = false;
+
+void cancelNasImport() {
+  _nasImportCancelled = true;
+  state = state.copyWith(nasImporting: false);
+}
+
+/// 触发 NAS 后台导入（fire-and-forget，不阻塞调用方），立即返回。
+/// 若未连接则用已保存的配置补连；进度经 onBatch 增量入库并更新曲库 UI。
+void startNasImport(String sharePath) {
+  _nasImportCancelled = false;
+  unawaited(_runNasImport(sharePath));
+}
+
+Future<void> _runNasImport(String sharePath) async {
+  if (_isScanning) return;
+  state = state.copyWith(nasImporting: true, nasImportedCount: 0, nasImportError: null);
+  try {
+    if (!SmbService.isConnected) {
+      final prefs = PreferencesService.instance;
+      final host = prefs.nasHost;
+      if (host == null || host.isEmpty) {
+        throw const FormatException('NAS host not configured');
+      }
+      final ok = await SmbService.connect(
+        host: host,
+        username: prefs.nasUsername ?? '',
+        password: prefs.nasPassword,
+      );
+      if (!ok) {
+        state = state.copyWith(
+          nasImporting: false,
+          nasImportError: SmbService.lastError ?? 'NAS connection failed',
+        );
+        return;
+      }
+    }
+    await scanSmb(sharePath);
+    state = state.copyWith(nasImporting: false);
+  } on NASImportCancelled {
+    // 用户主动取消，静默结束
+  } catch (e) {
+    debugPrint('[Library] NAS import failed: $e');
+    state = state.copyWith(nasImporting: false, nasImportError: '$e');
+  } finally {
+    onSongsLoaded?.call();
+  }
+}
+
+Future<bool> scanSmb(String sharePath) async {
+  if (_isScanning) return false;
+  _isScanning = true;
+  state = state.copyWith(nasImporting: true);
+  try {
+    final songRepo = ref.read(songRepositoryProvider);
+    // 增量合并：每批下载完立即入库+持久化，
+    // UI 实时可见、中途退出也保留已扫部分
+    final songs = await songRepo.scanSmb(sharePath, onBatch: (batch) {
+      if (_nasImportCancelled) {
+        throw const NASImportCancelled();
+      }
+      final batchPaths = batch
           .where((s) => s.path != null)
           .map((s) => s.path!)
           .toSet();
       final merged = [
-        ...songs,
+        ...batch,
         ...state.importedSongs.where(
-          (s) => s.path == null || !newPaths.contains(s.path),
+          (s) => s.path == null || !batchPaths.contains(s.path),
         ),
       ];
-      state = state.copyWith(importedSongs: merged);
+      state = state.copyWith(
+        importedSongs: merged,
+        nasImportedCount: state.nasImportedCount + batch.length,
+      );
       songRepo.setCachedSongs(merged);
       onSongsLoaded?.call();
-      return true;
-    } finally {
-      _isScanning = false;
-    }
+    });
+    // 注意：scanSmb 内部吞掉单文件失败；此处正常只可能因取消抛出
+    if (songs.isEmpty) return false;
+    // 最终一致性合并（与增量幂等），保证返回值统计准确
+    final newPaths = songs
+        .where((s) => s.path != null)
+        .map((s) => s.path!)
+        .toSet();
+    final merged = [
+      ...songs,
+      ...state.importedSongs.where(
+        (s) => s.path == null || !newPaths.contains(s.path),
+      ),
+    ];
+    state = state.copyWith(importedSongs: merged);
+    songRepo.setCachedSongs(merged);
+    onSongsLoaded?.call();
+    return true;
+  } finally {
+    _isScanning = false;
+    state = state.copyWith(nasImporting: false);
   }
+}
 
   Future<void> batchExtractCovers(List<Song> songs) async {
     final engineRepo = ref.read(audioEngineRepositoryProvider);

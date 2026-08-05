@@ -126,11 +126,11 @@ class ArtistDetailPage extends ConsumerWidget {
               delegate: SliverChildBuilderDelegate((ctx, i) {
                 final ss = songs.where((s) => s.album == album).toList();
                 final s = ss[i];
-                final isCurrent =
-                    playerState.isPlaying && queueState.currentSong?.id == s.id;
+                final isCurrent = queueState.currentSong?.id == s.id;
                 return _TrackTile(
                   song: s,
                   isCurrent: isCurrent,
+                  isPlaying: playerState.isPlaying && isCurrent,
                   onTap: () {
                     final allSongs = songs
                         .where((x) => x.album == album)
@@ -152,10 +152,12 @@ class ArtistDetailPage extends ConsumerWidget {
 class _TrackTile extends StatelessWidget {
   final Song song;
   final bool isCurrent;
+  final bool isPlaying;
   final VoidCallback onTap;
   const _TrackTile({
     required this.song,
     required this.isCurrent,
+    required this.isPlaying,
     required this.onTap,
   });
 
@@ -175,12 +177,18 @@ class _TrackTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: isCurrent
-                  ? const Center(
-                      child: NowPlayingIndicator(
-                        baseHeight: 4,
-                        barScale: 8,
-                        maxHeight: 12,
-                      ),
+                  ? Center(
+                      child: isPlaying
+                          ? const NowPlayingIndicator(
+                              baseHeight: 4,
+                              barScale: 8,
+                              maxHeight: 12,
+                            )
+                          : Icon(
+                              Icons.pause,
+                              size: 14,
+                              color: AppTheme.brand,
+                            ),
                     )
                   : null,
             ),

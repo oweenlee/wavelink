@@ -131,6 +131,11 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         ),
         const SizedBox(height: 8),
 
+        // ── NAS 后台导入进度条 ──
+        if (ref.watch(libraryProvider).nasImporting ||
+            ref.watch(libraryProvider).nasImportError != null)
+          const _NasImportBanner(),
+
         Expanded(
           child: TabBarView(
             controller: _tabController,
@@ -143,6 +148,89 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── NAS 后台导入进度条 ──
+
+class _NasImportBanner extends ConsumerWidget {
+  const _NasImportBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final lib = ref.watch(libraryProvider);
+    final accent = AccentScope.of(context);
+    final error = lib.nasImportError;
+
+    if (error != null) {
+      return Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppTheme.danger.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              LucideIcons.alertTriangle,
+              size: 16,
+              color: AppTheme.danger,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                error,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppTheme.danger,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.s2,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2, color: accent),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              l10n.nasImportingProgress(lib.nasImportedCount),
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: () =>
+                ref.read(libraryProvider.notifier).cancelNasImport(),
+            child: const Icon(
+              LucideIcons.x,
+              size: 16,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -219,10 +307,11 @@ class _SongsTab extends ConsumerWidget {
       itemCount: displayed.length,
       itemBuilder: (context, index) {
         final song = displayed[index];
-        final isPlaying =
-            playerState.isPlaying && queueState.currentSong?.id == song.id;
+        final isCurrent = queueState.currentSong?.id == song.id;
+        final isPlaying = playerState.isPlaying && isCurrent;
         return SongTile(
           song: song,
+          isCurrent: isCurrent,
           isPlaying: isPlaying,
           trackNumber: allSongs.indexOf(song) + 1,
           onTap: () => player.playSong(song),

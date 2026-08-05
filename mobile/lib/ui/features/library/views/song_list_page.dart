@@ -138,10 +138,12 @@ class SongListPage extends ConsumerWidget {
             SliverList(
               delegate: SliverChildBuilderDelegate((ctx, i) {
                 final song = songs[i];
-                final isPlaying =
-                    playerState.isPlaying && queueState.currentSong?.id == song.id;
+                final isCurrent =
+                    queueState.currentSong?.id == song.id;
+                final isPlaying = playerState.isPlaying && isCurrent;
                 return SongTile(
                   song: song,
+                  isCurrent: isCurrent,
                   isPlaying: isPlaying,
                   trackNumber: i + 1,
                   onTap: () => player.playSong(song),
@@ -170,7 +172,11 @@ class SongListPage extends ConsumerWidget {
           color: AppTheme.surfaceDark,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        child: Column(
+        // 透明 Material：让 ListTile 的 ink 波纹有绘制祖先，
+        // 否则被 Container 背景色遮住（框架警告）
+        child: Material(
+          type: MaterialType.transparency,
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
@@ -234,6 +240,7 @@ class SongListPage extends ConsumerWidget {
               },
             ),
           ],
+          ),
         ),
       ),
     );
