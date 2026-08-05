@@ -375,11 +375,11 @@ mod tests {
             file.extend_from_slice(&mpeg_frame);
         }
 
-        // 写入临时文件
-        let tmp = Path::new("/tmp/test_cover_synthetic.mp3");
-        std::fs::write(tmp, &file).unwrap();
+        // 写入临时文件（用系统临时目录，Windows 没有 /tmp）
+        let tmp = std::env::temp_dir().join("test_cover_synthetic.mp3");
+        std::fs::write(&tmp, &file).unwrap();
 
-        let result = get_file_cover(tmp);
+        let result = get_file_cover(&tmp);
         assert!(result.is_ok(), "get_file_cover failed: {:?}", result);
         let cover = result.unwrap();
         assert!(cover.is_some(), "should have found a cover");
@@ -392,9 +392,9 @@ mod tests {
     #[test]
     fn test_get_file_cover_no_id3() {
         // 没有 ID3v2 头的文件 → Ok(None)
-        let tmp = Path::new("/tmp/test_cover_no_id3.mp3");
-        std::fs::write(tmp, &[0xFF, 0xFB, 0x90, 0x00]).unwrap(); // MPEG sync
-        let result = get_file_cover(tmp);
+        let tmp = std::env::temp_dir().join("test_cover_no_id3.mp3");
+        std::fs::write(&tmp, &[0xFF, 0xFB, 0x90, 0x00]).unwrap(); // MPEG sync
+        let result = get_file_cover(&tmp);
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
         let _ = std::fs::remove_file(tmp);
