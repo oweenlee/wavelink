@@ -5065,6 +5065,7 @@ dependencies = [
  "keyring",
  "notify",
  "objc2",
+ "percent-encoding",
  "raw-window-handle",
  "rusqlite",
  "sdk",

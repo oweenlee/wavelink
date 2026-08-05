@@ -30,6 +30,7 @@ notify = { version = "7", features = ["macos_fsevent"] }
 
 # 文件编码检测
 encoding_rs = "0.8"
+percent-encoding = "2"
 
 # 窗口句柄获取（用于 Windows DWM 标题栏设置）
 raw-window-handle = "0.6"
