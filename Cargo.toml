@@ -18,3 +18,11 @@ opt-level = 2
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# release（各端上架包）：strip 去符号表（.so 8.7M → ~5.5M），
+# lto + 单编译单元进一步压缩 10~20% 并提升运行性能。
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
