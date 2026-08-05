@@ -201,7 +201,8 @@ class PlaybackService : Service() {
         instance?.let { it.updateNotification(buildNotification()) }
     }
 
-    /** positionMs 由 Dart 侧进度轮询驱动，刷新锁屏进度条 */
+    /** 位置锚点：由 Dart 在 play/pause/seek/切歌时事件驱动推送，
+     *  系统媒体面板按 PlaybackState 的 speed+updateTime 自行插值，无需 250ms 轮询 */
     @Volatile private var lastPositionMs = 0.0
 
     fun updatePosition(positionMs: Double, isPlaying: Boolean) {
@@ -220,7 +221,8 @@ class PlaybackService : Service() {
             .setState(
                 if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
                 positionMs.toLong(),
-                1.0f
+                // 暂停时 speed 必须为 0，否则系统会继续按 1.0 插值前进
+                if (isPlaying) 1.0f else 0.0f
             )
             .build()
         session.setPlaybackState(state)

@@ -1,6 +1,6 @@
-# audio-core API Reference
+# wavelink-audio-core API Reference
 
-> Source hash: `084c2f14d64a` | Generated: 2026-08-03 14:04
+> Source hash: `7d1cca41193d` | Generated: 2026-08-06 00:11
 > AI 助手优先读此文件，而非读 `src/` 源码。若 AI 返回的代码与当前签名不匹配，请重新运行 `bash doc-api.sh`。
 
 ## Table of Contents
@@ -55,6 +55,7 @@
 - **Exclusive Mode**
   - 独占模式支持 (`exclusive.rs`)
 - **Misc**
+  - 【临时诊断】跨平台诊断日志：Android 进 logcat（tag WaveLinkCore），其余平台 stderr。 (`diag.rs`)
   - DoP（DSD over PCM）打包 (`dsd/dop.rs`)
   - AutoEQ 耳机校正（基于 AutoEq 社区测量数据） (`dsp/autoeq.rs`)
   - AutoEQ 耳机校正数据（内嵌） (`dsp/autoeq/autoeq_data.rs`)
@@ -69,6 +70,11 @@
 ## Top-Level
 
 ### 纯 Rust 跨端音频引擎：解码 / DSP 管线 / 频谱分析 / BPM 调性检测。 (`lib.rs`)
+
+【临时诊断】Android logcat 诊断日志（结案后删）  
+```rust
+pub mod diag;
+```
 
 音频输入捕获抽象层  
 ```rust
@@ -554,9 +560,16 @@ pub struct EngineState { ...
 
 ### Thread Priority (`engine/thread_priority.rs`)
 
+注册平台提权钩子（应在任何音频线程启动前调用）  
+```rust
+pub fn set_elevate_hook(hook: ElevateHook) { ...
+```
+
+提升当前线程为高优先级音频线程。  
 各平台策略：  
 - macOS / iOS: QOS_CLASS_USER_INTERACTIVE  
-- Android: setpriority(PRIO_PROCESS, 0, -16)  
+- Android: 宿主注册的 JNI 钩子（Process.setThreadPriority URGENT_AUDIO），  
+  失败回退 setpriority(PRIO_PROCESS, 0, -16)（大概率失败，仅保底）  
 - Linux: SCHED_FIFO priority 80  
 - Windows: THREAD_PRIORITY_TIME_CRITICAL  
 失败时仅打印日志，不 panic（非关键路径）。  
@@ -978,6 +991,14 @@ pub fn process(&mut self, x0: f32) -> f32 { ...
 原地处理一段样本（单声道）  
 ```rust
 pub fn process_slice(&mut self, buf: &mut [f32]) { ...
+```
+
+原地处理交错多声道数据中从 `offset` 起、间隔 `stride` 的样本序列。  
+语义等价于对子序列 `buf[offset], buf[offset+stride], ...` 跑 [Self::process_slice]，  
+但就地跨步执行，免去「抽出声道 → 处理 → 写回」的 gather/scatter 缓冲拷贝。  
+状态读写与逐样本 [Self::process] 完全一致。  
+```rust
+pub fn process_strided(&mut self, buf: &mut [f32], offset: usize, stride: usize) { ...
 ```
 
 ### FIR Convolution EQ (`dsp/convolver.rs`)
@@ -1974,6 +1995,10 @@ pub fn release_exclusive_mode(_device_name: Option<&str>) { ...
 
 ## Misc
 
+### 【临时诊断】跨平台诊断日志：Android 进 logcat（tag WaveLinkCore），其余平台 stderr。 (`diag.rs`)
+
+【临时诊断】跨平台诊断日志：Android 进 logcat（tag WaveLinkCore），其余平台 stderr。
+
 ### DoP（DSD over PCM）打包 (`dsd/dop.rs`)
 
 DoP 标记 B（奇数帧）  
@@ -2299,4 +2324,4 @@ pub fn read_tags(path: &Path) -> Result<TagInfo, String> { ...
 
 ---
 
-> 395 pub items. Run `bash doc-api.sh` to refresh.
+> 398 pub items. Run `bash doc-api.sh` to refresh.

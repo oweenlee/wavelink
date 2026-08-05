@@ -97,7 +97,10 @@ class MockSongRepository extends SongRepository {
   @override
   Future<List<Song>> scanSubsonic() async => [];
   @override
-  Future<List<Song>> scanSmb(String sharePath) async => [];
+  Future<List<Song>> scanSmb(
+    String sharePath, {
+    void Function(List<Song> batch)? onBatch,
+  }) async => [];
   @override
   Future<void> cacheCovers(List<Song> songs) async {}
 }

@@ -24,11 +24,17 @@ class ArtistDetailPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final player = ref.watch(playbackControllerProvider);
-    final playerState = ref.watch(playerProvider);
+    // 只 select isPlaying：避免 250ms 进度 tick 触发整页重建
+    final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
     final queueState = ref.watch(queueProvider);
     ref.watch(libraryProvider);
     final songs = player.allSongs.where((s) => s.artist == artistName).toList();
-    final albums = songs.map((s) => s.album).toSet().toList();
+    // 按专辑分组（单次 O(N) 遍历，避免逐专辑 where 扫描）
+    final albumMap = <String, List<Song>>{};
+    for (final s in songs) {
+      (albumMap[s.album] ??= []).add(s);
+    }
+    final albums = albumMap.keys.toList();
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -124,22 +130,19 @@ class ArtistDetailPage extends ConsumerWidget {
             ),
             SliverList(
               delegate: SliverChildBuilderDelegate((ctx, i) {
-                final ss = songs.where((s) => s.album == album).toList();
+                final ss = albumMap[album]!;
                 final s = ss[i];
                 final isCurrent = queueState.currentSong?.id == s.id;
                 return _TrackTile(
                   song: s,
                   isCurrent: isCurrent,
-                  isPlaying: playerState.isPlaying && isCurrent,
+                  isPlaying: isPlaying && isCurrent,
                   onTap: () {
-                    final allSongs = songs
-                        .where((x) => x.album == album)
-                        .toList();
-                    player.playAlbum(allSongs, startIndex: i);
+                    player.playAlbum(ss, startIndex: i);
                     Navigator.pop(context);
                   },
                 );
-              }, childCount: songs.where((s) => s.album == album).length),
+              }, childCount: albumMap[album]!.length),
             ),
           ],
           const SliverToBoxAdapter(child: SizedBox(height: 40)),

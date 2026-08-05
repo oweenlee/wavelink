@@ -229,6 +229,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
       _startProgressTimer();
       await _nativeAudio.play(sampleRate: _nativeOutRate);
       _updateLockScreenMetadata();
+      // 切歌：锁屏进度锚点归零（事件驱动，之后系统按 playbackRate 自行插值）
+      _nativeAudio.updatePosition(0);
       _analyzeCurrent();
       _loadLyrics(resolvedPath);
     }
@@ -239,6 +241,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
     _progressTimer?.cancel();
     _engineRepo.pause();
     _nativeAudio.pause();
+    // 事件驱动锚点：暂停时推当前位置，锁屏进度不再靠 250ms 轮询
+    _nativeAudio.updatePosition(state.position);
     state = state.copyWith(isPlaying: false);
   }
 
@@ -251,6 +255,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
       _startProgressTimer();
       _engineRepo.resume();
       _nativeAudio.resume();
+      _nativeAudio.updatePosition(state.position);
       state = state.copyWith(isPlaying: true);
     } else {
       // 从未真正播放过（如程序启动后曲库当前曲尚未载入引擎）：
@@ -263,6 +268,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     _startProgressTimer();
     _nativeAudio.play(sampleRate: _nativeOutRate);
     _updateLockScreenMetadata();
+    _nativeAudio.updatePosition(state.position);
     state = state.copyWith(isPlaying: true);
   }
 
@@ -305,6 +311,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // 原生侧清 AudioTrack/ringbuf 里 seek 前的旧 PCM，避免旧声音先播出造成错位。
     // iOS 无 seek 通道实现 → MissingPluginException 被 _safeCall 静默吞掉。
     _nativeAudio.seek(pos);
+    // seek 后锁屏进度锚点必须立即更新（事件驱动，不再依赖 250ms 轮询）
+    _nativeAudio.updatePosition(pos);
   }
 
   void setVolume(double v) {
@@ -447,7 +455,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
       return;
     }
 
-    _nativeAudio.updatePosition(state.position);
+    // 锁屏进度改事件驱动（play/pause/seek/切歌时推锚点，系统按 rate 插值），
+    // 不再随 250ms tick 调平台通道。
     state = state.copyWith(position: state.position); // 触发 UI 进度刷新
   }
 

@@ -130,6 +130,34 @@ impl Biquad {
             *x = self.process(*x);
         }
     }
+
+    /// 原地处理交错多声道数据中从 `offset` 起、间隔 `stride` 的样本序列。
+    ///
+    /// 语义等价于对子序列 `buf[offset], buf[offset+stride], ...` 跑 [Self::process_slice]，
+    /// 但就地跨步执行，免去「抽出声道 → 处理 → 写回」的 gather/scatter 缓冲拷贝。
+    /// 状态读写与逐样本 [Self::process] 完全一致。
+    pub fn process_strided(&mut self, buf: &mut [f32], offset: usize, stride: usize) {
+        debug_assert!(stride >= 1);
+        // 系数/状态先落局部变量，让 LLVM 优化跨步循环（避免逐样本读写 &mut self 字段）
+        let (b0, b1, b2, a1, a2) = (self.b0, self.b1, self.b2, self.a1, self.a2);
+        let (mut x1, mut x2) = (self.x1, self.x2);
+        let (mut y1, mut y2) = (self.y1, self.y2);
+        let mut i = offset;
+        while i < buf.len() {
+            let x0 = buf[i];
+            let y0 = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+            x2 = x1;
+            x1 = x0;
+            y2 = y1;
+            y1 = y0;
+            buf[i] = y0;
+            i += stride;
+        }
+        self.x1 = x1;
+        self.x2 = x2;
+        self.y1 = y1;
+        self.y2 = y2;
+    }
 }
 
 #[cfg(test)]
@@ -167,5 +195,63 @@ mod tests {
             out = bq.process(1.0);
         }
         assert!(out.abs() < 0.05, "HPF 未滤除直流: {out}");
+    }
+
+    /// process_strided 必须与「抽声道 → process_slice」逐样本一致（含状态连续性）
+    #[test]
+    fn test_strided_matches_slice() {
+        let sr = 48000.0f32;
+        let ch = 2usize;
+        let frames = 4096usize;
+        // 交错立体声：左右不同频率正弦
+        let interleaved: Vec<f32> = (0..frames)
+            .flat_map(|n| {
+                let t = n as f32 / sr;
+                [
+                    (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.4,
+                    (2.0 * std::f32::consts::PI * 997.0 * t).sin() * 0.3,
+                ]
+            })
+            .collect();
+
+        // 参考实现：抽出声道逐段 process_slice（旧 gather/scatter 语义）
+        let mut ref_bqs = [
+            Biquad::peaking(1000.0, sr, 4.0, 1.0),
+            Biquad::peaking(1000.0, sr, 4.0, 1.0),
+        ];
+        let mut reference = interleaved.clone();
+        for c in 0..ch {
+            let mut mono: Vec<f32> = (0..frames).map(|i| reference[c + i * ch]).collect();
+            ref_bqs[c].process_slice(&mut mono);
+            for (i, v) in mono.iter().enumerate() {
+                reference[c + i * ch] = *v;
+            }
+        }
+
+        // 新实现：跨步原地处理，分多次调用验证状态跨块连续
+        let mut strided_bqs = [
+            Biquad::peaking(1000.0, sr, 4.0, 1.0),
+            Biquad::peaking(1000.0, sr, 4.0, 1.0),
+        ];
+        let mut out = interleaved.clone();
+        for start in (0..frames).step_by(1024) {
+            let end = (start + 1024).min(frames);
+            for c in 0..ch {
+                let to = (c + end * ch).min(out.len());
+                strided_bqs[c].process_strided(&mut out[c + start * ch..to], 0, ch);
+            }
+        }
+
+        for (i, (a, b)) in out.iter().zip(reference.iter()).enumerate() {
+            assert!(
+                (a - b).abs() < 1e-6,
+                "样本 {i} 不一致：strided={a} slice={b}"
+            );
+        }
+        // 状态也应一致：后续样本产出相同
+        let mut a = ref_bqs[0].process(0.123);
+        let b = strided_bqs[0].process(0.123);
+        a -= b;
+        assert!(a.abs() < 1e-6, "跨块后状态不一致: diff={a}");
     }
 }

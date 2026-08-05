@@ -29,7 +29,8 @@ class SongListPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final player = ref.watch(playbackControllerProvider);
-    final playerState = ref.watch(playerProvider);
+    // 只 select isPlaying：列表页不需要 position，避免 250ms 进度 tick 触发整页重建
+    final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
     final queueState = ref.watch(queueProvider);
 
     return Scaffold(
@@ -138,13 +139,11 @@ class SongListPage extends ConsumerWidget {
             SliverList(
               delegate: SliverChildBuilderDelegate((ctx, i) {
                 final song = songs[i];
-                final isCurrent =
-                    queueState.currentSong?.id == song.id;
-                final isPlaying = playerState.isPlaying && isCurrent;
+                final isCurrent = queueState.currentSong?.id == song.id;
                 return SongTile(
                   song: song,
                   isCurrent: isCurrent,
-                  isPlaying: isPlaying,
+                  isPlaying: isPlaying && isCurrent,
                   trackNumber: i + 1,
                   onTap: () => player.playSong(song),
                   onMore: () => _showContextMenu(ctx, song, player),

@@ -29,6 +29,8 @@ class AudioOutputManager {
     // 缓存当前曲封面：每次进度刷新都会重建 nowPlayingInfo，
     // 不缓存的话 artwork 会被不带图的 refresh 覆盖丢失
     private var lastCover: UIImage?
+    /// 缓存的锁屏 artwork（随封面重建，refresh 时复用）
+    private var lastArtwork: MPMediaItemArtwork?
 
     init() {
         rebuildSourceNode(sampleRate: AVAudioSession.sharedInstance().sampleRate)
@@ -194,10 +196,15 @@ class AudioOutputManager {
         }
         // 新曲目刷新封面（可能为 nil，清掉上一曲的图）
         lastCover = coverImage
+        // artwork 对象缓存复用，避免每次 refreshNowPlaying 重建
+        lastArtwork = coverImage.map { img in
+            MPMediaItemArtwork(boundsSize: img.size) { _ in img }
+        }
         refreshNowPlaying()
     }
 
-    /// 更新播放进度
+    /// 更新播放进度（事件驱动：play/pause/seek/切歌时推锚点，
+    /// 锁屏进度由系统按 ElapsedPlaybackTime + PlaybackRate 自行插值）
     func updatePosition(_ positionMs: Double) {
         nowPosition = positionMs / 1000.0
         refreshNowPlaying()
@@ -212,8 +219,7 @@ class AudioOutputManager {
         info[MPMediaItemPropertyPlaybackDuration] = nowDuration
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = nowPosition
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlayingFlag ? 1.0 : 0.0
-        if let image = lastCover {
-            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        if let artwork = lastArtwork {
             info[MPMediaItemPropertyArtwork] = artwork
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info

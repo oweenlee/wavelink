@@ -157,10 +157,9 @@ impl DspPipeline {
             return;
         }
         let ch = self.channels;
-        let frames = buf.len() / ch;
 
         // 1. DC offset HPF（逐声道，每声道独立 Biquad 状态）
-        process_biquads_per_channel(&mut self.dc_hpf, &mut self.ch_buf, buf, ch, frames);
+        process_biquads_per_channel(&mut self.dc_hpf, buf, ch);
 
         // 1.5 ReplayGain Pre-amp
         if self.replaygain_scale != 1.0 {
@@ -178,7 +177,7 @@ impl DspPipeline {
 
         // 3. IIR PEQ（逐段、逐声道，每声道独立状态）
         for band in self.peq.iter_mut() {
-            process_biquads_per_channel(band, &mut self.ch_buf, buf, ch, frames);
+            process_biquads_per_channel(band, buf, ch);
         }
 
         // 4. Crossfeed（立体声）
@@ -396,27 +395,17 @@ pub fn preset_bands(name: PresetName) -> Vec<PeqBand> {
 }
 
 /// 对交错缓冲逐声道应用 Biquad（每声道独立状态，复用预分配缓冲区）
-fn process_biquads_per_channel(
-    bqs: &mut [Biquad],
-    ch_buf: &mut Vec<f32>,
-    buf: &mut [f32],
-    ch: usize,
-    frames: usize,
-) {
+/// 逐声道处理交错 PCM：每声道的 Biquad 链直接跨步原地执行。
+///
+/// 旧实现先抽出声道到 ch_buf → process_slice → 写回，每段×每声道两次全缓冲拷贝
+/// （31 段 PEQ 时 ≈ 64 次/块）；IIR 状态逐声道独立，跨步处理语义完全等价。
+fn process_biquads_per_channel(bqs: &mut [Biquad], buf: &mut [f32], ch: usize) {
     if ch <= 1 {
         bqs[0].process_slice(buf);
         return;
     }
     for c in 0..ch {
-        ch_buf.clear();
-        ch_buf.reserve(frames);
-        for i in 0..frames {
-            ch_buf.push(buf[c + i * ch]);
-        }
-        bqs[c].process_slice(ch_buf);
-        for (i, &v) in ch_buf.iter().enumerate() {
-            buf[c + i * ch] = v;
-        }
+        bqs[c].process_strided(buf, c, ch);
     }
 }
 

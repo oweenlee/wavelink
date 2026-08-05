@@ -280,11 +280,17 @@ class _SongsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final player = ref.watch(playbackControllerProvider);
-    final playerState = ref.watch(playerProvider);
+    // 只 select isPlaying：列表页不需要 position，避免 250ms tick 重建全列表
+    final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
     final queueState = ref.watch(queueProvider);
     final libraryState = ref.watch(libraryProvider);
     final headerState = ref.watch(libraryHeaderProvider);
     final allSongs = libraryState.allSongs;
+
+    // 曲目 id → 全库序号（itemBuilder 内 O(1)，避免 indexOf 每行 O(N)）
+    final trackNumbers = <String, int>{
+      for (var i = 0; i < allSongs.length; i++) allSongs[i].id: i + 1,
+    };
 
     final query = headerState.searchQuery;
     final displayed = query.isEmpty
@@ -308,12 +314,11 @@ class _SongsTab extends ConsumerWidget {
       itemBuilder: (context, index) {
         final song = displayed[index];
         final isCurrent = queueState.currentSong?.id == song.id;
-        final isPlaying = playerState.isPlaying && isCurrent;
         return SongTile(
           song: song,
           isCurrent: isCurrent,
-          isPlaying: isPlaying,
-          trackNumber: allSongs.indexOf(song) + 1,
+          isPlaying: isPlaying && isCurrent,
+          trackNumber: trackNumbers[song.id] ?? index + 1,
           onTap: () => player.playSong(song),
           onMore: () => _showContextMenu(context, song, player),
           trailing: player.isSongFavorite(song.id)
@@ -335,12 +340,18 @@ class _AlbumsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final playerState = ref.watch(playerProvider);
+    // 只 select isPlaying：避免 250ms tick 重建专辑网格
+    final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
     final queueState = ref.watch(queueProvider);
     final songs = ref.watch(libraryProvider).allSongs;
 
-    // group by album
-    final albumNames = songs.map((s) => s.album).toSet().toList();
+    // 按专辑分组：单次 O(N) 遍历（保留首次出现顺序），
+    // 避免原来每次 build 的 map/toSet + itemBuilder 内逐专辑 where 扫描
+    final albums = <String, List<Song>>{};
+    for (final s in songs) {
+      (albums[s.album] ??= []).add(s);
+    }
+    final albumNames = albums.keys.toList();
     if (albumNames.isEmpty) {
       return _EmptyLibrary(message: l10n.noAlbumInfo);
     }
@@ -361,10 +372,10 @@ class _AlbumsTab extends ConsumerWidget {
       itemCount: albumNames.length,
       itemBuilder: (context, index) {
         final name = albumNames[index];
-        final albumSongs = songs.where((s) => s.album == name).toList();
+        final albumSongs = albums[name]!;
         final color = albumSongs.first.dominantColor;
         final isPlayingAlbum =
-            queueState.currentSong?.album == name && playerState.isPlaying;
+            queueState.currentSong?.album == name && isPlaying;
 
         return GestureDetector(
           onTap: () => context.push(
@@ -453,7 +464,12 @@ class _ArtistsTab extends ConsumerWidget {
     final player = ref.watch(playbackControllerProvider);
     final songs = ref.watch(libraryProvider).allSongs;
 
-    final artistNames = songs.map((s) => s.artist).toSet().toList();
+    // 按艺人分组：单次 O(N) 遍历，避免 itemBuilder 内逐艺人 where 扫描
+    final artists = <String, List<Song>>{};
+    for (final s in songs) {
+      (artists[s.artist] ??= []).add(s);
+    }
+    final artistNames = artists.keys.toList();
     if (artistNames.isEmpty) {
       return _EmptyLibrary(message: l10n.noArtistInfo);
     }
@@ -519,7 +535,7 @@ class _ArtistsTab extends ConsumerWidget {
           delegate: SliverChildBuilderDelegate(
             (context, index) {
               final name = artistNames[index];
-              final artistSongs = songs.where((s) => s.artist == name).toList();
+              final artistSongs = artists[name]!;
               final count = artistSongs.length;
               final albumCount =
                   artistSongs.map((s) => s.album).toSet().length;

@@ -17,7 +17,8 @@ class AlbumDetailPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final player = ref.watch(playbackControllerProvider);
-    final playerState = ref.watch(playerProvider);
+    // 只 select isPlaying：避免 250ms 进度 tick 触发整页重建
+    final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
     final queueState = ref.watch(queueProvider);
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -84,7 +85,7 @@ class AlbumDetailPage extends ConsumerWidget {
                 index: i + 1,
                 song: s,
                 isCurrent: isCurrent,
-                isPlaying: playerState.isPlaying && isCurrent,
+                isPlaying: isPlaying && isCurrent,
                 onTap: () {
                   player.playAlbum(album.songs, startIndex: i);
                   Navigator.pop(context);
