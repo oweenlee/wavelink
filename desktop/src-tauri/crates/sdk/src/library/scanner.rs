@@ -163,6 +163,22 @@ pub struct Scanner;
 impl Scanner {
     /// 递归扫描目录，读取标签并写入数据库
     pub fn scan_directory(db: &LibraryDb, dir: &Path) -> Result<ScannerResult, String> {
+        // 串行化扫描：文件监控 / 手动重扫 / 分析可能同时触发。
+        // 若不加锁, 两个并发扫描各自 reset+remove_missing 会互相删掉对方尚未入库的曲目
+        let _guard = SCAN_LOCK.lock().map_err(|e| format!("扫描锁失败: {e}"))?;
+
+        scan_directory_inner(db, dir)
+    }
+
+    /// 扫描单个文件
+    pub fn scan_file(path: &Path) -> Result<Option<Track>, String> {
+        scan_file(path)
+    }
+}
+
+static SCAN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn scan_directory_inner(db: &LibraryDb, dir: &Path) -> Result<ScannerResult, String> {
         if !dir.is_dir() {
             return Err(format!("路径不是目录: {}", dir.display()));
         }
@@ -206,12 +222,6 @@ impl Scanner {
         Result::Ok(ScannerResult { scanned, errors, removed: removed.len() as u64 })
     }
 
-    /// 扫描单个文件
-    pub fn scan_file(path: &Path) -> Result<Option<Track>, String> {
-        scan_file(path)
-    }
-}
-
 /// 扫描结果统计
 #[derive(Debug, Clone)]
 pub struct ScannerResult {
@@ -232,12 +242,13 @@ fn scan_file(path: &Path) -> Result<Option<Track>, String> {
         .and_then(|e| e.to_str())
         .map(|s| s.to_lowercase());
 
-    // 用 audio-core 读取元数据
+    // 用 audio-core 读取元数据；失败时不跳过文件，而是回退到文件名推断，
+    // 保证扫描结果不丢歌（损坏/非常规编码的文件也能入库）
     let metadata = match audio_core::decoder::read_metadata(path) {
-        Ok(m) => m,
+        Ok(m) => Some(m),
         Err(e) => {
-            debug!("audio_core 无法读取 {}: {e}", path.display());
-            return Ok(None);
+            warn!("audio_core 无法读取元数据 {}: {e}，改用文件名推断", path.display());
+            None
         }
     };
 
@@ -252,21 +263,29 @@ fn scan_file(path: &Path) -> Result<Option<Track>, String> {
     let track = Track {
         id: 0,
         path: path.to_string_lossy().into_owned(),
-        title: metadata.title.map(|s| fix_gbk_tag(&s)).or_else(|| {
-            inferred.title.or(Some(file_stem.to_string()))
-        }),
-        artist: metadata.artist.map(|s| fix_gbk_tag(&s)).or_else(|| {
-            if inferred.artist.is_some() { inferred.artist } else { Some("未知艺术家".into()) }
-        }),
-        album: metadata.album.map(|s| fix_gbk_tag(&s)).or_else(|| Some("未知专辑".into())),
+        title: metadata.as_ref()
+            .and_then(|m| m.title.as_deref().map(fix_gbk_tag))
+            .or_else(|| {
+                inferred.title.clone().or(Some(file_stem.to_string()))
+            }),
+        artist: metadata.as_ref()
+            .and_then(|m| m.artist.as_deref().map(fix_gbk_tag))
+            .or_else(|| {
+                if inferred.artist.is_some() { inferred.artist.clone() } else { Some("未知艺术家".into()) }
+            }),
+        album: metadata.as_ref()
+            .and_then(|m| m.album.as_deref().map(fix_gbk_tag))
+            .or_else(|| Some("未知专辑".into())),
         album_artist: None,
-        track_number: metadata.track_number.map(|n| n as i32).or(inferred.track_number),
-        disc_number: metadata.disc_number.map(|n| n as i32),
-        year: metadata.year,
-        genre: metadata.genre.map(|s| fix_gbk_tag(&s)),
-        duration: if metadata.duration_secs > 0.1 { Some(metadata.duration_secs) } else { None },
-        sample_rate: metadata.sample_rate.map(|r| r as i32),
-        channels: metadata.channels.map(|c| c as i32),
+        track_number: metadata.as_ref().and_then(|m| m.track_number.map(|n| n as i32)).or(inferred.track_number),
+        disc_number: metadata.as_ref().and_then(|m| m.disc_number.map(|n| n as i32)),
+        year: metadata.as_ref().and_then(|m| m.year),
+        genre: metadata.as_ref().and_then(|m| m.genre.as_deref().map(fix_gbk_tag)),
+        duration: metadata.as_ref()
+            .map(|m| m.duration_secs)
+            .filter(|d| *d > 0.1),
+        sample_rate: metadata.as_ref().and_then(|m| m.sample_rate.map(|r| r as i32)),
+        channels: metadata.as_ref().and_then(|m| m.channels.map(|c| c as i32)),
         format,
         file_size: Some(file_size),
         file_modified,

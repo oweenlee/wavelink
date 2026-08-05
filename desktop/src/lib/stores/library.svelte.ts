@@ -7,6 +7,14 @@ let _viewMode = $state<'list' | 'grid'>('list');
 let _sortBy = $state<'title' | 'artist' | 'album' | 'duration'>('title');
 let _loading = $state(false);
 
+// 浏览数据缓存：艺术家 / 专辑列表 / 专辑曲目，避免每次切换视图都重新查库
+const _artistsCache = new Map<string, string[]>();
+const _albumsByArtistCache = new Map<string, string[]>();
+const _tracksByAlbumCache = new Map<string, Track[]>();
+let _allAlbumsCache: AlbumBrief[] | null = null;
+// 专辑封面缓存（key = first_track_id）：避免每次进入专辑网格都重新从磁盘读封面
+const _albumCoverCache = new Map<number, string>();
+
 /** Sorted tracks — recomputed only when _tracks or _sortBy change */
 const _sortedTracks = $derived.by(() => {
 	const result = [..._tracks];
@@ -79,34 +87,77 @@ export function getLibraryState() {
 		// ── Browse ──
 		async loadArtists(): Promise<string[]> {
 			if (!browser) return [];
+			if (_artistsCache.has('')) return _artistsCache.get('')!;
 			try {
 				const invoke = await lazyInvoke();
-				return await invoke('get_artists') as string[];
+				const artists = await invoke('get_artists') as string[];
+				_artistsCache.set('', artists);
+				return artists;
 			} catch { return []; }
 		},
 
 		async loadAlbumsByArtist(artist: string): Promise<string[]> {
 			if (!browser) return [];
+			const key = artist;
+			if (_albumsByArtistCache.has(key)) return _albumsByArtistCache.get(key)!;
 			try {
 				const invoke = await lazyInvoke();
-				return await invoke('get_albums_by_artist', { artist }) as string[];
+				const albums = await invoke('get_albums_by_artist', { artist }) as string[];
+				_albumsByArtistCache.set(key, albums);
+				return albums;
 			} catch { return []; }
 		},
 
 		async loadTracksByAlbum(artist: string, album: string): Promise<Track[]> {
 			if (!browser) return [];
+			const key = `${artist}\u0000${album}`;
+			if (_tracksByAlbumCache.has(key)) return _tracksByAlbumCache.get(key)!;
 			try {
 				const invoke = await lazyInvoke();
-				return await invoke('get_tracks_by_album', { artist, album }) as Track[];
+				const tracks = await invoke('get_tracks_by_album', { artist, album }) as Track[];
+				_tracksByAlbumCache.set(key, tracks);
+				return tracks;
 			} catch { return []; }
 		},
 
 		async loadAllAlbums(): Promise<AlbumBrief[]> {
 			if (!browser) return [];
+			if (_allAlbumsCache) return _allAlbumsCache;
 			try {
 				const invoke = await lazyInvoke();
-				return await invoke('get_all_albums') as AlbumBrief[];
+				const albums = await invoke('get_all_albums') as AlbumBrief[];
+				_allAlbumsCache = albums;
+				return albums;
 			} catch { return []; }
+		},
+
+		/** 清空浏览缓存（重扫后调用） */
+		clearBrowseCache() {
+			_artistsCache.clear();
+			_albumsByArtistCache.clear();
+			_tracksByAlbumCache.clear();
+			_allAlbumsCache = null;
+			_albumCoverCache.clear();
+		},
+
+		/** 读取已缓存的专辑封面（同步），未缓存返回 null */
+		getAlbumCoverCached(firstTrackId: number): string | null {
+			return _albumCoverCache.get(firstTrackId) ?? null;
+		},
+
+		/** 加载专辑封面：优先用数据库里已存的封面，miss 时才回退到从磁盘读音频文件 */
+		async loadAlbumCover(firstTrackId: number, fallbackPath: string): Promise<string | null> {
+			if (!browser) return null;
+			if (_albumCoverCache.has(firstTrackId)) return _albumCoverCache.get(firstTrackId)!;
+			try {
+				const invoke = await lazyInvoke();
+				let data = await invoke('get_cover', { trackId: firstTrackId }) as string | null;
+				if (!data) {
+					data = await invoke('get_file_cover_cmd', { path: fallbackPath }) as string | null;
+				}
+				if (data) _albumCoverCache.set(firstTrackId, data);
+				return data;
+			} catch { return null; }
 		},
 
 	async deleteTrack(trackId: number) {

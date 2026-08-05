@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, Result as SqlResult};
 
@@ -49,10 +49,19 @@ pub struct LibraryDb {
     conn: Connection,
 }
 
+/// 用于列表 / 搜索的列：排除体积较大的 cover 列，避免每次查询把整张封面读进内存
+const LIST_COLUMNS: &str = "id, path, title, artist, album, album_artist, \
+    track_number, disc_number, year, genre, duration, \
+    sample_rate, channels, format, file_size, file_modified, \
+    date_added, play_count, last_played, rating, missing, track_gain";
+
 impl LibraryDb {
     /// 打开（或创建）数据库
     pub fn open(path: &Path) -> SqlResult<Self> {
         let conn = Connection::open(path)?;
+        // 多个连接会并发写同一个库（扫描 / 监控 / 分析）。
+        // 设置 busy_timeout 后, 写冲突会等待而不是立即 SQLITE_BUSY 失败丢歌
+        conn.busy_timeout(Duration::from_secs(10))?;
         conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
         let db = LibraryDb { conn };
         db.migrate()?;
@@ -230,13 +239,13 @@ impl LibraryDb {
     pub fn search(&self, keyword: &str, limit: i64, offset: i64) -> SqlResult<Vec<Track>> {
         let pattern = format!("%{}%", keyword);
         let mut stmt = self.conn.prepare(
-            "SELECT * FROM tracks
+            &format!("SELECT {LIST_COLUMNS} FROM tracks
              WHERE missing=0
                AND (title LIKE ?1 OR artist LIKE ?1 OR album LIKE ?1)
              ORDER BY artist, album, track_number
-             LIMIT ?2 OFFSET ?3",
+             LIMIT ?2 OFFSET ?3"),
         )?;
-        let rows = stmt.query_map(params![pattern, limit, offset], Self::row_to_track)?;
+        let rows = stmt.query_map(params![pattern, limit, offset], Self::row_to_track_light)?;
         rows.collect()
     }
 
@@ -286,20 +295,20 @@ impl LibraryDb {
     /// 获取某个专辑的曲目
     pub fn tracks_by_album(&self, artist: &str, album: &str) -> SqlResult<Vec<Track>> {
         let mut stmt = self.conn.prepare(
-            "SELECT * FROM tracks
+            &format!("SELECT {LIST_COLUMNS} FROM tracks
              WHERE artist=?1 AND album=?2 AND missing=0
-             ORDER BY disc_number, track_number",
+             ORDER BY disc_number, track_number"),
         )?;
-        let rows = stmt.query_map(params![artist, album], Self::row_to_track)?;
+        let rows = stmt.query_map(params![artist, album], Self::row_to_track_light)?;
         rows.collect()
     }
 
     /// 所有曲目（不含 missing）
     pub fn all_tracks(&self, limit: i64, offset: i64) -> SqlResult<Vec<Track>> {
         let mut stmt = self.conn.prepare(
-            "SELECT * FROM tracks WHERE missing=0 ORDER BY artist, album, track_number LIMIT ?1 OFFSET ?2",
+            &format!("SELECT {LIST_COLUMNS} FROM tracks WHERE missing=0 ORDER BY artist, album, track_number LIMIT ?1 OFFSET ?2"),
         )?;
-        let rows = stmt.query_map(params![limit, offset], Self::row_to_track)?;
+        let rows = stmt.query_map(params![limit, offset], Self::row_to_track_light)?;
         rows.collect()
     }
 
@@ -307,6 +316,35 @@ impl LibraryDb {
     pub fn track_count(&self) -> SqlResult<i64> {
         self.conn
             .query_row("SELECT COUNT(*) FROM tracks WHERE missing=0", [], |r| r.get(0))
+    }
+
+    /// 列表 / 搜索用的轻量行映射（不含 cover 列，cover_base64 置空）
+    fn row_to_track_light(row: &rusqlite::Row) -> rusqlite::Result<Track> {
+        Ok(Track {
+            id: row.get(0)?,
+            path: row.get(1)?,
+            title: row.get(2)?,
+            artist: row.get(3)?,
+            album: row.get(4)?,
+            album_artist: row.get(5)?,
+            track_number: row.get(6)?,
+            disc_number: row.get(7)?,
+            year: row.get(8)?,
+            genre: row.get(9)?,
+            duration: row.get(10)?,
+            sample_rate: row.get(11)?,
+            channels: row.get(12)?,
+            format: row.get(13)?,
+            file_size: row.get(14)?,
+            file_modified: row.get(15)?,
+            date_added: row.get(16)?,
+            play_count: row.get(17)?,
+            last_played: row.get(18)?,
+            rating: row.get(19)?,
+            missing: row.get::<_, i32>(20)? != 0,
+            cover_base64: None,
+            track_gain: row.get(21)?,
+        })
     }
 
     fn row_to_track(row: &rusqlite::Row) -> rusqlite::Result<Track> {

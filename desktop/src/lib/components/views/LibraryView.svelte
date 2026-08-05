@@ -39,6 +39,7 @@
 	async function handleAddFolder() {
 		try {
 			await library.scanDirectory();
+			library.clearBrowseCache();
 			await loadScanFolders();
 			await library.loadTracks();
 		} catch { /* cancelled */ }
@@ -46,6 +47,7 @@
 
 	async function handleRemoveFolder(path: string) {
 		await library.removeScanFolder(path);
+		library.clearBrowseCache();
 		await loadScanFolders();
 		await library.loadTracks();
 	}
@@ -63,6 +65,7 @@
 				await invoke('scan_dir', { path: folder });
 			}
 			await library.loadTracks();
+			library.clearBrowseCache();
 		} catch (e) { console.error('Rescan failed:', e); }
 		rescanning = false;
 	}
@@ -183,6 +186,11 @@
 		browsingLoading = true;
 		albumBriefs = await library.loadAllAlbums();
 		albumCovers = new SvelteMap();
+		// 用已缓存的封面预填, 进入网格即显示
+		for (const { first_track_id } of albumBriefs) {
+			const cached = library.getAlbumCoverCached(first_track_id);
+			if (cached) albumCovers.set(first_track_id, cached);
+		}
 		browsingLoading = false;
 		// 封面懒加载：由 IntersectionObserver action 按需加载
 	}
@@ -211,8 +219,7 @@
 	async function loadCoverForAlbum(ab: { first_track_id: number; first_track_path: string }) {
 		if (albumCovers.has(ab.first_track_id)) return;
 		try {
-			const { invoke } = await import('@tauri-apps/api/core');
-			const data = await invoke('get_file_cover_cmd', { path: ab.first_track_path }) as string | null;
+			const data = await library.loadAlbumCover(ab.first_track_id, ab.first_track_path);
 			if (data) {
 				albumCovers.set(ab.first_track_id, data);
 			}
