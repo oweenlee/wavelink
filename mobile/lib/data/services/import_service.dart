@@ -183,10 +183,13 @@ class ImportService {
     return await SubsonicService.scanLibrary();
   }
 
-  /// 从 SMB 共享扫描音频文件
-  static Future<List<Song>> scanSmb(String sharePath) async {
+  /// 从 SMB 共享扫描音频文件（[onBatch] 增量回调透传）
+  static Future<List<Song>> scanSmb(
+    String sharePath, {
+    void Function(List<Song> batch)? onBatch,
+  }) async {
     if (!SmbService.isConnected) return [];
-    return await SmbService.scanSmbLibrary(sharePath);
+    return await SmbService.scanSmbLibrary(sharePath, onBatch: onBatch);
   }
 
   // ── 内部方法 ──

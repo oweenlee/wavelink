@@ -168,8 +168,25 @@ class LibraryNotifier extends Notifier<LibraryState> {
     _isScanning = true;
     try {
       final songRepo = ref.read(songRepositoryProvider);
-      final songs = await songRepo.scanSmb(sharePath);
+      // 增量合并：每批下载完立即入库+持久化，
+      // UI 实时可见、中途退出也保留已扫部分
+      final songs = await songRepo.scanSmb(sharePath, onBatch: (batch) {
+        final batchPaths = batch
+            .where((s) => s.path != null)
+            .map((s) => s.path!)
+            .toSet();
+        final merged = [
+          ...batch,
+          ...state.importedSongs.where(
+            (s) => s.path == null || !batchPaths.contains(s.path),
+          ),
+        ];
+        state = state.copyWith(importedSongs: merged);
+        songRepo.setCachedSongs(merged);
+        onSongsLoaded?.call();
+      });
       if (songs.isEmpty) return false;
+      // 最终一致性合并（与增量幂等），保证返回值统计准确
       final newPaths = songs
           .where((s) => s.path != null)
           .map((s) => s.path!)

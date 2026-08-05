@@ -30,8 +30,10 @@ class SongRepository {
 
   Future<List<Song>> scanSubsonic() => ImportService.scanSubsonic();
 
-  Future<List<Song>> scanSmb(String sharePath) =>
-      ImportService.scanSmb(sharePath);
+  Future<List<Song>> scanSmb(
+    String sharePath, {
+    void Function(List<Song> batch)? onBatch,
+  }) => ImportService.scanSmb(sharePath, onBatch: onBatch);
 
   /// 封面缓存（委托给 ImportService 的异步缓存方法）
   Future<void> cacheCovers(List<Song> songs) =>

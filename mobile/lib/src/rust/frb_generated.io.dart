@@ -11,6 +11,7 @@ import 'api/device.dart';
 import 'api/engine.dart';
 import 'api/metadata.dart';
 import 'api/playlist.dart';
+import 'api/smb.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
@@ -123,6 +124,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<SmbDirEntry> dco_decode_list_smb_dir_entry(dynamic raw);
+
+  @protected
+  List<SmbShareInfo> dco_decode_list_smb_share_info(dynamic raw);
+
+  @protected
   MetadataResult dco_decode_metadata_result(dynamic raw);
 
   @protected
@@ -150,6 +157,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReplayGainResult dco_decode_replay_gain_result(dynamic raw);
+
+  @protected
+  SmbDirEntry dco_decode_smb_dir_entry(dynamic raw);
+
+  @protected
+  SmbShareInfo dco_decode_smb_share_info(dynamic raw);
 
   @protected
   int dco_decode_u_16(dynamic raw);
@@ -273,6 +286,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  List<SmbDirEntry> sse_decode_list_smb_dir_entry(SseDeserializer deserializer);
+
+  @protected
+  List<SmbShareInfo> sse_decode_list_smb_share_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   MetadataResult sse_decode_metadata_result(SseDeserializer deserializer);
 
   @protected
@@ -306,6 +327,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReplayGainResult sse_decode_replay_gain_result(SseDeserializer deserializer);
+
+  @protected
+  SmbDirEntry sse_decode_smb_dir_entry(SseDeserializer deserializer);
+
+  @protected
+  SmbShareInfo sse_decode_smb_share_info(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_16(SseDeserializer deserializer);
@@ -455,6 +482,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_smb_dir_entry(
+    List<SmbDirEntry> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_smb_share_info(
+    List<SmbShareInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_metadata_result(
     MetadataResult self,
     SseSerializer serializer,
@@ -498,6 +537,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ReplayGainResult self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_smb_dir_entry(SmbDirEntry self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_smb_share_info(SmbShareInfo self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_16(int self, SseSerializer serializer);

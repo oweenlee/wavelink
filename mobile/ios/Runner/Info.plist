@@ -65,6 +65,13 @@
 	</array>
 	<key>NSAppleMusicUsageDescription</key>
 	<string>WaveLink 需要访问您的音乐库以导入歌曲。</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>WaveLink 需要访问本地网络以连接同一局域网内的 NAS / SMB 共享服务器。</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_smb._tcp</string>
+		<string>_smb._udp</string>
+	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>

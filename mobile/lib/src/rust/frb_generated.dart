@@ -11,6 +11,7 @@ import 'api/device.dart';
 import 'api/engine.dart';
 import 'api/metadata.dart';
 import 'api/playlist.dart';
+import 'api/smb.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
@@ -71,7 +72,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0-beta.5';
 
   @override
-  int get rustContentHash => -971372368;
+  int get rustContentHash => -1889122047;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -232,6 +233,26 @@ abstract class RustLibApi extends BaseApi {
   });
 
   Future<void> crateApiAudioOutputSetHwSampleRate({required int rate});
+
+  Future<void> crateApiSmbSmbConnect({
+    required String host,
+    required int port,
+    required String username,
+    required String password,
+    required String domain,
+  });
+
+  Future<void> crateApiSmbSmbConnectShare({required String shareName});
+
+  Future<void> crateApiSmbSmbDisconnect();
+
+  Future<BigInt> crateApiSmbSmbFileSize({required String path});
+
+  Future<List<SmbDirEntry>> crateApiSmbSmbListDirectory({required String path});
+
+  Future<List<SmbShareInfo>> crateApiSmbSmbListShares();
+
+  Future<Uint8List> crateApiSmbSmbReadFile({required String path});
 
   Future<StreamDecoder> crateApiDecodeStreamDecoderCreate({
     required String path,
@@ -1993,6 +2014,216 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "set_hw_sample_rate", argNames: ["rate"]);
 
   @override
+  Future<void> crateApiSmbSmbConnect({
+    required String host,
+    required int port,
+    required String username,
+    required String password,
+    required String domain,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(host, serializer);
+          sse_encode_u_16(port, serializer);
+          sse_encode_String(username, serializer);
+          sse_encode_String(password, serializer);
+          sse_encode_String(domain, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 59,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSmbSmbConnectConstMeta,
+        argValues: [host, port, username, password, domain],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSmbSmbConnectConstMeta => const TaskConstMeta(
+    debugName: "smb_connect",
+    argNames: ["host", "port", "username", "password", "domain"],
+  );
+
+  @override
+  Future<void> crateApiSmbSmbConnectShare({required String shareName}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(shareName, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 60,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSmbSmbConnectShareConstMeta,
+        argValues: [shareName],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSmbSmbConnectShareConstMeta => const TaskConstMeta(
+    debugName: "smb_connect_share",
+    argNames: ["shareName"],
+  );
+
+  @override
+  Future<void> crateApiSmbSmbDisconnect() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 61,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSmbSmbDisconnectConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSmbSmbDisconnectConstMeta =>
+      const TaskConstMeta(debugName: "smb_disconnect", argNames: []);
+
+  @override
+  Future<BigInt> crateApiSmbSmbFileSize({required String path}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(path, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 62,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_u_64,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSmbSmbFileSizeConstMeta,
+        argValues: [path],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSmbSmbFileSizeConstMeta =>
+      const TaskConstMeta(debugName: "smb_file_size", argNames: ["path"]);
+
+  @override
+  Future<List<SmbDirEntry>> crateApiSmbSmbListDirectory({
+    required String path,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(path, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 63,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_smb_dir_entry,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSmbSmbListDirectoryConstMeta,
+        argValues: [path],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSmbSmbListDirectoryConstMeta =>
+      const TaskConstMeta(debugName: "smb_list_directory", argNames: ["path"]);
+
+  @override
+  Future<List<SmbShareInfo>> crateApiSmbSmbListShares() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 64,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_smb_share_info,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSmbSmbListSharesConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSmbSmbListSharesConstMeta =>
+      const TaskConstMeta(debugName: "smb_list_shares", argNames: []);
+
+  @override
+  Future<Uint8List> crateApiSmbSmbReadFile({required String path}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(path, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 65,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_prim_u_8_strict,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSmbSmbReadFileConstMeta,
+        argValues: [path],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSmbSmbReadFileConstMeta =>
+      const TaskConstMeta(debugName: "smb_read_file", argNames: ["path"]);
+
+  @override
   Future<StreamDecoder> crateApiDecodeStreamDecoderCreate({
     required String path,
     double? seekSecs,
@@ -2006,7 +2237,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 59,
+            funcId: 66,
             port: port_,
           );
         },
@@ -2043,7 +2274,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 60,
+            funcId: 67,
             port: port_,
           );
         },
@@ -2079,7 +2310,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 61,
+            funcId: 68,
             port: port_,
           );
         },
@@ -2347,6 +2578,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<SmbDirEntry> dco_decode_list_smb_dir_entry(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_smb_dir_entry).toList();
+  }
+
+  @protected
+  List<SmbShareInfo> dco_decode_list_smb_share_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_smb_share_info).toList();
+  }
+
+  @protected
   MetadataResult dco_decode_metadata_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -2434,6 +2677,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       albumGainDb: dco_decode_opt_box_autoadd_f_32(arr[1]),
       trackPeak: dco_decode_opt_box_autoadd_f_32(arr[2]),
       albumPeak: dco_decode_opt_box_autoadd_f_32(arr[3]),
+    );
+  }
+
+  @protected
+  SmbDirEntry dco_decode_smb_dir_entry(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return SmbDirEntry(
+      name: dco_decode_String(arr[0]),
+      size: dco_decode_u_64(arr[1]),
+      isDir: dco_decode_bool(arr[2]),
+    );
+  }
+
+  @protected
+  SmbShareInfo dco_decode_smb_share_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return SmbShareInfo(
+      name: dco_decode_String(arr[0]),
+      comment: dco_decode_String(arr[1]),
     );
   }
 
@@ -2757,6 +3025,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<SmbDirEntry> sse_decode_list_smb_dir_entry(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <SmbDirEntry>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_smb_dir_entry(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<SmbShareInfo> sse_decode_list_smb_share_info(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <SmbShareInfo>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_smb_share_info(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   MetadataResult sse_decode_metadata_result(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_title = sse_decode_opt_String(deserializer);
@@ -2883,6 +3179,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       trackPeak: var_trackPeak,
       albumPeak: var_albumPeak,
     );
+  }
+
+  @protected
+  SmbDirEntry sse_decode_smb_dir_entry(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_name = sse_decode_String(deserializer);
+    var var_size = sse_decode_u_64(deserializer);
+    var var_isDir = sse_decode_bool(deserializer);
+    return SmbDirEntry(name: var_name, size: var_size, isDir: var_isDir);
+  }
+
+  @protected
+  SmbShareInfo sse_decode_smb_share_info(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_name = sse_decode_String(deserializer);
+    var var_comment = sse_decode_String(deserializer);
+    return SmbShareInfo(name: var_name, comment: var_comment);
   }
 
   @protected
@@ -3188,6 +3501,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_smb_dir_entry(
+    List<SmbDirEntry> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_smb_dir_entry(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_smb_share_info(
+    List<SmbShareInfo> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_smb_share_info(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_metadata_result(
     MetadataResult self,
     SseSerializer serializer,
@@ -3292,6 +3629,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_f_32(self.albumGainDb, serializer);
     sse_encode_opt_box_autoadd_f_32(self.trackPeak, serializer);
     sse_encode_opt_box_autoadd_f_32(self.albumPeak, serializer);
+  }
+
+  @protected
+  void sse_encode_smb_dir_entry(SmbDirEntry self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.name, serializer);
+    sse_encode_u_64(self.size, serializer);
+    sse_encode_bool(self.isDir, serializer);
+  }
+
+  @protected
+  void sse_encode_smb_share_info(SmbShareInfo self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.name, serializer);
+    sse_encode_String(self.comment, serializer);
   }
 
   @protected

@@ -1,0 +1,224 @@
+//! SMB 客户端（FRB 包装层）
+//!
+//! 基于纯 Rust `smb2` crate 实现，替代原 smb_connect Dart 包。
+//! 空 username/password 即 guest（匿名）认证，macOS 共享可直接访问。
+//! 连接与会话保存在全局状态中，Dart 侧只需面向"共享目录路径"操作。
+
+use smb2::client::{DirectoryEntry, SmbClient, Tree};
+use smb2::rpc::srvsvc::ShareInfo;
+use smb2::ClientConfig;
+use tokio::sync::{Mutex, Semaphore};
+
+/// 读取连接池大小：多条独立 SMB 连接并行下载，打满 Wi-Fi 带宽
+const READ_POOL_SIZE: usize = 4;
+
+/// 一次 SMB 会话：底层连接 + 已挂载的共享（tree）
+struct SmbSession {
+    client: SmbClient,
+    tree: Option<Tree>,
+}
+
+/// 连接参数（用于创建池连接）
+struct ConnectParams {
+    addr: String,
+    username: String,
+    password: String,
+    domain: String,
+}
+
+impl ConnectParams {
+    fn to_config(&self) -> ClientConfig {
+        ClientConfig {
+            addr: self.addr.clone(),
+            timeout: std::time::Duration::from_secs(10),
+            username: self.username.clone(),
+            password: self.password.clone(),
+            domain: self.domain.clone(),
+            auto_reconnect: true,
+            compression: true,
+            dfs_enabled: true,
+            dfs_target_overrides: std::collections::HashMap::new(),
+        }
+    }
+}
+
+/// 全局会话（控制操作：list_shares / list_directory 等），跨 await 用 tokio Mutex
+static SESSION: Mutex<Option<SmbSession>> = Mutex::const_new(None);
+/// 连接参数（建池用）
+static PARAMS: Mutex<Option<ConnectParams>> = Mutex::const_new(None);
+/// 读取连接池（smb_read_file 专用，与主会话隔离）
+static POOL: Mutex<Vec<SmbSession>> = Mutex::const_new(Vec::new());
+/// 池并发信号量（限制同时借出的连接数）
+static POOL_SEM: Semaphore = Semaphore::const_new(READ_POOL_SIZE);
+
+/// 共享信息（list_shares 用）
+#[derive(Debug)]
+pub struct SmbShareInfo {
+    pub name: String,
+    pub comment: String,
+}
+
+/// 目录条目（list_directory 用）
+#[derive(Debug)]
+pub struct SmbDirEntry {
+    pub name: String,
+    pub size: u64,
+    pub is_dir: bool,
+}
+
+fn err_str<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
+}
+
+/// 连接 SMB 服务器（host 为裸 IP/域名，内部拼 :port）
+pub async fn smb_connect(
+    host: String,
+    port: u16,
+    username: String,
+    password: String,
+    domain: String,
+) -> Result<(), String> {
+    let addr = format!("{host}:{port}");
+    let params = ConnectParams {
+        addr,
+        username,
+        password,
+        domain,
+    };
+    let client = SmbClient::connect(params.to_config()).await.map_err(err_str)?;
+
+    let mut guard = SESSION.lock().await;
+    *guard = Some(SmbSession { client, tree: None });
+    drop(guard);
+
+    // 建立读取连接池（单条失败不影响整体，池为空时 read 回退主会话）
+    *PARAMS.lock().await = Some(ConnectParams {
+        addr: params.addr.clone(),
+        username: params.username.clone(),
+        password: params.password.clone(),
+        domain: params.domain.clone(),
+    });
+    let mut pool = Vec::new();
+    for _ in 0..READ_POOL_SIZE {
+        if let Ok(c) = SmbClient::connect(params.to_config()).await {
+            pool.push(SmbSession { client: c, tree: None });
+        }
+    }
+    *POOL.lock().await = pool;
+    Ok(())
+}
+
+/// 断开 SMB 连接（含读取池）
+pub async fn smb_disconnect() {
+    let mut guard = SESSION.lock().await;
+    *guard = None;
+    *POOL.lock().await = Vec::new();
+    *PARAMS.lock().await = None;
+}
+
+/// 列出服务器所有共享
+pub async fn smb_list_shares() -> Result<Vec<SmbShareInfo>, String> {
+    let mut guard = SESSION.lock().await;
+    let sess = guard.as_mut().ok_or("not connected")?;
+    let shares: Vec<ShareInfo> = sess
+        .client
+        .list_shares()
+        .await
+        .map_err(err_str)?;
+    Ok(shares
+        .into_iter()
+        .map(|s| SmbShareInfo {
+            name: s.name,
+            comment: s.comment,
+        })
+        .collect())
+}
+
+/// 挂载指定共享（后续 list/read 均相对该共享根目录）
+///
+/// 同时在读取池的每条连接上挂载，保证并行下载可用。
+pub async fn smb_connect_share(share_name: String) -> Result<(), String> {
+    let mut guard = SESSION.lock().await;
+    let sess = guard.as_mut().ok_or("not connected")?;
+    let tree = sess.client.connect_share(&share_name).await.map_err(err_str)?;
+    sess.tree = Some(tree);
+    drop(guard);
+
+    let mut pool = POOL.lock().await;
+    for s in pool.iter_mut() {
+        if let Ok(t) = s.client.connect_share(&share_name).await {
+            s.tree = Some(t);
+        }
+    }
+    Ok(())
+}
+
+/// 列出目录内容；path 空串表示共享根目录，子路径如 "Music/Album"
+///
+/// 过滤 "."/".." 条目：smb2 crate 会返回它们，
+/// 递归扫描时若不剔除会无限进入 "." 导致路径爆炸。
+pub async fn smb_list_directory(path: String) -> Result<Vec<SmbDirEntry>, String> {
+    let mut guard = SESSION.lock().await;
+    let sess = guard.as_mut().ok_or("not connected")?;
+    let tree = sess.tree.as_mut().ok_or("no share connected")?;
+    let entries: Vec<DirectoryEntry> = sess
+        .client
+        .list_directory(tree, &path)
+        .await
+        .map_err(err_str)?;
+    Ok(entries
+        .into_iter()
+        .filter(|e| e.name != "." && e.name != "..")
+        .map(|e| SmbDirEntry {
+            name: e.name,
+            size: e.size,
+            is_dir: e.is_directory,
+        })
+        .collect())
+}
+
+/// 读取远端文件完整内容（相对共享根目录的路径）
+///
+/// 用 read_file_pipelined 而非 read_file：后者单次读取上限 65536 字节，
+/// 大于该值的文件（几乎所有音频）会报错。
+/// 优先从读取池借独立连接（并行下载），池空时回退主会话。
+pub async fn smb_read_file(path: String) -> Result<Vec<u8>, String> {
+    let permit = POOL_SEM.acquire().await.map_err(err_str)?;
+    let pooled = POOL.lock().await.pop();
+    let result = match pooled {
+        Some(mut sess) => {
+            let r = if let Some(tree) = sess.tree.as_mut() {
+                sess.client.read_file_pipelined(tree, &path).await.map_err(err_str)
+            } else {
+                Err("no share connected".to_string())
+            };
+            POOL.lock().await.push(sess);
+            r
+        }
+        None => {
+            let mut guard = SESSION.lock().await;
+            let sess = guard.as_mut().ok_or("not connected")?;
+            let tree = sess.tree.as_mut().ok_or("no share connected")?;
+            sess.client.read_file_pipelined(tree, &path).await.map_err(err_str)
+        }
+    };
+    drop(permit);
+    result
+}
+
+/// 远端文件大小（扫描时判断是否有变化，避免重复下载）
+pub async fn smb_file_size(path: String) -> Result<u64, String> {
+    let mut guard = SESSION.lock().await;
+    let sess = guard.as_mut().ok_or("not connected")?;
+    let tree = sess.tree.as_mut().ok_or("no share connected")?;
+    let entries: Vec<DirectoryEntry> = sess
+        .client
+        .list_directory(tree, &path)
+        .await
+        .map_err(err_str)?;
+    entries
+        .into_iter()
+        .find(|e| !e.is_directory)
+        .map(|e| e.size)
+        .ok_or_else(|| "file not found".to_string())
+}

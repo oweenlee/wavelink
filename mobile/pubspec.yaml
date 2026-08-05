@@ -42,7 +42,6 @@ dependencies:
   shared_preferences: ^2.3.0
   go_router: ^14.0.0
   http: ^1.2.0
-  smb_connect: ^0.0.9
   webdav_client: ^1.2.2
   lucide_icons_flutter: ^3.1.15
 dev_dependencies:

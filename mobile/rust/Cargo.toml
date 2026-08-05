@@ -16,6 +16,9 @@ arc-swap = "1"
 realfft = "3.5"
 lofty = "0.24"
 parking_lot = "0.12"
+# SMB 直挂：纯 Rust SMB2/3 客户端（替换 smb_connect，支持 guest 匿名访问）
+smb2 = "0.17"
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"] }
 
 # Android: 启用 Oboe 后端（Rust 引擎直驱 AAudio，替代 Kotlin 泵线程 + AudioTrack + Headless）
 # 注意: oboe crate 仅支持 Android，故必须在 target 级声明依赖，

@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../data/services/preferences_service.dart';
 import '../../../../data/services/smb_service.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../playback/view_models/playback_controller.dart';
+import '../view_models/library_provider.dart';
 
-class NasSettingsSheet extends StatefulWidget {
+class NasSettingsSheet extends ConsumerStatefulWidget {
   const NasSettingsSheet({super.key});
 
   @override
-  State<NasSettingsSheet> createState() => _NasSettingsSheetState();
+  ConsumerState<NasSettingsSheet> createState() => _NasSettingsSheetState();
 }
 
-class _NasSettingsSheetState extends State<NasSettingsSheet> {
+class _NasSettingsSheetState extends ConsumerState<NasSettingsSheet> {
   final _hostCtrl = TextEditingController();
   final _shareCtrl = TextEditingController();
   final _userCtrl = TextEditingController();
@@ -25,10 +29,16 @@ class _NasSettingsSheetState extends State<NasSettingsSheet> {
   void initState() {
     super.initState();
     final prefs = PreferencesService.instance;
-    _hostCtrl.text = prefs.nasHost ?? '';
-    _shareCtrl.text = prefs.nasShare ?? '';
-    _userCtrl.text = prefs.nasUsername ?? '';
-    _passCtrl.text = prefs.nasPassword;
+    // 默认预填（仅当用户没保存过配置时）：本机 Mac 调试共享 music → /Users/qin/Public/music。
+    // 用 qin 账户 + Mac 登录密码认证（密码不预填，需手输）。
+    const testHost = '192.168.110.27';
+    const testUser = 'qin';
+    const testPass = '';
+    const testShare = '/music';
+    _hostCtrl.text = prefs.nasHost?.isNotEmpty == true ? prefs.nasHost! : testHost;
+    _shareCtrl.text = prefs.nasShare?.isNotEmpty == true ? prefs.nasShare! : testShare;
+    _userCtrl.text = prefs.nasUsername?.isNotEmpty == true ? prefs.nasUsername! : testUser;
+    _passCtrl.text = prefs.nasPassword.isNotEmpty ? prefs.nasPassword : testPass;
     _enabled = prefs.nasEnabled;
     _nasType = prefs.nasType;
   }
@@ -87,9 +97,34 @@ class _NasSettingsSheetState extends State<NasSettingsSheet> {
         );
       }
       await SmbService.disconnect();
+    } else if (mounted) {
+      _showErrorSnackBar();
     }
 
     if (mounted) setState(() {});
+  }
+
+  /// 失败时展示具体错误，并带复制按钮方便反馈
+  void _showErrorSnackBar() {
+    final err = SmbService.lastError;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          err ?? 'NAS connection failed',
+          maxLines: 4,
+          overflow: TextOverflow.ellipsis,
+        ),
+        backgroundColor: AppTheme.danger,
+        action: err == null
+            ? null
+            : SnackBarAction(
+                label: 'Copy',
+                textColor: Colors.white,
+                onPressed: () =>
+                    Clipboard.setData(ClipboardData(text: err)),
+              ),
+      ),
+    );
   }
 
   Future<void> _saveAndConnect() async {
@@ -104,25 +139,36 @@ class _NasSettingsSheetState extends State<NasSettingsSheet> {
 
     // Connect to SMB if enabled
     if (_enabled && _hostCtrl.text.trim().isNotEmpty) {
+      setState(() => _connecting = true);
       final ok = await SmbService.connect(
         host: _hostCtrl.text.trim(),
         username: _userCtrl.text.trim(),
         password: _passCtrl.text,
       );
-      if (ok && mounted) {
+      if (!mounted) return;
+      if (ok) {
+        // 保存成功后自动扫描共享目录并导入曲库
+        final share = _shareCtrl.text.trim();
+        final before = ref.read(libraryProvider).importedSongs.length;
+        final scanned = share.isEmpty
+            ? false
+            : await ref.read(playbackControllerProvider).scanSmb(share);
+        final imported = ref.read(libraryProvider).importedSongs.length - before;
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('NAS connected'),
+            content: Text(
+              scanned && imported > 0
+                  ? 'NAS connected · imported $imported songs'
+                  : scanned
+                      ? 'NAS connected · no new audio found'
+                      : 'NAS connected · empty share path, songs not imported',
+            ),
             backgroundColor: AppTheme.brand,
           ),
         );
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('NAS connection failed'),
-            backgroundColor: AppTheme.danger,
-          ),
-        );
+        _showErrorSnackBar();
       }
     }
 
