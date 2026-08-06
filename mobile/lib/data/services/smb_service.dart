@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../domain/models/song.dart';
@@ -16,6 +17,10 @@ class SmbService {
   SmbService._();
 
   static bool _connected = false;
+
+  /// 当前已挂载的共享名（connectShare 成功时记录；会话重建/断开时清空）。
+  /// 避免每次下载重复挂载 tree。
+  static String? _mountedShare;
 
   /// 扫描进行中标记：期间禁止 connect/disconnect 重建或销毁会话，
   /// 否则扫描中的 read 会因 tree 被重置而报 "no share connected"。
@@ -37,6 +42,13 @@ class SmbService {
   }) async {
     // 扫描进行中：复用现有会话，不重建（重建会把 tree 重置为 None）
     if (_scanning && _connected) return true;
+    // 连接前网络检测：无网络直接给明确提示，不甩 "No route to host" 原始错误
+    final connectivity = await Connectivity().checkConnectivity();
+    if (connectivity.isEmpty || connectivity.contains(ConnectivityResult.none)) {
+      _connected = false;
+      lastError = '未连接网络：请先连上 Wi-Fi（需与 NAS 同一局域网）';
+      return false;
+    }
     try {
       await smb.smbConnect(
         host: host,
@@ -46,21 +58,41 @@ class SmbService {
         domain: domain,
       );
       _connected = true;
+      // 会话重建后 tree 被重置，需重新 connectShare 才能读文件
+      _mountedShare = null;
       lastError = null;
       return true;
     } catch (e) {
       debugPrint('[SMB] connect failed: $e');
       _connected = false;
-      lastError = '$e';
+      lastError = _friendlyConnectError('$e');
       return false;
     }
   }
 
   /// 挂载共享（后续 list/read 均相对该共享根目录）
+  /// 连接错误人性化：把底层 I/O 错误映射成可操作的提示。
+  /// iOS 本地网络权限无 API 可查（被拒时系统直接阻断连接，报
+  /// No route to host 等），只能引导去设置开启。
+  static String _friendlyConnectError(String raw) {
+    if (raw.contains('No route to host') || raw.contains('Network is unreachable')) {
+      return Platform.isIOS
+          ? '$raw\n\n无法到达主机：请确认 iPhone 已连上与 NAS 同一局域网的 Wi-Fi；'
+            '若首次连接弹出过“本地网络”权限提示请点允许，'
+            '若之前拒绝过，请到 设置 > 隐私与安全性 > 本地网络 中开启 WaveLink。'
+          : '$raw\n\n无法到达主机：请确认手机与 NAS 在同一局域网。';
+    }
+    if (raw.toLowerCase().contains('timed out') || raw.toLowerCase().contains('timeout')) {
+      return '$raw\n\n连接超时：请确认 NAS 已开机、SMB/文件共享已开启，且手机与 NAS 在同一局域网。';
+    }
+    return raw;
+  }
+
   static Future<bool> connectShare(String shareName) async {
     if (!_connected) return false;
     try {
       await smb.smbConnectShare(shareName: shareName);
+      _mountedShare = shareName;
       lastError = null;
       return true;
     } catch (e) {
@@ -68,6 +100,46 @@ class SmbService {
       lastError = '$e';
       return false;
     }
+  }
+
+  /// 保证 SMB 会话可用（播放/下载前的自愈入口）：
+  /// 未连接时用已保存的配置自动重连（测试连接后 disconnect、重启后
+  /// 会话未恢复等场景），并确保共享 tree 已挂载。返回是否就绪。
+  static Future<bool> ensureReady() async {
+    if (!_connected) {
+      final prefs = PreferencesService.instance;
+      final host = prefs.nasHost;
+      if (host == null || host.isEmpty) {
+        debugPrint('[SMB] ensureReady 失败：未配置 NAS host');
+        return false;
+      }
+      final ok = await connect(
+        host: host,
+        username: prefs.nasUsername ?? '',
+        password: prefs.nasPassword,
+      );
+      if (!ok) return false;
+    }
+    final sharePath = PreferencesService.instance.nasShare;
+    if (sharePath == null || sharePath.isEmpty) {
+      debugPrint('[SMB] ensureReady 失败：未配置 NAS 共享');
+      return false;
+    }
+    // 与 scanSmbLibrary 对齐：nasShare 可能填“共享名/子目录”，
+    // connectShare 只接受共享名（第一段），否则挂载失败导致无法播放。
+    final parts = sharePath.split('/').where((s) => s.isNotEmpty).toList();
+    if (parts.isEmpty) {
+      debugPrint('[SMB] ensureReady 失败：共享路径无效 ($sharePath)');
+      return false;
+    }
+    final shareName = parts.first;
+    // 已挂载同一共享则复用，否则（会话重建/首次）挂载
+    if (_mountedShare == shareName) return true;
+    final ok = await connectShare(shareName);
+    if (!ok) {
+      debugPrint('[SMB] ensureReady 失败：connectShare($shareName) 未成功: $lastError');
+    }
+    return ok;
   }
 
   static Future<void> disconnect() async {
@@ -79,6 +151,7 @@ class SmbService {
       debugPrint('[SMB] disconnect failed: $e');
     }
     _connected = false;
+    _mountedShare = null;
   }
 
   /// 列出服务器所有共享（返回共享名）
@@ -300,7 +373,28 @@ class SmbService {
   /// 播放时按需下载单曲到本地缓存，返回可播放的本地路径（已存在则直接复用）。
   /// 用于离线缓存关闭时按需拉取；缓存复用避免重复下载。
   static Future<String?> downloadToLocal(String smbPath) async {
-    if (!_connected || smbPath.isEmpty) return null;
+    if (smbPath.isEmpty) return null;
+    // 自愈：会话丢失（测试连接断开/重启等）时自动重连并挂载共享
+    if (!await ensureReady()) {
+      debugPrint('[SMB] downloadToLocal 中止：会话不可用 (lastError=$lastError)');
+      return null;
+    }
+    var path = await _doDownload(smbPath);
+    if (path == null) {
+      // 下载失败：连接可能已失效（尤其 iOS 后台回收后，缓存的 _mountedShare
+      // 会误判为就绪）。强制全量重连 + 重新挂载后重试一次。
+      debugPrint('[SMB] 首次下载失败，强制重连后重试 ($smbPath)');
+      _connected = false;
+      _mountedShare = null;
+      if (await ensureReady()) {
+        path = await _doDownload(smbPath);
+      }
+    }
+    return path;
+  }
+
+  /// 实际下载单曲到本地缓存，返回可播放路径；失败返回 null。
+  static Future<String?> _doDownload(String smbPath) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final cacheDir = Directory('${appDir.path}/.smb_cache');
@@ -310,7 +404,9 @@ class SmbService {
       if (await localFile.exists() && await localFile.length() > 0) {
         return localFile.path;
       }
-      final sink = localFile.openWrite();
+      // 先写临时文件再原子改名：避免失败时残留半截缓存被后续误命中
+      final tmpFile = File('${localFile.path}.part');
+      final sink = tmpFile.openWrite();
       try {
         await for (final chunk in smb.smbReadFileStream(path: smbPath)) {
           sink.add(chunk);
@@ -318,6 +414,13 @@ class SmbService {
       } finally {
         await sink.close();
       }
+      // 下载完整性校验：空文件视为失败
+      if (await tmpFile.length() == 0) {
+        await tmpFile.delete();
+        debugPrint('[SMB] 下载结果为空文件 ($smbPath)');
+        return null;
+      }
+      await tmpFile.rename(localFile.path);
       return localFile.path;
     } catch (e) {
       debugPrint('[SMB] downloadToLocal failed ($smbPath): $e');
@@ -327,7 +430,7 @@ class SmbService {
 
   /// 从 NAS 读取音频文件并复制到本地 Documents/Imported/
   static Future<String?> copyToLocal(String smbPath) async {
-    if (!_connected) return null;
+    if (!await ensureReady()) return null;
 
     try {
       final appDir = await getApplicationDocumentsDirectory();

@@ -107,7 +107,8 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
           ),
         );
       }
-      await SmbService.disconnect();
+      // 测试成功后不断开会话：保留给后续 SMB 播放直接用
+      // （原来 disconnect 会销毁会话，导致之后所有 SMB 歌无法播放）
     } else if (mounted) {
       _showErrorSnackBar();
     }

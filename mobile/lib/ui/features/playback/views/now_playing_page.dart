@@ -11,6 +11,7 @@ import '../view_models/audio_player_provider.dart';
 import '../view_models/queue_provider.dart';
 import '../../library/view_models/library_provider.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/animations/app_animations.dart';
 import '../../../core/widgets/progress_slider_widget.dart';
 import '../../../core/widgets/album_cover.dart';
 import '../../../core/widgets/lyrics_overlay.dart';
@@ -160,17 +161,32 @@ class _NowPlayingPageState extends ConsumerState<NowPlayingPage>
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              _PauseAwareCover(
-                                isPlaying: playerState.isPlaying,
-                                child: AlbumCover(
-                                  color: song.dominantColor,
-                                  coverUrl: song.coverUrl,
+                              // 入场：封面缩放淡入；切歌：封面交叉淡化
+                              AppAnim.popIn(
+                                _PauseAwareCover(
+                                  isPlaying: playerState.isPlaying,
+                                  child: AnimatedSwitcher(
+                                    duration: AppAnim.normal,
+                                    switchInCurve: AppAnim.curve,
+                                    switchOutCurve: AppAnim.curveIn,
+                                    child: AlbumCover(
+                                      key: ValueKey('np_cover_${song.id}'),
+                                      color: song.dominantColor,
+                                      coverUrl: song.coverUrl,
+                                    ),
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 20),
-                              _SongInfo(song: song),
+                              AppAnim.entrance(
+                                _SongInfo(song: song),
+                                delay: const Duration(milliseconds: 80),
+                              ),
                               const SizedBox(height: 12),
-                              _Tags(player: player, song: song),
+                              AppAnim.entrance(
+                                _Tags(player: player, song: song),
+                                delay: const Duration(milliseconds: 140),
+                              ),
                             ],
                           ),
                         ),
@@ -180,7 +196,11 @@ class _NowPlayingPageState extends ConsumerState<NowPlayingPage>
                         child: _ProgressRow(player: player, song: song),
                       ),
                       const SizedBox(height: 4),
-                      _TransportRow(player: player),
+                      AppAnim.entrance(
+                        _TransportRow(player: player),
+                        delay: const Duration(milliseconds: 200),
+                        slideY: 0.15,
+                      ),
                       const SizedBox(height: 18),
                       _BottomToolbar(
                         player: player,
@@ -825,10 +845,21 @@ class _PlayBtn extends StatelessWidget {
             BoxShadow(color: accent.withValues(alpha: 0.35), blurRadius: 14),
           ],
         ),
-        child: Icon(
-          isPlaying ? Icons.pause : Icons.play_arrow,
-          color: Colors.white,
-          size: 30,
+        // 播放/暂停图标 scale+fade 过渡
+        child: AnimatedSwitcher(
+          duration: AppAnim.fast,
+          switchInCurve: AppAnim.curve,
+          switchOutCurve: AppAnim.curveIn,
+          transitionBuilder: (child, anim) => ScaleTransition(
+            scale: anim,
+            child: FadeTransition(opacity: anim, child: child),
+          ),
+          child: Icon(
+            key: ValueKey('np_play_$isPlaying'),
+            isPlaying ? Icons.pause : Icons.play_arrow,
+            color: Colors.white,
+            size: 30,
+          ),
         ),
       ),
     );

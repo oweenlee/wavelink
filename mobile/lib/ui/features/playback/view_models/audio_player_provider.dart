@@ -257,6 +257,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // 注意：上面已 pause 静音，回滚需 resume 恢复旧歌播放。
     if (resolvedPath == null) {
       debugPrint('[Audio] 无法播放 ${song.id}（resolvedPath=null），回滚到上一曲');
+      ref.read(playErrorProvider.notifier).report(
+        '无法播放「${song.title}」：文件不存在或下载失败',
+      );
       if (fallbackSong != null) {
         state = state.copyWith(currentSong: fallbackSong);
         await _engineRepo.resume();
@@ -781,4 +784,18 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
 final playerProvider = NotifierProvider<PlayerNotifier, PlayerState>(
   PlayerNotifier.new,
+);
+
+/// 播放失败一次性提示（文件不存在/下载失败等）：PlayerNotifier 上报，
+/// UI 层 ref.listen 弹 SnackBar 后 clear，避免静默回滚让用户困惑。
+class PlayErrorNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void report(String msg) => state = msg;
+  void clear() => state = null;
+}
+
+final playErrorProvider = NotifierProvider<PlayErrorNotifier, String?>(
+  PlayErrorNotifier.new,
 );

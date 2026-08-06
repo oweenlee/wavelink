@@ -12,6 +12,7 @@ import '../../playback/view_models/playback_controller.dart';
 import '../../playback/view_models/audio_player_provider.dart';
 import '../../playback/view_models/queue_provider.dart';
 import '../view_models/library_provider.dart';
+import '../../../core/animations/app_animations.dart';
 import '../view_models/library_header_notifier.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/song_tile.dart';
@@ -48,6 +49,22 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     final l10n = AppLocalizations.of(context);
     final headerState = ref.watch(libraryHeaderProvider);
     final headerNotifier = ref.read(libraryHeaderProvider.notifier);
+
+    // 播放失败提示（文件不存在/下载失败）：弹一次即清，
+    // 避免静默回滚让用户困惑为什么没播。
+    ref.listen(playErrorProvider, (prev, next) {
+      if (next != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(next),
+            backgroundColor: AppTheme.danger,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        ref.read(playErrorProvider.notifier).clear();
+      }
+    });
 
     return Column(
       children: [
@@ -314,20 +331,23 @@ class _SongsTab extends ConsumerWidget {
       itemBuilder: (context, index) {
         final song = displayed[index];
         final isCurrent = queueState.currentSong?.id == song.id;
-        return SongTile(
-          song: song,
-          isCurrent: isCurrent,
-          isPlaying: isPlaying && isCurrent,
-          trackNumber: trackNumbers[song.id] ?? index + 1,
-          onTap: () => player.playSong(song),
-          onMore: () => _showContextMenu(context, song, player),
-          trailing: player.isSongFavorite(song.id)
-              ? const Icon(
-                  LucideIcons.heart,
-                  size: 16,
-                  color: AppTheme.danger,
-                )
-              : null,
+        return AppAnim.listEntrance(
+          SongTile(
+            song: song,
+            isCurrent: isCurrent,
+            isPlaying: isPlaying && isCurrent,
+            trackNumber: trackNumbers[song.id] ?? index + 1,
+            onTap: () => player.playSong(song),
+            onMore: () => _showContextMenu(context, song, player),
+            trailing: player.isSongFavorite(song.id)
+                ? const Icon(
+                    LucideIcons.heart,
+                    size: 16,
+                    color: AppTheme.danger,
+                  )
+                : null,
+          ),
+          index,
         );
       },
     );
@@ -377,7 +397,8 @@ class _AlbumsTab extends ConsumerWidget {
         final isPlayingAlbum =
             queueState.currentSong?.album == name && isPlaying;
 
-        return GestureDetector(
+        return AppAnim.listEntrance(
+        GestureDetector(
           behavior: HitTestBehavior.opaque, // 行内空白也可点
           onTap: () => context.push(
             '/album',
@@ -450,6 +471,8 @@ class _AlbumsTab extends ConsumerWidget {
               ),
             ],
           ),
+        ),
+          index,
         );
       },
     );
@@ -542,7 +565,8 @@ class _ArtistsTab extends ConsumerWidget {
                   artistSongs.map((s) => s.album).toSet().length;
               final artistColor = artistSongs.first.dominantColor;
 
-              return GestureDetector(
+              return AppAnim.listEntrance(
+              GestureDetector(
                 behavior: HitTestBehavior.opaque, // 行内空白也可点
                 onTap: () => context.push(
                   '/artist',
@@ -605,6 +629,8 @@ class _ArtistsTab extends ConsumerWidget {
                     ],
                   ),
                 ),
+              ),
+                index,
               );
             },
             childCount: artistNames.length,
@@ -651,7 +677,8 @@ class _PlaylistsTab extends ConsumerWidget {
       itemCount: entries.length + 1,
       itemBuilder: (context, index) {
         if (index == 0) {
-          return Container(
+          return AppAnim.listEntrance(
+          Container(
             margin: const EdgeInsets.only(bottom: 16),
             child: Row(
               children: [
@@ -726,6 +753,8 @@ class _PlaylistsTab extends ConsumerWidget {
                 ),
               ],
             ),
+          ),
+            index,
           );
         }
 
@@ -733,7 +762,8 @@ class _PlaylistsTab extends ConsumerWidget {
         // margin 放外层 Padding（项间空隙不误触）；InkWell 默认 opaque 命中整个
         // 行区域（含文字/封面之外的空白），并带水波纹反馈——裸 GestureDetector
         // 只响应实际渲染元素，点行内空白会"无响应"。
-        return Padding(
+        return AppAnim.listEntrance(
+        Padding(
           padding: const EdgeInsets.only(bottom: 10),
           child: Material(
             color: Colors.transparent,
@@ -805,6 +835,8 @@ class _PlaylistsTab extends ConsumerWidget {
               ),
             ),
           ),
+        ),
+          index,
         );
       },
     );

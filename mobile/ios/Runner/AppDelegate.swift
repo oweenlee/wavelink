@@ -454,39 +454,63 @@ class AudioOutputManager {
     }
 
     /// 导出 ipod-library:// 资产到 Documents/Exported/，已存在则直接复用。
-    /// 使用 passthrough 预设避免重编码（源文件格式各异，输出扩展名从 URL 推断）。
+    /// 优先 passthrough 直通（不重编码保源质）；输出类型必须经兼容性校验
+    /// （否则 setOutputFileType 抛 NSInvalidArgumentException 崩溃），
+    /// 直通不可行时回退 M4A 转码（任意音频资产均兼容）。
     private func resolveLibraryAsset(urlString: String, result: @escaping FlutterResult) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            guard let url = URL(string: urlString) else {
-                DispatchQueue.main.async { result(nil) }
-                return
-            }
-            // 缓存名：URL hash + 原始扩展名（m4a/mp3 等），同名直接复用
-            let ext = url.pathExtension.isEmpty ? "m4a" : url.pathExtension
+        guard let url = URL(string: urlString) else {
+            result(nil)
+            return
+        }
+        Task.detached(priority: .userInitiated) {
+            let asset = AVURLAsset(url: url)
             let base = String(url.absoluteString.hashValue & 0x7fffffff)
             let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("Exported", isDirectory: true)
-            let dest = dir.appendingPathComponent("\(base).\(ext)")
-
-            if FileManager.default.fileExists(atPath: dest.path) {
-                DispatchQueue.main.async { result(dest.path) }
-                return
-            }
-
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let asset = AVURLAsset(url: url)
-            guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else {
-                DispatchQueue.main.async { result(nil) }
-                return
-            }
-            session.outputURL = dest
-            session.outputFileType = self.outputFileType(forExt: ext)
-            session.exportAsynchronously {
-                let ok = session.status == .completed
-                DispatchQueue.main.async {
-                    result(ok ? dest.path : nil)
+
+            // 直通导出：输出类型必须在该 session 的兼容列表内，否则 setOutputFileType
+            // 抛 NSInvalidArgumentException 崩溃。优先 URL 扩展名对应类型，否则取首个兼容类型。
+            if let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) {
+                let compatible = (try? await session.compatibleFileTypes) ?? []
+                let urlExt = url.pathExtension.lowercased()
+                let preferred = self.outputFileType(forExt: urlExt.isEmpty ? "m4a" : urlExt)
+                let finalType: AVFileType? = compatible.contains(preferred)
+                    ? preferred
+                    : compatible.first
+                if let ft = finalType {
+                    let dest = dir.appendingPathComponent("\(base).\(self.extForFileType(ft))")
+                    if FileManager.default.fileExists(atPath: dest.path) {
+                        await MainActor.run { result(dest.path) }
+                        return
+                    }
+                    session.outputURL = dest
+                    session.outputFileType = ft
+                    await session.export()
+                    if session.status == .completed {
+                        await MainActor.run { result(dest.path) }
+                        return
+                    }
                 }
             }
+
+            // 直通不可行（类型不兼容/DRM 等）：回退 M4A 转码
+            let m4aDest = dir.appendingPathComponent("\(base).m4a")
+            if FileManager.default.fileExists(atPath: m4aDest.path) {
+                await MainActor.run { result(m4aDest.path) }
+                return
+            }
+            if let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) {
+                session.outputURL = m4aDest
+                session.outputFileType = .m4a
+                await session.export()
+                if session.status == .completed {
+                    await MainActor.run { result(m4aDest.path) }
+                    return
+                }
+            }
+            // 全部失败（如 Apple Music DRM 保护曲目）：返回 nil，Dart 侧提示无法播放
+            await MainActor.run { result(nil) }
         }
     }
 
@@ -501,6 +525,20 @@ class AudioOutputManager {
         case "mp4": return .mp4
         case "opus", "ogg": return .m4a
         default: return .m4a
+        }
+    }
+
+    /// AVFileType → 文件扩展名（dest 命名对齐实际容器类型用）
+    private func extForFileType(_ type: AVFileType) -> String {
+        switch type {
+        case .mp3: return "mp3"
+        case .m4a: return "m4a"
+        case .caf: return "caf"
+        case .wav: return "wav"
+        case .aiff: return "aiff"
+        case .mov: return "mov"
+        case .mp4: return "mp4"
+        default: return "m4a"
         }
     }
 

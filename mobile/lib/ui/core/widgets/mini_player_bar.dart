@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/playback/view_models/playback_controller.dart';
 import '../../features/playback/view_models/audio_player_provider.dart';
 import '../../features/playback/view_models/queue_provider.dart';
+import '../animations/app_animations.dart';
 import '../theme/app_theme.dart';
 import 'album_cover.dart';
 
@@ -24,7 +25,9 @@ class MiniPlayerBar extends ConsumerWidget {
     final accent = AppTheme.accentFallback;
     return AccentScope(
       accent: accent,
-      child: GestureDetector(
+      // 首次出现：上滑淡入（Animate 状态随 rebuild 保留，只播一次）
+      child: AppAnim.entrance(
+        GestureDetector(
         onTap: onTap,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -68,42 +71,62 @@ class MiniPlayerBar extends ConsumerWidget {
                   ),
                   child: Row(
                     children: [
-                      WlCover(
-                        coverUrl: song.coverUrl,
-                        fallbackColor: song.dominantColor,
-                        borderRadius: 6,
-                        width: 36,
-                        height: 36,
+                      // 切歌封面交叉淡化（key=song.id，仅切歌时过渡）
+                      AnimatedSwitcher(
+                        duration: AppAnim.normal,
+                        switchInCurve: AppAnim.curve,
+                        switchOutCurve: AppAnim.curveIn,
+                        child: WlCover(
+                          key: ValueKey('mini_cover_${song.id}'),
+                          coverUrl: song.coverUrl,
+                          fallbackColor: song.dominantColor,
+                          borderRadius: 6,
+                          width: 36,
+                          height: 36,
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              song.title,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: AppTheme.textPrimary,
+                        child: AnimatedSwitcher(
+                          duration: AppAnim.normal,
+                          switchInCurve: AppAnim.curve,
+                          switchOutCurve: AppAnim.curveIn,
+                          transitionBuilder: (child, anim) => SlideTransition(
+                            position: Tween<Offset>(
+                              begin: const Offset(0, 0.35),
+                              end: Offset.zero,
+                            ).animate(anim),
+                            child: FadeTransition(opacity: anim, child: child),
+                          ),
+                          child: Column(
+                            key: ValueKey('mini_info_${song.id}'),
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                song.title,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppTheme.textPrimary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              song.artist,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: AppTheme.textSecondary,
+                              Text(
+                                song.artist,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.textSecondary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                      // 播放/暂停 — 对齐播放页 _PlayBtn：accent 填充圆形 + 白色 Material 图标
+                      // 播放/暂停 — 图标 scale 过渡（对齐播放页 _PlayBtn）
                       GestureDetector(
                         onTap: () => player.togglePlay(),
                         child: Container(
@@ -119,12 +142,22 @@ class MiniPlayerBar extends ConsumerWidget {
                               ),
                             ],
                           ),
-                          child: Icon(
-                            playerState.isPlaying
-                                ? Icons.pause
-                                : Icons.play_arrow,
-                            color: Colors.white,
-                            size: 22,
+                          child: AnimatedSwitcher(
+                            duration: AppAnim.fast,
+                            switchInCurve: AppAnim.curve,
+                            switchOutCurve: AppAnim.curveIn,
+                            transitionBuilder: (child, anim) => ScaleTransition(
+                              scale: anim,
+                              child: FadeTransition(opacity: anim, child: child),
+                            ),
+                            child: Icon(
+                              key: ValueKey('mini_play_${playerState.isPlaying}'),
+                              playerState.isPlaying
+                                  ? Icons.pause
+                                  : Icons.play_arrow,
+                              color: Colors.white,
+                              size: 22,
+                            ),
                           ),
                         ),
                       ),
@@ -154,6 +187,8 @@ class MiniPlayerBar extends ConsumerWidget {
             ),
           ],
         ),
+        ),
+        slideY: 0.6,
       ),
     );
   }
