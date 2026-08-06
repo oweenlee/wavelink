@@ -34,7 +34,10 @@ class SongTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
+    // opaque：整个行区域（含文字/封面的空白间隙）都可点，
+    // 裸 GestureDetector（deferToChild）只有实际渲染元素响应
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

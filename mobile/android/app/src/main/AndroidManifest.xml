@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- 读取设备音乐库（Android 13+） -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- 联网（SMB/NAS/流式源；release manifest 之前缺失，debug 包自带故未暴露） -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- 读取外部存储（Android 12 及以下） -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"

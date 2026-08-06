@@ -155,7 +155,8 @@ class SmbService {
           files.add((childPath, entry.name, entry.size.toInt()));
         }
       }
-      // 子目录串行递归（层级浅），文件并行下载（与 Rust 读取池大小对齐）
+      // 子目录串行递归（保持目录遍历顺序稳定），文件并行下载但结果按
+      // 列表顺序收集——并发 worker 按完成顺序 add 会导致每次扫描排序不同。
       final buffer = <Song>[];
       void flush() {
         if (buffer.isNotEmpty) {
@@ -164,25 +165,28 @@ class SmbService {
         }
       }
 
+      for (final d in dirs) {
+        await _scanDirectory(d, songs, onBatch);
+      }
+
+      // 并行下载，结果按下标收集后按序输出（顺序与目录条目一致）
+      final results = List<Song?>.filled(files.length, null);
       var next = 0;
       Future<void> worker() async {
         while (next < files.length) {
           final i = next++;
           final f = files[i];
-          final song = await _smbFileToSong(f.$1, f.$2, f.$3);
-          if (song != null) {
-            songs.add(song);
-            buffer.add(song);
-            if (buffer.length >= 20) flush();
-          }
+          results[i] = await _smbFileToSong(f.$1, f.$2, f.$3);
         }
       }
-
-      // 子目录递归与文件下载并行进行；连接并发由 Rust 读取池信号量统一控制为 8
-      await Future.wait([
-        ...dirs.map((d) => _scanDirectory(d, songs, onBatch)),
-        ...List.generate(8, (_) => worker()),
-      ]);
+      await Future.wait(List.generate(8, (_) => worker()));
+      for (final s in results) {
+        if (s != null) {
+          songs.add(s);
+          buffer.add(s);
+          if (buffer.length >= 20) flush();
+        }
+      }
       flush();
     } catch (e) {
       debugPrint('[SMB] scan directory $relPath failed: $e');

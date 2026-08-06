@@ -211,12 +211,19 @@ class PlayerNotifier extends Notifier<PlayerState> {
   }
 
   void playSong(Song song) {
+    final previous = state.currentSong;
     state = state.copyWith(currentSong: song, position: 0.0);
-    _playCurrent();
+    _playCurrent(fallbackSong: previous);
     saveResume();
   }
 
-  Future<void> _playCurrent({double initialSeekMs = 0}) async {
+  /// [fallbackSong]：切歌时传入旧曲。若新歌路径解析失败（SMB 下载失败/
+  /// 文件不存在等），引擎根本没切歌（还在播 [fallbackSong]），此时回滚 UI
+  /// 恢复旧曲，避免"底部横条变了但声音没变"的错位。
+  Future<void> _playCurrent({
+    double initialSeekMs = 0,
+    Song? fallbackSong,
+  }) async {
     final song = state.currentSong;
     if (song == null) return;
     final token = ++_playToken;
@@ -224,6 +231,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
     _progressTimer?.cancel();
     state = state.copyWith(position: 0.0);
 
+    // 立即静音当前声音（Rust 引擎 pause 保留输出流）：否则在解析/下载新歌
+    // 期间旧歌继续响，切换才有延迟感；且切歌瞬间旧 ringbuf 被覆盖会爆音。
+    await _engineRepo.pause();
     await _nativeAudio.stop();
     if (token != _playToken || !ref.mounted) return;
 
@@ -242,8 +252,21 @@ class PlayerNotifier extends Notifier<PlayerState> {
     }
     if (token != _playToken || !ref.mounted) return;
 
+    // 路径解析失败（SMB 下载失败/文件不存在/流式源不可用）→ 引擎没切歌，
+    // 回滚 UI 到仍在播放的旧曲，避免"横条变了但音源没变"的错位。
+    // 注意：上面已 pause 静音，回滚需 resume 恢复旧歌播放。
+    if (resolvedPath == null) {
+      debugPrint('[Audio] 无法播放 ${song.id}（resolvedPath=null），回滚到上一曲');
+      if (fallbackSong != null) {
+        state = state.copyWith(currentSong: fallbackSong);
+        await _engineRepo.resume();
+        saveResume();
+      }
+      return;
+    }
+
     // 探测文件采样率（轻量头部读取）：供乐器面板显示信号链，并复用于 bit-perfect 协调。
-    if (resolvedPath != null && _engineRepo.rustAvailable) {
+    if (_engineRepo.rustAvailable) {
       _currentFileRate = await _engineRepo.probeSampleRate(resolvedPath);
       if (token != _playToken || !ref.mounted) return;
     } else {
@@ -262,11 +285,13 @@ class PlayerNotifier extends Notifier<PlayerState> {
       }
     }
 
-    if (resolvedPath != null && _engineRepo.rustAvailable) {
+    if (_engineRepo.rustAvailable) {
       debugPrint('[Audio] engine play: $resolvedPath');
       await _engineRepo.play(resolvedPath);
     } else {
-      debugPrint('[Audio] engine play 跳过: resolvedPath=$resolvedPath rust=${_engineRepo.rustAvailable}');
+      debugPrint(
+        '[Audio] engine play 跳过: rust=${_engineRepo.rustAvailable}',
+      );
     }
     if (token != _playToken || !ref.mounted) return;
 
@@ -541,6 +566,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
   Future<void> _analyzeCurrent() async {
     final song = state.currentSong;
     if (song == null || !_engineRepo.rustAvailable) return;
+    // 无本地文件路径（SMB 索引/流式源下载失败等）无法分析，跳过而非强解包崩溃
+    if (song.path == null || song.path!.isEmpty) return;
     if (_engineRepo.hasAnalysis(song.id)) return;
     try {
       await _engineRepo.analyzeFile(song.id, song.path!);

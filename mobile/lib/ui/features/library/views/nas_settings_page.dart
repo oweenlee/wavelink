@@ -93,6 +93,8 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
       final shares = await SmbService.listShares();
       if (mounted) {
         final l10n = AppLocalizations.of(context);
+        // 先清掉可能堆积的旧 SnackBar，再显示新结果
+        ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -101,6 +103,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
               overflow: TextOverflow.ellipsis,
             ),
             backgroundColor: AccentScope.of(context),
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -112,13 +115,15 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     if (mounted) setState(() {});
   }
 
-  /// 失败时展示具体错误，并带复制按钮方便反馈
+  /// 失败时展示具体错误，并带复制按钮方便反馈。
+  /// 固定时长 + 先清队列，避免多次失败后 SnackBar 排队堆积"一直不消失"。
   void _showErrorSnackBar() {
     final l10n = AppLocalizations.of(context);
     final err = SmbService.lastError;
     final text = err == null
         ? l10n.nasConnectionFailedTitle
         : '$err\n\n${l10n.nasCheckHint}';
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -127,6 +132,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
           overflow: TextOverflow.ellipsis,
         ),
         backgroundColor: AppTheme.danger,
+        duration: const Duration(seconds: 5),
         action: err == null
             ? null
             : SnackBarAction(

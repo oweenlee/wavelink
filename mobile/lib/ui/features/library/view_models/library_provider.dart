@@ -154,17 +154,32 @@ class LibraryNotifier extends Notifier<LibraryState> {
 
       if (scannedSongs.isEmpty) return false;
 
-      // 合并到已有列表：扫描到的新 path 替换已有，保留已有的其他歌曲
-      final scannedPaths = scannedSongs
-          .where((s) => s.path != null)
-          .map((s) => s.path!)
-          .toSet();
-      final merged = [
-        ...scannedSongs,
-        ...state.importedSongs.where(
-          (s) => s.path == null || !scannedPaths.contains(s.path),
-        ),
-      ];
+      // 合并到已有列表：已有歌曲保持原位置（扫描到同 path 的新版就地替换），
+      // 扫描到的新歌追加到末尾——保证重启/重复扫描后排序稳定。
+      final byPath = {
+        for (final s in scannedSongs)
+          if (s.path != null) s.path!: s,
+      };
+      final merged = <Song>[];
+      final mergedPaths = <String>{};
+      for (final s in state.importedSongs) {
+        final p = s.path;
+        if (p != null && byPath.containsKey(p)) {
+          // 同 path 扫描到新版本：就地替换，保持位置
+          merged.add(byPath[p]!);
+          mergedPaths.add(p);
+        } else {
+          // 未被替换的已有歌曲（含 NAS 索引 path==null 的歌）原样保留
+          merged.add(s);
+          if (p != null) mergedPaths.add(p);
+        }
+      }
+      // 追加扫描到的新歌（已有列表没有的 path）
+      for (final s in scannedSongs) {
+        if (s.path == null || !mergedPaths.contains(s.path)) {
+          merged.add(s);
+        }
+      }
 
       state = state.copyWith(importedSongs: merged, scanDone: true);
       songRepo.setCachedSongs(merged);
@@ -187,10 +202,10 @@ class LibraryNotifier extends Notifier<LibraryState> {
           .map((s) => s.path!)
           .toSet();
       final merged = [
-        ...songs,
         ...state.importedSongs.where(
           (s) => s.path == null || !newPaths.contains(s.path),
         ),
+        ...songs,
       ];
       state = state.copyWith(importedSongs: merged);
       songRepo.setCachedSongs(merged);
@@ -284,12 +299,13 @@ Future<bool> scanSmb(String sharePath) async {
   }
 }
 
-  /// 按歌曲 id 去重合并传入歌曲与现有曲库。NAS 索引歌曲 path 为 null，
-  /// 用 id（如 `smb_<hash>`）保证幂等，避免跨批次重复入库。
+  /// 按歌曲 id 去重合并传入歌曲与现有曲库，保持已有顺序、新歌追加。
+  /// NAS 索引歌曲 path 为 null，用 id（如 `smb_<hash>`）保证幂等，
+  /// 避免跨批次重复入库；并发批次顺序不稳定时也不会打乱已有顺序。
   List<Song> _mergeById(List<Song> incoming) {
     final seen = <String>{};
     final out = <Song>[];
-    for (final s in [...incoming, ...state.importedSongs]) {
+    for (final s in [...state.importedSongs, ...incoming]) {
       if (seen.add(s.id)) out.add(s);
     }
     return out;

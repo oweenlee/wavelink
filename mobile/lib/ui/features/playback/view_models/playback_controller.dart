@@ -34,10 +34,21 @@ class PlaybackController {
   /// 初始化队列并尝试恢复断点（onSongsLoaded 回调在扫描无新歌时不触发）。
   /// 注意：discoverSongs 成功时其内部回调已触发过 [_onLibrarySongsLoaded]，
   /// 这里用 [_resumeRestored] 守卫兜底，避免二次整体替换覆盖已恢复的队列。
+  /// 最后：若配置过 NAS（enabled），自动重连并增量导入，无需手动再点。
   Future<void> _bootstrapLibrary() async {
     await _library.discoverSongs();
     if (!_resumeRestored) {
       _onLibrarySongsLoaded();
+    }
+    final prefs = _prefsRepo;
+    final host = prefs.nasHost;
+    final share = prefs.nasShare;
+    if (prefs.nasEnabled &&
+        host != null &&
+        host.isNotEmpty &&
+        share != null &&
+        share.isNotEmpty) {
+      _library.startNasImport(share);
     }
   }
 

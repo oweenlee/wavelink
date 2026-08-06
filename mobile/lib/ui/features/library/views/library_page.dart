@@ -378,6 +378,7 @@ class _AlbumsTab extends ConsumerWidget {
             queueState.currentSong?.album == name && isPlaying;
 
         return GestureDetector(
+          behavior: HitTestBehavior.opaque, // 行内空白也可点
           onTap: () => context.push(
             '/album',
             extra: Album(
@@ -542,6 +543,7 @@ class _ArtistsTab extends ConsumerWidget {
               final artistColor = artistSongs.first.dominantColor;
 
               return GestureDetector(
+                behavior: HitTestBehavior.opaque, // 行内空白也可点
                 onTap: () => context.push(
                   '/artist',
                   extra: {'name': name, 'color': artistColor},
@@ -728,66 +730,79 @@ class _PlaylistsTab extends ConsumerWidget {
         }
 
         final pl = entries[index - 1];
-        return GestureDetector(
-          onTap: () => context.push(
-            '/song-list',
-            extra: {
-              'title': pl.name,
-              'songs': pl.songs,
-              'accentColor': pl.color,
-              'isFavoriteList': pl.builtIn,
-            },
-          ),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              children: [
-                WlCover(
-                  coverUrl: pl.songs.isNotEmpty ? pl.songs.first.coverUrl : null,
-                  fallbackColor: pl.color,
-                  borderRadius: 10,
-                  width: 48,
-                  height: 48,
-                  placeholder: Center(
-                    child: Icon(
-                      pl.builtIn
-                          ? LucideIcons.heart
-                          : LucideIcons.listMusic,
-                      color: Colors.white.withValues(alpha: 0.6),
-                      size: 22,
+        // margin 放外层 Padding（项间空隙不误触）；InkWell 默认 opaque 命中整个
+        // 行区域（含文字/封面之外的空白），并带水波纹反馈——裸 GestureDetector
+        // 只响应实际渲染元素，点行内空白会"无响应"。
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => context.push(
+                '/song-list',
+                extra: {
+                  'title': pl.name,
+                  'songs': pl.songs,
+                  'accentColor': pl.color,
+                  'isFavoriteList': pl.builtIn,
+                },
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                child: Row(
+                  children: [
+                    WlCover(
+                      coverUrl: pl.songs.isNotEmpty
+                          ? pl.songs.first.coverUrl
+                          : null,
+                      fallbackColor: pl.color,
+                      borderRadius: 10,
+                      width: 48,
+                      height: 48,
+                      placeholder: Center(
+                        child: Icon(
+                          pl.builtIn
+                              ? LucideIcons.heart
+                              : LucideIcons.listMusic,
+                          color: Colors.white.withValues(alpha: 0.6),
+                          size: 22,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        pl.name,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                          color: AppTheme.textPrimary,
-                        ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            pl.name,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            l10n.songsCount(pl.count),
+                            style: WlText.mono(
+                              fontSize: 11,
+                              color: AppTheme.textTertiary,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 3),
-                      Text(
-                        l10n.songsCount(pl.count),
-                        style: WlText.mono(
-                          fontSize: 11,
-                          color: AppTheme.textTertiary,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const Icon(
+                      LucideIcons.chevronRight,
+                      color: AppTheme.textTertiary,
+                      size: 18,
+                    ),
+                  ],
                 ),
-                const Icon(
-                  LucideIcons.chevronRight,
-                  color: AppTheme.textTertiary,
-                  size: 18,
-                ),
-              ],
+              ),
             ),
           ),
         );

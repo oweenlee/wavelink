@@ -396,7 +396,20 @@ void main() {
   });
 
   group('有效 bit-perfect 判定', () {
-    /// 引擎可用 + 单曲库 + 创建真实文件，返回 (container, controller, engine)
+    /// 轮询等待条件成立（曲库扫描/播放装载/遥测轮询都是异步的，固定 delay 在慢机器上会 flake）
+    Future<void> waitUntil(
+      bool Function() cond, {
+      Duration timeout = const Duration(seconds: 3),
+    }) async {
+      final deadline = DateTime.now().add(timeout);
+      while (!cond()) {
+        if (DateTime.now().isAfter(deadline)) break;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    }
+
+    /// 引擎可用 + 单曲库 + 创建真实文件，返回 (container, controller, engine)。
+    /// 已等曲库扫描完成（currentSong 就绪），调用方可直接 play。
     (ProviderContainer, PlaybackController, _EngineAvailableMock)
         buildPlayable() {
       final engine = _EngineAvailableMock()..outputMode = 1;
@@ -420,9 +433,10 @@ void main() {
 
     test('速率匹配 + 无 DSP → 有效（非 Android 平台不要求独占模式）', () async {
       final (_, p, _) = buildPlayable();
+      await waitUntil(() => p.currentSong != null); // 等曲库扫描完成
       p.setBitPerfect(true);
       p.play();
-      await Future<void>.delayed(const Duration(milliseconds: 50)); // 等遥测轮询
+      await waitUntil(() => p.telemetry.fileRate == 44100);
 
       check(p.telemetry.fileRate).equals(44100);
       check(p.telemetry.outputRate).equals(44100);
@@ -431,9 +445,10 @@ void main() {
 
     test('DSP 开启 → 非有效（引擎会自动旁路，UI 如实反映）', () async {
       final (container, p, _) = buildPlayable();
+      await waitUntil(() => p.currentSong != null);
       p.setBitPerfect(true);
       p.play();
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await waitUntil(() => p.telemetry.fileRate == 44100);
       check(p.effectiveBitPerfect).isTrue();
 
       container.read(dspProvider.notifier).toggleDspEnabled();
@@ -442,10 +457,11 @@ void main() {
 
     test('速率不匹配（重采样中）→ 非有效', () async {
       final (_, p, engine) = buildPlayable();
+      await waitUntil(() => p.currentSong != null);
       engine.hwRate = 48000; // 引擎按 48k 输出，文件 44.1k → 重采样
       p.setBitPerfect(true);
       p.play();
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await waitUntil(() => p.telemetry.outputRate == 48000);
 
       check(p.telemetry.outputRate).equals(48000);
       check(p.effectiveBitPerfect).isFalse();

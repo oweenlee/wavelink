@@ -10,7 +10,7 @@
 //! - 低延迟回调
 
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use oboe::{
@@ -29,6 +29,10 @@ enum OboeFormat {
     F32,
 }
 
+/// 起播去爆点：从停（playing=false）到播的瞬间，ringbuf 首个样本几乎总是
+/// 非零，波形从 0 直接跳到信号会形成 click/pop。前 ~5ms 线性渐变消除。
+const FADE_IN_SAMPLES: usize = 240; // 5ms @ 48k
+
 /// Oboe 实时数据回调。
 ///
 /// oboe 0.6 不支持闭包回调，必须手动实现 `AudioOutputCallback`。
@@ -37,6 +41,10 @@ struct OboeOutputCallback<T, C> {
     inner: Arc<AudioOutputInner>,
     playing: Arc<AtomicBool>,
     tmp: Vec<f32>,
+    /// 上一次回调时的播放状态（检测 false→true 起播，触发 fade-in）
+    was_playing: bool,
+    /// 剩余 fade-in 样本数（立体声帧）
+    fade_remaining: usize,
     _marker: PhantomData<(T, C)>,
 }
 
@@ -46,8 +54,55 @@ impl<T, C> OboeOutputCallback<T, C> {
             inner,
             playing,
             tmp: Vec::new(),
+            was_playing: false,
+            fade_remaining: 0,
             _marker: PhantomData,
         }
+    }
+
+    /// 每次回调开头调用：检测 playing false→true（起播/续播），触发 fade-in
+    fn detect_start(&mut self) {
+        let now = self.playing.load(Ordering::Acquire);
+        if !self.was_playing && now {
+            self.fade_remaining = FADE_IN_SAMPLES;
+        }
+        self.was_playing = now;
+    }
+}
+
+/// 交织样本 fade-in（线性渐变）。fade_remaining 以帧为单位递减。
+pub(crate) fn fade_in(fade_remaining: &mut usize, samples: &mut [f32]) {
+    if *fade_remaining == 0 {
+        return;
+    }
+    let total = FADE_IN_SAMPLES;
+    let done = total - *fade_remaining;
+    let n = samples.len() / 2;
+    for i in 0..n {
+        if *fade_remaining == 0 {
+            break;
+        }
+        let gain = (done + i + 1) as f32 / total as f32;
+        samples[i * 2] *= gain;
+        samples[i * 2 + 1] *= gain;
+        *fade_remaining -= 1;
+    }
+}
+
+/// 单声道 fade-in（直接作用于输出切片）
+pub(crate) fn fade_in_mono(fade_remaining: &mut usize, out: &mut [f32]) {
+    if *fade_remaining == 0 {
+        return;
+    }
+    let total = FADE_IN_SAMPLES;
+    let done = total - *fade_remaining;
+    for i in 0..out.len() {
+        if *fade_remaining == 0 {
+            break;
+        }
+        let gain = (done + i + 1) as f32 / total as f32;
+        out[i] *= gain;
+        *fade_remaining -= 1;
     }
 }
 
@@ -55,17 +110,44 @@ impl<T, C> OboeOutputCallback<T, C> {
 fn read_samples(inner: &AudioOutputInner, playing: &AtomicBool, out: &mut [f32]) {
     if !playing.load(Ordering::Acquire) {
         out.fill(0.0);
+        diag_fill(true);
         return;
     }
     let Some(mut guard) = inner.consumer.try_lock() else {
         inner.underrun_count.fetch_add(1, Ordering::Relaxed);
         out.fill(0.0);
+        diag_fill(false);
         return;
     };
     let n = guard.pop_slice(out);
     if n < out.len() {
         inner.underrun_count.fetch_add(1, Ordering::Relaxed);
         out[n..].fill(0.0);
+        diag_fill(false);
+    } else {
+        diag_fill(true);
+    }
+}
+
+// ── 诊断探针：只在事件发生瞬间输出，不逐帧打日志 ──
+static LAST_FRAMES: AtomicUsize = AtomicUsize::new(0);
+static LAST_FILL_OK: AtomicBool = AtomicBool::new(true);
+
+/// 帧大小变化检测（稳定时不输出；变化=潜在过度消费/欠载根因）
+fn diag_frame_size(frames: usize) {
+    let prev = LAST_FRAMES.swap(frames, Ordering::Relaxed);
+    if prev != 0 && prev != frames {
+        eprintln!("[OboeDiag] 帧大小变化: {} -> {}", prev, frames);
+    }
+}
+
+/// underrun 突发起止检测
+fn diag_fill(ok: bool) {
+    let was_ok = LAST_FILL_OK.swap(ok, Ordering::Relaxed);
+    if was_ok && !ok {
+        eprintln!("[OboeDiag] underrun 突发开始");
+    } else if !was_ok && ok {
+        eprintln!("[OboeDiag] underrun 突发结束");
     }
 }
 
@@ -77,11 +159,16 @@ impl AudioOutputCallback for OboeOutputCallback<f32, Stereo> {
         _stream: &mut dyn AudioOutputStreamSafe,
         data: &mut [(f32, f32)],
     ) -> DataCallbackResult {
-        // 容量不足时才扩容（避免每帧无条件 resize 的 memset 开销）
-        if self.tmp.len() < data.len() * 2 {
-            self.tmp.resize(data.len() * 2, 0.0);
+        let need = data.len() * 2;
+        diag_frame_size(data.len());
+        // 容量不足才扩容；读写一律用精确切片 [..need]，避免 tmp 偏大时
+        // read_samples 从 ringbuf 过度取样本再丢弃（会造成内容跳变爆点）。
+        if self.tmp.len() < need {
+            self.tmp.resize(need, 0.0);
         }
-        read_samples(&self.inner, &self.playing, &mut self.tmp);
+        self.detect_start();
+        read_samples(&self.inner, &self.playing, &mut self.tmp[..need]);
+        fade_in(&mut self.fade_remaining, &mut self.tmp[..need]);
         for (i, frame) in data.iter_mut().enumerate() {
             frame.0 = self.tmp[i * 2];
             frame.1 = self.tmp[i * 2 + 1];
@@ -98,10 +185,14 @@ impl AudioOutputCallback for OboeOutputCallback<i16, Stereo> {
         _stream: &mut dyn AudioOutputStreamSafe,
         data: &mut [(i16, i16)],
     ) -> DataCallbackResult {
-        if self.tmp.len() < data.len() * 2 {
-            self.tmp.resize(data.len() * 2, 0.0);
+        let need = data.len() * 2;
+        diag_frame_size(data.len());
+        if self.tmp.len() < need {
+            self.tmp.resize(need, 0.0);
         }
-        read_samples(&self.inner, &self.playing, &mut self.tmp);
+        self.detect_start();
+        read_samples(&self.inner, &self.playing, &mut self.tmp[..need]);
+        fade_in(&mut self.fade_remaining, &mut self.tmp[..need]);
         for (i, frame) in data.iter_mut().enumerate() {
             frame.0 = (self.tmp[i * 2].clamp(-1.0, 1.0) * 32768.0)
                 .round()
@@ -122,7 +213,10 @@ impl AudioOutputCallback for OboeOutputCallback<f32, Mono> {
         _stream: &mut dyn AudioOutputStreamSafe,
         data: &mut [f32],
     ) -> DataCallbackResult {
+        diag_frame_size(data.len());
+        self.detect_start();
         read_samples(&self.inner, &self.playing, data);
+        fade_in_mono(&mut self.fade_remaining, data);
         DataCallbackResult::Continue
     }
 }
@@ -135,10 +229,14 @@ impl AudioOutputCallback for OboeOutputCallback<i16, Mono> {
         _stream: &mut dyn AudioOutputStreamSafe,
         data: &mut [i16],
     ) -> DataCallbackResult {
-        if self.tmp.len() < data.len() {
-            self.tmp.resize(data.len(), 0.0);
+        let need = data.len();
+        diag_frame_size(data.len());
+        if self.tmp.len() < need {
+            self.tmp.resize(need, 0.0);
         }
-        read_samples(&self.inner, &self.playing, &mut self.tmp);
+        self.detect_start();
+        read_samples(&self.inner, &self.playing, &mut self.tmp[..need]);
+        fade_in_mono(&mut self.fade_remaining, &mut self.tmp[..need]);
         for (i, s) in data.iter_mut().enumerate() {
             *s = (self.tmp[i].clamp(-1.0, 1.0) * 32768.0)
                 .round()
@@ -528,4 +626,63 @@ fn fallback_devices() -> Vec<crate::output::OutputDeviceInfo> {
             sr_config(48000, 16, crate::output::SampleFormat::I16, true),
         ],
     }]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// fade-in 数学验证：前样本≈0（从静音渐变），末尾样本≈原值（不衰减）
+    #[test]
+    fn fade_in_ramps_from_zero_and_recovers_full() {
+        let mut remaining = FADE_IN_SAMPLES;
+        let mut samples: Vec<f32> = (0..FADE_IN_SAMPLES * 2)
+            .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
+            .collect();
+        fade_in(&mut remaining, &mut samples);
+        // 渐变起点接近 0
+        assert!(samples[0].abs() < 0.01, "起点应接近 0，实际 {}", samples[0]);
+        // 渐变终点接近原值（第一个样本 gain ≈ 1/240，最后 ≈ 1）
+        let last_idx = (FADE_IN_SAMPLES - 1) * 2;
+        assert!(
+            (samples[last_idx].abs() - 1.0).abs() < 0.01,
+            "终点应接近原值，实际 {}",
+            samples[last_idx]
+        );
+        // 单调递增（渐变无回跳）
+        let mut prev = 0.0f32;
+        for i in (0..FADE_IN_SAMPLES * 2).step_by(2) {
+            let g = samples[i].abs();
+            assert!(g >= prev - 1e-6, "渐变应单调：{g} < {prev}");
+            prev = g;
+        }
+        // 剩余 0：fade 用尽后不再改数据
+        assert_eq!(remaining, 0);
+    }
+
+    /// detect_start：playing false→true 触发 fade，持续 true 不重复触发
+    #[test]
+    fn detect_start_triggers_once() {
+        let rb = ringbuf::HeapRb::<f32>::new(1024);
+        let (producer, consumer) = rb.split();
+        drop(producer);
+        let inner = crate::output::AudioOutputInner {
+            consumer: parking_lot::Mutex::new(consumer),
+            underrun_count: std::sync::atomic::AtomicU64::new(0),
+            stream_failed: std::sync::atomic::AtomicBool::new(false),
+        };
+        let playing = Arc::new(AtomicBool::new(false));
+        let mut cb = OboeOutputCallback::<f32, Stereo>::new(inner, playing.clone());
+        assert_eq!(cb.fade_remaining, 0);
+
+        cb.detect_start(); // playing=false，不触发
+        assert_eq!(cb.fade_remaining, 0);
+
+        playing.store(true, Ordering::Release);
+        cb.detect_start(); // false→true，触发
+        assert_eq!(cb.fade_remaining, FADE_IN_SAMPLES);
+
+        cb.detect_start(); // 持续 true，不重复触发（fade 在数据应用时递减）
+        assert_eq!(cb.fade_remaining, FADE_IN_SAMPLES);
+    }
 }

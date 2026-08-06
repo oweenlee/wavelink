@@ -36,8 +36,10 @@ class MediaStoreChannel {
     try {
       final result = await _channel.invokeMethod('scanAll');
       if (result == null) return [];
+      // MethodChannel 反序列化的 Map 是 _Map<Object?, Object?>，直接强转
+      // Map<String, dynamic> 会抛 type cast 错误，用 Map.from 重建安全类型
       return (result as List)
-          .map((e) => _toSong(e as Map<String, dynamic>))
+          .map((e) => _toSong(Map<String, dynamic>.from(e as Map)))
           .where((s) => s != null)
           .cast<Song>()
           .toList();
