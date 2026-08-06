@@ -26,6 +26,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _enabled = false;
+  bool _offlineCache = false;
   String? _nasType;
   bool _connecting = false;
   String _connectionStatus = '';
@@ -46,6 +47,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     _passCtrl.text = prefs.nasPassword.isNotEmpty ? prefs.nasPassword : testPass;
     _enabled = prefs.nasEnabled;
     _nasType = prefs.nasType;
+    _offlineCache = prefs.smbOfflineCache;
   }
 
   @override
@@ -114,11 +116,14 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
   void _showErrorSnackBar() {
     final l10n = AppLocalizations.of(context);
     final err = SmbService.lastError;
+    final text = err == null
+        ? l10n.nasConnectionFailedTitle
+        : '$err\n\n${l10n.nasCheckHint}';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          err ?? l10n.nasConnectionFailedTitle,
-          maxLines: 4,
+          text,
+          maxLines: 6,
           overflow: TextOverflow.ellipsis,
         ),
         backgroundColor: AppTheme.danger,
@@ -133,6 +138,43 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     );
   }
 
+  /// 切换离线缓存：开启前弹确认，说明会占用大量本地空间。
+  Future<void> _toggleOfflineCache() async {
+    if (_offlineCache) {
+      // 关闭：直接改
+      setState(() => _offlineCache = false);
+      return;
+    }
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceDark,
+        title: Text(l10n.smbOfflineCacheTitle),
+        content: Text(l10n.smbOfflineCacheMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              l10n.nasCancel,
+              style: const TextStyle(color: AppTheme.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              l10n.smbOfflineCacheConfirm,
+              style: const TextStyle(color: AppTheme.accentFallback),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      setState(() => _offlineCache = true);
+    }
+  }
+
   Future<void> _saveAndConnect() async {
     await PreferencesService.instance.setNasConfig(
       type: _nasType,
@@ -142,6 +184,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
       password: _passCtrl.text,
       enabled: _enabled,
     );
+    await PreferencesService.instance.setSmbOfflineCache(_offlineCache);
 
     // 触发后台导入（fire-and-forget，不阻塞页面）：
     // 立即返回曲库，导入进度在曲库页顶部展示，可随时取消。
@@ -239,6 +282,44 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
               ),
             ),
             if (_enabled) ...[
+              const SizedBox(height: 16),
+              // ── 离线缓存开关 ──
+              Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceDark.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: ListTile(
+                    dense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    leading: const Icon(
+                      LucideIcons.download,
+                      color: AppTheme.textSecondary,
+                      size: 22,
+                    ),
+                    title: Text(
+                      l10n.smbOfflineCache,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    subtitle: Text(
+                      l10n.smbOfflineCacheHint,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textTertiary,
+                      ),
+                    ),
+                    trailing: WlToggle(
+                      value: _offlineCache,
+                      onChanged: () => _toggleOfflineCache(),
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 16),
               Row(
                 children: [

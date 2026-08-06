@@ -80,6 +80,10 @@ class PreferencesRepository {
   String get nasPassword => PreferencesService.instance.nasPassword;
   bool get nasEnabled => PreferencesService.instance.nasEnabled;
 
+  bool get smbOfflineCache => PreferencesService.instance.smbOfflineCache;
+  Future<void> setSmbOfflineCache(bool v) =>
+      PreferencesService.instance.setSmbOfflineCache(v);
+
   Future<void> setNasConfig({
     String? type,
     String? host,

@@ -8,6 +8,7 @@ import '../../../../domain/models/song.dart';
 import '../../../../domain/models/lyric_line.dart';
 import '../../../../domain/models/playback_types.dart';
 import '../../../../data/services/native_audio_service.dart';
+import '../../../../data/services/smb_service.dart';
 import '../../../../data/services/lrc_parser.dart';
 import '../../../../data/repositories/audio_engine_repository.dart';
 import '../../../../data/services/rust_service.dart' show AnalyzeResult;
@@ -183,9 +184,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
     await _nativeAudio.stop();
     if (token != _playToken || !ref.mounted) return;
 
-    // 解析本地可播放路径：远程流式源先下载到本地缓存
+    // 解析本地可播放路径：SMB 远端先按需下载，HTTP 流式源先下载到本地缓存
     String? resolvedPath;
-    if (song.streamUrl != null && song.streamUrl!.isNotEmpty) {
+    if (song.smbPath != null && song.smbPath!.isNotEmpty) {
+      resolvedPath = await SmbService.downloadToLocal(song.smbPath!);
+    } else if (song.streamUrl != null && song.streamUrl!.isNotEmpty) {
       resolvedPath = await _downloadToCache(song.streamUrl!, song.id, song.title);
     } else {
       resolvedPath = await _resolvePlayablePath(song.path);

@@ -263,36 +263,17 @@ Future<bool> scanSmb(String sharePath) async {
       if (_nasImportCancelled) {
         throw const NASImportCancelled();
       }
-      final batchPaths = batch
-          .where((s) => s.path != null)
-          .map((s) => s.path!)
-          .toSet();
-      final merged = [
-        ...batch,
-        ...state.importedSongs.where(
-          (s) => s.path == null || !batchPaths.contains(s.path),
-        ),
-      ];
       state = state.copyWith(
-        importedSongs: merged,
+        importedSongs: _mergeById(batch),
         nasImportedCount: state.nasImportedCount + batch.length,
       );
-      songRepo.setCachedSongs(merged);
+      songRepo.setCachedSongs(state.importedSongs);
       onSongsLoaded?.call();
     });
     // 注意：scanSmb 内部吞掉单文件失败；此处正常只可能因取消抛出
     if (songs.isEmpty) return false;
     // 最终一致性合并（与增量幂等），保证返回值统计准确
-    final newPaths = songs
-        .where((s) => s.path != null)
-        .map((s) => s.path!)
-        .toSet();
-    final merged = [
-      ...songs,
-      ...state.importedSongs.where(
-        (s) => s.path == null || !newPaths.contains(s.path),
-      ),
-    ];
+    final merged = _mergeById(songs);
     state = state.copyWith(importedSongs: merged);
     songRepo.setCachedSongs(merged);
     onSongsLoaded?.call();
@@ -302,6 +283,17 @@ Future<bool> scanSmb(String sharePath) async {
     state = state.copyWith(nasImporting: false);
   }
 }
+
+  /// 按歌曲 id 去重合并传入歌曲与现有曲库。NAS 索引歌曲 path 为 null，
+  /// 用 id（如 `smb_<hash>`）保证幂等，避免跨批次重复入库。
+  List<Song> _mergeById(List<Song> incoming) {
+    final seen = <String>{};
+    final out = <Song>[];
+    for (final s in [...incoming, ...state.importedSongs]) {
+      if (seen.add(s.id)) out.add(s);
+    }
+    return out;
+  }
 
   Future<void> batchExtractCovers(List<Song> songs) async {
     final engineRepo = ref.read(audioEngineRepositoryProvider);

@@ -16,6 +16,9 @@ class Song {
   /// HTTP(S) 流式播放 URL（Subsonic 等远程源），为空表示本地文件。
   /// 如果设置了此字段，播放前需先下载到本地临时缓存。
   final String? streamUrl;
+  /// SMB 共享内相对路径（离线模式为 null 时歌曲尚未下载到本地）。
+  /// 设置了此字段表示文件在远端共享，播放时先按需下载到本地缓存。
+  final String? smbPath;
   String? lyricsPath;
   bool hasCover;
 
@@ -32,6 +35,7 @@ class Song {
     this.coverUrl,
     this.path,
     this.streamUrl,
+    this.smbPath,
     this.lyricsPath,
     this.hasCover = false,
   });
@@ -50,6 +54,7 @@ class Song {
         'coverUrl': coverUrl,
         'path': path,
         'streamUrl': streamUrl,
+        'smbPath': smbPath,
         'lyricsPath': lyricsPath,
         'hasCover': hasCover,
       };
@@ -68,6 +73,7 @@ class Song {
         coverUrl: json['coverUrl'] as String?,
         path: json['path'] as String?,
         streamUrl: json['streamUrl'] as String?,
+        smbPath: json['smbPath'] as String?,
         lyricsPath: json['lyricsPath'] as String?,
         hasCover: json['hasCover'] as bool? ?? false,
       );

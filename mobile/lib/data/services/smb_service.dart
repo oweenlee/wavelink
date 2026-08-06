@@ -5,6 +5,7 @@ import '../../domain/models/song.dart';
 import '../../src/rust/api/smb.dart' as smb;
 import '../../ui/core/theme/app_theme.dart';
 import 'import_service.dart';
+import 'preferences_service.dart';
 import 'rust_service.dart' as rs;
 
 /// SMB 直挂服务
@@ -193,8 +194,9 @@ class SmbService {
     return ImportService.extensions.contains(ext);
   }
 
-  /// 将 SMB 文件复制到本地、提取元数据，创建可播放的 Song 对象。
-  /// 本地副本保存在 Documents/.smb_cache/ 中，后续直接播放无需再次下载。
+  /// 将 SMB 文件转为可播放的 Song 对象。
+  /// 离线缓存关闭（默认）：只建索引，不下载文件，播放时按需下载；
+  /// 离线缓存开启：下载文件到本地 `.smb_cache` 并读取真实元数据，关 SMB 也能播。
   static Future<Song?> _smbFileToSong(
     String smbPath,
     String name,
@@ -202,8 +204,21 @@ class SmbService {
   ) async {
     final fallbackTitle = name.replaceAll(RegExp(r'\.[^.]+$'), '');
 
+    // 关闭离线缓存 → 仅索引，不占本地空间。播放时经 downloadToLocal 拉取。
+    if (!PreferencesService.instance.smbOfflineCache) {
+      return Song(
+        id: 'smb_${smbPath.hashCode}',
+        title: fallbackTitle,
+        artist: 'Unknown Artist',
+        album: 'NAS Music',
+        duration: ImportService.estimateDuration(remoteSize),
+        dominantColor: AppTheme.s2,
+        smbPath: smbPath,
+      );
+    }
+
     try {
-      // 检查本地缓存（按远端大小判断是否有变化）
+      // 下载到本地缓存（按远端大小判断是否有变化）
       final appDir = await getApplicationDocumentsDirectory();
       final cacheDir = Directory('${appDir.path}/.smb_cache');
       if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
@@ -266,6 +281,7 @@ class SmbService {
         album: album,
         duration: duration,
         dominantColor: AppTheme.s2,
+        smbPath: smbPath,
         path: localPath,
         coverUrl: coverUrl,
         hasCover: hasCover,
@@ -273,6 +289,34 @@ class SmbService {
     } catch (e) {
       // 降级：下载/元数据提取失败，返回 null 跳过该文件
       debugPrint('[SMB] 文件处理失败 ($smbPath): $e');
+      return null;
+    }
+  }
+
+  /// 播放时按需下载单曲到本地缓存，返回可播放的本地路径（已存在则直接复用）。
+  /// 用于离线缓存关闭时按需拉取；缓存复用避免重复下载。
+  static Future<String?> downloadToLocal(String smbPath) async {
+    if (!_connected || smbPath.isEmpty) return null;
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final cacheDir = Directory('${appDir.path}/.smb_cache');
+      if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
+      final name = smbPath.split('/').last;
+      final localFile = File('${cacheDir.path}/${smbPath.hashCode}_$name');
+      if (await localFile.exists() && await localFile.length() > 0) {
+        return localFile.path;
+      }
+      final sink = localFile.openWrite();
+      try {
+        await for (final chunk in smb.smbReadFileStream(path: smbPath)) {
+          sink.add(chunk);
+        }
+      } finally {
+        await sink.close();
+      }
+      return localFile.path;
+    } catch (e) {
+      debugPrint('[SMB] downloadToLocal failed ($smbPath): $e');
       return null;
     }
   }
