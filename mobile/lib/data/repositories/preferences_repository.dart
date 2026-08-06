@@ -71,6 +71,23 @@ class PreferencesRepository {
   Future<void> setCoverBlur(double v) =>
       PreferencesService.instance.setCoverBlur(v);
 
+  // ── 断点续播 ──
+
+  List<String> get resumeQueue => PreferencesService.instance.resumeQueue;
+  int get resumeIndex => PreferencesService.instance.resumeIndex;
+  double get resumePositionMs => PreferencesService.instance.resumePositionMs;
+  Future<void> setResume({
+    required List<String> queueIds,
+    required int index,
+    required double positionMs,
+  }) => PreferencesService.instance.setResume(
+    queueIds: queueIds,
+    index: index,
+    positionMs: positionMs,
+  );
+
+  Future<void> clearResume() => PreferencesService.instance.clearResume();
+
   // ── NAS 配置 ──
 
   String? get nasType => PreferencesService.instance.nasType;

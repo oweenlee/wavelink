@@ -77,7 +77,10 @@ impl AudioOutputCallback for OboeOutputCallback<f32, Stereo> {
         _stream: &mut dyn AudioOutputStreamSafe,
         data: &mut [(f32, f32)],
     ) -> DataCallbackResult {
-        self.tmp.resize(data.len() * 2, 0.0);
+        // 容量不足时才扩容（避免每帧无条件 resize 的 memset 开销）
+        if self.tmp.len() < data.len() * 2 {
+            self.tmp.resize(data.len() * 2, 0.0);
+        }
         read_samples(&self.inner, &self.playing, &mut self.tmp);
         for (i, frame) in data.iter_mut().enumerate() {
             frame.0 = self.tmp[i * 2];
@@ -95,7 +98,9 @@ impl AudioOutputCallback for OboeOutputCallback<i16, Stereo> {
         _stream: &mut dyn AudioOutputStreamSafe,
         data: &mut [(i16, i16)],
     ) -> DataCallbackResult {
-        self.tmp.resize(data.len() * 2, 0.0);
+        if self.tmp.len() < data.len() * 2 {
+            self.tmp.resize(data.len() * 2, 0.0);
+        }
         read_samples(&self.inner, &self.playing, &mut self.tmp);
         for (i, frame) in data.iter_mut().enumerate() {
             frame.0 = (self.tmp[i * 2].clamp(-1.0, 1.0) * 32768.0)
@@ -130,7 +135,9 @@ impl AudioOutputCallback for OboeOutputCallback<i16, Mono> {
         _stream: &mut dyn AudioOutputStreamSafe,
         data: &mut [i16],
     ) -> DataCallbackResult {
-        self.tmp.resize(data.len(), 0.0);
+        if self.tmp.len() < data.len() {
+            self.tmp.resize(data.len(), 0.0);
+        }
         read_samples(&self.inner, &self.playing, &mut self.tmp);
         for (i, s) in data.iter_mut().enumerate() {
             *s = (self.tmp[i].clamp(-1.0, 1.0) * 32768.0)

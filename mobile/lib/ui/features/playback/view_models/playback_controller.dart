@@ -1,5 +1,6 @@
 export '../../../../domain/models/playback_types.dart';
 
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../domain/models/song.dart';
 import '../../../../domain/models/lyric_line.dart';
@@ -26,7 +27,18 @@ class PlaybackController {
   void bootstrap() {
     _loadPreferences();
     _player.init();
-    _library.discoverSongs();
+    unawaited(_bootstrapLibrary());
+  }
+
+  /// 曲库就绪编排：无论增量扫描结果如何，都以当前曲库（缓存+扫描）
+  /// 初始化队列并尝试恢复断点（onSongsLoaded 回调在扫描无新歌时不触发）。
+  /// 注意：discoverSongs 成功时其内部回调已触发过 [_onLibrarySongsLoaded]，
+  /// 这里用 [_resumeRestored] 守卫兜底，避免二次整体替换覆盖已恢复的队列。
+  Future<void> _bootstrapLibrary() async {
+    await _library.discoverSongs();
+    if (!_resumeRestored) {
+      _onLibrarySongsLoaded();
+    }
   }
 
   final Ref _ref;
@@ -54,11 +66,41 @@ class PlaybackController {
     };
   }
 
+  /// 是否已尝试恢复断点（幂等守卫，避免 NAS 导入等多次 onSongsLoaded 重复恢复）
+  bool _resumeRestored = false;
+
   void _onLibrarySongsLoaded() {
     final songs = _ref.read(libraryProvider).importedSongs;
     _queue.onImportedSongsLoaded(songs);
+    if (!_resumeRestored) {
+      _resumeRestored = true;
+      _restoreResume();
+    }
     _player.setCurrentSong(_ref.read(queueProvider).currentSong);
     _library.batchExtractCovers(songs);
+  }
+
+  /// 断点续播：恢复上次会话的队列 + 当前索引 + 播放位置（不自动播放）。
+  /// 歌曲按 id 匹配当前曲库，失效的 id 静默丢弃。
+  void _restoreResume() {
+    final prefs = _prefsRepo;
+    final ids = prefs.resumeQueue;
+    if (ids.isEmpty) return;
+    final byId = {
+      for (final s in _ref.read(libraryProvider).importedSongs) s.id: s,
+    };
+    final restored = <Song>[];
+    for (final id in ids) {
+      final s = byId[id];
+      if (s != null) restored.add(s);
+    }
+    if (restored.isEmpty) return;
+    final idx = prefs.resumeIndex < restored.length
+        ? prefs.resumeIndex
+        : 0;
+    _queue.setQueue(restored, startIndex: idx);
+    _player.setCurrentSong(restored[idx]);
+    _player.setPosition(prefs.resumePositionMs);
   }
 
   void _onLibrarySongsAdded() {

@@ -1,4 +1,3 @@
-import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -112,7 +111,6 @@ class _ImportSheetState extends ConsumerState<_ImportSheet> {
                   nasConnected: nasConnected,
                   onDiscover: () => _handleDiscover(context),
                   onPickFiles: () => _handlePickFiles(context),
-                  onServer: () => _handleSubsonic(context),
                   // 进入 NAS 配置页；保存成功返回 true 时关闭导入 sheet，回到曲库
                   onNas: () async {
                     final saved = await context.push<bool>('/nas');
@@ -120,8 +118,6 @@ class _ImportSheetState extends ConsumerState<_ImportSheet> {
                       Navigator.of(context, rootNavigator: true).pop();
                     }
                   },
-                  onAirDrop: () => _handleAirDrop(context),
-                  onWebDav: () => _showComingSoon(context),
             ),
             ),
           ],
@@ -161,31 +157,6 @@ class _ImportSheetState extends ConsumerState<_ImportSheet> {
       );
     }
   }
-
-  Future<void> _handleSubsonic(BuildContext context) async {
-    final player = ref.read(playbackControllerProvider);
-    final ok = await player.scanSubsonic();
-    if (!mounted) return;
-    _showToast(context, ok ? 'Connected' : 'Failed');
-  }
-
-  Future<void> _handleAirDrop(BuildContext context) async {
-    _showComingSoon(context);
-  }
-
-  void _showComingSoon(BuildContext context) {
-    _showToast(context, 'Coming soon');
-  }
-
-  void _showToast(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppTheme.s3,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -198,10 +169,7 @@ class _SourceList extends StatelessWidget {
   final bool nasConnected;
   final VoidCallback onDiscover;
   final VoidCallback onPickFiles;
-  final VoidCallback onServer;
   final VoidCallback onNas;
-  final VoidCallback onAirDrop;
-  final VoidCallback onWebDav;
 
   const _SourceList({
     required this.scanning,
@@ -209,10 +177,7 @@ class _SourceList extends StatelessWidget {
     required this.nasConnected,
     required this.onDiscover,
     required this.onPickFiles,
-    required this.onServer,
     required this.onNas,
-    required this.onAirDrop,
-    required this.onWebDav,
   });
 
   @override
@@ -240,16 +205,6 @@ class _SourceList extends StatelessWidget {
           onTap: onPickFiles,
         ),
 
-        // ── Music Server ──
-        _SourceRow(
-          icon: LucideIcons.server,
-          title: l10n.scanSubsonic,
-          subtitle: l10n.importSubsonicHint,
-          status: l10n.nasDisconnected,
-          statusOn: false,
-          onTap: onServer,
-        ),
-
         // ── NAS (SMB) ──
         _SourceRow(
           icon: LucideIcons.hardDrive,
@@ -258,25 +213,6 @@ class _SourceList extends StatelessWidget {
           status: nasConnected ? l10n.nasConnected : l10n.nasDisconnected,
           statusOn: nasConnected,
           onTap: onNas,
-        ),
-
-        // ── AirDrop (iOS only) ──
-        if (!Platform.isAndroid)
-          _SourceRow(
-            icon: LucideIcons.share2,
-            title: l10n.airDrop,
-            subtitle: l10n.airDropHint,
-            onTap: onAirDrop,
-          ),
-
-        // ── WebDAV ──
-        _SourceRow(
-          icon: LucideIcons.globe,
-          title: l10n.webDav,
-          subtitle: l10n.webDavHint,
-          status: l10n.nasDisconnected,
-          statusOn: false,
-          onTap: onWebDav,
         ),
 
         // ── Format footnote ──
@@ -338,12 +274,11 @@ class _SourceRow extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.onTap,
-    this.isPrimary = false,
-    this.loading = false,
-    this.resultMessage,
     this.status,
     this.statusOn = false,
-  });
+  }) : isPrimary = false,
+       loading = false,
+       resultMessage = null;
 
   const _SourceRow.primary({
     required this.icon,
@@ -352,9 +287,9 @@ class _SourceRow extends StatelessWidget {
     this.onTap,
     this.loading = false,
     this.resultMessage,
-    this.status,
-    this.statusOn = false,
-  }) : isPrimary = true;
+  }) : isPrimary = true,
+       status = null,
+       statusOn = false;
 
   @override
   Widget build(BuildContext context) {

@@ -68,6 +68,33 @@ class PreferencesService {
   bool get bitPerfect => _prefs.getBool(_kBitPerfect) ?? false;
   Future<void> setBitPerfect(bool v) => _prefs.setBool(_kBitPerfect, v);
 
+  // ── 断点续播（会话恢复）──
+  // 保存上次播放的队列（歌曲 id 列表）、当前索引与播放位置（ms）。
+  // 启动后曲库就绪时恢复队列与位置，不自动播放，用户点播放继续。
+  static const _kResumeQueue = 'resume_queue';
+  static const _kResumeIndex = 'resume_index';
+  static const _kResumePositionMs = 'resume_position_ms';
+
+  List<String> get resumeQueue => _prefs.getStringList(_kResumeQueue) ?? [];
+  int get resumeIndex => _prefs.getInt(_kResumeIndex) ?? 0;
+  double get resumePositionMs => _prefs.getDouble(_kResumePositionMs) ?? 0;
+
+  Future<void> setResume({
+    required List<String> queueIds,
+    required int index,
+    required double positionMs,
+  }) async {
+    await _prefs.setStringList(_kResumeQueue, queueIds);
+    await _prefs.setInt(_kResumeIndex, index);
+    await _prefs.setDouble(_kResumePositionMs, positionMs);
+  }
+
+  Future<void> clearResume() async {
+    await _prefs.remove(_kResumeQueue);
+    await _prefs.remove(_kResumeIndex);
+    await _prefs.remove(_kResumePositionMs);
+  }
+
   // ── 动态取色 ──
   static const _kDynamicColor = 'dynamic_color';
   bool get dynamicColor => _prefs.getBool(_kDynamicColor) ?? true;

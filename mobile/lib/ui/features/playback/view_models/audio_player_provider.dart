@@ -13,6 +13,7 @@ import '../../../../data/services/lrc_parser.dart';
 import '../../../../data/repositories/audio_engine_repository.dart';
 import '../../../../data/services/rust_service.dart' show AnalyzeResult;
 import '../../../core/providers/repositories.dart';
+import 'queue_provider.dart';
 
 class PlayerState {
   final bool isPlaying;
@@ -92,6 +93,13 @@ class PlayerNotifier extends Notifier<PlayerState> {
   bool _nativeReady = false;
   int _playToken = 0;
 
+  /// 引擎是否已装载当前曲目。false 时即使 position>0 也不能 resume（引擎空），
+  /// 需走完整装载流程再 seek——断点续播恢复场景依赖此判定。
+  bool _engineLoaded = false;
+
+  /// 断点续播兜底节流：距上次持久化超过 5s 才写一次（避免每 250ms tick 刷盘）
+  int _lastResumeSave = 0;
+
   // ── 引擎遥测（乐器面板）──
   Timer? _telemetryTimer;
   int _lastUnderrun = 0;
@@ -160,20 +168,22 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
   void play() {
     if (state.currentSong == null) return;
-    if (state.position > 0 && !state.isPlaying) {
+    if (_engineLoaded && state.position > 0 && !state.isPlaying) {
       // 恢复播放（不从头开始）
       togglePlay();
     } else {
-      _playCurrent();
+      // 引擎未装载（如启动后恢复的断点曲目）：完整装载后 seek 到保存位置
+      _playCurrent(initialSeekMs: state.position);
     }
   }
 
   void playSong(Song song) {
     state = state.copyWith(currentSong: song, position: 0.0);
     _playCurrent();
+    saveResume();
   }
 
-  Future<void> _playCurrent() async {
+  Future<void> _playCurrent({double initialSeekMs = 0}) async {
     final song = state.currentSong;
     if (song == null) return;
     final token = ++_playToken;
@@ -232,10 +242,14 @@ class PlayerNotifier extends Notifier<PlayerState> {
       _startProgressTimer();
       await _nativeAudio.play(sampleRate: _nativeOutRate);
       _updateLockScreenMetadata();
-      // 切歌：锁屏进度锚点归零（事件驱动，之后系统按 playbackRate 自行插值）
-      _nativeAudio.updatePosition(0);
+      // 断点续播：锁屏进度锚点直接落在恢复位置
+      _nativeAudio.updatePosition(initialSeekMs > 0 ? initialSeekMs : 0);
       _analyzeCurrent();
       _loadLyrics(resolvedPath);
+      _engineLoaded = true;
+      if (initialSeekMs > 0) {
+        _seekToPosition(initialSeekMs);
+      }
     }
   }
 
@@ -247,13 +261,14 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // 事件驱动锚点：暂停时推当前位置，锁屏进度不再靠 250ms 轮询
     _nativeAudio.updatePosition(state.position);
     state = state.copyWith(isPlaying: false);
+    saveResume();
   }
 
   void togglePlay() {
     if (state.currentSong == null) return;
     if (state.isPlaying) {
       pause();
-    } else if (state.position > 0) {
+    } else if (state.position > 0 && _engineLoaded) {
       // 暂停恢复播放（不从头开始）
       _startProgressTimer();
       _engineRepo.resume();
@@ -261,9 +276,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
       _nativeAudio.updatePosition(state.position);
       state = state.copyWith(isPlaying: true);
     } else {
-      // 从未真正播放过（如程序启动后曲库当前曲尚未载入引擎）：
-      // resume 对空引擎无效，需走完整装载/播放流程
-      _playCurrent();
+      // 从未真正播放过（如程序启动后曲库当前曲尚未载入引擎，或断点恢复的曲目）：
+      // resume 对空引擎无效，需走完整装载/播放流程，并在装载后 seek 到保存位置
+      _playCurrent(initialSeekMs: state.position);
     }
   }
 
@@ -273,6 +288,21 @@ class PlayerNotifier extends Notifier<PlayerState> {
     _updateLockScreenMetadata();
     _nativeAudio.updatePosition(state.position);
     state = state.copyWith(isPlaying: true);
+  }
+
+  void setPosition(double ms) {
+    state = state.copyWith(position: ms.clamp(0.0, double.infinity));
+  }
+
+  /// 持久化断点：当前队列 + 索引 + 位置。供暂停/切歌/tick 兜底调用。
+  void saveResume() {
+    final q = ref.read(queueProvider);
+    if (q.queue.isEmpty || state.currentSong == null) return;
+    ref.read(preferencesRepositoryProvider).setResume(
+      queueIds: q.queue.map((s) => s.id).toList(),
+      index: q.currentIndex,
+      positionMs: state.position,
+    );
   }
 
   void seek(double value, {bool immediate = false}) {
@@ -461,6 +491,13 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // 锁屏进度改事件驱动（play/pause/seek/切歌时推锚点，系统按 rate 插值），
     // 不再随 250ms tick 调平台通道。
     state = state.copyWith(position: state.position); // 触发 UI 进度刷新
+
+    // 断点续播兜底：每 5s 持久化一次当前位置（防 app 被杀丢进度）
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (nowMs - _lastResumeSave >= 5000) {
+      _lastResumeSave = nowMs;
+      saveResume();
+    }
   }
 
   Future<void> _analyzeCurrent() async {

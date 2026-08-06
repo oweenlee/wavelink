@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -294,4 +295,109 @@ void main() {
       check(stopsAfterPlay).equals(0);
     });
   });
+
+  group('断点续播', () {
+    /// 构造带 mock override 的容器（与 buildProvider 相同注入，但暴露 container）。
+    /// [bootstrap] 为 false 时由调用方先注入曲库再手动 bootstrap（避免 async 方法体
+    /// 同步执行导致 Future 固定为空列表的问题）。
+    (ProviderContainer, PlaybackController) buildContainer({bool bootstrap = true}) {
+      final container = ProviderContainer(
+        overrides: [
+          audioEngineRepositoryProvider.overrideWith(
+            (_) => MockAudioEngineRepository(),
+          ),
+          songRepositoryProvider.overrideWith((_) => MockSongRepository()),
+          preferencesRepositoryProvider.overrideWith(
+            (_) => PreferencesRepository(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final p = container.read(playbackControllerProvider);
+      if (bootstrap) p.bootstrap();
+      return (container, p);
+    }
+
+    test('保存断点：播放中暂停写入队列/索引/位置', () async {
+      final (_, p) = buildContainer();
+      await Future<void>.delayed(const Duration(milliseconds: 30)); // 等空库扫描完成
+      p.setQueue([_song('s1'), _song('s2'), _song('s3')]);
+      p.play();
+      await Future<void>.delayed(const Duration(milliseconds: 30)); // 等装载完成
+      p.seek(0.5, immediate: true); // 100s * 0.5 = 50s
+      p.pause();
+      // saveResume 是 fire-and-forget 异步写盘，等其完成（最多丢 5s 兜底，测试里直接等）
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      final prefs = PreferencesRepository();
+      check(prefs.resumeQueue).deepEquals(['s1', 's2', 's3']);
+      check(prefs.resumeIndex).equals(0);
+      check(prefs.resumePositionMs).isCloseTo(50000, 1);
+    });
+
+    test('恢复断点：曲库就绪后恢复队列/索引/位置，不自动播放', () async {
+      final prefs = PreferencesRepository();
+      await prefs.setResume(
+        queueIds: ['s2', 's3'],
+        index: 1,
+        positionMs: 30000,
+      );
+
+      final (container, p) = buildContainer(bootstrap: false);
+      (container.read(songRepositoryProvider) as MockSongRepository)
+          .songsToReturn = [_song('s1'), _song('s2'), _song('s3')];
+      p.bootstrap();
+      await Future<void>.delayed(const Duration(milliseconds: 30)); // 等扫描+恢复
+
+      check(p.queue.map((s) => s.id).toList()).deepEquals(['s2', 's3']);
+      check(p.currentIndex).equals(1);
+      check(p.currentSong?.id).equals('s3');
+      check(p.position).isCloseTo(30000, 1);
+      check(p.isPlaying).isFalse(); // 不自动播放
+    });
+
+    test('恢复断点后播放：完整装载并从保存位置继续', () async {
+      final prefs = PreferencesRepository();
+      await prefs.setResume(queueIds: ['s1'], index: 0, positionMs: 42000);
+
+      // 引擎可用版 mock：让 play/seek 真正走到引擎仓库（默认 mock rustAvailable=false）
+      final engine = _EngineAvailableMock();
+      final container = ProviderContainer(
+        overrides: [
+          audioEngineRepositoryProvider.overrideWith((_) => engine),
+          songRepositoryProvider.overrideWith((_) => MockSongRepository()),
+          preferencesRepositoryProvider.overrideWith(
+            (_) => PreferencesRepository(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      // _playCurrent 会校验本地文件存在性，需真实创建
+      File('/tmp/s1.flac').writeAsBytesSync([0, 1, 2, 3]);
+      (container.read(songRepositoryProvider) as MockSongRepository)
+          .songsToReturn = [_song('s1')];
+      final p = container.read(playbackControllerProvider);
+      p.bootstrap();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      // 恢复后未播放：位置已就位，引擎未装载
+      check(p.currentSong?.id).equals('s1');
+      check(p.position).isCloseTo(42000, 1);
+      check(p.isPlaying).isFalse();
+
+      p.play();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      check(engine.playCalls.length).equals(1); // 走完整装载而非空 resume
+      check(engine.position).isCloseTo(42.0, 0.1); // seek 到保存位置（秒）
+      check(p.isPlaying).isTrue();
+    });
+  });
+}
+
+/// 引擎可用版 mock：默认 mock 的 rustAvailable=false 会跳过 play/seek 调用，
+/// 断点续播的「装载+seek」链路需要引擎仓库真正可用才能断言。
+class _EngineAvailableMock extends MockAudioEngineRepository {
+  @override
+  bool get rustAvailable => true;
 }
