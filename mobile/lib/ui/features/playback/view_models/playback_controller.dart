@@ -155,6 +155,12 @@ class PlaybackController {
   /// 引擎实时遥测（乐器面板）
   EngineTelemetry get telemetry => _ref.read(playerProvider).telemetry;
 
+  /// 有效 bit-perfect（请求偏好 && 实际链路 && 无 DSP，见 PlayerNotifier）
+  bool get effectiveBitPerfect => _player.effectiveBitPerfect;
+
+  /// DSP 是否在动信号（指示器"被旁路/生效中"说明用）
+  bool get dspAffectingSignal => _player.dspAffectingSignal;
+
   AnalyzeResult? getAnalysis(String songId) => _player.getAnalysis(songId);
 
   // ── 外观偏好 ──

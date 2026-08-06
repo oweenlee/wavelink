@@ -1,7 +1,7 @@
 //! EngineState — 引擎内部运行状态（只存在于引擎线程）
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
@@ -70,6 +70,8 @@ pub struct EngineState {
     pub(crate) stream_handle: Option<StreamHandle>,
     /// 共享的实际输出采样率（与 EngineHandle 同步）
     pub(crate) output_sample_rate_shared: Option<Arc<AtomicU32>>,
+    /// 共享的实际输出共享模式（与 EngineHandle 同步）：0=未知/不适用，1=Exclusive，2=Shared
+    pub(crate) output_mode_shared: Option<Arc<AtomicU8>>,
     /// 当前播放是否已获取排他模式（跟踪实际状态，避免 config 被修改后不一致）
     pub(crate) exclusive_mode_acquired: bool,
     /// 当前输出位深（dither 用，默认 24）
@@ -116,6 +118,7 @@ impl EngineState {
             output_inner_shared: None,
             stream_handle: None,
             output_sample_rate_shared: None,
+            output_mode_shared: None,
             exclusive_mode_acquired: false,
             output_bit_depth: 24,
             capture_inner_shared: None,
@@ -135,6 +138,21 @@ impl EngineState {
     pub(crate) fn sync_output_sample_rate(&self) {
         if let Some(ref shared) = self.output_sample_rate_shared {
             shared.store(self.output_sample_rate, Ordering::Release);
+        }
+    }
+
+    /// 同步实际输出共享模式到共享原子（供 EngineHandle 读取）。
+    /// 从当前输出后端读真实模式（Oboe 的 Exclusive/Shared 最终结果），
+    /// 无后端或后端不适用时置 0（未知）。
+    pub(crate) fn sync_output_mode(&self) {
+        if let Some(ref shared) = self.output_mode_shared {
+            let mode = self
+                .output
+                .as_ref()
+                .and_then(|o| o.actual_sharing_mode())
+                .map(|exclusive| if exclusive { 1u8 } else { 2u8 })
+                .unwrap_or(0);
+            shared.store(mode, Ordering::Release);
         }
     }
 
@@ -339,6 +357,7 @@ impl EngineState {
                     self.output = Some(output);
                     self.output_sample_rate = actual_rate;
                     self.sync_output_sample_rate();
+                    self.sync_output_mode();
                     self.sync_output_inner();
                     (prod, actual_rate, ch)
                 }
@@ -790,6 +809,7 @@ impl EngineState {
         self.output = None;
         self.output_inner = None;
         self.sync_output_inner();
+        self.sync_output_mode(); // 输出关闭 → 模式置 0（未知）
         // 释放独占模式（使用实际获取时的状态，而非当前 config）
         if self.exclusive_mode_acquired {
             crate::exclusive::release_exclusive_mode(self.config.output_device.as_deref());
@@ -897,6 +917,7 @@ pub(crate) mod tests {
             output_inner_shared: None,
             stream_handle: None,
             output_sample_rate_shared: None,
+            output_mode_shared: None,
             exclusive_mode_acquired: false,
             output_bit_depth: 24,
             capture_inner_shared: None,

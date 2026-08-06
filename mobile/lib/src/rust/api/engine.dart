@@ -140,6 +140,11 @@ Future<double> engineDurationSecs() =>
 Future<bool> engineIsPlaying() =>
     RustLib.instance.api.crateApiEngineEngineIsPlaying();
 
+/// 实际输出共享模式：0=未知/不适用，1=Exclusive，2=Shared（Android Oboe）。
+/// 反映「请求 Exclusive 但静默降级为 Shared」的真实结果，指示器据此显示。
+Future<int> engineOutputMode() =>
+    RustLib.instance.api.crateApiEngineEngineOutputMode();
+
 Future<String> engineCurrentPath() =>
     RustLib.instance.api.crateApiEngineEngineCurrentPath();
 

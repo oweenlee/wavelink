@@ -13,6 +13,7 @@ import '../../../../data/services/lrc_parser.dart';
 import '../../../../data/repositories/audio_engine_repository.dart';
 import '../../../../data/services/rust_service.dart' show AnalyzeResult;
 import '../../../core/providers/repositories.dart';
+import '../../settings/view_models/dsp_provider.dart';
 import 'queue_provider.dart';
 
 class PlayerState {
@@ -133,6 +134,38 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
   void setBitPerfect(bool v) {
     state = state.copyWith(bitPerfect: v);
+  }
+
+  /// 有效 bit-perfect：请求偏好 && 实际链路 && 无 DSP 改动信号。
+  /// - 速率维度：文件速率 == 实际输出速率（不等于时引擎在重采样）
+  /// - Android：需实际 Exclusive 直通（mode=1）；Shared 降级不算
+  /// - iOS：速率匹配即 bit-exact（无独占概念，不做独占宣称）
+  /// - DSP：任一环节在动信号（EQ/Crossfeed/Widener/Limiter/Dither）即非
+  ///   bit-perfect（引擎在 bit_perfect 下会自动 bypass，UI 如实反映）
+  bool get effectiveBitPerfect {
+    if (!state.bitPerfect) return false;
+    final t = state.telemetry;
+    if (t.fileRate <= 0 || t.fileRate != t.outputRate) return false;
+    if (Platform.isAndroid && t.outputMode != 1) return false;
+    final dsp = ref.read(dspProvider).dspSettings;
+    if (dsp.enabled ||
+        dsp.crossfeed ||
+        dsp.widener ||
+        dsp.limiter ||
+        dsp.dither) {
+      return false;
+    }
+    return true;
+  }
+
+  /// DSP 是否在动信号（供指示器说明"被旁路/生效中"）
+  bool get dspAffectingSignal {
+    final dsp = ref.read(dspProvider).dspSettings;
+    return dsp.enabled ||
+        dsp.crossfeed ||
+        dsp.widener ||
+        dsp.limiter ||
+        dsp.dither;
   }
 
   void setCurrentSong(Song? song) {
@@ -393,6 +426,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
             underrunRecent: state.telemetry.underrunRecent,
             running: false,
             bufferMs: state.telemetry.bufferMs,
+            outputMode: state.telemetry.outputMode,
           ),
         );
       }
@@ -404,9 +438,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
       final results = await Future.wait([
         _engineRepo.getHwSampleRate(),
         _engineRepo.getUnderrunCount(),
+        _engineRepo.getOutputMode(),
       ]);
       final outputRate = results[0];
       final underrunTotal = results[1];
+      final outputMode = results[2];
       final running = await _engineRepo.isPlaying();
 
       final fileRate = _currentFileRate;
@@ -421,6 +457,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
         underrunRecent: recent,
         running: running,
         bufferMs: EngineTelemetry.idle.bufferMs,
+        outputMode: outputMode,
       );
 
       // 仅在读数变化时更新，避免无谓重建
@@ -438,7 +475,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
         n.fileRate != o.fileRate ||
         n.underrunTotal != o.underrunTotal ||
         n.underrunRecent != o.underrunRecent ||
-        n.running != o.running;
+        n.running != o.running ||
+        n.outputMode != o.outputMode;
   }
 
   Future<void> _tick() async {

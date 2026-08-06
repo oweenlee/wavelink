@@ -182,6 +182,7 @@ Future<String?> enginePollEvents() => engine.enginePollEvents();
 Future<double> enginePositionSecs() => engine.enginePositionSecs();
 Future<double> engineDurationSecs() => engine.engineDurationSecs();
 Future<bool> engineIsPlaying() => engine.engineIsPlaying();
+Future<int> engineOutputMode() => engine.engineOutputMode();
 Future<String> engineCurrentPath() => engine.engineCurrentPath();
 Future<String> engineLastError() => engine.engineLastError();
 

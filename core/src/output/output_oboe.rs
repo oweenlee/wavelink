@@ -243,6 +243,11 @@ fn negotiate_formats(_channels: u16, _sample_rate: u32, bit_depth: u16) -> Vec<O
 // ─── AudioOutput trait ───────────────────────────────────────
 
 impl AudioOutput for AudioOutputOboe {
+    fn actual_sharing_mode(&self) -> Option<bool> {
+        // 真实上报最终成功模式（先试 Exclusive 再回退 Shared 的实际结果）
+        Some(self.exclusive)
+    }
+
     fn pause(&self) {
         self.playing.store(false, Ordering::Release);
         if let Some(s) = self.stream.lock().as_mut() {

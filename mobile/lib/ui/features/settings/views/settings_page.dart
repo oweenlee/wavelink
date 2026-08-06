@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -67,6 +68,7 @@ class SettingsPage extends ConsumerWidget {
               label: l10n.bitPerfect,
               value: player.bitPerfect,
               onChanged: (_) => player.setBitPerfect(!player.bitPerfect),
+              subtitle: _bitPerfectStatus(player),
             ),
             _SettingItem(
               icon: LucideIcons.volume2,
@@ -332,12 +334,14 @@ class _SwitchItem extends StatelessWidget {
   final String label;
   final bool value;
   final ValueChanged<bool> onChanged;
+  final String? subtitle;
 
   const _SwitchItem({
     required this.icon,
     required this.label,
     required this.value,
     required this.onChanged,
+    this.subtitle,
   });
 
   @override
@@ -348,6 +352,15 @@ class _SwitchItem extends StatelessWidget {
         label,
         style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
       ),
+      subtitle: subtitle == null
+          ? null
+          : Text(
+              subtitle!,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppTheme.textTertiary,
+              ),
+            ),
       trailing: WlToggle(
         value: value,
         // 与音效面板同一组件，开关视觉全局一致
@@ -357,6 +370,27 @@ class _SwitchItem extends StatelessWidget {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
     );
   }
+}
+
+/// bit-perfect 开关副标题：如实反映「有效」状态（偏好 + 实际链路 + DSP）。
+String _bitPerfectStatus(PlaybackController player) {
+  final t = player.telemetry;
+  if (!player.bitPerfect) return '未开启';
+  if (player.effectiveBitPerfect) {
+    return Platform.isAndroid ? 'Exclusive 直通生效中' : 'bit-exact（速率匹配）生效中';
+  }
+  final reasons = <String>[];
+  if (t.fileRate > 0 && t.fileRate != t.outputRate) {
+    reasons.add('重采样中');
+  }
+  if (Platform.isAndroid && t.outputMode == 2) {
+    reasons.add('Shared 降级');
+  }
+  if (player.dspAffectingSignal) {
+    reasons.add('DSP 未旁路');
+  }
+  if (reasons.isEmpty) reasons.add('等待播放');
+  return '未生效：${reasons.join(' / ')}';
 }
 
 class _SliderItem extends StatelessWidget {

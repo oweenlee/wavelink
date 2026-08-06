@@ -42,6 +42,8 @@ Future<void> smbConnectShare({required String shareName}) =>
 ///
 /// 过滤 "."/".." 条目：smb2 crate 会返回它们，
 /// 递归扫描时若不剔除会无限进入 "." 导致路径爆炸。
+/// 优先从读取池借独立连接，使多个目录可并行列出（避免主会话串行排队）；
+/// 池空时回退主会话。
 Future<List<SmbDirEntry>> smbListDirectory({required String path}) =>
     RustLib.instance.api.crateApiSmbSmbListDirectory(path: path);
 

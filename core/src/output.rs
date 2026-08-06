@@ -135,6 +135,17 @@ pub trait AudioOutput {
     /// 当前输出声道数
     fn channels(&self) -> u32;
 
+    /// 实际输出共享模式（Android Oboe：Exclusive/Shared）。
+    /// - `Some(true)` = Exclusive（绕过混音器独占直通）
+    /// - `Some(false)` = Shared（混音器路径）
+    /// - `None` = 不适用（macOS/iOS/headless 无此概念）
+    ///
+    /// 用于如实上报「请求 Exclusive 但静默降级为 Shared」的真实状态，
+    /// 指示器必须基于此值而非请求偏好。
+    fn actual_sharing_mode(&self) -> Option<bool> {
+        None
+    }
+
     /// 请求切换输出采样率，返回实际生效的采样率。
     /// 桌面端：重新配置 cpal stream；移动端 Headless：通知平台层重设。
     /// 默认实现：不支持切换，返回当前采样率。

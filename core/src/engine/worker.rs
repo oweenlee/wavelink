@@ -43,11 +43,13 @@ pub(crate) fn run_engine(
     levels: Arc<Mutex<Levels>>,
     output_inner_shared: Arc<RwLock<Option<Arc<AudioOutputInner>>>>,
     output_sample_rate_shared: Arc<std::sync::atomic::AtomicU32>,
+    output_mode_shared: Arc<std::sync::atomic::AtomicU8>,
     capture_inner_shared: Arc<std::sync::RwLock<Option<Arc<crate::capture::CaptureInner>>>>,
 ) {
     let mut state = EngineState::new(config, position, duration_us, playing, external_tx.clone(), levels);
     state.output_inner_shared = Some(output_inner_shared);
     state.output_sample_rate_shared = Some(output_sample_rate_shared);
+    state.output_mode_shared = Some(output_mode_shared);
     state.capture_inner_shared = Some(capture_inner_shared);
     info!("引擎线程启动");
 
@@ -118,6 +120,7 @@ pub(crate) fn run_engine(
                             }
                             state.output_sample_rate = rate;
                             state.sync_output_sample_rate();
+                            state.sync_output_mode(); // 重建后模式可能降级（Exclusive→Shared）
                             if let Ok(mut shared) = config_shared.write() {
                                 shared.sample_rate = rate;
                             }

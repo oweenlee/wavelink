@@ -13,6 +13,12 @@ class MockAudioEngineRepository extends AudioEngineRepository {
   final List<String> playCalls = [];
   double position = 0.0;
 
+  /// 模拟 Android 实际输出共享模式：0=未知，1=Exclusive，2=Shared
+  int outputMode = 0;
+
+  /// 硬件/输出采样率（getHwSampleRate 返回）
+  int hwRate = 44100;
+
   /// 下一次 pollEvents 返回的事件（null = 无事件）
   String? nextEvent;
 
@@ -63,6 +69,9 @@ class MockAudioEngineRepository extends AudioEngineRepository {
   Future<double> positionSecs() async => position;
 
   @override
+  Future<bool> isPlaying() async => true;
+
+  @override
   Future<String> lastError() async => '';
 
   @override
@@ -77,6 +86,12 @@ class MockAudioEngineRepository extends AudioEngineRepository {
 
   @override
   Future<int> getUnderrunCount() async => 0;
+
+  @override
+  Future<int> getHwSampleRate() async => hwRate;
+
+  @override
+  Future<int> getOutputMode() async => outputMode;
 
   @override
   bool get rustAvailable => false;

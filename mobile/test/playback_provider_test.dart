@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wavelink_mobile/domain/models/song.dart';
 import 'package:wavelink_mobile/ui/features/playback/view_models/playback_controller.dart';
+import 'package:wavelink_mobile/ui/features/settings/view_models/dsp_provider.dart';
 import 'package:wavelink_mobile/ui/core/providers/repositories.dart';
 import 'package:wavelink_mobile/data/services/preferences_service.dart';
 import 'helpers/mock_repositories.dart';
@@ -391,6 +392,63 @@ void main() {
       check(engine.playCalls.length).equals(1); // 走完整装载而非空 resume
       check(engine.position).isCloseTo(42.0, 0.1); // seek 到保存位置（秒）
       check(p.isPlaying).isTrue();
+    });
+  });
+
+  group('有效 bit-perfect 判定', () {
+    /// 引擎可用 + 单曲库 + 创建真实文件，返回 (container, controller, engine)
+    (ProviderContainer, PlaybackController, _EngineAvailableMock)
+        buildPlayable() {
+      final engine = _EngineAvailableMock()..outputMode = 1;
+      final container = ProviderContainer(
+        overrides: [
+          audioEngineRepositoryProvider.overrideWith((_) => engine),
+          songRepositoryProvider.overrideWith((_) => MockSongRepository()),
+          preferencesRepositoryProvider.overrideWith(
+            (_) => PreferencesRepository(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      File('/tmp/s1.flac').writeAsBytesSync([0, 1, 2, 3]);
+      (container.read(songRepositoryProvider) as MockSongRepository)
+          .songsToReturn = [_song('s1')];
+      final p = container.read(playbackControllerProvider);
+      p.bootstrap();
+      return (container, p, engine);
+    }
+
+    test('速率匹配 + 无 DSP → 有效（非 Android 平台不要求独占模式）', () async {
+      final (_, p, _) = buildPlayable();
+      p.setBitPerfect(true);
+      p.play();
+      await Future<void>.delayed(const Duration(milliseconds: 50)); // 等遥测轮询
+
+      check(p.telemetry.fileRate).equals(44100);
+      check(p.telemetry.outputRate).equals(44100);
+      check(p.effectiveBitPerfect).isTrue();
+    });
+
+    test('DSP 开启 → 非有效（引擎会自动旁路，UI 如实反映）', () async {
+      final (container, p, _) = buildPlayable();
+      p.setBitPerfect(true);
+      p.play();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      check(p.effectiveBitPerfect).isTrue();
+
+      container.read(dspProvider.notifier).toggleDspEnabled();
+      check(p.effectiveBitPerfect).isFalse();
+    });
+
+    test('速率不匹配（重采样中）→ 非有效', () async {
+      final (_, p, engine) = buildPlayable();
+      engine.hwRate = 48000; // 引擎按 48k 输出，文件 44.1k → 重采样
+      p.setBitPerfect(true);
+      p.play();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      check(p.telemetry.outputRate).equals(48000);
+      check(p.effectiveBitPerfect).isFalse();
     });
   });
 }

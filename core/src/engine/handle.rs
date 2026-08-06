@@ -1,6 +1,6 @@
 //! EngineHandle — 对外的线程安全句柄
 
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
@@ -36,6 +36,8 @@ pub struct EngineHandle {
     pub output_inner: Arc<RwLock<Option<Arc<AudioOutputInner>>>>,
     /// 实际输出采样率（与 EngineState.output_sample_rate 同步）
     pub(crate) output_sample_rate: Arc<AtomicU32>,
+    /// 实际输出共享模式（与 EngineState.output_mode 同步）：0=未知/不适用，1=Exclusive，2=Shared
+    pub(crate) output_mode: Arc<AtomicU8>,
     /// 捕获缓冲（替代全局 CAPTURE_INNER，供宿主层读取捕获数据）
     #[allow(dead_code)] // 仅通过宿主层访问
     pub(crate) capture_inner: Arc<RwLock<Option<Arc<CaptureInner>>>>,
@@ -57,6 +59,7 @@ impl EngineHandle {
         let levels = Arc::new(Mutex::new(Levels::default()));
         let output_inner: Arc<RwLock<Option<Arc<AudioOutputInner>>>> = Arc::new(RwLock::new(None));
         let output_sample_rate = Arc::new(AtomicU32::new(config.sample_rate));
+        let output_mode = Arc::new(AtomicU8::new(0));
         let capture_inner: Arc<RwLock<Option<Arc<CaptureInner>>>> = Arc::new(RwLock::new(None));
         let pos_clone = Arc::clone(&position);
         let dur_clone = Arc::clone(&duration_us);
@@ -64,11 +67,17 @@ impl EngineHandle {
         let levels_clone = Arc::clone(&levels);
         let output_inner_clone = Arc::clone(&output_inner);
         let output_sr_clone = Arc::clone(&output_sample_rate);
+        let output_mode_clone = Arc::clone(&output_mode);
         let capture_inner_clone = Arc::clone(&capture_inner);
         let config_shared = Arc::new(RwLock::new(config.clone()));
         let config_for_engine = Arc::clone(&config_shared);
-        thread::spawn(move || run_engine(cmd_rx, event_tx, pos_clone, dur_clone, playing_clone, config, config_for_engine, levels_clone, output_inner_clone, output_sr_clone, capture_inner_clone));
-        (EngineHandle { tx, position, duration_us, playing, config: config_shared, levels, output_inner, output_sample_rate, capture_inner }, event_rx)
+        thread::spawn(move || run_engine(cmd_rx, event_tx, pos_clone, dur_clone, playing_clone, config, config_for_engine, levels_clone, output_inner_clone, output_sr_clone, output_mode_clone, capture_inner_clone));
+        (EngineHandle { tx, position, duration_us, playing, config: config_shared, levels, output_inner, output_sample_rate, output_mode, capture_inner }, event_rx)
+    }
+
+    /// 当前实际输出共享模式：0=未知/不适用，1=Exclusive，2=Shared（Android Oboe）
+    pub fn output_mode(&self) -> u8 {
+        self.output_mode.load(Ordering::Acquire)
     }
 
     /// 获取当前音频电平（RMS / 峰值 / 削波标志）

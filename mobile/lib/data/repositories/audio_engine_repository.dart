@@ -92,4 +92,7 @@ class AudioEngineRepository {
   Future<int> getUnderrunCount() => rs.getUnderrunCount();
   Future<int> getHwSampleRate() => rs.getHwSampleRate();
   Future<bool> isPlaying() => rs.engineIsPlaying();
+
+  /// 实际输出共享模式：0=未知/不适用，1=Exclusive，2=Shared（Android Oboe）
+  Future<int> getOutputMode() => rs.engineOutputMode();
 }

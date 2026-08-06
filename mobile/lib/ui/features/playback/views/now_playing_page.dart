@@ -127,7 +127,7 @@ class _NowPlayingPageState extends ConsumerState<NowPlayingPage>
     }
 
     final accent = AppTheme.accentFallback;
-    final fmtInfo = _buildFormatInfo(song, player.bitPerfect);
+    final fmtInfo = _buildFormatInfo(song, player);
 
     return AccentScope(
       accent: accent,
@@ -261,11 +261,47 @@ String _formatFromPath(String? path) {
   }
 }
 
-/// 构建顶栏格式信息字符串
-/// TODO: 接入 Rust 引擎获取真实采样率/位深
-String _buildFormatInfo(Song song, bool bitPerfect) {
+/// 构建顶栏格式信息字符串。
+/// bit-perfect 指示基于「有效」状态（偏好 && 实际链路 && 无 DSP）：
+/// - Android：仅实际 Exclusive 直通 显示 bit-perfect；Shared 静默降级如实标注
+/// - iOS：速率匹配即 bit-exact（无独占概念，文案诚实区分，不做独占宣称）
+String _buildFormatInfo(Song song, PlaybackController player) {
   final fmt = _formatFromPath(song.path);
-  return '$fmt${bitPerfect ? ' · bit-perfect' : ''}';
+  final t = player.telemetry;
+
+  if (t.outputRate <= 0) return fmt; // 未播放
+  if (t.fileRate <= 0) return fmt;
+
+  if (player.effectiveBitPerfect) {
+    return Platform.isAndroid
+        ? '$fmt · Exclusive bit-perfect'
+        : '$fmt · bit-exact（速率匹配）';
+  }
+
+  // 未达有效 bit-perfect：如实说明原因（不撒谎）
+  final reasons = <String>[];
+  if (!player.bitPerfect) {
+    reasons.add('未开启');
+  } else {
+    if (t.fileRate != t.outputRate) {
+      reasons.add('重采样 ${_khz(t.fileRate)}→${_khz(t.outputRate)}');
+    }
+    if (Platform.isAndroid && t.outputMode == 2) {
+      reasons.add('Shared 混音器路径');
+    }
+    if (player.dspAffectingSignal) {
+      reasons.add('DSP 处理中');
+    }
+    if (reasons.isEmpty) reasons.add('等待播放');
+  }
+  return '$fmt · ${reasons.join(' / ')}';
+}
+
+/// 44100 → "44.1k"、48000 → "48k"、96000 → "96k"（顶层，供格式信息与仪表面板共用）
+String _khz(int hz) {
+  if (hz <= 0) return '--';
+  final k = hz / 1000;
+  return (hz % 1000 == 0) ? '${k.round()}k' : '${k.toStringAsFixed(1)}k';
 }
 
 // ── Instrument Panel ──
@@ -276,24 +312,22 @@ class _InstrumentPanel extends StatelessWidget {
   final PlaybackController player;
   const _InstrumentPanel({required this.player});
 
-  /// 44100 → "44.1k"、48000 → "48k"、96000 → "96k"
-  static String _khz(int hz) {
-    if (hz <= 0) return '--';
-    final k = hz / 1000;
-    return (hz % 1000 == 0) ? '${k.round()}k' : '${k.toStringAsFixed(1)}k';
-  }
-
   @override
   Widget build(BuildContext context) {
     final t = player.telemetry;
 
-    // Output：文件速率 → 输出速率 · direct/resample
+    // Output：文件速率 → 输出速率 · direct/resample，Android 附带实际共享模式
     final String output;
     if (t.outputRate <= 0) {
       output = '-- · idle';
     } else if (t.fileRate > 0) {
+      final mode = Platform.isAndroid
+          ? (t.outputMode == 1
+                ? ' · Exclusive'
+                : (t.outputMode == 2 ? ' · Shared' : ''))
+          : ''; // iOS 无独占概念
       output =
-          '${_khz(t.fileRate)} → ${_khz(t.outputRate)} · ${t.bitPerfect ? 'direct' : 'resample'}';
+          '${_khz(t.fileRate)} → ${_khz(t.outputRate)} · ${t.bitPerfect ? 'direct' : 'resample'}$mode';
     } else {
       output = '${_khz(t.outputRate)} · --';
     }

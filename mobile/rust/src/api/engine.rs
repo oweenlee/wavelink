@@ -320,6 +320,12 @@ pub fn engine_is_playing() -> bool {
     with_engine(|h| h.is_playing()).unwrap_or(false)
 }
 
+/// 实际输出共享模式：0=未知/不适用，1=Exclusive，2=Shared（Android Oboe）。
+/// 反映「请求 Exclusive 但静默降级为 Shared」的真实结果，指示器据此显示。
+pub fn engine_output_mode() -> u8 {
+    with_engine(|h| h.output_mode()).unwrap_or(0)
+}
+
 /// 【临时诊断】探测当前库实例看到的 ENGINE 状态（验证 JNI/Dart FFI 是否同一实例）
 pub(crate) fn engine_probe() -> String {
     match ENGINE.load_full() {

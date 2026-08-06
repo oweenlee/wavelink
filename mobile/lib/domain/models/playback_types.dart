@@ -64,6 +64,9 @@ class EngineTelemetry {
   /// 最近一个轮询周期的 underrun 增量
   final int underrunRecent;
 
+  /// 实际输出共享模式：0=未知/不适用，1=Exclusive，2=Shared（Android Oboe）
+  final int outputMode;
+
   /// 引擎是否正在播放
   final bool running;
 
@@ -77,6 +80,7 @@ class EngineTelemetry {
     required this.underrunRecent,
     required this.running,
     required this.bufferMs,
+    this.outputMode = 0,
   });
 
   static const idle = EngineTelemetry(
@@ -88,8 +92,14 @@ class EngineTelemetry {
     bufferMs: 280,
   );
 
-  /// bit-perfect：文件速率与输出速率一致（不重采样）
+  /// bit-perfect（速率维度）：文件速率与输出速率一致（不重采样）
   bool get bitPerfect => fileRate > 0 && fileRate == outputRate;
+
+  /// 是否 Exclusive 直通（Android 实际模式，非请求偏好）
+  bool get exclusiveDirect => outputMode == 1;
+
+  /// 是否 Shared 混音器路径（Android，请求 Exclusive 被静默降级）
+  bool get sharedFallback => outputMode == 2;
 
   /// Buffer 是否供数不足（最近周期出现 underrun）
   bool get bufferStarving => underrunRecent > 0;
