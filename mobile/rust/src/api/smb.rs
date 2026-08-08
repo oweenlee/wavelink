@@ -21,6 +21,7 @@ struct SmbSession {
 }
 
 /// 连接参数（用于创建池连接）
+#[derive(Clone)]
 struct ConnectParams {
     addr: String,
     username: String,
@@ -271,6 +272,51 @@ pub async fn smb_read_file_stream(
     // 显式关闭句柄释放服务端资源（直接 drop 会泄漏句柄）
     let _ = reader.close().await;
     result
+}
+
+/// 读远端文件头部（最多 [max_len] 字节）：封面提取/格式探测用，避免整文件下载。
+/// 注意：池空时**绝不回退主会话**——主会话可能正被扫描（list_directory）使用，
+/// smb2 单连接不支持并发请求，混用会让服务器挂起（30s 无响应）。
+pub async fn smb_read_head(path: String, max_len: u64) -> Result<Vec<u8>, String> {
+    let permit = POOL_SEM.acquire().await.map_err(err_str)?;
+    let pooled = POOL.lock().await.pop();
+    let mut owned: Option<SmbSession> = None;
+    let reader = match pooled {
+        Some(sess) => {
+            let r = {
+                let tree = sess.tree.as_ref().ok_or("no share connected")?;
+                sess.client.open_file_reader(tree, &path).await.map_err(err_str)
+            };
+            POOL.lock().await.push(sess);
+            r
+        }
+        None => {
+            // 新建独立连接并挂载同一共享（避免与主会话并发冲突）
+            let params = PARAMS.lock().await.clone().ok_or("not connected")?;
+            let share = SESSION
+                .lock()
+                .await
+                .as_ref()
+                .and_then(|s| s.tree.as_ref().map(|t| t.share_name.clone()))
+                .ok_or("no share connected")?;
+            let mut client = SmbClient::connect(params.to_config()).await.map_err(err_str)?;
+            let tree = client.connect_share(&share).await.map_err(err_str)?;
+            let sess = SmbSession { client, tree: Some(tree) };
+            let r = {
+                let tree = sess.tree.as_ref().expect("just set");
+                sess.client.open_file_reader(tree, &path).await.map_err(err_str)
+            };
+            owned = Some(sess); // 用完 drop 关闭，不污染池
+            r
+        }
+    };
+    drop(permit);
+    let reader = reader?;
+    let data = reader.read_at(0, max_len).await.map_err(err_str)?;
+    // 显式关闭句柄释放服务端资源（直接 drop 会泄漏句柄）
+    let _ = reader.close().await;
+    drop(owned);
+    Ok(data)
 }
 
 /// 远端文件大小（扫描时判断是否有变化，避免重复下载）

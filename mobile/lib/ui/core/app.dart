@@ -8,9 +8,15 @@ import '../../l10n/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'theme/app_theme.dart';
+import '../../data/services/preferences_service.dart';
+import '../../data/services/smb_service.dart';
+import '../../data/services/subsonic_service.dart';
+import '../../domain/models/song.dart';
+import '../features/library/view_models/library_provider.dart';
 import '../features/settings/view_models/locale_provider.dart';
 import '../features/library/view_models/library_header_notifier.dart';
-import '../features/library/views/import_page.dart';
+import 'widgets/wl_toggle.dart';
+import '../features/playback/view_models/playback_controller.dart';
 import 'widgets/mini_player_bar.dart';
 import 'routes.dart';
 
@@ -54,6 +60,27 @@ class AppShell extends ConsumerStatefulWidget {
 }
 
 class _AppShellState extends ConsumerState<AppShell> {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  DateTime? _lastLibraryTap;
+
+  /// 双击曲库 tab：第一次正常切页，350ms 内第二次打开抽屉
+  void _onLibraryTap() {
+    final now = DateTime.now();
+    if (_lastLibraryTap != null &&
+        now.difference(_lastLibraryTap!) < const Duration(milliseconds: 350)) {
+      _lastLibraryTap = null;
+      _scaffoldKey.currentState?.openDrawer();
+    } else {
+      _lastLibraryTap = now;
+      _goTab(0);
+    }
+  }
+
+  /// 抽屉打开（双击/左滑手势/边缘滑动均触发）：轻震动反馈
+  void _onDrawerChanged(bool opened) {
+    if (opened) HapticFeedback.lightImpact();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -74,105 +101,119 @@ class _AppShellState extends ConsumerState<AppShell> {
     final currentTab = widget.navigationShell.currentIndex;
     final headerState = ref.watch(libraryHeaderProvider);
 
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      body: Column(
-        children: [
-          SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Row(
-                children: [
-                  if (currentTab == 0)
-                    // Library tab: Space Grotesk wordmark + action icons
-                    const Text(
-                      'WAVELINK',
-                      style: TextStyle(
-                        fontFamily: 'Space Grotesk',
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.18 * 22,
-                        color: AppTheme.textPrimary,
-                      ),
-                    )
-                  else
-                    Text(
-                      _getTitle(currentTab, l10n),
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                  const Spacer(),
-                  if (currentTab == 0) ...[
-                    // Search toggle
-                    _HeaderIconButton(
-                      icon: LucideIcons.search,
-                      onTap: () =>
-                          ref.read(libraryHeaderProvider.notifier).toggleSearch(),
-                      active: headerState.isSearchVisible,
-                    ),
-                    const SizedBox(width: 4),
-                    // Import
-                    _HeaderIconButton(
-                      icon: LucideIcons.download,
-                      onTap: () => showImportSheet(context),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          Expanded(child: widget.navigationShell),
-        ],
-      ),
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          MiniPlayerBar(onTap: () => context.push('/now-playing')),
-          Container(
-            decoration: BoxDecoration(
-              color: AppTheme.background,
-              border: Border(
-                top: BorderSide(
-                  color: AppTheme.textTertiary.withValues(alpha: 0.1),
-                  width: 0.5,
-                ),
-              ),
-            ),
-            child: SafeArea(
-              top: false,
+    // 根壳拦截系统返回（Android 左边缘右滑=系统返回手势）：
+    // 根页面无返回栈，返回键/左滑 → 开/关抽屉，避免误退 app 回桌面。
+    // 子路由（专辑/设置详情等）的返回手势不受影响。
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        final scaffold = _scaffoldKey.currentState;
+        if (scaffold == null) return;
+        if (scaffold.isDrawerOpen) {
+          scaffold.closeDrawer();
+        } else {
+          scaffold.openDrawer();
+        }
+      },
+      child: Scaffold(
+        key: _scaffoldKey,
+        drawer: const _QuickDrawer(),
+        onDrawerChanged: _onDrawerChanged,
+        backgroundColor: AppTheme.background,
+        body: Column(
+          children: [
+            SafeArea(
+              bottom: false,
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _NavItem(
-                      icon: LucideIcons.library,
-                      label: l10n.tabLibrary,
-                      isSelected: currentTab == 0,
-                      onTap: () => _goTab(0),
-                    ),
-                    _NavItem(
-                      icon: LucideIcons.slidersHorizontal,
-                      label: l10n.tabPlay,
-                      isSelected: false,
-                      onTap: () => context.push('/now-playing'),
-                    ),
-                    _NavItem(
-                      icon: LucideIcons.settings,
-                      label: l10n.tabSettings,
-                      isSelected: currentTab == 1,
-                      onTap: () => _goTab(1),
-                    ),
+                    if (currentTab == 0)
+                      // 曲库页：Space Grotesk 字标 + 操作图标
+                      const Text(
+                        'WAVELINK',
+                        style: TextStyle(
+                          fontFamily: 'Space Grotesk',
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.18 * 22,
+                          color: AppTheme.textPrimary,
+                        ),
+                      )
+                    else
+                      Text(
+                        _getTitle(currentTab, l10n),
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                    const Spacer(),
+                    if (currentTab == 0) ...[
+                      // 搜索开关
+                      _HeaderIconButton(
+                        icon: LucideIcons.search,
+                        onTap: () => ref
+                            .read(libraryHeaderProvider.notifier)
+                            .toggleSearch(),
+                        active: headerState.isSearchVisible,
+                      ),
+                    ],
                   ],
                 ),
               ),
             ),
-          ),
-        ],
+            Expanded(child: widget.navigationShell),
+          ],
+        ),
+        bottomNavigationBar: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            MiniPlayerBar(onTap: () => context.push('/now-playing')),
+            Container(
+              decoration: BoxDecoration(
+                color: AppTheme.background,
+                border: Border(
+                  top: BorderSide(
+                    color: AppTheme.textTertiary.withValues(alpha: 0.1),
+                    width: 0.5,
+                  ),
+                ),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _NavItem(
+                        icon: LucideIcons.library,
+                        label: l10n.tabLibrary,
+                        isSelected: currentTab == 0,
+                        onTap: _onLibraryTap,
+                      ),
+                      _NavItem(
+                        icon: LucideIcons.slidersHorizontal,
+                        label: l10n.tabPlay,
+                        isSelected: false,
+                        onTap: () => context.push('/now-playing'),
+                      ),
+                      _NavItem(
+                        icon: LucideIcons.settings,
+                        label: l10n.tabSettings,
+                        isSelected: currentTab == 1,
+                        onTap: () => _goTab(1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -193,6 +234,308 @@ class _AppShellState extends ConsumerState<AppShell> {
       default:
         return '';
     }
+  }
+}
+
+/// 曲库快捷抽屉（双击底部「曲库」tab 打开）：导入音乐功能菜单
+class _QuickDrawer extends ConsumerStatefulWidget {
+  const _QuickDrawer();
+
+  @override
+  ConsumerState<_QuickDrawer> createState() => _QuickDrawerState();
+}
+
+class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
+  bool _discovering = false;
+  bool _subsonicScanning = false;
+  String? _subsonicResult;
+
+  Future<void> _handleDiscover() async {
+    if (_discovering) return;
+    final player = ref.read(playbackControllerProvider);
+    setState(() => _discovering = true);
+    await player.discoverSongs();
+    if (!mounted) return;
+    // 扫描完成即回到开关态（不显示结果文案）
+    setState(() => _discovering = false);
+  }
+
+  Future<void> _handlePickFiles() async {
+    final player = ref.read(playbackControllerProvider);
+    Navigator.of(context).pop(); // 关抽屉（系统文件选择器会盖住）
+    final count = await player.importFromPicker();
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
+    if (count > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.importN(count)),
+          backgroundColor: AppTheme.s3,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  void _handleNas() {
+    Navigator.of(context).pop(); // 关抽屉
+    context.push('/nas');
+  }
+
+  /// Subsonic：未配置 → 进配置页；已配置 → 直接扫描（loading/结果反馈）
+  void _handleSubsonic() {
+    Navigator.of(context).pop(); // 关抽屉
+    if (!SubsonicService.isConfigured) {
+      context.push('/subsonic');
+    } else {
+      _scanSubsonic();
+    }
+  }
+
+  Future<void> _scanSubsonic() async {
+    if (_subsonicScanning) return;
+    final player = ref.read(playbackControllerProvider);
+    setState(() {
+      _subsonicScanning = true;
+      _subsonicResult = null;
+    });
+    final ok = await player.scanSubsonic();
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
+    setState(() {
+      _subsonicScanning = false;
+      _subsonicResult = ok ? l10n.sourceFound : l10n.sourceNotFound;
+    });
+  }
+
+  Future<void> _toggleSource(SongSource source, bool value) async {
+    final prefs = PreferencesService.instance;
+    switch (source) {
+      case SongSource.nas:
+        await prefs.setShowNas(value);
+      case SongSource.appleMusic:
+        await prefs.setShowAppleMusic(value);
+      case SongSource.subsonic:
+        await prefs.setShowSubsonic(value);
+      case SongSource.imported:
+        await prefs.setShowImported(value);
+      case SongSource.local:
+        await prefs.setShowLocal(value);
+    }
+    if (!mounted) return;
+    setState(() {}); // 刷新抽屉开关状态
+    ref.read(libraryProvider.notifier).refreshSources(); // 刷新曲库
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final prefs = PreferencesService.instance;
+    return Drawer(
+      backgroundColor: AppTheme.surfaceDark,
+      width: 280,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.horizontal(right: Radius.circular(20)),
+      ),
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 标题区
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'WAVELINK',
+                    style: TextStyle(
+                      fontFamily: 'Space Grotesk',
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.18 * 22,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    l10n.drawerSubtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textTertiary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Divider(
+              height: 1,
+              color: AppTheme.textTertiary.withValues(alpha: 0.1),
+            ),
+            const SizedBox(height: 4),
+            // 音源管理：一行 = 一个音源（点击行=添加/扫描/管理，右侧开关=曲库过滤）
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+              child: Text(
+                l10n.sourcesSection,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1.2,
+                  color: AppTheme.textTertiary,
+                ),
+              ),
+            ),
+            // 系统音乐库（iOS=Apple Music / Android=设备音乐库）
+            _SourceRow(
+              icon: Platform.isIOS ? LucideIcons.apple : LucideIcons.smartphone,
+              label: Platform.isIOS ? l10n.sourceAppleMusic : l10n.sourceDeviceLibrary,
+              subtitle: Platform.isIOS
+                  ? l10n.sourceAppleMusicHint
+                  : l10n.sourceDeviceLibraryHint,
+              value: Platform.isIOS ? prefs.showAppleMusic : prefs.showLocal,
+              onChanged: (v) => _toggleSource(
+                Platform.isIOS ? SongSource.appleMusic : SongSource.local,
+                v,
+              ),
+              loading: _discovering,
+              onTap: _handleDiscover,
+            ),
+            // 文件导入
+            _SourceRow(
+              icon: LucideIcons.folderOpen,
+              label: l10n.sourceFileImport,
+              subtitle: l10n.sourceFileImportHint,
+              value: prefs.showImported,
+              onChanged: (v) => _toggleSource(SongSource.imported, v),
+              onTap: _handlePickFiles,
+            ),
+            // NAS
+            _SourceRow(
+              icon: LucideIcons.hardDrive,
+              label: l10n.sourceNas,
+              subtitle: SmbService.isConnected
+                  ? l10n.sourceNasConnected
+                  : l10n.sourceNasHint,
+              value: prefs.showNas,
+              onChanged: (v) => _toggleSource(SongSource.nas, v),
+              onTap: _handleNas,
+            ),
+            // 音乐服务器（Subsonic 兼容）
+            _SourceRow(
+              icon: LucideIcons.server,
+              label: l10n.sourceMusicServer,
+              subtitle: SubsonicService.isConfigured
+                  ? l10n.sourceMusicServerReady
+                  : l10n.sourceMusicServerHint,
+              value: prefs.showSubsonic,
+              onChanged: (v) => _toggleSource(SongSource.subsonic, v),
+              loading: _subsonicScanning,
+              result: _subsonicResult,
+              onTap: _handleSubsonic,
+            ),
+            const Spacer(),
+            // 底部版本号
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: Text(
+                'v1.0.0-rc.1',
+                style: TextStyle(fontSize: 11, color: AppTheme.textTertiary),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 抽屉音源行：图标 + 名称 + 副标题，右侧状态（loading/结果/开关）。
+/// 点击行 = 添加/扫描/管理该音源；开关 = 曲库是否展示该来源音乐。
+class _SourceRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final VoidCallback onTap;
+  final bool loading;
+  final String? result;
+
+  const _SourceRow({
+    required this.icon,
+    required this.label,
+    this.subtitle,
+    required this.value,
+    required this.onChanged,
+    required this.onTap,
+    this.loading = false,
+    this.result,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: loading ? null : onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: AppTheme.textSecondary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 1),
+                    Text(
+                      subtitle!,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.textTertiary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            // 右侧状态：扫描中 / 结果 / 过滤开关
+            if (loading)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppTheme.textSecondary,
+                ),
+              )
+            else if (result != null)
+              Text(
+                result!,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.textTertiary,
+                ),
+              )
+            else
+              WlToggle(value: value, onChanged: () => onChanged(!value)),
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -280,17 +280,20 @@ class SmbService {
     int remoteSize,
   ) async {
     final fallbackTitle = name.replaceAll(RegExp(r'\.[^.]+$'), '');
+    // 文件名启发式解析艺术家（`艺术家 - 歌名` 格式），拆不到时保持占位由 UI 隐藏
+    final parsed = ImportService.parseArtistTitle(fallbackTitle);
 
     // 关闭离线缓存 → 仅索引，不占本地空间。播放时经 downloadToLocal 拉取。
     if (!PreferencesService.instance.smbOfflineCache) {
       return Song(
         id: 'smb_${smbPath.hashCode}',
-        title: fallbackTitle,
-        artist: 'Unknown Artist',
+        title: parsed.title,
+        artist: parsed.artist ?? 'Unknown Artist',
         album: 'NAS Music',
-        duration: ImportService.estimateDuration(remoteSize),
+        duration: ImportService.estimateDuration(remoteSize, name),
         dominantColor: AppTheme.s2,
         smbPath: smbPath,
+        durationEstimated: true,
       );
     }
 
@@ -325,7 +328,9 @@ class SmbService {
       String album = 'NAS Music';
       Duration duration = ImportService.estimateDuration(
         await localFile.length(),
+        localPath,
       );
+      bool durationEstimated = true;
       String? coverUrl;
       bool hasCover = false;
 
@@ -337,6 +342,7 @@ class SmbService {
           if (meta.album != null && meta.album!.isNotEmpty) album = meta.album!;
           if (meta.durationSecs > 0) {
             duration = Duration(milliseconds: (meta.durationSecs * 1000).round());
+            durationEstimated = false;
           }
           if (meta.hasCover && meta.coverBytes.isNotEmpty) {
             final coversDir = Directory('${appDir.path}/.covers');
@@ -362,11 +368,66 @@ class SmbService {
         path: localPath,
         coverUrl: coverUrl,
         hasCover: hasCover,
+        durationEstimated: durationEstimated,
       );
     } catch (e) {
       // 降级：下载/元数据提取失败，返回 null 跳过该文件
       debugPrint('[SMB] 文件处理失败 ($smbPath): $e');
       return null;
+    }
+  }
+
+  /// 读 SMB 远端文件头部提取内嵌封面（离线缓存关模式：不下载整文件）。
+  /// 成功设置 song.coverUrl/hasCover；失败静默（封面保持纯色占位）。
+  /// 会话可能已断开（服务器空闲超时等）：失败后强制重连再试一次。
+  static Future<void> fetchRemoteCover(Song song) async {
+    final smbPath = song.smbPath;
+    if (smbPath == null || smbPath.isEmpty || song.coverUrl != null) return;
+    try {
+      await _fetchRemoteCoverOnce(song, smbPath);
+    } catch (e) {
+      debugPrint('[SMB] 远端封面提取失败 ($e)，强制重连后重试');
+      // 与 downloadToLocal 同策略：会话可能已被服务器端断开，
+      // 强制全量重连（ensureReady 在 _connected=true 时不会重连）
+      _connected = false;
+      _mountedShare = null;
+      if (!await ensureReady()) {
+        debugPrint('[SMB] 封面重试中止：重连失败');
+        return;
+      }
+      try {
+        await _fetchRemoteCoverOnce(song, smbPath);
+      } catch (e2) {
+        debugPrint('[SMB] 远端封面提取重试仍失败: $e2');
+      }
+    }
+  }
+
+  static Future<void> _fetchRemoteCoverOnce(Song song, String smbPath) async {
+    final head = await smb.smbReadHead(
+      path: smbPath,
+      maxLen: BigInt.from(512 * 1024),
+    );
+    if (head.isEmpty) return;
+    final appDir = await getApplicationDocumentsDirectory();
+    final headDir = Directory('${appDir.path}/.smb_head');
+    if (!await headDir.exists()) await headDir.create(recursive: true);
+    final headFile = File('${headDir.path}/${smbPath.hashCode}.head');
+    await headFile.writeAsBytes(head);
+    try {
+      final meta = await rs.readMetadata(headFile.path);
+      if (meta.hasCover && meta.coverBytes.isNotEmpty) {
+        final coversDir = Directory('${appDir.path}/.covers');
+        if (!await coversDir.exists()) await coversDir.create(recursive: true);
+        final coverFile =
+            File('${coversDir.path}/smb_${smbPath.hashCode}.jpg');
+        await coverFile.writeAsBytes(meta.coverBytes);
+        song.coverUrl = coverFile.path;
+        song.hasCover = true;
+      }
+    } finally {
+      // 头部临时文件用完即删
+      if (await headFile.exists()) await headFile.delete();
     }
   }
 

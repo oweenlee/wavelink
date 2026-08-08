@@ -38,6 +38,9 @@ class AudioEngineRepository {
   /// 探测音频文件采样率（失败返回 0）
   Future<int> probeSampleRate(String path) => rs.probeSampleRate(path);
 
+  /// 探测音频文件时长秒数（失败返回 0；仅头部读取，不完整解码）
+  Future<double> probeDurationSecs(String path) => rs.probeDurationSecs(path);
+
   // ── 音量 ──
 
   Future<void> setVolume(double vol) => rs.engineSetVolume(vol: vol);

@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0-beta.5";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -895261013;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 619970762;
 
 // Section: executor
 
@@ -1938,6 +1938,40 @@ fn wire__crate__api__playlist__parse_playlist_file_impl(
         },
     )
 }
+fn wire__crate__api__decode__probe_duration_secs_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "probe_duration_secs",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_path = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok =
+                        Result::<_, ()>::Ok(crate::api::decode::probe_duration_secs(api_path))?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__decode__probe_sample_rate_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -2369,6 +2403,44 @@ fn wire__crate__api__smb__smb_read_file_stream_impl(
                     (move || async move {
                         let output_ok =
                             crate::api::smb::smb_read_file_stream(api_path, api_sink).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__smb__smb_read_head_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "smb_read_head",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_path = <String>::sse_decode(&mut deserializer);
+            let api_max_len = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::smb::smb_read_head(api_path, api_max_len).await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -3143,33 +3215,35 @@ fn pde_ffi_dispatcher_primary_impl(
         55 => {
             wire__crate__api__playlist__parse_playlist_file_impl(port, ptr, rust_vec_len, data_len)
         }
-        56 => wire__crate__api__decode__probe_sample_rate_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__metadata__read_metadata_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__metadata__read_replaygain_impl(port, ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__audio_output__set_hw_sample_rate_impl(
+        56 => wire__crate__api__decode__probe_duration_secs_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__decode__probe_sample_rate_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__metadata__read_metadata_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__metadata__read_replaygain_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__audio_output__set_hw_sample_rate_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        60 => wire__crate__api__smb__smb_connect_impl(port, ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__smb__smb_connect_share_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__smb__smb_disconnect_impl(port, ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__smb__smb_file_size_impl(port, ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__smb__smb_list_directory_impl(port, ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__smb__smb_list_shares_impl(port, ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__smb__smb_read_file_impl(port, ptr, rust_vec_len, data_len),
-        67 => wire__crate__api__smb__smb_read_file_stream_impl(port, ptr, rust_vec_len, data_len),
-        68 => {
+        61 => wire__crate__api__smb__smb_connect_impl(port, ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__smb__smb_connect_share_impl(port, ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__smb__smb_disconnect_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__smb__smb_file_size_impl(port, ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__smb__smb_list_directory_impl(port, ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__smb__smb_list_shares_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__smb__smb_read_file_impl(port, ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__smb__smb_read_file_stream_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__smb__smb_read_head_impl(port, ptr, rust_vec_len, data_len),
+        70 => {
             wire__crate__api__decode__stream_decoder_create_impl(port, ptr, rust_vec_len, data_len)
         }
-        69 => wire__crate__api__decode__stream_decoder_next_chunk_impl(
+        71 => wire__crate__api__decode__stream_decoder_next_chunk_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        70 => wire__crate__api__decode__stream_decoder_stop_impl(port, ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__decode__stream_decoder_stop_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

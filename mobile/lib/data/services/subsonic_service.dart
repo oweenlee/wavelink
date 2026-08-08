@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../domain/models/song.dart';
 import '../../ui/core/theme/app_theme.dart';
+import 'preferences_service.dart';
 
 /// Subsonic / Navidrome / Jellyfin / Emby API 客户端
 ///
@@ -20,6 +21,43 @@ class SubsonicService {
       _baseUrl!.isNotEmpty &&
       _username != null &&
       _password != null;
+
+  /// 从持久化配置恢复（app 启动时调用）
+  static void loadFromPrefs() {
+    final prefs = PreferencesService.instance;
+    final url = prefs.subsonicBaseUrl;
+    final user = prefs.subsonicUsername;
+    if (url != null && url.isNotEmpty && user != null && user.isNotEmpty) {
+      configure(baseUrl: url, username: user, password: prefs.subsonicPassword);
+    }
+  }
+
+  /// 连接测试：ping 服务器并校验凭据，成功返回 true
+  static Future<bool> testConnection({
+    required String baseUrl,
+    required String username,
+    required String password,
+  }) async {
+    try {
+      final url = baseUrl.replaceAll(RegExp(r'/+$'), '');
+      final uri = Uri.parse('$url/rest/ping').replace(queryParameters: {
+        'u': username,
+        'p': password,
+        'v': '1.16.0',
+        'c': 'wavelink',
+      });
+      final resp = await http
+          .get(uri, headers: {'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 10));
+      if (resp.statusCode != 200) return false;
+      final json = jsonDecode(resp.body);
+      final status = json['subsonic-response']?['status'] as String?;
+      return status == 'ok';
+    } catch (e) {
+      debugPrint('[Subsonic] ping failed: $e');
+      return false;
+    }
+  }
 
   static void configure({
     required String baseUrl,
@@ -62,29 +100,30 @@ class SubsonicService {
     final songs = <Song>[];
 
     try {
-      final artistResponse = await _get('/getArtists');
-      if (artistResponse.statusCode != 200) return [];
+      // getAlbumList2（标准端点，type=alphabeticalByName）：分页拉全量专辑，
+      // 每张专辑再 getAlbum 拿歌曲。注意 getArtists 的 artist 在 index[] 分组里、
+      // getAlbums 非标准端点，均不可用。
+      var offset = 0;
+      const pageSize = 500;
+      while (true) {
+        final albumListResp = await _get('/getAlbumList2', {
+          'type': 'alphabeticalByName',
+          'size': '$pageSize',
+          'offset': '$offset',
+        });
+        if (albumListResp.statusCode != 200) break;
 
-      final artistsJson = jsonDecode(artistResponse.body);
-      final artists =
-          artistsJson['subsonic-response']?['artists']?['artist'] as List?;
-      if (artists == null) return [];
-
-      for (final artist in artists) {
-        final artistId = artist['id'] as String?;
-        if (artistId == null) continue;
-
-        final albumResponse = await _get('/getAlbums', {'artistId': artistId});
-        if (albumResponse.statusCode != 200) continue;
-
-        final albumsJson = jsonDecode(albumResponse.body);
+        final albumListJson = jsonDecode(albumListResp.body);
         final albums =
-            albumsJson['subsonic-response']?['albums']?['album'] as List?;
-        if (albums == null) continue;
+            albumListJson['subsonic-response']?['albumList2']?['album']
+                as List?;
+        if (albums == null || albums.isEmpty) break;
 
         for (final album in albums) {
           final albumId = album['id'] as String?;
           if (albumId == null) continue;
+          final albumName = album['name'] as String?;
+          final albumArtist = album['artist'] as String?;
 
           final songResponse = await _get('/getAlbum', {'id': albumId});
           if (songResponse.statusCode != 200) continue;
@@ -95,14 +134,13 @@ class SubsonicService {
           if (tracks == null) continue;
 
           for (final track in tracks) {
-            final song = _toSong(
-              track,
-              artist['name'] as String?,
-              album['name'] as String?,
-            );
+            final song = _toSong(track, albumArtist, albumName);
             if (song != null) songs.add(song);
           }
         }
+
+        if (albums.length < pageSize) break;
+        offset += pageSize;
       }
     } catch (e) {
       debugPrint('[Subsonic] scanLibrary failed: $e');

@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../domain/models/song.dart';
+
 /// 本地偏好持久化服务
 /// 统一管理音量、循环模式、DSP 设置、ReplayGain、搜索历史等
 class PreferencesService {
@@ -22,6 +24,60 @@ class PreferencesService {
       'PreferencesService 尚未初始化，请先调用 PreferencesService.init()',
     );
     return _instance!;
+  }
+
+  // ── 来源显示开关（曲库过滤：关闭则曲库不展示该来源音乐）──
+  static const _kShowNas = 'show_source_nas';
+  static const _kShowAppleMusic = 'show_source_apple_music';
+  static const _kShowSubsonic = 'show_source_subsonic';
+  static const _kShowImported = 'show_source_imported';
+  static const _kShowLocal = 'show_source_local';
+
+  bool get showNas => _prefs.getBool(_kShowNas) ?? true;
+  bool get showAppleMusic => _prefs.getBool(_kShowAppleMusic) ?? true;
+  bool get showSubsonic => _prefs.getBool(_kShowSubsonic) ?? true;
+  bool get showImported => _prefs.getBool(_kShowImported) ?? true;
+  bool get showLocal => _prefs.getBool(_kShowLocal) ?? true;
+
+  Future<void> setShowNas(bool v) => _prefs.setBool(_kShowNas, v);
+  Future<void> setShowAppleMusic(bool v) =>
+      _prefs.setBool(_kShowAppleMusic, v);
+  Future<void> setShowSubsonic(bool v) => _prefs.setBool(_kShowSubsonic, v);
+  Future<void> setShowImported(bool v) => _prefs.setBool(_kShowImported, v);
+  Future<void> setShowLocal(bool v) => _prefs.setBool(_kShowLocal, v);
+
+  /// 该来源是否在曲库展示
+  bool showSource(SongSource source) => switch (source) {
+        SongSource.nas => showNas,
+        SongSource.appleMusic => showAppleMusic,
+        SongSource.subsonic => showSubsonic,
+        SongSource.imported => showImported,
+        SongSource.local => showLocal,
+      };
+
+  // ── Subsonic 音乐服务器配置 ──
+  static const _kSubsonicBaseUrl = 'subsonic_base_url';
+  static const _kSubsonicUsername = 'subsonic_username';
+  static const _kSubsonicPassword = 'subsonic_password';
+
+  String? get subsonicBaseUrl => _prefs.getString(_kSubsonicBaseUrl);
+  String? get subsonicUsername => _prefs.getString(_kSubsonicUsername);
+  String get subsonicPassword => _prefs.getString(_kSubsonicPassword) ?? '';
+
+  Future<void> setSubsonicConfig({
+    required String baseUrl,
+    required String username,
+    required String password,
+  }) async {
+    await _prefs.setString(_kSubsonicBaseUrl, baseUrl);
+    await _prefs.setString(_kSubsonicUsername, username);
+    await _prefs.setString(_kSubsonicPassword, password);
+  }
+
+  Future<void> clearSubsonicConfig() async {
+    await _prefs.remove(_kSubsonicBaseUrl);
+    await _prefs.remove(_kSubsonicUsername);
+    await _prefs.remove(_kSubsonicPassword);
   }
 
   // ── 音量 ──

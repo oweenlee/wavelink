@@ -18,6 +18,12 @@ Future<DecodeResult> decodeDsdFile({required String path}) =>
 Future<int> probeSampleRate({required String path}) =>
     RustLib.instance.api.crateApiDecodeProbeSampleRate(path: path);
 
+/// 快速探测音频文件时长（秒，不完整解码，只读文件头），失败返回 0。
+/// FLAC/WAV/M4A 等容器自带总帧数可直接得出；MP3 无 Xing/Info 头时无法确定返回 0；
+/// DSF 走头部直解。用于回填 NAS 等场景的文件大小估算时长。
+Future<double> probeDurationSecs({required String path}) =>
+    RustLib.instance.api.crateApiDecodeProbeDurationSecs(path: path);
+
 /// 检查文件是否是 DSD 格式
 Future<bool> isDsdFile({required String path}) =>
     RustLib.instance.api.crateApiDecodeIsDsdFile(path: path);

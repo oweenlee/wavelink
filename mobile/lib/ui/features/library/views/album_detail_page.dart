@@ -146,7 +146,7 @@ class _AlbumInfo extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '${album.artist} · ${album.year} · ${l10n.songsCount(album.songs.length)} · ${album.formattedDurationOf(l10n)}',
+            '${album.artist} · ${album.year} · ${l10n.songsCount(album.songs.length)}',
             style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
             textAlign: TextAlign.center,
           ),
@@ -344,13 +344,15 @@ class _TrackTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    song.artist,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textTertiary,
+                  // 艺术家解析不到则不显示
+                  if (song.displayArtist != null)
+                    Text(
+                      song.displayArtist!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textTertiary,
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),

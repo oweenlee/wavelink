@@ -38,7 +38,15 @@ class LibraryState {
     this.nasImportError,
   });
 
-  List<Song> get allSongs => importedSongs;
+  /// 曲库可见歌曲：按来源开关过滤（关闭的来源不在曲库展示）。
+  /// 队列/收藏/播放不受影响（各自独立数据源）。
+  /// 队列/收藏/播放不受影响（各自独立数据源）。
+  List<Song> get allSongs {
+    final prefs = PreferencesService.instance;
+    return importedSongs
+        .where((s) => prefs.showSource(s.source))
+        .toList();
+  }
 
   bool isSongFavorite(String songId) => favoriteIds.contains(songId);
 
@@ -64,6 +72,9 @@ class LibraryState {
 
 class LibraryNotifier extends Notifier<LibraryState> {
   bool _isScanning = false;
+
+  /// 来源过滤开关变化后刷新曲库（allSongs 是 getter，需重建 state 触发监听）
+  void refreshSources() => state = state.copyWith();
 
   /// 曲目加载/新增后的编排回调（由 PlaybackController 接线）。
   VoidCallback? onSongsLoaded;
@@ -141,9 +152,10 @@ class LibraryNotifier extends Notifier<LibraryState> {
     _isScanning = true;
     try {
       final songRepo = ref.read(songRepositoryProvider);
-      final mediaSongs = await songRepo.scanMediaStore();
-      final docSongs = await songRepo.scanDocuments();
-      final scannedSongs = [...mediaSongs, ...docSongs];
+      // 只扫系统音乐库（Android MediaStore / iOS MPMediaQuery）。
+      // 沙盒文件由 Pick Files 覆盖（文件已在 app 目录内时直接收录，不重复拷贝），
+      // 避免与发现歌曲语义重叠。
+      final scannedSongs = await songRepo.scanMediaStore();
 
       // 按 path 去重（扫描结果内部）
       final seen = <String>{};
@@ -292,12 +304,37 @@ Future<bool> scanSmb(String sharePath) async {
     state = state.copyWith(importedSongs: merged);
     songRepo.setCachedSongs(merged);
     onSongsLoaded?.call();
+    // 兜底：扫描完成后对仍未拿到封面的 NAS 歌再提取一次
+    // （扫描中异步提取可能因取消/批次边界遗漏）
+    final pendingCovers = state.importedSongs
+        .where((s) =>
+            s.smbPath != null && s.path == null && s.coverUrl == null)
+        .toList();
+    if (pendingCovers.isNotEmpty) {
+      unawaited(_extractNasCovers(pendingCovers));
+    }
     return true;
   } finally {
     _isScanning = false;
     state = state.copyWith(nasImporting: false);
   }
 }
+
+  /// NAS 远端封面批量提取（限流并发 8），完成后刷新 UI。
+  /// 失败静默：封面保持纯色占位，不影响曲库。
+  Future<void> _extractNasCovers(List<Song> songs) async {
+    const batchSize = 8;
+    for (var i = 0; i < songs.length; i += batchSize) {
+      final end = i + batchSize > songs.length ? songs.length : i + batchSize;
+      await Future.wait(
+        songs.sublist(i, end).map((s) => SmbService.fetchRemoteCover(s)),
+      );
+    }
+    // 封面就绪（Song.coverUrl 可变字段），触发一次刷新
+    state = state.copyWith(
+      importedSongs: List<Song>.from(state.importedSongs),
+    );
+  }
 
   /// 按歌曲 id 去重合并传入歌曲与现有曲库，保持已有顺序、新歌追加。
   /// NAS 索引歌曲 path 为 null，用 id（如 `smb_<hash>`）保证幂等，
@@ -318,12 +355,16 @@ Future<bool> scanSmb(String sharePath) async {
     final cacheDir = Directory('${appDir.path}/.covers');
     if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
 
-    // 待处理的歌曲（无封面缓存）。
-    // 不依赖 hasCover 标记（_fileToSong 降级导入时未设），
-    // 有本地文件路径但无 coverUrl 的就尝试提取——Rust 读不到封面会自然失败。
-    final pending = songs
-        .where((s) => s.path != null && s.coverUrl == null)
-        .toList();
+    // 待处理的歌曲（无封面缓存、本地文件真实存在）。
+    // 不依赖 hasCover 标记（_fileToSong 降级导入时未设）；
+    // NAS 缓存路径的本地文件可能已被清理/未下载 → 跳过，
+    // 避免 lofty 读取不存在的文件（No such file or directory）。
+    final pending = <Song>[];
+    for (final s in songs) {
+      if (s.path == null || s.coverUrl != null) continue;
+      if (!await File(s.path!).exists()) continue;
+      pending.add(s);
+    }
     if (pending.isEmpty) return;
 
     var changed = false;

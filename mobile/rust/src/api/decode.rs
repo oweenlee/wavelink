@@ -50,6 +50,13 @@ pub fn probe_sample_rate(path: String) -> u32 {
     audio_core::decoder::probe_sample_rate(std::path::Path::new(&path)).unwrap_or(0)
 }
 
+/// 快速探测音频文件时长（秒，不完整解码，只读文件头），失败返回 0。
+/// FLAC/WAV/M4A 等容器自带总帧数可直接得出；MP3 无 Xing/Info 头时无法确定返回 0；
+/// DSF 走头部直解。用于回填 NAS 等场景的文件大小估算时长。
+pub fn probe_duration_secs(path: String) -> f64 {
+    audio_core::decoder::probe_duration_secs(std::path::Path::new(&path)).unwrap_or(0.0)
+}
+
 /// 检查文件是否是 DSD 格式
 pub fn is_dsd_file(path: String) -> bool {
     let p = Path::new(&path);

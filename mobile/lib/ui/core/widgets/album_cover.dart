@@ -57,6 +57,10 @@ class WlCover extends StatelessWidget {
               Image.file(
                 File(coverUrl!),
                 fit: BoxFit.cover,
+                // 缩略图：按展示尺寸解码缩放，避免 4K 封面整图进内存
+                cacheWidth: width != null && width!.isFinite
+                    ? (width! * 2.5).round().clamp(128, 1024)
+                    : null,
                 errorBuilder: (context, error, stackTrace) => _fallback(),
               )
             else

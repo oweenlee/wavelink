@@ -211,13 +211,15 @@ class _TrackTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    song.album,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textTertiary,
+                  // 专辑解析不到（占位文案）则不显示专辑行
+                  if (song.displayAlbum != null)
+                    Text(
+                      song.displayAlbum!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textTertiary,
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -232,13 +234,6 @@ class _TrackTile extends StatelessWidget {
                   ),
                 ),
               ),
-            Text(
-              song.formattedDuration,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppTheme.textTertiary,
-              ),
-            ),
           ],
         ),
       ),

@@ -21,7 +21,7 @@ class PlaybackController {
     _wire();
   }
 
-  /// 启动副作用：偏好加载、引擎初始化、曲库扫描。
+  /// 启动副作用：偏好加载、引擎初始化、曲库恢复（仅缓存，不自动扫描）。
   /// 必须在 playbackControllerProvider 构建完成后由调用方显式触发
   /// （Riverpod 禁止在 provider 初始化期间修改其它 provider）。
   void bootstrap() {
@@ -30,13 +30,14 @@ class PlaybackController {
     unawaited(_bootstrapLibrary());
   }
 
-  /// 曲库就绪编排：无论增量扫描结果如何，都以当前曲库（缓存+扫描）
-  /// 初始化队列并尝试恢复断点（onSongsLoaded 回调在扫描无新歌时不触发）。
+  /// 曲库就绪编排：以缓存曲库初始化队列并尝试恢复断点。
+  /// 不做系统媒体库扫描（discoverSongs）——Apple Music/媒体库权限弹窗
+  /// 只在用户主动 Discover 时触发，避免首次启动即弹窗。
+  /// 已配置的 NAS 仍自动重连增量导入（重连不申请权限；
+  /// 局域网权限弹窗只出现在用户首次主动添加 NAS 时）。
   /// 注意：discoverSongs 成功时其内部回调已触发过 [_onLibrarySongsLoaded]，
   /// 这里用 [_resumeRestored] 守卫兜底，避免二次整体替换覆盖已恢复的队列。
-  /// 最后：若配置过 NAS（enabled），自动重连并增量导入，无需手动再点。
   Future<void> _bootstrapLibrary() async {
-    await _library.discoverSongs();
     if (!_resumeRestored) {
       _onLibrarySongsLoaded();
     }

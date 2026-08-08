@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -139,6 +140,8 @@ class _NowPlayingPageState extends ConsumerState<NowPlayingPage>
             if (!_lyricsOverlay &&
                 d.primaryVelocity != null &&
                 d.primaryVelocity! > 500) {
+              // 下滑关闭：轻震动反馈
+              HapticFeedback.lightImpact();
               Navigator.of(context).pop();
             }
           },
@@ -834,7 +837,11 @@ class _PlayBtn extends StatelessWidget {
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        // 点击播放/暂停：轻震动反馈
+        HapticFeedback.lightImpact();
+        onTap();
+      },
       child: Container(
         width: 60,
         height: 60,
@@ -940,12 +947,16 @@ class _BottomToolbar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _BarItem(
-            icon: LucideIcons.heart,
-            label: l10n.favorite,
-            active: player.isFavorite,
-            activeColor: AppTheme.danger,
-            onTap: () => player.toggleFavorite(),
+          // 收藏切换：弹跳反馈（active 状态变化时触发一次性 pop）
+          _BounceOnChange(
+            trigger: player.isFavorite,
+            child: _BarItem(
+              icon: LucideIcons.heart,
+              label: l10n.favorite,
+              active: player.isFavorite,
+              activeColor: AppTheme.danger,
+              onTap: () => player.toggleFavorite(),
+            ),
           ),
           _BarItem(
             icon: LucideIcons.text,
@@ -1038,6 +1049,50 @@ class _BarItem extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+// ── 收藏切换弹跳反馈 ──
+
+/// 当 [trigger] 值变化时，子组件做一次 scale pop 弹跳（easeOutBack 过冲）。
+/// 用于收藏切换时的反馈动画，仅在状态翻转瞬间播放，无常驻 ticker。
+class _BounceOnChange extends StatefulWidget {
+  final bool trigger;
+  final Widget child;
+  const _BounceOnChange({required this.trigger, required this.child});
+
+  @override
+  State<_BounceOnChange> createState() => _BounceOnChangeState();
+}
+
+class _BounceOnChangeState extends State<_BounceOnChange>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ac = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 280),
+  )..value = 1.0; // 初始即 1.0，避免首次 build 消失
+  late final Animation<double> _scale = CurvedAnimation(
+    parent: _ac,
+    curve: Curves.easeOutBack,
+  );
+
+  @override
+  void didUpdateWidget(covariant _BounceOnChange oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.trigger != oldWidget.trigger) {
+      _ac.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ac.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(scale: _scale, child: widget.child);
   }
 }
 

@@ -89,7 +89,7 @@ class QueueSheet extends ConsumerWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            s.artist,
+                            s.artistAlbumLine,
                             style: const TextStyle(
                               fontSize: 12,
                               color: AppTheme.textTertiary,

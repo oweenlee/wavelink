@@ -62,6 +62,10 @@ Future<Uint8List> smbReadFile({required String path}) =>
 Stream<Uint8List> smbReadFileStream({required String path}) =>
     RustLib.instance.api.crateApiSmbSmbReadFileStream(path: path);
 
+/// 读远端文件头部（最多 [max_len] 字节）：封面提取/格式探测用，避免整文件下载。
+Future<Uint8List> smbReadHead({required String path, required BigInt maxLen}) =>
+    RustLib.instance.api.crateApiSmbSmbReadHead(path: path, maxLen: maxLen);
+
 /// 远端文件大小（扫描时判断是否有变化，避免重复下载）
 Future<BigInt> smbFileSize({required String path}) =>
     RustLib.instance.api.crateApiSmbSmbFileSize(path: path);

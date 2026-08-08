@@ -9,6 +9,7 @@ import '../features/library/views/artist_detail_page.dart';
 import '../features/library/views/song_list_page.dart';
 import '../features/settings/views/diagnostic_page.dart';
 import '../features/library/views/nas_settings_page.dart';
+import '../features/library/views/subsonic_settings_page.dart';
 import 'app.dart';
 
 final goRouter = GoRouter(
@@ -99,6 +100,10 @@ final goRouter = GoRouter(
     GoRoute(
       path: '/nas',
       builder: (context, state) => const NasSettingsPage(),
+    ),
+    GoRoute(
+      path: '/subsonic',
+      builder: (context, state) => const SubsonicSettingsPage(),
     ),
   ],
 );

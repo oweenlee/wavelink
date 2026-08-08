@@ -75,7 +75,7 @@ class SongTile extends StatelessWidget {
               isCurrent: isCurrent,
               isPlaying: isPlaying,
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             // Title & artist
             Expanded(
               child: Column(
@@ -94,14 +94,29 @@ class SongTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    '${song.artist} · ${song.album}',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppTheme.textSecondary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  // 来源图标始终保留；副标题（艺术家 · 专辑）解析不到的部分不显示
+                  Row(
+                    children: [
+                      Icon(
+                        _sourceIcon(song.source),
+                        size: 12,
+                        color: AppTheme.textTertiary,
+                      ),
+                      if (song.artistAlbumLine.isNotEmpty) ...[
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            song.artistAlbumLine,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppTheme.textSecondary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -112,14 +127,6 @@ class SongTile extends StatelessWidget {
               _FormatBadge(song: song),
               const SizedBox(width: 6),
             ],
-            // Duration
-            Text(
-              song.formattedDuration,
-              style: WlText.mono(
-                fontSize: 12,
-                color: AppTheme.textTertiary,
-              ),
-            ),
             const SizedBox(width: 8),
             // 自定义 trailing（如收藏图标）
             if (trailing != null) ...[trailing!, const SizedBox(width: 4)],
@@ -146,7 +153,6 @@ class SongTile extends StatelessWidget {
 class _FormatBadge extends StatelessWidget {
   final Song song;
   const _FormatBadge({required this.song});
-
   @override
   Widget build(BuildContext context) {
     final fmt = song.formatInfo!;
@@ -175,6 +181,15 @@ class _FormatBadge extends StatelessWidget {
     );
   }
 }
+
+/// 来源图标映射：NAS=硬盘、Apple Music 同步=苹果、Subsonic=服务器、文件导入=文件夹（与导入弹窗 Pick Files 一致）、本地媒体库=音乐
+IconData _sourceIcon(SongSource source) => switch (source) {
+      SongSource.nas => LucideIcons.hardDrive,
+      SongSource.appleMusic => LucideIcons.apple,
+      SongSource.subsonic => LucideIcons.server,
+      SongSource.imported => LucideIcons.folderOpen,
+      SongSource.local => LucideIcons.music,
+    };
 
 /// 专辑封面组件：有缓存封面则显示图片，否则显示纯色占位
 class _AlbumArt extends StatelessWidget {

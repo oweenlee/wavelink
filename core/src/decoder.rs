@@ -622,7 +622,13 @@ pub fn read_metadata(path: &Path) -> Result<Metadata, String> {
 }
 
 /// 用 Symphonia 探测音频时长（秒），不完整解码
-pub(crate) fn probe_duration_secs(path: &Path) -> Option<f64> {
+pub fn probe_duration_secs(path: &Path) -> Option<f64> {
+    // DSF：Symphonia 无 DSD 格式支持，走头部直解
+    if is_dsf_file(path) {
+        if let Some(secs) = probe_dsf_secs(path) {
+            return Some(secs);
+        }
+    }
     let file = File::open(path).ok()?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
@@ -763,6 +769,24 @@ pub fn probe_sample_rate(path: &Path) -> Option<u32> {
     None
 }
 
+/// DSF 头部时长：fmt chunk 内 sampling freq(4B @56) / sample count(8B @64)，均小端。
+/// 布局见 Sony DSF 规范（"DSD " 头 28B + "fmt " 12B 后为字段区）。
+pub fn probe_dsf_secs(path: &Path) -> Option<f64> {
+    let mut f = File::open(path).ok()?;
+    let mut buf = [0u8; 76];
+    use std::io::Read;
+    f.read_exact(&mut buf).ok()?;
+    if &buf[0..4] != b"DSD " {
+        return None;
+    }
+    let rate = u32::from_le_bytes(buf[56..60].try_into().ok()?) as f64;
+    let count = u64::from_le_bytes(buf[64..72].try_into().ok()?);
+    if rate <= 0.0 {
+        return None;
+    }
+    Some(count as f64 / rate)
+}
+
 /// 快速探测音频文件的位深（不完整解码，只读文件头）
 pub fn probe_bit_depth(path: &Path) -> Option<u16> {
     let file = File::open(path).ok()?;
@@ -790,6 +814,14 @@ pub fn is_dsd_file(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|e| e.to_str()),
         Some(ext) if ext.eq_ignore_ascii_case("dsf") || ext.eq_ignore_ascii_case("dff")
+    )
+}
+
+/// 判断扩展名是否为 DSF（DFF 无简单头部时长字段，走 symphonia 也探测不到，返回 None）
+pub fn is_dsf_file(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some(ext) if ext.eq_ignore_ascii_case("dsf")
     )
 }
 
@@ -1288,6 +1320,43 @@ mod tests {
         ensure_test_tone("/tmp/_test_decode.wav");
         let samples = test_decode("/tmp/_test_decode.wav").unwrap_or(0);
         assert!(samples > 100, "解码样本数过少: {samples}");
+    }
+
+    #[test]
+    fn test_probe_duration_wav() {
+        ensure_test_tone("/tmp/_test_decode.wav");
+        let secs = crate::decoder::probe_duration_secs(std::path::Path::new("/tmp/_test_decode.wav"));
+        assert!(secs.is_some(), "WAV 应能从头探测时长");
+        let secs = secs.unwrap();
+        assert!(
+            (secs - 0.5).abs() < 0.05,
+            "WAV 0.5s 测试音时长探测偏差过大: {secs}"
+        );
+    }
+
+    #[test]
+    fn test_probe_dsf_header() {
+        // 构造最小 DSF 头（76 字节覆盖 fmt chunk）：采样率 2822400，样本数 2822400*2
+        let mut buf = Vec::with_capacity(76);
+        buf.extend_from_slice(b"DSD ");
+        buf.extend_from_slice(&[0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // chunk size (8B, 28)
+        buf.extend_from_slice(&[0x00; 8]); // total file size (占位)
+        buf.extend_from_slice(&[0x00; 8]); // metadata ptr (占位)
+        buf.extend_from_slice(b"fmt ");
+        buf.extend_from_slice(&[0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // fmt size (8B, 28)
+        buf.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]); // format version (1)
+        buf.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // format id (0 = raw)
+        buf.extend_from_slice(&[0x02, 0x00, 0x00, 0x00]); // channel type (2 = stereo)
+        buf.extend_from_slice(&[0x02, 0x00, 0x00, 0x00]); // channel num (2)
+        buf.extend_from_slice(&[0x00, 0x11, 0x2b, 0x00]); // sampling freq 2822400 @56
+        buf.extend_from_slice(&[0x40, 0x00, 0x00, 0x00]); // bits (64)
+        buf.extend_from_slice(&[0x00, 0x22, 0x56, 0x00, 0x00, 0x00, 0x00, 0x00]); // sample count 2822400*2 @64
+        buf.extend_from_slice(&[0x00, 0x10, 0x00, 0x00]); // block size (4096)
+        let path = "/tmp/_test_probe.dsf";
+        std::fs::write(path, &buf).unwrap();
+        let secs = crate::decoder::probe_dsf_secs(std::path::Path::new(path)).unwrap();
+        assert!((secs - 2.0).abs() < 1e-6, "DSF 头部时长解析错误: {secs}");
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

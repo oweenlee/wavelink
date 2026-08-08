@@ -245,12 +245,16 @@ class ImportService {
       if (rs.rustAvailable) {
         try {
           final meta = await rs.readMetadata(file.path);
-          final title = meta.title ?? _titleFromPath(file.path);
-          final artist = meta.artist ?? 'Unknown Artist';
+          final titleFromName = _titleFromPath(file.path);
+          final parsed = parseArtistTitle(titleFromName);
+          final title = meta.title ?? parsed.title;
+          final artist = meta.artist ?? parsed.artist ?? 'Unknown Artist';
           final albumName = meta.album ?? 'Imported Music';
           final duration = meta.durationSecs > 0
               ? Duration(milliseconds: (meta.durationSecs * 1000).round())
-              : estimateDuration(file.statSync().size);
+              : estimateDuration(file.statSync().size, file.path);
+
+          final durationEstimated = meta.durationSecs <= 0;
 
           String? coverUrl;
           if (meta.hasCover && meta.coverBytes.isNotEmpty) {
@@ -275,6 +279,7 @@ class ImportService {
             path: file.path,
             coverUrl: coverUrl,
             hasCover: meta.hasCover,
+            durationEstimated: durationEstimated,
           );
         } catch (e) {
           debugPrint('[Import] Rust 元数据读取失败，降级到文件名猜测: $e');
@@ -282,7 +287,7 @@ class ImportService {
       }
 
       song ??= _fileToSong(file);
-      // Check for matching .lrc lyrics file in same directory
+      // 查找同目录 .lrc 歌词文件
       if (song.path != null) {
         final dir = File(song.path!).parent.path;
         final base = _fileBaseName(song.path!);
@@ -312,10 +317,60 @@ class ImportService {
     return hash.toRadixString(16).padLeft(16, '0');
   }
 
-  static Duration estimateDuration(int fileSizeBytes) {
-    final sizeMb = (fileSizeBytes / (1024 * 1024)).clamp(0.1, 9999);
-    final estMin = (sizeMb / 1.2).ceil().clamp(1, 999);
-    return Duration(minutes: estMin);
+  /// 按文件大小估算时长（仅 NAS 等无法读取元数据时的占位）。
+  /// [pathOrName] 用于按扩展名区分码率假设；不取整分钟，返回秒级 Duration。
+  static Duration estimateDuration(int fileSizeBytes, String? pathOrName) {
+    final sizeMb = fileSizeBytes / (1024 * 1024);
+    final mbPerMin = _mbPerMinFor(pathOrName);
+    final estSec = (sizeMb / mbPerMin * 60).round().clamp(10, 24 * 3600);
+    return Duration(seconds: estSec);
+  }
+
+  /// 从文件名启发式解析 (artist, title)：`艺术家 - 歌名` 格式，
+  /// 兼容 `01. Artist - Title` 轨道号前缀。解析不到艺术家时返回 null。
+  static ({String? artist, String title}) parseArtistTitle(String name) {
+    // 去掉开头的轨道号（"01 " / "01- " / "01. " 等）
+    final t =
+        name.replaceFirst(RegExp(r'^\d{1,3}\s*[.。\-]\s*'), '');
+    final sep = t.indexOf(' - ');
+    if (sep > 0) {
+      final artist = t.substring(0, sep).trim();
+      final title = t.substring(sep + 3).trim();
+      if (artist.isNotEmpty && title.isNotEmpty) {
+        return (artist: artist, title: title);
+      }
+    }
+    return (artist: null, title: name);
+  }
+
+  /// 各格式典型码率（MB/min）：无损按 44.1/16 压缩后典型值，DSD64 基准。
+  static double _mbPerMinFor(String? pathOrName) {
+    final ext = (pathOrName ?? '').split('.').last.toLowerCase();
+    switch (ext) {
+      case 'flac':
+        return 6.0;
+      case 'ape':
+      case 'wv':
+        return 6.0;
+      case 'wav':
+      case 'aiff':
+      case 'aif':
+        return 10.0;
+      case 'dsf':
+      case 'dff':
+        return 43.0; // DSD64；DSD128 约 86，保守取低
+      case 'mp3':
+        return 2.2;
+      case 'm4a':
+      case 'aac':
+      case 'alac':
+        return 1.8;
+      case 'ogg':
+      case 'opus':
+        return 1.3;
+      default:
+        return 4.0;
+    }
   }
 
   static Color _colorFromPath(String path) {
@@ -332,14 +387,16 @@ class ImportService {
   static Song _fileToSong(File file) {
     final name = file.path.split('/').last;
     final title = name.replaceAll(RegExp(r'\.[^.]+$'), '');
+    final parsed = parseArtistTitle(title);
     return Song(
       id: 'imp_${_stableHash(file.path)}',
-      title: title,
-      artist: '未知艺术家',
+      title: parsed.title,
+      artist: parsed.artist ?? '未知艺术家',
       album: '导入的音乐',
-      duration: ImportService.estimateDuration(file.statSync().size),
+      duration: ImportService.estimateDuration(file.statSync().size, file.path),
       dominantColor: _colorFromPath(file.path),
       path: file.path,
+      durationEstimated: true,
     );
   }
 
@@ -355,7 +412,7 @@ class ImportService {
         continue;
       }
 
-      // Android: 用 Rust 提取封面
+      // Android：用 Rust 提取封面
       if (!rs.rustAvailable) continue;
       try {
         final bytes = await rs.getCoverBytes(song.path!);

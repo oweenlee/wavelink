@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../../../../data/services/subsonic_service.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/sheet_shell.dart';
@@ -73,6 +75,18 @@ class SettingsPage extends ConsumerWidget {
             _SettingItem(
               icon: LucideIcons.volume2,
               label: l10n.outputDevice,
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        _Section(
+          title: l10n.settingsMusicSources,
+          children: [
+            _SettingItem(
+              icon: LucideIcons.server,
+              label: l10n.sourceMusicServer,
+              trailing: SubsonicService.isConfigured ? l10n.subsonicConnected : null,
+              onTap: () => context.push('/subsonic'),
             ),
           ],
         ),

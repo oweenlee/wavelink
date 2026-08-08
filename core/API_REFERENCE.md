@@ -1,6 +1,6 @@
 # wavelink-audio-core API Reference
 
-> Source hash: `7d1cca41193d` | Generated: 2026-08-06 00:11
+> Source hash: `60f6baac2712` | Generated: 2026-08-08 21:54
 > AI 助手优先读此文件，而非读 `src/` 源码。若 AI 返回的代码与当前签名不匹配，请重新运行 `bash doc-api.sh`。
 
 ## Table of Contents
@@ -292,6 +292,11 @@ pub fn start() -> (EngineHandle, Receiver<EngineEvent>) { ...
 使用自定义配置启动引擎线程  
 ```rust
 pub fn start_with_config(config: EngineConfig) -> (EngineHandle, Receiver<EngineEvent>) { ...
+```
+
+当前实际输出共享模式：0=未知/不适用，1=Exclusive，2=Shared（Android Oboe）  
+```rust
+pub fn output_mode(&self) -> u8 { ...
 ```
 
 获取当前音频电平（RMS / 峰值 / 削波标志）  
@@ -732,6 +737,11 @@ pub channels: Option<u32>,
 pub fn read_metadata(path: &Path) -> Result<Metadata, String> { ...
 ```
 
+用 Symphonia 探测音频时长（秒），不完整解码  
+```rust
+pub fn probe_duration_secs(path: &Path) -> Option<f64> { ...
+```
+
 读取音频文件内嵌封面图（JPEG/PNG 原始字节）  
 读取封面图片（JPEG/PNG/WEBP 原始字节）。  
 支持音频格式（lofty）以及 MKV/WebM 附件封面。  
@@ -774,6 +784,11 @@ pub fn read_replaygain(path: &Path) -> Result<ReplayGain, String> { ...
 pub fn probe_sample_rate(path: &Path) -> Option<u32> { ...
 ```
 
+布局见 Sony DSF 规范（"DSD " 头 28B + "fmt " 12B 后为字段区）。  
+```rust
+pub fn probe_dsf_secs(path: &Path) -> Option<f64> { ...
+```
+
 快速探测音频文件的位深（不完整解码，只读文件头）  
 ```rust
 pub fn probe_bit_depth(path: &Path) -> Option<u16> { ...
@@ -782,6 +797,11 @@ pub fn probe_bit_depth(path: &Path) -> Option<u16> { ...
 判断扩展名是否为 DSD 容器（DSF/DFF）  
 ```rust
 pub fn is_dsd_file(path: &Path) -> bool { ...
+```
+
+判断扩展名是否为 DSF（DFF 无简单头部时长字段，走 symphonia 也探测不到，返回 None）  
+```rust
+pub fn is_dsf_file(path: &Path) -> bool { ...
 ```
 
 探测 DSD 文件的原始速率和声道数（只读文件头）。  
@@ -1997,7 +2017,10 @@ pub fn release_exclusive_mode(_device_name: Option<&str>) { ...
 
 ### 【临时诊断】跨平台诊断日志：Android 进 logcat（tag WaveLinkCore），其余平台 stderr。 (`diag.rs`)
 
-【临时诊断】跨平台诊断日志：Android 进 logcat（tag WaveLinkCore），其余平台 stderr。
+输出一条诊断日志（Android → logcat，其余平台 stderr）  
+```rust
+pub fn log(msg: &str) { ...
+```
 
 ### DoP（DSD over PCM）打包 (`dsd/dop.rs`)
 
@@ -2324,4 +2347,4 @@ pub fn read_tags(path: &Path) -> Result<TagInfo, String> { ...
 
 ---
 
-> 398 pub items. Run `bash doc-api.sh` to refresh.
+> 403 pub items. Run `bash doc-api.sh` to refresh.

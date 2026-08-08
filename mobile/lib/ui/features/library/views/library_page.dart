@@ -126,18 +126,18 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
               labelColor: AppTheme.textPrimary,
               unselectedLabelColor: AppTheme.textTertiary,
               labelStyle: const TextStyle(
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
               unselectedLabelStyle: const TextStyle(fontSize: 12),
               tabs: [
-                Tab(text: l10n.libSongs),
-                Tab(text: l10n.libAlbums),
-                Tab(text: l10n.libArtists),
-                Tab(text: l10n.libPlaylists),
+                Tab(text: l10n.libSongs,height: 44,),
+                Tab(text: l10n.libAlbums,height: 44,),
+                Tab(text: l10n.libArtists,height: 44,),
+                Tab(text: l10n.libPlaylists,height: 44,),
               ],
               onTap: (_) {
-                // Close search when switching tabs
+                // 切 tab 时关闭搜索
                 if (ref.read(libraryHeaderProvider).isSearchVisible) {
                   ref.read(libraryHeaderProvider.notifier).closeSearch();
                   _searchController.clear();
@@ -414,7 +414,7 @@ class _AlbumsTab extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Album artwork
+              // 专辑封面
               Expanded(
                 child: WlCover(
                   coverUrl: albumSongs.first.coverUrl,
@@ -449,7 +449,7 @@ class _AlbumsTab extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              // Album title
+              // 专辑标题
               Text(
                 name,
                 style: const TextStyle(
@@ -461,7 +461,7 @@ class _AlbumsTab extends ConsumerWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 2),
-              // Mono meta line
+              // 单行元信息
               Text(
                 '${albumSongs.length} songs',
                 style: WlText.mono(
@@ -500,7 +500,7 @@ class _ArtistsTab extends ConsumerWidget {
 
     return CustomScrollView(
       slivers: [
-        // Shuffle All pill
+        // 全部随机播放按钮
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -554,7 +554,7 @@ class _ArtistsTab extends ConsumerWidget {
             ),
           ),
         ),
-        // Artist list
+        // 艺术家列表
         SliverList(
           delegate: SliverChildBuilderDelegate(
             (context, index) {
@@ -682,7 +682,7 @@ class _PlaylistsTab extends ConsumerWidget {
             margin: const EdgeInsets.only(bottom: 16),
             child: Row(
               children: [
-                // New Playlist
+                // 新建播放列表
                 Expanded(
                   child: GestureDetector(
                     onTap: () => _showCreatePlaylist(context, player),
@@ -715,7 +715,7 @@ class _PlaylistsTab extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                // Import/Export
+                // 导入/导出
                 Expanded(
                   child: GestureDetector(
                     onTap: () => _openPlaylistIo(context, player),
@@ -1004,7 +1004,8 @@ class _PlaylistsTab extends ConsumerWidget {
       final buffer = StringBuffer('#EXTM3U\n');
       for (final s in queue) {
         final artist = s.artist.isEmpty ? '' : '${s.artist} - ';
-        buffer.writeln('#EXTINF:${s.duration.inSeconds},$artist${s.title}');
+        buffer.writeln(
+            '#EXTINF:${s.durationEstimated ? 0 : s.duration.inSeconds},$artist${s.title}');
         buffer.writeln(s.path ?? s.streamUrl ?? '');
       }
       final docs = await getApplicationDocumentsDirectory();
@@ -1094,7 +1095,7 @@ void _showContextMenu(
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${song.artist} · ${song.album}',
+                        song.artistAlbumLine,
                         style: const TextStyle(
                           fontSize: 12,
                           color: AppTheme.textSecondary,

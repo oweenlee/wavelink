@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/playback/view_models/playback_controller.dart';
 import '../../features/playback/view_models/audio_player_provider.dart';
@@ -128,7 +129,10 @@ class MiniPlayerBar extends ConsumerWidget {
                       ),
                       // 播放/暂停 — 图标 scale 过渡（对齐播放页 _PlayBtn）
                       GestureDetector(
-                        onTap: () => player.togglePlay(),
+                        onTap: () {
+                          HapticFeedback.lightImpact(); // 轻震动反馈
+                          player.togglePlay();
+                        },
                         child: Container(
                           width: 40,
                           height: 40,

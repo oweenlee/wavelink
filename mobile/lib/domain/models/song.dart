@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 
+/// 歌曲来源（用于列表行来源图标）
+enum SongSource { nas, subsonic, appleMusic, imported, local }
+
 class Song {
   String id;
   String title;
@@ -20,6 +23,9 @@ class Song {
   /// 设置了此字段表示文件在远端共享，播放时先按需下载到本地缓存。
   final String? smbPath;
   String? lyricsPath;
+  /// 时长是否为估算值（NAS 等无法读取元数据时按文件大小估算）。
+  /// 估算值不参与曲库列表显示；播放时引擎探测到真实时长后回填并置 false。
+  bool durationEstimated;
   bool hasCover;
 
   Song({
@@ -38,6 +44,7 @@ class Song {
     this.smbPath,
     this.lyricsPath,
     this.hasCover = false,
+    this.durationEstimated = false,
   });
 
   /// 序列化为 JSON（轻量持久化：曲库缓存）
@@ -57,6 +64,7 @@ class Song {
         'smbPath': smbPath,
         'lyricsPath': lyricsPath,
         'hasCover': hasCover,
+        'durationEstimated': durationEstimated,
       };
 
   /// 从 JSON 还原（与 [toJson] 对称）
@@ -76,19 +84,62 @@ class Song {
         smbPath: json['smbPath'] as String?,
         lyricsPath: json['lyricsPath'] as String?,
         hasCover: json['hasCover'] as bool? ?? false,
+        durationEstimated: json['durationEstimated'] as bool? ?? false,
       );
 
   String get formattedDuration {
+    if (durationEstimated) return '--:--';
     final m = duration.inMinutes;
     final s = duration.inSeconds % 60;
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
+  /// 来源判断优先级：NAS > 流式(Subsonic) > Apple Music 同步 > 文件导入 > 本地媒体库
+  SongSource get source {
+    if (smbPath != null && smbPath!.isNotEmpty) return SongSource.nas;
+    if (streamUrl != null && streamUrl!.isNotEmpty) return SongSource.subsonic;
+    if (path != null && path!.startsWith('ipod-library://')) {
+      return SongSource.appleMusic;
+    }
+    if (id.startsWith('imp_')) return SongSource.imported;
+    return SongSource.local;
+  }
+
+  /// 艺术家显示名：占位文案视为解析不到，返回 null（UI 不显示）
+  String? get displayArtist {
+    final a = artist.trim();
+    if (a.isEmpty) return null;
+    const placeholders = {'Unknown Artist', '未知艺术家'};
+    if (placeholders.contains(a)) return null;
+    return a;
+  }
+
+  /// 专辑显示名：占位文案（NAS/导入降级）视为解析不到，返回 null（UI 不显示专辑段）
+  String? get displayAlbum {
+    final a = album.trim();
+    if (a.isEmpty) return null;
+    const placeholders = {'NAS Music', 'Imported Music', '导入的音乐', 'Unknown Album'};
+    if (placeholders.contains(a)) return null;
+    return a;
+  }
+
+  /// 副标题行：艺术家 · 专辑。解析不到的部分不显示，都解析不到返回空串（UI 只留来源图标）
+  String get artistAlbumLine {
+    final a = displayArtist;
+    final al = displayAlbum;
+    if (a != null && al != null) return '$a · $al';
+    if (a != null) return a;
+    if (al != null) return al;
+    return '';
+  }
+
   /// 格式标签，如 "FLAC"、"DSD"、"MP3 320"、"WAV"
-  /// 从文件路径扩展名推断，用于 SongTile 的格式 pill
+  /// 从文件路径扩展名推断，用于 SongTile 的格式 pill。
+  /// 本地文件看 [path]；NAS 未下载（仅索引）看 [smbPath]；流式源看 [streamUrl]（取 URL path 去 query）。
   String? get formatInfo {
-    if (path == null) return null;
-    final ext = path!.split('.').last.toUpperCase();
+    final src = path ?? smbPath ?? streamUrl;
+    if (src == null) return null;
+    final ext = src.split('?').first.split('.').last.toUpperCase();
     switch (ext) {
       case 'FLAC':
         return 'FLAC';
@@ -121,8 +172,9 @@ class Song {
 
   /// 是否为无损格式（用于格式 pill 高亮）
   bool get isLossless {
-    if (path == null) return false;
-    final ext = path!.split('.').last.toUpperCase();
+    final src = path ?? smbPath ?? streamUrl;
+    if (src == null) return false;
+    final ext = src.split('?').first.split('.').last.toUpperCase();
     return ['FLAC', 'WAV', 'DSF', 'DFF', 'AIFF', 'AIF', 'APE', 'WV'].contains(ext);
   }
 }

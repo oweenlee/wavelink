@@ -271,6 +271,15 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // 探测文件采样率（轻量头部读取）：供乐器面板显示信号链，并复用于 bit-perfect 协调。
     if (_engineRepo.rustAvailable) {
       _currentFileRate = await _engineRepo.probeSampleRate(resolvedPath);
+      // 回填真实时长（估算占位 → 头部探测准确值，FLAC/WAV/M4A/DSF 有效，MP3 无 Xing 时保持估算）
+      if (song.durationEstimated) {
+        final realSecs = await _engineRepo.probeDurationSecs(resolvedPath);
+        if (realSecs > 0) {
+          song.duration = Duration(milliseconds: (realSecs * 1000).round());
+          song.durationEstimated = false;
+          state = state.copyWith(); // 刷新当前曲（队列/播放页时长）
+        }
+      }
       if (token != _playToken || !ref.mounted) return;
     } else {
       _currentFileRate = 0;

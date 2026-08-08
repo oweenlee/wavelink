@@ -50,6 +50,11 @@ Future<int> probeSampleRate(String path) {
   return decode.probeSampleRate(path: path);
 }
 
+/// 快速探测音频文件时长秒数，失败返回 0（仅头部读取，不完整解码）
+Future<double> probeDurationSecs(String path) {
+  return decode.probeDurationSecs(path: path);
+}
+
 // ── 分析 ──
 
 Future<analyze.AnalyzeResult> analyzeAudioFile(String path) {
