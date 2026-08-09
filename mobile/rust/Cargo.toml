@@ -6,6 +6,10 @@ edition = "2021"
 [lib]
 crate-type = ["staticlib", "cdylib", "lib"]
 
+[lints.rust]
+# FRB 宏会注入 cfg(frb_expand) 条件，需在清单中声明以免 unexpected_cfgs 告警
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(frb_expand)"] }
+
 [dependencies]
 flutter_rust_bridge = "=2.13.0-beta.5"
 jni = "0.21"

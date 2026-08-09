@@ -51,6 +51,7 @@ pub fn engine_init() -> Result<(), String> {
 }
 
 /// 完整参数初始化引擎
+#[allow(clippy::too_many_arguments)] // 与 EngineConfig 字段一一对应，FRB 不支持结构体参数
 pub fn engine_init_ex(
     sr: u32,
     channels: u16,

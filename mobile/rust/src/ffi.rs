@@ -66,38 +66,15 @@ pub extern "system" fn Java_com_wavelink_wavelink_1mobile_AudioEngine_nativeRegi
 }
 
 /// iOS AVAudioSourceNode 回调：从 ringbuf 拉取 PCM 数据填入左右声道 buffer
+///
+/// # Safety
+/// `left_out`/`right_out` 必须指向至少 `frames` 个 f32 的有效可写空间
+/// （AVAudioSourceNode 回调保证其 bufferList 容量）。
 #[no_mangle]
 pub unsafe extern "C" fn audio_output_fill_buffer_stereo(
     left_out: *mut f32, right_out: *mut f32, frames: u32,
 ) {
     crate::api::audio_output::fill_buffer_stereo_impl(left_out, right_out, frames);
-}
-
-/// Android Kotlin 原生泵：从 ringbuf 拉取最多 `max_frames` 帧交错立体声 PCM
-/// 写入 `out`，返回实际写入的帧数。
-#[no_mangle]
-pub unsafe extern "C" fn audio_output_fill_interleaved(
-    out: *mut f32, max_frames: u32,
-) -> u32 {
-    if out.is_null() || max_frames == 0 {
-        return 0;
-    }
-    // catch_unwind：panic 跨 extern "C" 边界会 abort 整个 app，兜住并返回 0
-    let buf = std::slice::from_raw_parts_mut(out, max_frames as usize * 2);
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::api::audio_output::fill_interleaved_impl(buf, max_frames)
-    }))
-    .unwrap_or_else(|payload| {
-        let msg = if let Some(s) = payload.downcast_ref::<&str>() {
-            (*s).to_string()
-        } else if let Some(s) = payload.downcast_ref::<String>() {
-            s.clone()
-        } else {
-            "unknown panic payload".to_string()
-        };
-        crate::api::audio_output::probe_log(&format!("[panic] Android 泵回调 panic: {msg}"));
-        0
-    })
 }
 
 /// iOS 恢复播放时清空 ringbuf 积压，避免"磁带滑"
@@ -124,7 +101,7 @@ pub extern "C" fn engine_sync_output_rate(rate: u32) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Android JNI 直读绑定（Kotlin AudioEngine 原生泵）
+// Android JNI 直读绑定（Kotlin AudioEngine）
 //
 // 采用 `Java_` 前缀静态绑定：只要 so 被 JVM 加载（System.loadLibrary），
 // native 方法符号即可经 dlsym 解析，无需 JNI_OnLoad/RegisterNatives，
@@ -132,6 +109,9 @@ pub extern "C" fn engine_sync_output_rate(rate: u32) {
 // 注意函数名必须按 JNI 规范转义：包名 wavelink_mobile 的下划线 → _1。
 
 /// Kotlin AudioEngine.nativeSetVolume：设置引擎音量（音频焦点 duck/恢复用）
+///
+/// # Safety
+/// JNI 回调：`_env`/`_this` 由 JVM 保证有效，函数体不解引用裸指针。
 #[no_mangle]
 pub unsafe extern "system" fn Java_com_wavelink_wavelink_1mobile_AudioEngine_nativeSetVolume(
     _env: JNIEnv,

@@ -1,7 +1,8 @@
 //! 平台音频输出桥接
 //!
 //! 从 EngineHandle 的 HeadlessOutput ringbuf 拉取 PCM 数据，
-//! 供 iOS AVAudioSourceNode 回调使用。
+//! 供 iOS AVAudioSourceNode 回调使用；并维护硬件采样率/频谱/underrun 遥测
+//! 与播放门控。低层诊断日志（Android logcat / stderr）见 [`probe_log`]。
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -17,7 +18,8 @@ static SPECTRUM: Mutex<[f32; 16]> = Mutex::new([0.0; 16]);
 /// underrun 计数：iOS 回调从 ringbuf 读不到足够数据时递增
 static UNDERRUN_COUNT: AtomicU64 = AtomicU64::new(0);
 
-/// 【临时诊断】平台日志：Android 进 logcat（tag WaveLinkRust），iOS 进 stderr
+/// 低层诊断日志：Android 进 logcat（tag WaveLinkRust），其余平台 stderr。
+/// 不依赖 tracing subscriber，用于音频关键路径的无条件诊断输出。
 #[cfg(target_os = "android")]
 #[link(name = "log")]
 extern "C" {
@@ -36,7 +38,7 @@ pub(crate) fn probe_log(msg: &str) {
     eprintln!("{msg}");
 }
 
-/// 【临时诊断】underrun 爆发日志：打印爆发起止与时长，定位阵发卡顿用
+/// underrun 爆发日志：打印爆发起止与时长，定位阵发卡顿用
 #[frb(ignore)]
 mod underrun_probe {
     use once_cell::sync::Lazy;
@@ -142,36 +144,6 @@ pub(crate) fn clear_ringbuf_impl() {
 /// iOS AVAudioSourceNode 单次回调最大 4096 帧，首次回调时自动分配
 static RT_BUF: ParkingMutex<Vec<f32>> = ParkingMutex::new(Vec::new());
 
-/// 从 engine 的 HeadlessOutput ringbuf 拉取交错立体声 PCM 写入连续 buffer
-/// （Android Kotlin 原生泵使用）。
-///
-/// 返回实际读取的帧数；播放门控关闭时返回 0（调用方应等待而非忙转）。
-/// 数据不足时剩余部分清零并计入 underrun，与 iOS 回调行为一致。
-pub(crate) fn fill_interleaved_impl(out: &mut [f32], max_frames: u32) -> u32 {
-    let frames = max_frames as usize;
-    let need = frames * 2;
-    if out.len() < need {
-        return 0;
-    }
-    if !PLAYING.load(Ordering::Acquire) {
-        return 0;
-    }
-    let n = crate::api::engine::engine_read_samples(&mut out[..need]);
-    if n < need {
-        if n == 0 {
-            underrun_probe::starve();
-        }
-        for s in &mut out[n..need] {
-            *s = 0.0;
-        }
-        UNDERRUN_COUNT.fetch_add(1, Ordering::AcqRel);
-        underrun_probe::on_fill(false);
-    } else {
-        underrun_probe::on_fill(true);
-    }
-    (n / 2) as u32
-}
-
 /// 从 engine 的 HeadlessOutput ringbuf 拉取 PCM 填入左右声道 buffer。
 /// iOS 渲染线程调用：任何 panic 都会跨 extern "C" 边界 abort 掉整个 app，
 /// 因此用 catch_unwind 兜住，panic 时输出静音并记录 panic 消息（供定位）。
@@ -233,6 +205,9 @@ unsafe fn fill_buffer_stereo_inner(
         *right_out.add(i) = buf[i * 2 + 1];
     }
     if fc < frames {
+        if n == 0 {
+            underrun_probe::starve();
+        }
         for i in fc..frames {
             *left_out.add(i) = 0.0;
             *right_out.add(i) = 0.0;

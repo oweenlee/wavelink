@@ -13,12 +13,10 @@ fn measure_m4a_seek_latency() {
         let t0 = Instant::now();
         let mut dec = rust_lib_wavelink_mobile::decode::stream_decoder_create(path.to_string(), Some(target)).unwrap();
         // 等首块
-        let first = loop {
-            match rust_lib_wavelink_mobile::decode::stream_decoder_next_chunk(&mut dec) {
-                Ok(Some(c)) => break Some(c.samples.len()),
-                Ok(None) => break None,
-                Err(e) => { eprintln!("err {e}"); break None; }
-            }
+        let first = match rust_lib_wavelink_mobile::decode::stream_decoder_next_chunk(&mut dec) {
+            Ok(Some(c)) => Some(c.samples.len()),
+            Ok(None) => None,
+            Err(e) => { eprintln!("err {e}"); None }
         };
         let dt = t0.elapsed();
         eprintln!("seek->{:.0}s 耗时 {:.1}ms, 首块样本 {}", target, dt.as_secs_f64()*1000.0, first.unwrap_or(0));
