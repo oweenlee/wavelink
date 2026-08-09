@@ -1,4 +1,11 @@
-name: CI
+# core（audio-core）CI。
+#
+# 注意：GitHub Actions 只读取仓库根的 .github/workflows/，
+# 原 core/.github/workflows/ci.yml 在本 monorepo 中不会触发，已迁移至此。
+# cargo 命令统一加 --manifest-path core/Cargo.toml，自动定位根 workspace
+# （共享根 Cargo.lock 与 symphonia-core patch）。
+
+name: Core CI
 
 on:
   push:
@@ -25,11 +32,11 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
 
-      - name: Cargo check (default)
-        run: cargo check
+      - name: Cargo check
+        run: cargo check -p audio-core --manifest-path core/Cargo.toml
 
       - name: Cargo test
-        run: cargo test
+        run: cargo test -p audio-core --manifest-path core/Cargo.toml
 
   platform:
     name: Platform backends
@@ -44,10 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install Linux audio dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
-      - run: cargo check --features "${{ matrix.features }}"
+      - run: cargo check -p audio-core --features "${{ matrix.features }}" --manifest-path core/Cargo.toml
 
   clippy:
     name: Clippy
@@ -64,7 +68,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
 
       - name: Clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy -p audio-core --manifest-path core/Cargo.toml -- -D warnings
 
   fuzz:
     name: Fuzz (30s)
@@ -79,7 +83,7 @@ jobs:
         run: cargo install cargo-fuzz
 
       - name: Fuzz DSP pipeline
-        run: cargo fuzz run dsp -- -max_total_time=30
+        run: cargo fuzz run dsp --manifest-path core/fuzz/Cargo.toml -- -max_total_time=30
 
       - name: Fuzz Symphonia probe
-        run: cargo fuzz run symphonia -- -max_total_time=30
+        run: cargo fuzz run symphonia --manifest-path core/fuzz/Cargo.toml -- -max_total_time=30
