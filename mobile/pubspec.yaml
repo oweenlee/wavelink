@@ -1,5 +1,5 @@
 name: wavelink_mobile
-description: "A new Flutter project."
+description: "WaveLink 移动端：Flutter + Rust（audio-core）跨端 HiFi 音乐播放器"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -32,6 +32,8 @@ dependencies:
   flutter_riverpod: 3.4.2
   rust_lib_wavelink_mobile:
     path: rust_builder
+  # 有意锁定 beta：生成代码（lib/src/rust/ 与 rust/src/frb_generated.rs）
+  # 依赖该版本的代码生成行为，升级需双侧同步重新 generate，勿随意改动
   flutter_rust_bridge: 2.13.0-beta.5
   path_provider: ^2.1.0
   shared_preferences: ^2.3.0
@@ -45,7 +47,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  checks: any
+  checks: ^0.3.1
   flutter_native_splash: ^2.4.5
 
   # The "flutter_lints" package below contains a set of recommended lints to

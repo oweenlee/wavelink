@@ -24,7 +24,10 @@ android {
 
     defaultConfig {
         applicationId = "com.wavelink.wavelink_mobile"
-        minSdk = flutter.minSdkVersion
+        // 显式声明（与 flutter.minSdkVersion 默认值一致，勿隐式依赖）：
+        // Oboe/AAudio 在 API 27 以下无 Exclusive 能力，audio-core 会自动
+        // 降级 Shared 模式并如实上报，故 24 可正常运行
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
