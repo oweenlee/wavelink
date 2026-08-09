@@ -9,6 +9,7 @@ import 'package:wavelink_mobile/ui/features/playback/view_models/playback_contro
 import 'package:wavelink_mobile/ui/features/settings/view_models/dsp_provider.dart';
 import 'package:wavelink_mobile/ui/core/providers/repositories.dart';
 import 'package:wavelink_mobile/data/services/preferences_service.dart';
+import 'package:wavelink_mobile/ui/features/library/view_models/library_provider.dart';
 import 'helpers/mock_repositories.dart';
 import 'package:wavelink_mobile/data/repositories/preferences_repository.dart';
 import 'package:checks/checks.dart';
@@ -28,6 +29,11 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
     SharedPreferences.setMockInitialValues({});
     await PreferencesService.init();
+    // 生产链路会校验本地文件存在性（防 Subsonic server-local 路径误判），
+    // 测试 fixture 需建真实占位文件，否则 resolvedPath 被判 null 走回滚
+    for (final id in ['s1', 's2', 's3']) {
+      File('/tmp/$id.flac').createSync();
+    }
     // 屏蔽 path_provider / MethodChannel 的原生调用
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -345,8 +351,11 @@ void main() {
       );
 
       final (container, p) = buildContainer(bootstrap: false);
-      (container.read(songRepositoryProvider) as MockSongRepository)
-          .songsToReturn = [_song('s1'), _song('s2'), _song('s3')];
+      // 与生产 main.dart 对齐：bootstrap 不再扫描媒体库（避免启动弹窗），
+      // 曲库由缓存恢复预填，随后 bootstrap 才能按 id 匹配恢复断点
+      container.read(libraryProvider.notifier).restoreCachedSongs(
+        [_song('s1'), _song('s2'), _song('s3')],
+      );
       p.bootstrap();
       await Future<void>.delayed(const Duration(milliseconds: 30)); // 等扫描+恢复
 
@@ -375,8 +384,10 @@ void main() {
       addTearDown(container.dispose);
       // _playCurrent 会校验本地文件存在性，需真实创建
       File('/tmp/s1.flac').writeAsBytesSync([0, 1, 2, 3]);
-      (container.read(songRepositoryProvider) as MockSongRepository)
-          .songsToReturn = [_song('s1')];
+      // bootstrap 不再扫描媒体库，曲库需先经缓存恢复预填（同 main.dart）
+      container.read(libraryProvider.notifier).restoreCachedSongs(
+        [_song('s1')],
+      );
       final p = container.read(playbackControllerProvider);
       p.bootstrap();
       await Future<void>.delayed(const Duration(milliseconds: 30));
@@ -424,8 +435,10 @@ void main() {
       );
       addTearDown(container.dispose);
       File('/tmp/s1.flac').writeAsBytesSync([0, 1, 2, 3]);
-      (container.read(songRepositoryProvider) as MockSongRepository)
-          .songsToReturn = [_song('s1')];
+      // bootstrap 不再扫描媒体库，曲库需先经缓存恢复预填（同 main.dart）
+      container.read(libraryProvider.notifier).restoreCachedSongs(
+        [_song('s1')],
+      );
       final p = container.read(playbackControllerProvider);
       p.bootstrap();
       return (container, p, engine);
