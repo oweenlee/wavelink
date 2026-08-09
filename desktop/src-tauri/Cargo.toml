@@ -49,3 +49,8 @@ windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphic
 objc2 = "0.6"
 
 [workspace]
+
+# core 的 symphonia 用 git main；symphonia-adapter-oporus 依赖 crates.io 的 symphonia-core，
+# 用 patch 统一到同一版本源码，避免双 symphonia_core 编译冲突（与根 workspace 同理）
+[patch.crates-io]
+symphonia-core = { git = "https://github.com/pdeljanov/Symphonia", branch = "main" }
