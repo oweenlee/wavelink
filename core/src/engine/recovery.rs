@@ -106,6 +106,7 @@ impl EngineState {
             true, self.current_volume, self.output_bit_depth,
         )));
         self.dsp = Some(dsp.clone());
+        self.reload_pending_ir();
 
         // 启动消费者线程
         let stop_flag = Arc::new(AtomicBool::new(false));

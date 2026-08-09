@@ -28,9 +28,11 @@ impl ConvolutionEq {
     ///
     /// - `path`: .wav 文件路径
     /// - `block_size`: FFT 分块大小（推荐 256-1024）
+    /// - `expected_sample_rate`: 管线当前采样率；IR 采样率不一致时自动离线重采样
+    ///   （不匹配会导致频响静默错位，对房间校正类 IR 是致命的）
     ///
     /// 自动处理 Mono/Stereo IR：Mono IR 应用于所有声道，Stereo IR 逐声道匹配。
-    pub fn load_wav(&mut self, path: &str, block_size: usize) -> Result<(), String> {
+    pub fn load_wav(&mut self, path: &str, block_size: usize, expected_sample_rate: u32) -> Result<(), String> {
         let mut reader = hound::WavReader::open(path).map_err(|e| format!("打开 IR 失败: {e}"))?;
         let spec = reader.spec();
 
@@ -39,7 +41,7 @@ impl ConvolutionEq {
         }
 
         // 读取所有样本，归一化到 [-1, 1]
-        let raw: Vec<f32> = match spec.sample_format {
+        let mut raw: Vec<f32> = match spec.sample_format {
             hound::SampleFormat::Float => {
                 reader.samples::<f32>().map(|s| s.unwrap_or(0.0)).collect()
             }
@@ -52,7 +54,25 @@ impl ConvolutionEq {
             }
         };
 
+        // IR 采样率与管线不一致 → 逐声道离线重采样（单声道 IR 只重采一次）
         let ir_channels = spec.channels as usize;
+        if expected_sample_rate > 0 && (spec.sample_rate as i64 - expected_sample_rate as i64).abs() > 1 {
+            let mut resampled = Vec::new();
+            for ch in 0..ir_channels {
+                let ch_data: Vec<f32> = raw.iter().skip(ch).step_by(ir_channels).copied().collect();
+                let rs = crate::dsp::room_correction::resample_ir(&ch_data, spec.sample_rate, expected_sample_rate)?;
+                resampled.push(rs);
+            }
+            // 重新交错（各声道重采样后长度可能差 1~2 样本，取最短对齐）
+            let min_len = resampled.iter().map(|c| c.len()).min().unwrap_or(0);
+            let mut interleaved = Vec::with_capacity(min_len * ir_channels);
+            for i in 0..min_len {
+                for c in 0..ir_channels {
+                    interleaved.push(resampled[c][i]);
+                }
+            }
+            raw = interleaved;
+        }
         let ir_frame_count = raw.len() / ir_channels;
 
         if ir_frame_count < 16 {
@@ -154,7 +174,7 @@ mod tests {
         write_ir_wav(path, &ir);
 
         let mut conv = ConvolutionEq::new(1);
-        conv.load_wav(path, 256).unwrap();
+        conv.load_wav(path, 256, 44100).unwrap();
         assert!(conv.is_active());
 
         let mut buf = vec![0.0f32; 512];
@@ -179,7 +199,7 @@ mod tests {
         write_ir_wav(path, &ir);
 
         let mut conv = ConvolutionEq::new(2);
-        conv.load_wav(path, 256).unwrap();
+        conv.load_wav(path, 256, 44100).unwrap();
 
         let mut buf = vec![0.0f32; 512];
         buf[0] = 1.0; // 左声道冲激
@@ -193,6 +213,29 @@ mod tests {
             assert!(diff_l < 1e-4, "L index {i}: expected 0.25, got {}", buf[i * 2]);
             assert!(diff_r < 1e-4, "R index {i}: expected 0.125, got {}", buf[i * 2 + 1]);
         }
+
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_load_wav_mismatched_rate_resamples() {
+        // 48kHz 的 16 帧 IR，管线 44.1kHz → 应自动重采样（帧数按比例变化）
+        let path = "/tmp/_test_conv_resample.wav";
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 48000,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut ir = vec![0.0f32; 1600];
+        ir[0] = 1.0;
+        let mut w = hound::WavWriter::create(path, spec).unwrap();
+        for &s in &ir { w.write_sample(s).unwrap(); }
+        w.finalize().unwrap();
+
+        let mut conv = ConvolutionEq::new(1);
+        conv.load_wav(path, 256, 44100).unwrap();
+        assert!(conv.is_active());
 
         std::fs::remove_file(path).ok();
     }

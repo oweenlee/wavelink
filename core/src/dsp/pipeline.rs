@@ -251,10 +251,10 @@ impl DspPipeline {
         }
     }
 
-    /// 加载卷积 EQ 的脉冲响应文件
+    /// 加载卷积 EQ 的脉冲响应文件（IR 采样率与管线不一致时自动重采样）
     pub fn load_conv_ir(&mut self, path: &str) -> Result<(), String> {
         let mut conv = ConvolutionEq::new(self.channels);
-        conv.load_wav(path, 256)?;
+        conv.load_wav(path, 256, self.sample_rate as u32)?;
         self.conv_eq = Some(conv);
         Ok(())
     }

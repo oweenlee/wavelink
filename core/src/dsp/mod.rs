@@ -14,6 +14,7 @@ pub mod crossfeed;
 pub mod dither;
 pub mod limiter;
 pub mod pipeline;
+pub mod room_correction;
 pub mod speed;
 pub mod widener;
 

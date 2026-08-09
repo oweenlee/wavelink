@@ -318,14 +318,7 @@ impl EngineState {
         self.dop_active = dop_active;
         self.apply_pending_replaygain();
 
-        if let Some(ir_path) = self.pending_ir.clone() {
-            if let Some(dsp) = &self.dsp {
-                if let Err(e) = dsp.lock().load_conv_ir(&ir_path) {
-                    error!("加载 IR 失败(play_file): {e}");
-                    self.pending_ir = None;
-                }
-            }
-        }
+        self.reload_pending_ir();
 
         self.preload_next();
     }
@@ -430,6 +423,7 @@ impl EngineState {
         self.consumer_stop = Some(stop_flag);
         self.stream_handle = Some(handle.clone());
         self.apply_pending_replaygain();
+        self.reload_pending_ir();
 
         // 发送 ack 成功
         if let Some(tx) = ack {
@@ -552,6 +546,7 @@ impl EngineState {
         self.dsp = Some(dsp);
         self.consumer_stop = Some(stop_flag);
         self.apply_pending_replaygain();
+        self.reload_pending_ir();
 
         let _ = self.external_tx.send(EngineEvent::Position(pos));
     }
@@ -709,6 +704,19 @@ impl EngineState {
             if let Err(e) = dsp.lock().load_conv_ir(path) {
                 error!("加载 IR 失败: {e}");
                 self.pending_ir = None;
+            }
+        }
+    }
+
+    /// 管线重建后重载待命 IR（seek/play_stream/设备恢复等路径会新建 DspPipeline，
+    /// 不重载会静默丢失卷积 EQ/房间校正配置）
+    pub(crate) fn reload_pending_ir(&mut self) {
+        if let Some(ir_path) = self.pending_ir.clone() {
+            if let Some(dsp) = &self.dsp {
+                if let Err(e) = dsp.lock().load_conv_ir(&ir_path) {
+                    error!("重载 IR 失败: {e}");
+                    self.pending_ir = None;
+                }
             }
         }
     }
