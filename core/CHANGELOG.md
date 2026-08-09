@@ -25,6 +25,14 @@
   `Lyrics::line_at()` 二分同步，`find_lrc_file()` 侧载查找（.lrc/.Lrc/.LRC/.txt）
 - **标签写入**（`tag` 模块）：`write_tags(path, TagUpdate)` 基于 lofty，
   支持 MP3/FLAC/M4A/OGG/WAV/AIFF；`None` 字段保持原值；无标签时按容器格式创建
+- **房间校正**（`dsp::room_correction`，离线模块）：导入 REW（Room EQ Wizard）扫频测量曲线，
+  自动生成线性相位 FIR 校正滤波器：
+  - `parse_rew_txt`：REW 频响导出解析（逗号/Tab、有无表头、乱序容错）
+  - `generate_correction`：偏差取反（峰衰减限 `max_cut_db`、null 提升限 `null_limit_db`）
+    → 心理声学频段权重 → 频域采样法 FIR → headroom 归一化（报告 `applied_gain_db`）
+  - `export_ir_wav`：导出 32-bit float WAV，经现有 `ConvolutionEq` 加载应用
+  - `resample_ir`：IR 采样率适配（rubato 离线重采样）
+  - 支持 `Flat` / `HarmanTilt` 目标曲线；12 个量化测试（DTFT 实测幅频）
 
 ### 变更
 
@@ -32,6 +40,19 @@
   （此前为含糊的“探测失败”；无成熟 Rust 解码器，symphonia 上游亦不支持）
 - `EngineConfig` 新增 `dsd_mode: DsdMode`（默认 `ToPcm`，行为不变）
 - `ConsumerConfig` 新增 `passthrough: bool`（默认 false）
+- **decoder 拆分**：`decoder.rs` 拆为 `decoder/mod.rs`（流式解码）+ `decoder/metadata.rs`
+  （标签/封面/ReplayGain/格式探测），`pub use metadata::*` 保持既有路径兼容
+- `diag` 低层诊断日志降为 `pub(crate)`；`consumer` 保持公开（样本级集成测试依赖）
+- 诊断型集成测试（check_two_files/check_384k_speed）迁至 `examples/`
+- CI 工作流迁至仓库根 `.github/workflows/core-ci.yml`（子目录 workflows 不会被触发）；
+  `core/fuzz` 补独立 workspace 与 symphonia patch
+
+### 修复
+
+- **IR 采样率失配静默错位**：`ConvolutionEq::load_wav` 增加采样率校验，失配自动重采样
+  （原先 48kHz IR 进 44.1kHz 管线会频响错位）
+- **管线重建后卷积 EQ 配置静默丢失**：`EngineState` 新增 `reload_pending_ir`，
+  play_entry/play_stream/seek/设备恢复四条管线重建路径统一重载 pending_ir
 
 ### 整改（1.0-rc.2 方向）
 

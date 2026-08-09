@@ -27,6 +27,7 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → 输出
 │  │ ① DC offset HPF (~2Hz)                         │         │
 │  │ ② ReplayGain Pre-amp (EBU R128)                  │         │
 │  │ ③ FIR 卷积 EQ (fft-convolver, 加载任意 IR WAV)   │         │
+│  │   ↑ 房间校正 IR 由此级加载（REW 测量→FIR 生成）    │         │
 │  │ ④ IIR PEQ (31 段 ISO, RBJ Biquad, 含 shelf)     │         │
 │  │ ⑤ Crossfeed (Bauer 算法)                         │         │
 │  │ ⑥ 立体声展宽 (Mid/Side)                           │         │
@@ -57,10 +58,11 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → 输出
 
 | 模块 | 说明 |
 |------|------|
-| `decoder` | Symphonia 流式解码 + DSD；rubato 异步 SRC；声道混音；seek；`decode_to_memory`；WavPack 明确报错（无可用 Rust 解码器） |
+| `decoder` | 流式解码主体（Symphonia + DSD；rubato 异步 SRC；声道混音；seek；`decode_to_memory`；WavPack 明确报错）；元数据/封面/探测拆在 `decoder::metadata` 子模块（经 re-export 仍可从 `decoder::` 路径访问） |
 | `dsp::biquad` | IIR 双二阶 (RBJ cookbook: peaking/lowpass/highpass/low_shelf/high_shelf) |
 | `dsp::autoeq` | AutoEQ 耳机校正：34 个 oratory1990 实测档案内嵌（离线），`catalog()` / `find_profile()` / `profile_to_peq_bands()` |
-| `dsp::convolver` | FIR 分区卷积 (fft-convolver) |
+| `dsp::convolver` | FIR 分区卷积 (fft-convolver)；IR 采样率失配自动重采样 |
+| `dsp::room_correction` | 房间校正（离线）：REW 测量导入 → 限幅/频段权重 → 频域采样法 FIR → IR WAV 导出，经卷积 EQ 级应用；支持 Flat/Harman 目标曲线 |
 | `dsp::crossfeed` | Bauer 算法耳机串音模拟 |
 | `dsp::widener` | Mid/Side 立体声展宽 |
 | `dsp::limiter` | 4x 过采样真峰值限幅 |
@@ -130,6 +132,7 @@ let (engine, events) = EngineHandle::start_with_config(config);
 | DC offset HPF (~2Hz) | ✅ |
 | ReplayGain Pre-amp (DSP 管线内, 独立于音量) | ✅ |
 | FIR 卷积 EQ (加载 IR WAV) | ✅ |
+| 房间校正 (REW 测量导入 → FIR IR 生成) | ✅ 离线模块（P1 引擎命令/UI 接入待做） |
 | IIR PEQ (31 段 ISO, 运行时调参) | ✅ |
 | 耳机串音模拟 (Bauer crossfeed) | ✅ |
 | 立体声展宽 (Mid/Side) | ✅ |
@@ -180,9 +183,12 @@ let (engine, events) = EngineHandle::start_with_config(config);
 ## 测试
 
 ```bash
-cargo test -p audio-core    # 255 个测试 (单元 + 集成)
+cargo test -p audio-core    # 279 个测试 (单元 + 集成)
 cargo test -p audio-core -- --ignored  # 含 FFmpeg 依赖的格式验证
 ```
+
+诊断型样例（依赖本机样本文件，非 CI 测试）见 `examples/`：
+`check_two_files` / `check_384k_speed` / `spin_repro` / `underrun_repro`。
 
 ## 依赖
 
@@ -241,4 +247,4 @@ for dev in enumerate_devices() {
 
 ## API 文档
 
-详细 API 参考见 [`API_REFERENCE.md`](./API_REFERENCE.md)（由 `bash doc-api.sh` 自动生成）。
+以源码为准，文档注释与代码同源，直接看 `src/` 或 `cargo doc -p audio-core --open`。
