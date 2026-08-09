@@ -34,7 +34,7 @@ serde = { version = "1", features = ["derive"] }
 lofty = "0.24"
 
 # 纯 Rust 解码器
-symphonia = { version = "0.6", default-features = false, features = [
+symphonia = { git = "https://github.com/pdeljanov/Symphonia", branch = "main", default-features = false, features = [
     "mp3", "flac", "pcm", "vorbis", "aac", "alac", "isomp4", "ogg", "wav", "aiff"
 ] }
 symphonia-adapter-oporus = "0.1"
