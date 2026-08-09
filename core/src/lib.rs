@@ -13,11 +13,12 @@
 /// 音频分析（BPM 检测 / 调性识别 / 能量计算）
 pub mod analysis;
 
-/// 【临时诊断】Android logcat 诊断日志（结案后删）
-pub mod diag;
+/// 低层诊断日志（Android logcat / stderr，仅 crate 内部使用）
+pub(crate) mod diag;
 /// 音频输入捕获抽象层
 pub mod capture;
-/// 平台无关的解码→DSP→ringbuf 循环（PC 和 Mobile 共享）
+/// 解码→DSP→ringbuf 消费循环（PC 和 Mobile 共享）。
+/// 引擎内部编排使用，公开以支持样本级集成测试（gapless / consumer 链路验证）
 pub mod consumer;
 /// 音频文件解码（Symphonia 流式解码 + DSD 直解）
 pub mod decoder;

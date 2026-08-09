@@ -1,6 +1,7 @@
 //! 复现：headless 引擎播放但无人消费 ringbuf → consumer 是否 100% 空转
 //! 用法: cargo run --release --example spin_repro --no-default-features
 #[cfg(target_os = "macos")]
+#[allow(clippy::duplicated_attributes)] // 多个 #[link] 的 kind = "framework" 会被 clippy 误报为重复属性
 #[link(name = "CoreAudio", kind = "framework")]
 #[link(name = "AudioToolbox", kind = "framework")]
 #[link(name = "CoreFoundation", kind = "framework")]

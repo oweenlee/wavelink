@@ -1,12 +1,13 @@
-//! 专门测试之前超时的两个文件
+//! 诊断：之前解码超时的两个真实文件的解码速度
+//! 用法: cargo run --release --example check_two_files
+//! 依赖本机 test-media/ 下的样本文件，缺失时自动跳过。
+
 use audio_core::decoder::Decoder;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-#[test]
-#[ignore = "解码完整歌曲，耗时较长，手动运行: cargo test --test check_two_files -- --ignored"]
-fn check_timed_out_files() {
+fn main() {
     let files = [
         ("李荣浩-恋人.m4a", "/Users/qin/Desktop/wavelink/test-media/李荣浩-恋人.m4a"),
         ("渡口.mp3", "/Users/qin/Desktop/wavelink/test-media/在百万豪装录音棚大声听 蔡琴《渡口》【Hi-res】.mp3"),

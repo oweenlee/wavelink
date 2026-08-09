@@ -1,5 +1,7 @@
-//! 【临时诊断】跨平台诊断日志：Android 进 logcat（tag WaveLinkCore），其余平台 stderr。
-//! 定位 Android 播放无声（ringbuf 断供）用，结案后删除。
+//! 低层诊断日志：Android 进 logcat（tag WaveLinkCore），其余平台 stderr。
+//!
+//! 不依赖 tracing subscriber（移动端 headless 场景未必初始化），
+//! 用于关键路径的无条件诊断输出，仅 crate 内部使用。
 
 #[cfg(target_os = "android")]
 #[link(name = "log")]

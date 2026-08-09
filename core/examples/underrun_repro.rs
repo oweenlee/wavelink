@@ -3,6 +3,7 @@
 //! 用法: cargo run --release --no-default-features --example underrun_repro
 
 #[cfg(target_os = "macos")]
+#[allow(clippy::duplicated_attributes)] // 多个 #[link] 的 kind = "framework" 会被 clippy 误报为重复属性
 #[link(name = "CoreAudio", kind = "framework")]
 #[link(name = "AudioToolbox", kind = "framework")]
 #[link(name = "CoreFoundation", kind = "framework")]

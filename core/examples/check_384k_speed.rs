@@ -1,14 +1,13 @@
-//! 快速诊断：384kHz WAV 解码速度（只解前 10 秒实际音频数据）
-//! 这个文件 ~553MB，全解太慢，所以先探测时长再取前 10s 数据量
+//! 诊断：384kHz WAV 解码速度（限时 30 秒，看能解多少）
+//! 用法: cargo run --release --example check_384k_speed
+//! 依赖本机 test-media/hifi_ode_to_joy.wav（~553MB），缺失时自动退出。
 
 use audio_core::decoder::Decoder;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-#[test]
-#[ignore = "解码 384kHz WAV，耗时较长"]
-fn diagnose_384k() {
+fn main() {
     let path = std::path::Path::new("/Users/qin/Desktop/wavelink/test-media/hifi_ode_to_joy.wav");
     if !path.exists() {
         eprintln!("文件不存在");
