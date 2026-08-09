@@ -611,36 +611,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
         debugPrint('[Audio] 歌词加载失败: $e');
       }
     }
-    // 【临时】演示歌词：仅 debug 生效，预览歌词 UI 效果用，验收后删除
-    if (kDebugMode && (lyrics == null || lyrics.isEmpty)) {
-      lyrics = parseLrc(_demoLrc);
-    }
     if (!ref.mounted) return;
     state = state.copyWith(lyrics: lyrics);
   }
-
-  static const String _demoLrc = '''
-[00:00.00]WaveLink 歌词演示
-[00:06.00]这是一句演示歌词
-[00:13.00]歌词会跟随播放进度逐行高亮
-[00:20.00]点按预览行可以打开全屏歌词
-[00:28.00]月光落在旧唱片的纹路里
-[00:36.00]风声轻轻翻过昨日的和弦
-[00:44.00]有些旋律不必说完
-[00:52.00]有些故事听着就懂
-[01:02.00]城市灯火一盏一盏熄灭
-[01:10.00]只剩耳机里的世界还亮着
-[01:18.00]把心事调成无损的格式
-[01:26.00]每一个比特都不肯将就
-[01:36.00]副歌来了 跟着节奏
-[01:44.00]高音拉满 低音下潜
-[01:52.00]这就是我们做播放器的理由
-[02:02.00]让每一首歌都被认真播放
-[02:12.00]让每一次聆听都不被辜负
-[02:24.00]演示歌词即将结束
-[02:36.00]感谢观看 ♪
-[03:00.00]（之后的时间留白，验证最后一行常驻）
-''';
 
   void _handleRemoteCommand(RemoteCommand cmd) {
     debugPrint('[Audio] 收到远程命令: ${cmd.command}');

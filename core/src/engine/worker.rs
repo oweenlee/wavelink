@@ -242,7 +242,9 @@ pub(crate) fn spawn_consumer(
     levels: Arc<Mutex<Levels>>,
     err_rx: Receiver<EngineError>,
     passthrough: bool,
+    playback_gen: Arc<AtomicU64>,
 ) -> thread::JoinHandle<()> {
+    let my_gen = playback_gen.load(Ordering::SeqCst);
     thread::spawn(move || {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             // 提升线程优先级（跨平台）
@@ -287,7 +289,11 @@ pub(crate) fn spawn_consumer(
                     }
                     let mut guard = next_rx.lock();
                     let preloaded = guard.take();
-                    let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
+                    if playback_gen.load(Ordering::SeqCst) == my_gen {
+                        let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
+                    } else {
+                        debug!("消费者线程 gen={my_gen} 已过期（当前 gen={}），跳过 TrackChanged", playback_gen.load(Ordering::Relaxed));
+                    }
                     preloaded
                 },
             };
@@ -304,7 +310,9 @@ pub(crate) fn spawn_consumer(
                       else if let Some(s) = panic_info.downcast_ref::<String>() { s.clone() }
                       else { "消费者线程未知 panic".to_string() };
             error!("消费者线程 crash: {msg}");
-            let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
+            if playback_gen.load(Ordering::SeqCst) == my_gen {
+                let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
+            }
         }
         debug!("消费者线程结束");
     })
@@ -362,7 +370,7 @@ mod tests {
         let rb = ringbuf::HeapRb::<f32>::new(65536);
         let (prod, _cons) = rb.split();
 
-        let consumer = spawn_consumer(rx1, prod, dsp, stop.clone(), pos, ev_tx, ready_tx, next_rx.clone(), 44100, 2, 0, Arc::new(AtomicU32::new(1.0f32.to_bits())), Arc::new(Mutex::new(Levels::default())), bounded(1).1, false);
+        let consumer = spawn_consumer(rx1, prod, dsp, stop.clone(), pos, ev_tx, ready_tx, next_rx.clone(), 44100, 2, 0, Arc::new(AtomicU32::new(1.0f32.to_bits())), Arc::new(Mutex::new(Levels::default())), bounded(1).1, false, Arc::new(AtomicU64::new(1)));
 
         let frame = DecodedFrame {
             samples: vec![0.5f32; 1024],

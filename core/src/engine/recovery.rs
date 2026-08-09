@@ -112,7 +112,7 @@ impl EngineState {
         self.consumer_stop = Some(stop_flag.clone());
         let consumer_event_tx = self.internal_event_tx.clone();
         let (ready_tx, ready_rx) = unbounded::<bool>();
-        let consumer = spawn_consumer(rx, pcm, dsp, stop_flag, self.position.clone(), consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx, false);
+        let consumer = spawn_consumer(rx, pcm, dsp, stop_flag, self.position.clone(), consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx, false, self.playback_gen.clone());
         self.consumer_thread = Some(consumer);
 
         let output = self.output.as_ref().expect("output 必须在之前创建");

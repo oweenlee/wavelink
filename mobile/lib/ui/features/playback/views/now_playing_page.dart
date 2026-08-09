@@ -15,9 +15,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/animations/app_animations.dart';
 import '../../../core/widgets/progress_slider_widget.dart';
 import '../../../core/widgets/album_cover.dart';
-import '../../../core/widgets/lyrics_overlay.dart';
 import '../../../core/widgets/queue_sheet.dart';
 import '../../../core/widgets/effects_sheet.dart';
+import '../../../core/widgets/lyrics_overlay.dart';
 
 class NowPlayingPage extends ConsumerStatefulWidget {
   const NowPlayingPage({super.key});
@@ -86,7 +86,7 @@ class _NowPlayingPageState extends ConsumerState<NowPlayingPage>
     final player = ref.watch(playbackControllerProvider);
     final playerState = ref.watch(playerProvider);
     final queueState = ref.watch(queueProvider);
-    ref.watch(libraryProvider); // 收藏变化驱动 _Tags / _BottomToolbar 重建
+    ref.watch(libraryProvider); // 收藏变化驱动 _Tags 重建
     final song = queueState.currentSong;
 
     if (song == null) {
@@ -140,14 +140,12 @@ class _NowPlayingPageState extends ConsumerState<NowPlayingPage>
             if (!_lyricsOverlay &&
                 d.primaryVelocity != null &&
                 d.primaryVelocity! > 500) {
-              // 下滑关闭：轻震动反馈
               HapticFeedback.lightImpact();
               Navigator.of(context).pop();
             }
           },
           child: Stack(
             children: [
-              // 模糊封面底色 — 对齐 HTML prototype 的 blurred backdrop
               _Backdrop(coverUrl: song.coverUrl),
               SafeArea(
                   child: Padding(
@@ -158,13 +156,15 @@ class _NowPlayingPageState extends ConsumerState<NowPlayingPage>
                         onClose: () => Navigator.of(context).pop(),
                         formatInfo: fmtInfo,
                         isPlaying: playerState.isPlaying,
+                        onQueue: () => _openQueue(context),
+                        onEffects: () => _openEffects(context),
+                        queueCount: player.queue.length,
                       ),
                       Expanded(
                         child: Center(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              // 入场：封面缩放淡入；切歌：封面交叉淡化
                               AppAnim.popIn(
                                 _PauseAwareCover(
                                   isPlaying: playerState.isPlaying,
@@ -194,37 +194,36 @@ class _NowPlayingPageState extends ConsumerState<NowPlayingPage>
                           ),
                         ),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: _ProgressRow(player: player, song: song),
-                      ),
-                      const SizedBox(height: 4),
-                      AppAnim.entrance(
-                        _TransportRow(player: player),
-                        delay: const Duration(milliseconds: 200),
-                        slideY: 0.15,
-                      ),
-                      const SizedBox(height: 18),
-                      _BottomToolbar(
-                        player: player,
-                        lyricsActive: _lyricsOverlay,
-                        onQueue: () => _openQueue(context),
-                        onEffects: () => _openEffects(context),
-                        onLyrics: _openLyrics,
-                      ),
-                      const SizedBox(height: 4),
-                      _LyricsPreview(
-                        lyrics: playerState.lyrics ?? [],
-                        line: playerState.currentLyricLine,
-                        onTap: _openLyrics,
+                      Transform.translate(
+                        offset: const Offset(0, -49),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _LyricsPreview(
+                              lyrics: playerState.lyrics ?? [],
+                              line: playerState.currentLyricLine,
+                              onTap: _openLyrics,
+                            ),
+                            const SizedBox(height: 4),
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: _ProgressRow(player: player, song: song),
+                            ),
+                            const SizedBox(height: 6),
+                            AppAnim.entrance(
+                              _TransportRow(player: player),
+                              delay: const Duration(milliseconds: 200),
+                              slideY: 0.15,
+                            ),
+                          ],
+                        ),
                       ),
                       _InstrumentPanel(player: player),
-                      const SizedBox(height: 8),
-                    ],
-                  ),
+                  ],
                 ),
               ),
-              if (_lyricsOverlay)
+            ),
+            if (_lyricsOverlay)
                 SlideTransition(
                   position: _lyricsSlide,
                   child: LyricsOverlay(
@@ -454,14 +453,21 @@ class _TopBar extends StatelessWidget {
   final VoidCallback onClose;
   final String formatInfo;
   final bool isPlaying;
+  final VoidCallback? onQueue;
+  final VoidCallback? onEffects;
+  final int queueCount;
   const _TopBar({
     required this.onClose,
     required this.formatInfo,
     required this.isPlaying,
+    this.onQueue,
+    this.onEffects,
+    this.queueCount = 0,
   });
 
   @override
   Widget build(BuildContext context) {
+    final hasMenu = onQueue != null || onEffects != null;
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Row(
@@ -482,14 +488,69 @@ class _TopBar extends StatelessWidget {
           const SizedBox(width: 8),
           _EngineLed(isPlaying: isPlaying),
           const Spacer(),
-          IconButton(
-            icon: const Icon(
-              LucideIcons.moreHorizontal,
-              color: AppTheme.textPrimary,
+          if (hasMenu)
+            PopupMenuButton<String>(
+              icon: const Icon(
+                LucideIcons.moreHorizontal,
+                color: AppTheme.textPrimary,
+              ),
+              color: AppTheme.s1,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              onSelected: (value) {
+                if (value == 'queue') onQueue?.call();
+                if (value == 'effects') onEffects?.call();
+              },
+              itemBuilder: (context) => [
+                if (onQueue != null)
+                  PopupMenuItem(
+                    value: 'queue',
+                    child: Row(
+                      children: [
+                        Text(
+                          AppLocalizations.of(context).queue,
+                          style: TextStyle(color: AppTheme.textPrimary, fontSize: 14),
+                        ),
+                        const Spacer(),
+                        if (queueCount > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppTheme.textTertiary,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '$queueCount',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                if (onEffects != null)
+                  PopupMenuItem(
+                    value: 'effects',
+                    child: Text(
+                      AppLocalizations.of(context).sound,
+                      style: TextStyle(color: AppTheme.textPrimary, fontSize: 14),
+                    ),
+                  ),
+              ],
+            )
+          else
+            IconButton(
+              icon: const Icon(
+                LucideIcons.moreHorizontal,
+                color: AppTheme.textPrimary,
+              ),
+              onPressed: () {},
+              splashRadius: 20,
             ),
-            onPressed: () {},
-            splashRadius: 20,
-          ),
         ],
       ),
     );
@@ -634,7 +695,6 @@ class _Tags extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final analysis = player.getAnalysis(song.id);
     final bpm = analysis?.bpm;
     final key = analysis?.key;
@@ -645,12 +705,6 @@ class _Tags extends StatelessWidget {
             _TechTag(icon: LucideIcons.gauge, label: '${bpm.round()} BPM'),
           if (key != null)
             _TechTag(icon: LucideIcons.music, label: key),
-          if (player.isSongFavorite(song.id))
-            _TechTag(
-              icon: LucideIcons.heart,
-              label: l10n.favorited,
-              accent: AppTheme.danger,
-            ),
         ],
     );
   }
@@ -659,12 +713,11 @@ class _Tags extends StatelessWidget {
 class _TechTag extends StatelessWidget {
   final IconData icon;
   final String label;
-  final Color? accent;
-  const _TechTag({required this.icon, required this.label, this.accent});
+  const _TechTag({required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) {
-    final c = accent ?? AccentScope.of(context);
+    final c = AccentScope.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -720,41 +773,40 @@ class _TransportRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 60,
-      child: Stack(
-        alignment: Alignment.center,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // 模式按钮 — 单独左侧
-          Positioned(
-            left: 0,
-            top: 12,
-            child: _ModeBtn(
-              loopMode: player.loopMode,
-              onTap: () => player.toggleLoopMode(),
-            ),
+          _ModeBtn(
+            loopMode: player.loopMode,
+            onTap: () => player.toggleLoopMode(),
           ),
-          // prev-play-next 组 — 死中心
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _TransportBtn(
-                icon: Icons.skip_previous,
-                size: 44,
-                filled: true,
-                onTap: () => player.previous(),
-              ),
-              const SizedBox(width: 32),
-              _PlayBtn(
-                isPlaying: player.isPlaying,
-                onTap: () => player.togglePlay(),
-              ),
-              const SizedBox(width: 32),
-              _TransportBtn(
-                icon: Icons.skip_next,
-                size: 44,
-                filled: true,
-                onTap: () => player.next(),
-              ),
-            ],
+          _TransportBtn(
+            icon: Icons.skip_previous,
+            size: 44,
+            filled: true,
+            onTap: () => player.previous(),
+          ),
+          _PlayBtn(
+            isPlaying: player.isPlaying,
+            onTap: () => player.togglePlay(),
+          ),
+          _TransportBtn(
+            icon: Icons.skip_next,
+            size: 44,
+            filled: true,
+            onTap: () => player.next(),
+          ),
+          _TransportBtn(
+            icon: player.isFavorite ? Icons.favorite : Icons.favorite_border,
+            size: 44,
+            filled: true,
+            active: player.isFavorite,
+            activeColor: AppTheme.danger,
+            onTap: () {
+              HapticFeedback.lightImpact();
+              player.toggleFavorite();
+            },
           ),
         ],
       ),
@@ -801,19 +853,23 @@ class _TransportBtn extends StatelessWidget {
   final double size;
   final VoidCallback onTap;
   final bool active;
+  final Color? activeColor;
   final bool filled;
   const _TransportBtn({
     required this.icon,
     this.size = 36,
     required this.onTap,
     this.active = false,
+    this.activeColor,
     this.filled = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
-    final color = active ? accent : AppTheme.textSecondary;
+    final color = active
+        ? (activeColor ?? accent)
+        : AppTheme.textSecondary;
     // Material Icons (filled) are naturally larger, scale down a bit
     final iconSize = filled ? size * 0.5 : size * 0.6;
     return GestureDetector(
@@ -888,211 +944,49 @@ class _LyricsPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasLyrics = lyrics.isNotEmpty && line >= 0 && line < lyrics.length;
-    if (!hasLyrics) return const SizedBox.shrink();
+    if (!hasLyrics) return const SizedBox(height: 64);
 
-    final text = lyrics[line].text;
+    // 三行：前一行 / 当前行 / 后一行
+    final lines = <String>[];
+    int currentIdx = 0;
+    if (line > 0) {
+      lines.add(lyrics[line - 1].text);
+      currentIdx = 1;
+    }
+    lines.add(lyrics[line].text);
+    if (line < lyrics.length - 1) lines.add(lyrics[line + 1].text);
+    while (lines.length < 3) {
+      lines.add('');
+    }
 
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-        child: Row(
-          children: [
-            Icon(LucideIcons.text, size: 16, color: AppTheme.textTertiary),
-            const SizedBox(width: 8),
-            Expanded(
+      child: SizedBox(
+        height: 64,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(lines.length, (i) {
+            final isCurrent = i == currentIdx;
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
               child: Text(
-                text,
-                style: const TextStyle(
+                lines[i],
+                style: TextStyle(
                   fontSize: 13,
-                  color: AppTheme.textSecondary,
+                  fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
+                  color: isCurrent
+                      ? AppTheme.textPrimary
+                      : AppTheme.textTertiary,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
               ),
-            ),
-            Icon(
-              LucideIcons.chevronUp,
-              size: 16,
-              color: AppTheme.textTertiary,
-            ),
-          ],
+            );
+          }),
         ),
       ),
     );
-  }
-}
-
-// ── Bottom Toolbar ──
-
-class _BottomToolbar extends StatelessWidget {
-  final PlaybackController player;
-  final bool lyricsActive;
-  final VoidCallback onQueue;
-  final VoidCallback onEffects;
-  final VoidCallback onLyrics;
-  const _BottomToolbar({
-    required this.player,
-    required this.lyricsActive,
-    required this.onQueue,
-    required this.onEffects,
-    required this.onLyrics,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return Container(
-      padding: const EdgeInsets.only(left: 12, right: 12, top: 18),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // 收藏切换：弹跳反馈（active 状态变化时触发一次性 pop）
-          _BounceOnChange(
-            trigger: player.isFavorite,
-            child: _BarItem(
-              icon: LucideIcons.heart,
-              label: l10n.favorite,
-              active: player.isFavorite,
-              activeColor: AppTheme.danger,
-              onTap: () => player.toggleFavorite(),
-            ),
-          ),
-          _BarItem(
-            icon: LucideIcons.text,
-            label: l10n.lyrics,
-            active: lyricsActive,
-            onTap: onLyrics,
-          ),
-          _BarItem(
-            icon: LucideIcons.slidersHorizontal,
-            label: l10n.sound,
-            onTap: onEffects,
-          ),
-          _BarItem(
-            icon: LucideIcons.listMusic,
-            label: l10n.queue,
-            onTap: onQueue,
-            badge: '${player.queue.length}',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BarItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool active;
-  final Color? activeColor;
-  final VoidCallback onTap;
-  final String? badge;
-  const _BarItem({
-    required this.icon,
-    required this.label,
-    this.active = false,
-    this.activeColor,
-    required this.onTap,
-    this.badge,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = AccentScope.of(context);
-    final color = active ? (activeColor ?? accent) : AppTheme.textTertiary;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Icon(icon, color: color, size: 20),
-              if (badge != null)
-                Positioned(
-                  right: -10,
-                  top: -4,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      color: accent,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      badge!,
-                      style: const TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w500,
-              letterSpacing: 0.04,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── 收藏切换弹跳反馈 ──
-
-/// 当 [trigger] 值变化时，子组件做一次 scale pop 弹跳（easeOutBack 过冲）。
-/// 用于收藏切换时的反馈动画，仅在状态翻转瞬间播放，无常驻 ticker。
-class _BounceOnChange extends StatefulWidget {
-  final bool trigger;
-  final Widget child;
-  const _BounceOnChange({required this.trigger, required this.child});
-
-  @override
-  State<_BounceOnChange> createState() => _BounceOnChangeState();
-}
-
-class _BounceOnChangeState extends State<_BounceOnChange>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ac = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 280),
-  )..value = 1.0; // 初始即 1.0，避免首次 build 消失
-  late final Animation<double> _scale = CurvedAnimation(
-    parent: _ac,
-    curve: Curves.easeOutBack,
-  );
-
-  @override
-  void didUpdateWidget(covariant _BounceOnChange oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.trigger != oldWidget.trigger) {
-      _ac.forward(from: 0);
-    }
-  }
-
-  @override
-  void dispose() {
-    _ac.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ScaleTransition(scale: _scale, child: widget.child);
   }
 }
 

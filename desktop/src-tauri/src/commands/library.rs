@@ -4,16 +4,25 @@ use sdk::library::{Scanner, Track, AlbumBrief};
 use crate::state::AppState;
 
 #[tauri::command]
-pub fn scan_dir(path: String, state: State<AppState>) -> Result<serde_json::Value, String> {
-    let dir = PathBuf::from(&path);
-    let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
-    let result = Scanner::scan_directory(&db, &dir)?;
-    db.add_folder(&path).ok();
-    Ok(serde_json::json!({
-        "scanned": result.scanned,
-        "errors": result.errors,
-        "removed": result.removed,
-    }))
+pub async fn scan_dir(path: String, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    // 同步命令跑在主线程，扫描大量文件会卡死 UI。
+    // 改为后台线程执行扫描，用独立 DB 连接（busy_timeout + SCAN_LOCK 保证并发安全，与 watcher 一致）。
+    let db_path = state.db_path.clone();
+    let handle = tauri::async_runtime::spawn_blocking(move || {
+        let dir = PathBuf::from(&path);
+        let db = sdk::library::LibraryDb::open(&db_path)
+            .map_err(|e| format!("db open failed: {e}"))?;
+        let result = Scanner::scan_directory(&db, &dir)?;
+        db.add_folder(&path).ok();
+        Ok(serde_json::json!({
+            "scanned": result.scanned,
+            "errors": result.errors,
+            "removed": result.removed,
+        }))
+    });
+    handle
+        .await
+        .map_err(|e| format!("scan task failed: {e}"))?
 }
 
 #[tauri::command]

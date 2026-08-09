@@ -78,6 +78,8 @@ pub struct EngineState {
     pub(crate) output_bit_depth: u32,
     /// 共享捕获缓冲（与 EngineHandle 同步，替代全局 CAPTURE_INNER）
     pub(crate) capture_inner_shared: Option<Arc<RwLock<Option<Arc<crate::capture::CaptureInner>>>>>,
+    /// 播放代数：每次 play_entry 递增，消费者线程用它判断自己是否已成"僵尸"
+    pub(crate) playback_gen: Arc<AtomicU64>,
 }
 
 impl EngineState {
@@ -122,6 +124,7 @@ impl EngineState {
             exclusive_mode_acquired: false,
             output_bit_depth: 24,
             capture_inner_shared: None,
+            playback_gen: Arc::new(AtomicU64::new(1)),
         }
     }
 
@@ -157,7 +160,8 @@ impl EngineState {
     }
 
     pub(crate) fn play_entry(&mut self, entry: &QueueEntry) {
-        crate::diag::log(&format!("seq: play_entry 开始: {}", entry.display));
+        self.playback_gen.fetch_add(1, Ordering::SeqCst);
+        crate::diag::log(&format!("seq: play_entry 开始: {} (gen={})", entry.display, self.playback_gen.load(Ordering::Relaxed)));
         info!("播放: {} (file={}, start={}s, end={}s)",
             entry.display, entry.audio_file, entry.start_secs, entry.end_secs);
         // 记录历史（用于"上一首"）
@@ -274,7 +278,7 @@ impl EngineState {
         if self.config.bit_perfect || dop_active {
             dsp.lock().set_bypass(true);
         }
-        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx, dop_active);
+        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx, dop_active, self.playback_gen.clone());
         let output = match self.output.as_ref() {
             Some(o) => o,
             None => { error!("播放时输出设备未初始化"); self.stop_playback(); self.advance_queue(); return; }
@@ -398,7 +402,7 @@ impl EngineState {
         let position_clone = self.position.clone();
         let consumer_event_tx = self.internal_event_tx.clone();
         let (ready_tx, ready_rx) = unbounded::<bool>();
-        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx, false);
+        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx, false, self.playback_gen.clone());
         let output = match self.output.as_ref() {
             Some(o) => o,
             None => { error!("流式播放时输出设备未初始化"); self.stop_playback(); self.fail_stream(ack, EngineError::InvalidState("未初始化输出设备".into())); return; }
@@ -526,7 +530,7 @@ impl EngineState {
         let position_clone = self.position.clone();
         let consumer_event_tx = self.internal_event_tx.clone();
         let (ready_tx, ready_rx) = unbounded::<bool>();
-        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), sr, ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx, dop);
+        let consumer = spawn_consumer(rx, pcm, dsp.clone(), stop_flag.clone(), position_clone, consumer_event_tx, ready_tx, self.next_rx.clone(), sr, ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx, dop, self.playback_gen.clone());
         let output = match self.output.as_ref() {
             Some(o) => o,
             None => { error!("seek 后输出设备未初始化"); return; }
@@ -921,6 +925,7 @@ pub(crate) mod tests {
             exclusive_mode_acquired: false,
             output_bit_depth: 24,
             capture_inner_shared: None,
+            playback_gen: Arc::new(AtomicU64::new(1)),
         };
         (s, rx)
     }
