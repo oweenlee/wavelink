@@ -82,6 +82,19 @@ pub fn read_metadata(path: &Path) -> Result<Metadata, String> {
     })
 }
 
+/// 用 Symphonia 打开文件并探测容器格式（probe_duration/sample_rate/bit_depth 共用）
+fn open_symphonia_format(path: &Path) -> Option<Box<dyn symphonia::core::formats::FormatReader>> {
+    let file = File::open(path).ok()?;
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+    symphonia::default::get_probe()
+        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+        .ok()
+}
+
 /// 用 Symphonia 探测音频时长（秒），不完整解码
 pub fn probe_duration_secs(path: &Path) -> Option<f64> {
     // DSF：Symphonia 无 DSD 格式支持，走头部直解
@@ -90,15 +103,7 @@ pub fn probe_duration_secs(path: &Path) -> Option<f64> {
             return Some(secs);
         }
     }
-    let file = File::open(path).ok()?;
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
-    let mut hint = Hint::new();
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
-    }
-    let format = symphonia::default::get_probe()
-        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
-        .ok()?;
+    let format = open_symphonia_format(path)?;
     format.tracks().iter()
         .find(|t| matches!(&t.codec_params, Some(symphonia::core::codecs::CodecParameters::Audio(p))
             if p.codec != symphonia::core::codecs::audio::CODEC_ID_NULL_AUDIO))
@@ -211,15 +216,7 @@ fn parse_replaygain_str(s: &str) -> Option<f32> {
 
 /// 快速探测音频文件的采样率（不完整解码，只读文件头）
 pub fn probe_sample_rate(path: &Path) -> Option<u32> {
-    let file = File::open(path).ok()?;
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
-    let mut hint = Hint::new();
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
-    }
-    let format = symphonia::default::get_probe()
-        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
-        .ok()?;
+    let format = open_symphonia_format(path)?;
     for track in format.tracks() {
         if let Some(symphonia::core::codecs::CodecParameters::Audio(audio)) = &track.codec_params {
             let rate = audio.sample_rate.unwrap_or(44100);
@@ -249,15 +246,7 @@ pub fn probe_dsf_secs(path: &Path) -> Option<f64> {
 
 /// 快速探测音频文件的位深（不完整解码，只读文件头）
 pub fn probe_bit_depth(path: &Path) -> Option<u16> {
-    let file = File::open(path).ok()?;
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
-    let mut hint = Hint::new();
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
-    }
-    let format = symphonia::default::get_probe()
-        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
-        .ok()?;
+    let format = open_symphonia_format(path)?;
     for track in format.tracks() {
         if let Some(symphonia::core::codecs::CodecParameters::Audio(audio)) = &track.codec_params {
             let bits = audio.bits_per_sample.unwrap_or(16);

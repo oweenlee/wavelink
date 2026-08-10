@@ -12,6 +12,10 @@ pub struct ConvolutionEq {
     convolvers: Vec<FFTConvolver<f32>>,
     channels: usize,
     block_size: usize,
+    /// 预分配的去交错工作缓冲（避免热路径逐块分配）
+    work_in: Vec<f32>,
+    /// 预分配的卷积输出缓冲
+    work_out: Vec<f32>,
 }
 
 impl ConvolutionEq {
@@ -21,6 +25,8 @@ impl ConvolutionEq {
             convolvers: Vec::new(),
             channels,
             block_size: 256,
+            work_in: Vec::new(),
+            work_out: Vec::new(),
         }
     }
 
@@ -110,17 +116,20 @@ impl ConvolutionEq {
         Ok(())
     }
 
-    /// 处理交错 PCM 缓冲
+    /// 处理交错 PCM 缓冲（复用预分配工作缓冲，热路径零分配）
     pub fn process(&mut self, buf: &mut [f32]) {
         if self.convolvers.is_empty() {
             return;
         }
         let ch = self.channels;
+        let frames = buf.len() / ch;
         for c in 0..ch.min(self.convolvers.len()) {
-            let ch_buf: Vec<f32> = buf.iter().skip(c).step_by(ch).copied().collect();
-            let mut out_buf = vec![0.0f32; ch_buf.len()];
-            if self.convolvers[c].process(&ch_buf, &mut out_buf).is_ok() {
-                for (i, v) in out_buf.into_iter().enumerate() {
+            self.work_in.clear();
+            self.work_in.extend(buf.iter().skip(c).step_by(ch).copied());
+            self.work_out.clear();
+            self.work_out.resize(frames, 0.0);
+            if self.convolvers[c].process(&self.work_in, &mut self.work_out).is_ok() {
+                for (i, &v) in self.work_out.iter().enumerate() {
                     buf[c + i * ch] = v;
                 }
             }

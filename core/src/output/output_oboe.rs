@@ -264,6 +264,22 @@ unsafe impl Sync for AudioOutputOboe {}
 
 // ─── 构建 stream ────────────────────────────────────────────
 
+/// 停流并等待回调退出后销毁。超时（200ms）后仍强制 drop，避免无限阻塞。
+fn stop_stream_before_drop(stream: &Mutex<Option<Box<dyn oboe::AudioStream>>>) {
+    let mut old = match stream.lock().take() {
+        Some(s) => s,
+        None => return,
+    };
+    let _ = old.request_stop();
+    for _ in 0..40 {
+        if old.get_state() == oboe::StreamState::Stopped {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    drop(old);
+}
+
 fn build_stream(
     inner: Arc<AudioOutputInner>,
     playing: Arc<AtomicBool>,
@@ -388,7 +404,8 @@ impl AudioOutput for AudioOutputOboe {
         let mut last_err = String::new();
 
         for &fmt in &formats {
-            *self.stream.lock() = None;
+            // 先停旧流再销毁，避免实时回调仍在访问流对象（UAF）
+            stop_stream_before_drop(&self.stream);
             match build_stream(
                 self.inner.clone(),
                 self.playing.clone(),
@@ -521,7 +538,8 @@ fn rebuild_stream(output: &mut AudioOutputOboe) -> Result<(), String> {
     let formats = negotiate_formats(output.channels as u16, output.sample_rate, output.bit_depth);
     let mut last_err = String::new();
 
-    output.stream = Mutex::new(None);
+    // 先停旧流再销毁，避免实时回调仍在访问流对象（UAF）
+    stop_stream_before_drop(&output.stream);
     for &fmt in &formats {
         match build_stream(
             output.inner.clone(),

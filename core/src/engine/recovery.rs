@@ -103,8 +103,9 @@ impl EngineState {
         // 重建 DSP 管线
         let dsp = Arc::new(Mutex::new(DspPipeline::new(
             actual_sr, actual_ch as usize, &self.peq_bands,
-            true, self.current_volume, self.output_bit_depth,
+            self.crossfeed_enabled, self.current_volume, self.output_bit_depth,
         )));
+        self.apply_dsp_settings(&dsp);
         self.dsp = Some(dsp.clone());
         self.reload_pending_ir();
 
@@ -116,7 +117,13 @@ impl EngineState {
         let consumer = spawn_consumer(rx, pcm, dsp, stop_flag, self.position.clone(), consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx, false, self.playback_gen.clone());
         self.consumer_thread = Some(consumer);
 
-        let output = self.output.as_ref().expect("output 必须在之前创建");
+        let output = match self.output.as_ref() {
+            Some(o) => o,
+            None => {
+                error!("设备恢复：输出创建后丢失");
+                return;
+            }
+        };
         match ready_rx.recv_timeout(Duration::from_secs(3)) {
             Ok(true) => {
                 output.resume();

@@ -76,6 +76,14 @@ pub struct EngineState {
     pub(crate) exclusive_mode_acquired: bool,
     /// 当前输出位深（dither 用，默认 24）
     pub(crate) output_bit_depth: u32,
+    /// DSP 开关持久化：管线在 seek/切歌/设备恢复时重建，
+    /// 这些字段保证重建后恢复用户设置（否则静默回退默认值）
+    pub(crate) widener_enabled: bool,
+    pub(crate) widener_width: f32,
+    pub(crate) crossfeed_enabled: bool,
+    pub(crate) noise_shaping_enabled: bool,
+    pub(crate) limiter_enabled: bool,
+    pub(crate) dither_enabled: bool,
     /// 共享捕获缓冲（与 EngineHandle 同步，替代全局 CAPTURE_INNER）
     pub(crate) capture_inner_shared: Option<Arc<RwLock<Option<Arc<crate::capture::CaptureInner>>>>>,
     /// 播放代数：每次 play_entry 递增，消费者线程用它判断自己是否已成"僵尸"
@@ -125,6 +133,12 @@ impl EngineState {
             output_bit_depth: 24,
             capture_inner_shared: None,
             playback_gen: Arc::new(AtomicU64::new(1)),
+            widener_enabled: false,
+            widener_width: 1.0,
+            crossfeed_enabled: true,
+            noise_shaping_enabled: false,
+            limiter_enabled: true,
+            dither_enabled: true,
         }
     }
 
@@ -269,8 +283,9 @@ impl EngineState {
         let decode_err_rx = decoder.take_err_rx().unwrap_or_else(|| bounded(1).1);
         let dsp = Arc::new(Mutex::new(DspPipeline::new(
             actual_sr, actual_ch as usize, &self.peq_bands,
-            true, self.current_volume, self.output_bit_depth,
+            self.crossfeed_enabled, self.current_volume, self.output_bit_depth,
         )));
+        self.apply_dsp_settings(&dsp);
         let stop_flag = Arc::new(AtomicBool::new(false));
         let position_clone = self.position.clone();
         let consumer_event_tx = self.internal_event_tx.clone();
@@ -386,8 +401,9 @@ impl EngineState {
 
         let dsp = Arc::new(Mutex::new(DspPipeline::new(
             actual_sr, actual_ch as usize, &self.peq_bands,
-            true, self.current_volume, self.output_bit_depth,
+            self.crossfeed_enabled, self.current_volume, self.output_bit_depth,
         )));
+        self.apply_dsp_settings(&dsp);
         if self.config.bit_perfect {
             dsp.lock().set_bypass(true);
         }
@@ -514,8 +530,9 @@ impl EngineState {
         let decode_err_rx = decoder.take_err_rx().unwrap_or_else(|| bounded(1).1);
         let dsp = Arc::new(Mutex::new(DspPipeline::new(
             sr, ch as usize, &self.peq_bands,
-            true, self.current_volume, self.output_bit_depth,
+            self.crossfeed_enabled, self.current_volume, self.output_bit_depth,
         )));
+        self.apply_dsp_settings(&dsp);
         if self.config.bit_perfect || dop {
             dsp.lock().set_bypass(true);
             info!("bit-perfect/DoP: DSP 管线已绕过");
@@ -602,7 +619,7 @@ impl EngineState {
         *self.next_rx.lock() = Some(rx);
         self.next_decoder = Some(decoder);
         self.next_entry = Some(entry.clone());
-        debug!("已预加载: {}", self.next_entry.as_ref().unwrap().display);
+        debug!("已预加载: {}", entry.display);
     }
 
     /// 计算 QueueEntry 的时长（微秒）
@@ -700,23 +717,35 @@ impl EngineState {
 
     pub(crate) fn load_ir(&mut self, path: &str) {
         self.pending_ir = Some(path.to_string());
-        if let Some(dsp) = &self.dsp {
-            if let Err(e) = dsp.lock().load_conv_ir(path) {
-                error!("加载 IR 失败: {e}");
-                self.pending_ir = None;
-            }
+        if !self.load_ir_now(path) {
+            self.pending_ir = None;
         }
+    }
+
+    /// 两阶段加载 IR：短锁读管线参数 → 锁外构建（文件 IO + 重采样可能数十 ms）
+    /// → 短锁安装。避免长持 DSP 锁阻塞消费线程造成 underrun。
+    /// 引擎未启动（dsp=None）时视为成功，留给 reload_pending_ir 在管线重建后补载。
+    fn load_ir_now(&mut self, path: &str) -> bool {
+        let Some(dsp) = &self.dsp else { return true };
+        let (channels, sr) = {
+            let g = dsp.lock();
+            (g.channels(), g.sample_rate())
+        };
+        let mut conv = crate::dsp::convolver::ConvolutionEq::new(channels);
+        if let Err(e) = conv.load_wav(path, 256, sr) {
+            error!("加载 IR 失败: {e}");
+            return false;
+        }
+        dsp.lock().set_conv_ir(conv);
+        true
     }
 
     /// 管线重建后重载待命 IR（seek/play_stream/设备恢复等路径会新建 DspPipeline，
     /// 不重载会静默丢失卷积 EQ/房间校正配置）
     pub(crate) fn reload_pending_ir(&mut self) {
         if let Some(ir_path) = self.pending_ir.clone() {
-            if let Some(dsp) = &self.dsp {
-                if let Err(e) = dsp.lock().load_conv_ir(&ir_path) {
-                    error!("重载 IR 失败: {e}");
-                    self.pending_ir = None;
-                }
+            if !self.load_ir_now(&ir_path) {
+                self.pending_ir = None;
             }
         }
     }
@@ -738,33 +767,49 @@ impl EngineState {
     }
 
     pub(crate) fn set_stereo_widener(&mut self, enabled: bool, width: f32) {
+        self.widener_enabled = enabled;
+        self.widener_width = width;
         if let Some(dsp) = &self.dsp {
             dsp.lock().set_stereo_widener(enabled, width);
         }
     }
 
     pub(crate) fn set_crossfeed(&mut self, enabled: bool) {
+        self.crossfeed_enabled = enabled;
         if let Some(dsp) = &self.dsp {
             dsp.lock().set_crossfeed(enabled);
         }
     }
 
     pub(crate) fn set_noise_shaping(&mut self, enabled: bool) {
+        self.noise_shaping_enabled = enabled;
         if let Some(dsp) = &self.dsp {
             dsp.lock().set_noise_shaping(enabled);
         }
     }
 
     pub(crate) fn set_limiter_enabled(&mut self, enabled: bool) {
+        self.limiter_enabled = enabled;
         if let Some(dsp) = &self.dsp {
             dsp.lock().set_limiter_enabled(enabled);
         }
     }
 
     pub(crate) fn set_dither_enabled(&mut self, enabled: bool) {
+        self.dither_enabled = enabled;
         if let Some(dsp) = &self.dsp {
             dsp.lock().set_dither_enabled(enabled);
         }
+    }
+
+    /// 管线重建后重放用户的 DSP 开关设置（seek/切歌/设备恢复路径会
+    /// 新建 DspPipeline，不重放会静默回退默认值）
+    pub(crate) fn apply_dsp_settings(&self, dsp: &Arc<Mutex<DspPipeline>>) {
+        let mut g = dsp.lock();
+        g.set_stereo_widener(self.widener_enabled, self.widener_width);
+        g.set_noise_shaping(self.noise_shaping_enabled);
+        g.set_limiter_enabled(self.limiter_enabled);
+        g.set_dither_enabled(self.dither_enabled);
     }
 
     pub(crate) fn set_volume(&mut self, vol: f32) {
@@ -934,6 +979,12 @@ pub(crate) mod tests {
             output_bit_depth: 24,
             capture_inner_shared: None,
             playback_gen: Arc::new(AtomicU64::new(1)),
+            widener_enabled: false,
+            widener_width: 1.0,
+            crossfeed_enabled: true,
+            noise_shaping_enabled: false,
+            limiter_enabled: true,
+            dither_enabled: true,
         };
         (s, rx)
     }

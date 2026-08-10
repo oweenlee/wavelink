@@ -259,6 +259,23 @@ impl DspPipeline {
         Ok(())
     }
 
+    /// 安装预先构建好的卷积 EQ。
+    /// 构建过程（文件 IO + 重采样）可在实时线程外完成，短锁安装，
+    /// 避免长持锁阻塞消费线程造成 underrun。
+    pub fn set_conv_ir(&mut self, conv: ConvolutionEq) {
+        self.conv_eq = Some(conv);
+    }
+
+    /// 管线输出采样率（锁外构建卷积 EQ / PEQ 用）
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate as u32
+    }
+
+    /// 管线声道数
+    pub fn channels(&self) -> usize {
+        self.channels
+    }
+
     /// 清除卷积 EQ（bypass）
     pub fn clear_conv_ir(&mut self) {
         self.conv_eq = None;
@@ -394,11 +411,10 @@ pub fn preset_bands(name: PresetName) -> Vec<PeqBand> {
     freq.iter().zip(gains.iter()).map(|(&f, &g)| PeqBand { freq: f, gain_db: g, q, kind: PeqKind::Peaking }).collect()
 }
 
-/// 对交错缓冲逐声道应用 Biquad（每声道独立状态，复用预分配缓冲区）
-/// 逐声道处理交错 PCM：每声道的 Biquad 链直接跨步原地执行。
+/// 对交错缓冲逐声道应用 Biquad（每声道独立状态）。
 ///
-/// 旧实现先抽出声道到 ch_buf → process_slice → 写回，每段×每声道两次全缓冲拷贝
-/// （31 段 PEQ 时 ≈ 64 次/块）；IIR 状态逐声道独立，跨步处理语义完全等价。
+/// 直接跨步原地执行，免去「抽出声道 → 处理 → 写回」的 gather/scatter 拷贝
+/// （31 段 PEQ 时旧实现 ≈ 64 次全缓冲拷贝/块）；IIR 状态逐声道独立，语义等价。
 fn process_biquads_per_channel(bqs: &mut [Biquad], buf: &mut [f32], ch: usize) {
     if ch <= 1 {
         bqs[0].process_slice(buf);

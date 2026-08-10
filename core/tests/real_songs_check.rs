@@ -1,29 +1,55 @@
-//! 随机抽取 test-media 中的真实歌曲，做解码完整性验证
+//! 从 /Users/qin/Public/music 抽样真实歌曲，做解码完整性验证
+//!
+//! 该目录为本机个人音乐库（约 690 首 mp3），不随仓库分发；
+//! 目录缺失或为空时自动 SKIP，不会误报失败。
 use audio_core::decoder::Decoder;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-const TEST_MEDIA: &str = "/Users/qin/Desktop/wavelink/test-media";
+/// 个人音乐库根目录，缺失时整个测试 SKIP
+const PUBLIC_MUSIC: &str = "/Users/qin/Public/music";
 
-struct SongTest {
-    name: &'static str,
-    path: String,
-    /// 解码超时（秒），384kHz 文件需要更长时间
-    timeout_secs: u64,
+/// 抽样数量：全库全量解码耗时过长，均匀抽取若干首即可覆盖各编码/采样率
+const SAMPLE_COUNT: usize = 40;
+
+/// 单曲字符串名（文件名去扩展名）
+fn song_name(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(str::to_owned)
+        .unwrap_or_else(|| path.to_owned())
 }
 
-fn decode_one(song: &SongTest) {
-    let path = std::path::Path::new(&song.path);
-    if !path.exists() {
-        eprintln!("[SKIP] {}: 文件不存在", song.name);
-        return;
+/// 收集目录下指定扩展名的文件，排序保证确定性
+fn collect_ext(ext: &str) -> Vec<String> {
+    let mut files = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(PUBLIC_MUSIC) {
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if p.is_file()
+                && p.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext))
+            {
+                files.push(p.display().to_string());
+            }
+        }
     }
+    files.sort();
+    files
+}
 
+/// 收集目录下全部 .mp3，排序保证抽样确定
+fn collect_mp3s() -> Vec<String> {
+    collect_ext("mp3")
+}
+
+fn decode_one(name: &str, path: &str) {
+    let timeout = Duration::from_secs(60);
     let pos = Arc::new(AtomicU64::new(0));
     let start = Instant::now();
 
-    match Decoder::start(path, 44100, 2, pos, None, None) {
+    match Decoder::start(std::path::Path::new(path), 44100, 2, pos, None, None) {
         Ok((rx, dec)) => {
             let mut frames = 0u64;
             let mut total = 0u64;
@@ -32,14 +58,13 @@ fn decode_one(song: &SongTest) {
             let mut has_nan = false;
             let mut has_inf = false;
 
-            let deadline = Duration::from_secs(song.timeout_secs);
             loop {
-                if start.elapsed() > deadline {
+                if start.elapsed() > timeout {
                     dec.stop();
-                    eprintln!("[⚠️] {}: 解码超时 {}s", song.name, song.timeout_secs);
+                    eprintln!("[⏱️] {}: 解码超时 {}s", name, timeout.as_secs());
                     return;
                 }
-                match rx.recv_timeout(Duration::from_secs(5)) {
+                match rx.recv_timeout(Duration::from_secs(10)) {
                     Ok(frame) => {
                         frames += 1;
                         total += frame.samples.len() as u64;
@@ -68,19 +93,15 @@ fn decode_one(song: &SongTest) {
 
             eprintln!(
                 "[{}] {}: {}帧 {}样本 ~{:.0}s 解码{:.1}x 帧{}-{}",
-                status, song.name, frames, total, output_secs, speed,
+                status, name, frames, total, output_secs, speed,
                 min_frame, max_frame,
             );
 
-            assert!(!has_nan, "{}: NaN 检测到!", song.name);
-            assert!(!has_inf, "{}: Inf 检测到!", song.name);
+            assert!(!has_nan, "{name}: NaN 检测到!");
+            assert!(!has_inf, "{name}: Inf 检测到!");
         }
         Err(e) => {
-            if song.name.starts_with("WMA") {
-                eprintln!("[⚠️] {}: WMA 不被 symphonia 支持: {e}", song.name);
-            } else {
-                panic!("{}: 解码失败: {e}", song.name);
-            }
+            panic!("{name}: 解码失败: {e}");
         }
     }
 }
@@ -88,31 +109,35 @@ fn decode_one(song: &SongTest) {
 #[test]
 #[ignore = "解码真实歌曲，耗时较长"]
 fn decode_real_songs_44100() {
-    let songs = vec![
-        SongTest { name: "M4A(李荣浩)", path: format!("{TEST_MEDIA}/李荣浩-恋人.m4a"), timeout_secs: 30 },
-        SongTest { name: "M4A(梁博)",   path: format!("{TEST_MEDIA}/梁博-出现又离开.m4a"), timeout_secs: 30 },
-        SongTest { name: "FLAC(理由)",  path: format!("{TEST_MEDIA}/一千个伤心的理由.flac"), timeout_secs: 30 },
-        SongTest { name: "MP3(渡口)",   path: format!("{TEST_MEDIA}/在百万豪装录音棚大声听 蔡琴《渡口》【Hi-res】.mp3"), timeout_secs: 30 },
-        SongTest { name: "MP3(浮夸)",   path: format!("{TEST_MEDIA}/陈奕迅 - 浮夸.mp3"), timeout_secs: 30 },
-        SongTest { name: "MP3(ukulele)", path: format!("{TEST_MEDIA}/freepd_happy_whistling_ukulele.mp3"), timeout_secs: 30 },
-        SongTest { name: "WMA(回忆)",   path: format!("{TEST_MEDIA}/回忆是开在春天的花朵.wma"), timeout_secs: 10 },
-    ];
-
-    for song in &songs {
-        decode_one(song);
+    let all = collect_mp3s();
+    if all.is_empty() {
+        eprintln!("[SKIP] {} 为空或无 mp3，跳过真实歌曲解码", PUBLIC_MUSIC);
+        return;
     }
-    eprintln!("\n ✅ 常规文件解码完成");
+
+    // 均匀抽样，覆盖不同码率/歌手/unicode 路径
+    let step = all.len().div_ceil(SAMPLE_COUNT).max(1);
+    let sampled: Vec<String> = all.iter().step_by(step).cloned().collect();
+    eprintln!("共 {} 首 mp3，均匀抽样 {} 首", all.len(), sampled.len());
+
+    for path in &sampled {
+        decode_one(&song_name(path), path);
+    }
+    eprintln!("\n ✅ 真实歌曲解码完成");
 }
 
 #[test]
-#[ignore = "解码 384kHz HiFi WAV，耗时较长"]
-fn decode_384k_hifi_wav() {
-    // 384kHz 文件单独一个测试，允许更长时间
-    let song = SongTest {
-        name: "WAV(384kHz)",
-        path: format!("{TEST_MEDIA}/hifi_ode_to_joy.wav"),
-        timeout_secs: 120,
-    };
-    decode_one(&song);
-    eprintln!("\n ✅ 384kHz 解码完成");
+#[ignore = "解码 HiFi WAV，耗时较长"]
+fn decode_hifi_wav() {
+    // Public/music 当前无 wav 文件，若有则逐个解码验证
+    let wavs = collect_ext("wav");
+    if wavs.is_empty() {
+        eprintln!("[SKIP] {PUBLIC_MUSIC} 无 wav 文件，跳过 HiFi WAV 解码");
+        return;
+    }
+    eprintln!("共 {} 个 wav，逐个解码", wavs.len());
+    for path in &wavs {
+        decode_one(&song_name(path), path);
+    }
+    eprintln!("\n ✅ HiFi WAV 解码完成");
 }

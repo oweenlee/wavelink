@@ -76,6 +76,36 @@ pub struct ConsumerControl {
     pub speed: Arc<AtomicU32>,
 }
 
+/// ringbuf 满时的写入退避：先短暂 spin 抗抖动，随后逐级 sleep。
+/// 输出停摆（如 AVAudioEngine 被系统停止）时若只 yield_now 会变成
+/// 100% CPU 死循环，触发 iOS cpu_resource 看门狗杀进程。
+fn push_with_backoff(
+    mut remaining: &[f32],
+    push: &dyn Fn(&[f32]) -> usize,
+    stop: &AtomicBool,
+) {
+    let mut spin_count = 0u32;
+    let mut stalled = 0u32;
+    while !remaining.is_empty() && !stop.load(Ordering::SeqCst) {
+        let n = push(remaining);
+        if n == 0 {
+            spin_count += 1;
+            if spin_count < 64 {
+                std::hint::spin_loop();
+            } else if stalled < 50 {
+                stalled += 1;
+                std::thread::sleep(Duration::from_millis(1));
+            } else {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        } else {
+            spin_count = 0;
+            stalled = 0;
+        }
+        remaining = &remaining[n..];
+    }
+}
+
 /// 平台无关的解码消费循环。
 ///
 /// 从 `rx` 接收解码帧，依次过 `process_dsp`、可选 crossfade、坏帧检测、`push_samples`。
@@ -171,30 +201,7 @@ pub fn run_consumer_loop(
 
                 // 直通模式（DoP）：原样推入，不过任何处理（保护标记比特不被篡改）
                 if config.passthrough {
-                    let mut remaining: &[f32] = &buf;
-                    let mut spin_count = 0u32;
-                    let mut stalled = 0u32;
-                    while !remaining.is_empty() && !stop.load(Ordering::SeqCst) {
-                        let n = (cb.push_samples)(remaining);
-                        if n == 0 {
-                            // 满：先短暂 spin 抗抖动，随后退避 sleep。
-                            // 输出停摆（如 AVAudioEngine 被系统停止）时旧 yield_now
-                            // 会变成 100% CPU 死循环，触发 iOS cpu_resource 看门狗杀进程。
-                            spin_count += 1;
-                            if spin_count < 64 {
-                                std::hint::spin_loop();
-                            } else if stalled < 50 {
-                                stalled += 1;
-                                std::thread::sleep(Duration::from_millis(1));
-                            } else {
-                                std::thread::sleep(Duration::from_millis(10));
-                            }
-                        } else {
-                            spin_count = 0;
-                            stalled = 0;
-                        }
-                        remaining = &remaining[n..];
-                    }
+                    push_with_backoff(&buf, cb.push_samples, stop);
                     (cb.on_samples_output)(count);
                     continue;
                 }
@@ -239,7 +246,9 @@ pub fn run_consumer_loop(
                 }
 
                 // 3) 坏帧检测（在淡入之前，避免淡入把首帧压到接近零被误判）
-                if buf.iter().all(|&s| s == 0.0) || buf.iter().any(|&s| !s.is_finite()) {
+                // 只拦截 NaN/Inf：全零是合法静音段（解码器侧已过滤非有限样本），
+                // 丢弃会造成可闻空洞且进度不计，故照常输出
+                if buf.iter().any(|&s| !s.is_finite()) {
                     (cb.on_bad_frame)();
                     continue;
                 }
@@ -269,30 +278,8 @@ pub fn run_consumer_loop(
                     }
                 };
 
-                // 6) 推入 ringbuf（ringbuf 无阻塞 API：满时先短暂 spin 抗抖动，
-                //    随后退避 sleep。输出停摆（如 AVAudioEngine 被系统停止）时
-                //    旧 yield_now 会变成 100% CPU 死循环，触发 iOS cpu_resource 看门狗杀进程）
-                let mut remaining: &[f32] = output_buf;
-                let mut spin_count = 0u32;
-                let mut stalled = 0u32;
-                while !remaining.is_empty() && !stop.load(Ordering::SeqCst) {
-                    let n = (cb.push_samples)(remaining);
-                    if n == 0 {
-                        spin_count += 1;
-                        if spin_count < 64 {
-                            std::hint::spin_loop();
-                        } else if stalled < 50 {
-                            stalled += 1;
-                            std::thread::sleep(Duration::from_millis(1));
-                        } else {
-                            std::thread::sleep(Duration::from_millis(10));
-                        }
-                    } else {
-                        spin_count = 0;
-                        stalled = 0;
-                    }
-                    remaining = &remaining[n..];
-                }
+                // 6) 推入 ringbuf（满时退避策略见 push_with_backoff）
+                push_with_backoff(output_buf, cb.push_samples, stop);
 
                 // 7) 进度追踪（使用原始解码样本数，追踪源音频位置）
                 (cb.on_samples_output)(count);
@@ -384,12 +371,14 @@ mod tests {
     }
 
     #[test]
-    fn test_bad_frame_all_zero_skipped() {
+    fn test_all_zero_silence_pushed() {
+        // 回归：全零帧是合法静音段，不得被当作坏帧丢弃
+        // （旧实现误杀静音段，造成可闻空洞且进度不计）
         let (tx, rx) = unbounded();
-        let pair = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
-        let pair2 = pair.clone();
         let pushed = Arc::new(Mutex::new(0usize));
         let p = pushed.clone();
+        let bad_called = Arc::new(AtomicBool::new(false));
+        let b = bad_called.clone();
 
         let stop = Arc::new(AtomicBool::new(false));
         let s = stop.clone();
@@ -399,11 +388,7 @@ mod tests {
                 push_samples: &|s: &[f32]| { *p.lock().unwrap() += s.len(); s.len() },
                 process_dsp: &|_: &mut [f32]| {},
                 on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| {},
-                on_bad_frame: &|| {
-                    let (lock, cvar) = &*pair2;
-                    *lock.lock().unwrap() = true;
-                    cvar.notify_one();
-                },
+                on_bad_frame: &|| { b.store(true, Ordering::SeqCst); },
                 on_samples_output: &|_: u64| {},
                 on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
             };
@@ -415,15 +400,16 @@ mod tests {
         });
 
         tx.send(make_frame(vec![0.0; 256])).unwrap();
-        // 等待 on_bad_frame 被调用（替代 sleep）
-        let (lock, cvar) = &*pair;
-        let guard = lock.lock().unwrap();
-        let bad = cvar.wait_timeout(guard, Duration::from_secs(3)).unwrap();
+        // 等静音帧被推入（代替 sleep）
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while *pushed.lock().unwrap() == 0 && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
         drop(tx);
         handle.join().unwrap();
 
-        assert!(*bad.0, "on_bad_frame should be called for all-zero");
-        assert_eq!(*pushed.lock().unwrap(), 0, "bad frame should not be pushed");
+        assert_eq!(*pushed.lock().unwrap(), 256, "静音帧应照常推入输出");
+        assert!(!bad_called.load(Ordering::SeqCst), "全零帧不应触发 on_bad_frame");
     }
 
     #[test]

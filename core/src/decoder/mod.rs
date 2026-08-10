@@ -409,6 +409,7 @@ fn run(
     let out_ch = target_ch as usize;
     let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
     let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
+    let mut consecutive_errors = 0u32;
 
     loop {
         if stop_rx.try_recv().is_ok() { break; }
@@ -430,9 +431,24 @@ fn run(
         }
 
         let decoded = match decoder.decode(&packet) {
-            Ok(buf) => buf,
-            Err(symphonia::core::errors::Error::DecodeError(_)) => continue,
-            Err(e) => { debug!("解码错误: {e}"); continue; }
+            Ok(buf) => {
+                consecutive_errors = 0;
+                buf
+            }
+            // IO 错误（读盘失败等）不可恢复，必须终止；continue 会热自旋
+            Err(symphonia::core::errors::Error::IoError(e)) => {
+                warn!("解码 IO 错误，终止: {e}");
+                break;
+            }
+            Err(e) => {
+                consecutive_errors += 1;
+                if consecutive_errors >= 64 {
+                    warn!("连续 {consecutive_errors} 包解码失败，文件可能损坏，终止: {e}");
+                    break;
+                }
+                debug!("解码错误: {e}");
+                continue;
+            }
         };
 
         // 转 f32 交错
@@ -499,6 +515,7 @@ fn run_from_stream(
 
     let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
     let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
+    let mut consecutive_errors = 0u32;
 
     loop {
         if stop_rx.try_recv().is_ok() { break; }
@@ -512,9 +529,23 @@ fn run_from_stream(
         if packet.track_id != track_id { continue; }
 
         let decoded = match decoder.decode(&packet) {
-            Ok(buf) => buf,
-            Err(symphonia::core::errors::Error::DecodeError(_)) => continue,
-            Err(e) => { debug!("流式解码错误: {e}"); continue; }
+            Ok(buf) => {
+                consecutive_errors = 0;
+                buf
+            }
+            Err(symphonia::core::errors::Error::IoError(e)) => {
+                warn!("流式 IO 错误，终止: {e}");
+                break;
+            }
+            Err(e) => {
+                consecutive_errors += 1;
+                if consecutive_errors >= 64 {
+                    warn!("流式连续 {consecutive_errors} 包解码失败，终止: {e}");
+                    break;
+                }
+                debug!("流式解码错误: {e}");
+                continue;
+            }
         };
 
         let spec = decoded.spec().clone();

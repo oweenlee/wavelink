@@ -1,8 +1,9 @@
 //! 立体声展宽 (Mid/Side 处理)
 //!
-//! Mid/Side 解码: M = L + R, S = L - R
+//! Mid/Side 解码: M = (L + R)/2, S = (L - R)/2
 //! 展宽: new_L = M + S * width, new_R = M - S * width
 //! width=1.0 → 原始, width=0.0 → 单声道, width>1.0 → 展宽
+//! （M/S 必须带 1/2 归一，否则 width≠1 时电平翻倍 +6dB）
 
 /// 立体声展宽处理器（Mid/Side 处理）。
 /// width=1.0 → 原始, width=0.0 → 单声道, width>1.0 → 展宽
@@ -46,8 +47,8 @@ impl StereoWidener {
         while i + 1 < n {
             let l = buf[i];
             let r = buf[i + 1];
-            let m = l + r;
-            let s = l - r;
+            let m = (l + r) * 0.5;
+            let s = (l - r) * 0.5;
             buf[i] = m + s * self.width;
             buf[i + 1] = m - s * self.width;
             i += 2;
@@ -101,5 +102,25 @@ mod tests {
         let w = StereoWidener::new();
         assert!(!w.enabled(), "默认应关闭");
         assert!((w.width() - 1.0).abs() < 1e-6, "默认 width 应为 1.0");
+    }
+
+    /// 纯 Mid 信号（L=R）经任意 width 处理不应改变电平（回归：M/S 缺 1/2 归一
+    /// 会让 width≠1 时电平翻倍 +6dB）
+    #[test]
+    fn test_widener_mid_preserved_at_any_width() {
+        for width in [0.0f32, 0.5, 1.5, 2.0] {
+            let mut w = StereoWidener::new();
+            w.set_enabled(true);
+            w.set_width(width);
+            let mut buf = vec![0.4, 0.4, -0.2, -0.2];
+            w.process(&mut buf);
+            for (i, &s) in buf.iter().enumerate() {
+                let expect = if i < 2 { 0.4 } else { -0.2 };
+                assert!(
+                    (s - expect).abs() < 1e-6,
+                    "width={width} 时纯 Mid 信号电平被篡改: {s} != {expect}"
+                );
+            }
+        }
     }
 }

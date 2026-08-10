@@ -86,16 +86,21 @@ impl AudioOutput for AudioOutputCpal {
         let rb = HeapRb::<f32>::new(buf_samples.max(64));
         let (_producer, consumer) = rb.split();
 
-        let new_inner = Arc::new(AudioOutputInner {
-            consumer: parking_lot::Mutex::new(consumer),
-            underrun_count: std::sync::atomic::AtomicU64::new(0),
-            stream_failed: std::sync::atomic::AtomicBool::new(false),
-        });
+        // 复用现有 inner：引擎（state.output_inner）持有的是 open() 时返回的 Arc，
+        // 若新建 inner，stream_failed/underrun_count 监控会永久失联。
+        // 只替换 consumer，计数器归零。
+        {
+            let mut guard = self.inner.consumer.lock();
+            guard.clear();
+            *guard = consumer;
+        }
+        self.inner.underrun_count.store(0, std::sync::atomic::Ordering::Relaxed);
+        self.inner.stream_failed.store(false, std::sync::atomic::Ordering::Release);
 
-        let playing = Arc::new(AtomicBool::new(false));
-        let playing_clone = playing.clone();
-        let inner_clone = new_inner.clone();
-        let err_inner = new_inner.clone();
+        // 继承当前 playing 状态：否则切采样率后新流默认静音且无报错
+        let playing_clone = self.playing.clone();
+        let inner_clone = self.inner.clone();
+        let err_inner = self.inner.clone();
 
         let stream = device.build_output_stream(
             &config,
@@ -125,8 +130,6 @@ impl AudioOutput for AudioOutputCpal {
         }
 
         self.stream = stream;
-        self.inner = new_inner;
-        self.playing = playing;
         self.sample_rate = rate;
         info!("采样率切换成功: {}Hz", rate);
         Ok(rate)
