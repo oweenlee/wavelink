@@ -1,5 +1,8 @@
 allprojects {
     repositories {
+        // Flutter 引擎产物镜像（Gradle 守护进程可能拿不到
+        // FLUTTER_STORAGE_BASE_URL 环境变量，直连 storage.googleapis.com 会失败）
+        maven { url = uri("https://storage.flutter-io.cn/download.flutter.io") }
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         google()

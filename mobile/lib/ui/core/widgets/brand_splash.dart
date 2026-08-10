@@ -117,22 +117,24 @@ class _SplashGateState extends State<SplashGate>
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: const Color(0xFF0A0A0A),
-      child: Stack(
-        // SplashGate 位于 MaterialApp 之外（main.dart 第二段 runApp
-        // 直接包裹 WaveLinkApp），无 Directionality 祖先；
-        // 显式指定 textDirection 避免 Stack 默认
-        // AlignmentDirectional 触发 "No Directionality" 断言。
-        textDirection: TextDirection.ltr,
-        children: [
-          widget.child,
-          if (_showSplash)
-            FadeTransition(
-              opacity: Tween<double>(begin: 1, end: 0).animate(_fade),
-              child: const BrandSplash(),
-            ),
-        ],
+    // SplashGate 位于 MaterialApp 之外（main.dart 第二段 runApp
+    // 直接包裹 WaveLinkApp），无 Directionality 祖先；
+    // RichText/Row 等需要 Directionality，缺失时 debug 下直接抛异常
+    // 导致整棵树不布局（黑屏）。显式包一层 Directionality。
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: ColoredBox(
+        color: const Color(0xFF0A0A0A),
+        child: Stack(
+          children: [
+            widget.child,
+            if (_showSplash)
+              FadeTransition(
+                opacity: Tween<double>(begin: 1, end: 0).animate(_fade),
+                child: const BrandSplash(),
+              ),
+          ],
+        ),
       ),
     );
   }
