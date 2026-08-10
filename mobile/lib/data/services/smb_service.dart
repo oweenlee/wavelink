@@ -32,9 +32,9 @@ class SmbService {
   // "no share connected" 刷屏），此前用 _connecting/_ensuring/_recovering
   // 三个重叠的单飞锁补丁修复，语义纠缠难以维护。现收敛为：
   // - _gate：异步互斥，会话变更串行化，并发调用排队复用同一过程；
-  // - _sessionGen：会话代数，每次重建 +1。失败方重连前对比发起时的
-  //   代数，若已被其他任务重建过则跳过重连直接重试，避免重复摧毁
-  //   刚建好的会话。
+  // - _sessionGen：会话代数，每次会话变更（重建/断开）+1。失败方
+  //   重连前对比发起时的代数，若已被其他任务重建过则跳过重连
+  //   直接重试，避免重复摧毁刚建好的会话。
   static Future<void> _gate = Future.value();
   static int _sessionGen = 0;
 
@@ -153,6 +153,12 @@ class SmbService {
       _inGate(() => _ensureReadyImpl(force: force));
 
   static Future<bool> _ensureReadyImpl({bool force = false}) async {
+    // 扫描进行中禁止强制重建：重连会重置 tree，扫描中的 read 会报
+    // "no share connected"。降级为非强制路径（会话尚在则直接复用）。
+    if (force && _scanning) {
+      Log.w('SMB', '扫描中忽略 force 重建，复用现有会话');
+      force = false;
+    }
     if (force) {
       _connected = false;
       _mountedShare = null;

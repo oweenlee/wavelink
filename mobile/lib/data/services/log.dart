@@ -59,8 +59,10 @@ abstract final class Log {
     if (_logFile != null) _scheduleFlush();
   }
 
-  /// 启用落盘（main 启动时调一次）。失败静默降级为纯 debugPrint。
+  /// 启用落盘（main 启动时调一次，重复调用幂等）。
+  /// 失败静默降级为纯 debugPrint。
   static Future<void> init() async {
+    if (_logFile != null) return;
     try {
       final dir = Directory(
         '${(await getApplicationDocumentsDirectory()).path}/$_dirName',
