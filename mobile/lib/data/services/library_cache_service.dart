@@ -73,7 +73,7 @@ class LibraryCacheService {
   /// 相对路径 → 绝对路径（拼回当前 Documents 目录）。
   /// 兼容存量绝对路径数据：不以 '/' 开头且非 URL（ipod-library:// 等）
   /// 才视为相对路径，旧数据的失效绝对路径由 restoreCachedSongs 的
-  /// 存在性清洗兑底。
+  /// 存在性清洗兜底。
   static Map<String, dynamic> _resolve(
     Map<String, dynamic> json,
     String docs,

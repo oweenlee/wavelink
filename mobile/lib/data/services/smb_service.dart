@@ -26,21 +26,25 @@ class SmbService {
   /// 否则扫描中的 read 会因 tree 被重置而报 "no share connected"。
   static bool _scanning = false;
 
-  /// 会话恢复互斥锁：并发任务（批量封面提取等）同时失败时，
-  /// 只允许一个执行强制重连，其余等待后复用新会话。
-  /// 无此锁时每个失败任务各自 smbConnect，互相摧毁对方正在使用的
-  /// 会话/连接池，报 Protocol error 雪崩、全部封面提取失败。
-  static Future<void>? _recovering;
+  // ── 会话守卫：所有会话变更（连接/重连/挂载/断开）的唯一串行入口 ──
+  //
+  // 历史教训：并发任务各自重建会话互相摧毁（Protocol error 雪崩、
+  // "no share connected" 刷屏），此前用 _connecting/_ensuring/_recovering
+  // 三个重叠的单飞锁补丁修复，语义纠缠难以维护。现收敛为：
+  // - _gate：异步互斥，会话变更串行化，并发调用排队复用同一过程；
+  // - _sessionGen：会话代数，每次重建 +1。失败方重连前对比发起时的
+  //   代数，若已被其他任务重建过则跳过重连直接重试，避免重复摧毁
+  //   刚建好的会话。
+  static Future<void> _gate = Future.value();
+  static int _sessionGen = 0;
 
-  /// ensureReady 单飞锁：并发任务（批量封面提取等）同时看到未连接时，
-  /// 只允许一个执行 connect + connectShare，其余等待并复用结果。
-  /// 无此锁时每个任务各自 smbConnect 重建会话/连接池，互相覆盖，
-  /// 新池连接未挂载共享就被读取 → 全部报 "no share connected"。
-  static Future<bool>? _ensuring;
-
-  /// connect 单飞锁：并发 connect（ensureReady 之外的入口如设置页
-  /// 测试连接 + 后台补提取同时发起）各自 smbConnect 会互相覆盖会话。
-  static Future<bool>? _connecting;
+  /// 在会话守卫内串行执行 [op]（会话变更类操作的唯一入口）。
+  static Future<T> _inGate<T>(Future<T> Function() op) {
+    final prev = _gate;
+    final next = prev.catchError((_) {}).then((_) => op());
+    _gate = next.then((_) {}, onError: (_) {});
+    return next;
+  }
 
   /// 进行中的下载（按 smbPath 去重）：并发调用共享同一次下载，
   /// 避免两个任务写同一个 .part 文件互相截断，以及各自失败后
@@ -54,30 +58,21 @@ class SmbService {
 
   /// 连接 SMB 服务器（host 为裸 IP/域名，内部拼 :port）。
   /// 共享挂载在扫描/列目录前按需调用 [connectShare]。
-  /// 单飞：同参数的并发连接共享同一次过程。
+  /// 会话守卫内串行：并发连接排队复用同一过程，不互相覆盖。
   static Future<bool> connect({
     required String host,
     required String username,
     required String password,
     String domain = '',
     int port = 445,
-  }) async {
-    final pending = _connecting;
-    if (pending != null) return pending;
-    final fut = _connectImpl(
-      host: host,
-      username: username,
-      password: password,
-      domain: domain,
-      port: port,
-    );
-    _connecting = fut;
-    try {
-      return await fut;
-    } finally {
-      _connecting = null;
-    }
-  }
+  }) =>
+      _inGate(() => _connectImpl(
+        host: host,
+        username: username,
+        password: password,
+        domain: domain,
+        port: port,
+      ));
 
   static Future<bool> _connectImpl({
     required String host,
@@ -106,6 +101,7 @@ class SmbService {
       _connected = true;
       // 会话重建后 tree 被重置，需重新 connectShare 才能读文件
       _mountedShare = null;
+      _sessionGen++;
       lastError = null;
       return true;
     } catch (e) {
@@ -148,23 +144,19 @@ class SmbService {
     }
   }
 
-  /// 保证 SMB 会话可用（播放/下载前的自愈入口）：
+  /// 保证 SMB 会话可用（播放/下载前的唯一自愈入口）：
   /// 未连接时用已保存的配置自动重连（测试连接后 disconnect、重启后
   /// 会话未恢复等场景），并确保共享 tree 已挂载。返回是否就绪。
-  /// 单飞：并发调用共享同一次重连过程，避免会话互相覆盖。
-  static Future<bool> ensureReady() async {
-    final pending = _ensuring;
-    if (pending != null) return pending;
-    final fut = _ensureReadyImpl();
-    _ensuring = fut;
-    try {
-      return await fut;
-    } finally {
-      _ensuring = null;
-    }
-  }
+  /// [force]=true：忽略缓存的 _connected/_mountedShare 强制重建
+  ///（操作失败后判定会话失效时使用）。会话守卫内串行。
+  static Future<bool> ensureReady({bool force = false}) =>
+      _inGate(() => _ensureReadyImpl(force: force));
 
-  static Future<bool> _ensureReadyImpl() async {
+  static Future<bool> _ensureReadyImpl({bool force = false}) async {
+    if (force) {
+      _connected = false;
+      _mountedShare = null;
+    }
     if (!_connected) {
       final prefs = PreferencesService.instance;
       final host = prefs.nasHost;
@@ -172,7 +164,7 @@ class SmbService {
         Log.e('SMB', 'ensureReady 失败：未配置 NAS host');
         return false;
       }
-      final ok = await connect(
+      final ok = await _connectImpl(
         host: host,
         username: prefs.nasUsername ?? '',
         password: prefs.nasPassword,
@@ -201,7 +193,7 @@ class SmbService {
     return ok;
   }
 
-  static Future<void> disconnect() async {
+  static Future<void> disconnect() => _inGate(() async {
     // 扫描进行中：保持会话，避免打断扫描
     if (_scanning) return;
     try {
@@ -211,7 +203,8 @@ class SmbService {
     }
     _connected = false;
     _mountedShare = null;
-  }
+    _sessionGen++;
+  });
 
   /// 列出服务器所有共享（返回共享名）
   static Future<List<String>> listShares() async {
@@ -439,19 +432,20 @@ class SmbService {
   /// 读 SMB 远端文件头部提取内嵌封面（离线缓存关模式：不下载整文件）。
   /// 成功设置 song.coverUrl/hasCover；失败静默（封面保持纯色占位）。
   /// 会话可能已断开（服务器空闲超时、iOS 后台回收等）：
-  /// 首次尝试前先自愈就绪，失败后强制重连再试一次。
+  /// 首次尝试前先自愈就绪，失败后按会话代数判定是否需要重连再试。
   static Future<void> fetchRemoteCover(Song song) async {
     final smbPath = song.smbPath;
     if (smbPath == null || smbPath.isEmpty || song.coverUrl != null) return;
     // App 后台挂起后 SMB 会话常已失效而 _connected 仍为 true，
     // 直接读会失败；先走自愈入口确保会话与共享挂载就绪
     if (!await ensureReady()) return;
+    final gen = _sessionGen;
     try {
       await _fetchRemoteCoverOnce(song, smbPath);
     } catch (e) {
-      Log.w('SMB', '远端封面提取失败 ($e)，强制重连后重试');
-      if (!await _recoverSession()) {
-        Log.e('SMB', '封面重试中止：重连失败');
+      Log.w('SMB', '远端封面提取失败 ($e)，会话重建后重试');
+      if (!await _retryReady(gen)) {
+        Log.e('SMB', '封面重试中止：会话不可用');
         return;
       }
       try {
@@ -462,26 +456,12 @@ class SmbService {
     }
   }
 
-  /// 强制全量重连（互斥）：并发失败的多个任务共享一次重连，
-  /// 避免各自 smbConnect 互相摧毁对方仍在使用的会话（Protocol error 雪崩）。
-  static Future<bool> _recoverSession() async {
-    final pending = _recovering;
-    if (pending != null) {
-      await pending;
-      return _connected;
-    }
-    final fut = () async {
-      _connected = false;
-      _mountedShare = null;
-      await ensureReady();
-    }();
-    _recovering = fut;
-    try {
-      await fut;
-    } finally {
-      _recovering = null;
-    }
-    return _connected;
+  /// 操作失败后的会话重建：发起时记录的代数为 [gen]，若期间已被
+  /// 其他任务重建过（代数变化）则直接复用新会话，否则强制重建。
+  /// 避免并发失败任务各自 force 重连互相摧毁刚建好的会话。
+  static Future<bool> _retryReady(int gen) async {
+    if (_sessionGen != gen) return _connected && _mountedShare != null;
+    return ensureReady(force: true);
   }
 
   static Future<void> _fetchRemoteCoverOnce(Song song, String smbPath) async {
@@ -540,14 +520,13 @@ class SmbService {
       Log.e('SMB', 'downloadToLocal 中止：会话不可用 (lastError=$lastError)');
       return null;
     }
+    final gen = _sessionGen;
     var path = await _doDownload(smbPath);
     if (path == null) {
       // 下载失败：连接可能已失效（尤其 iOS 后台回收后，缓存的 _mountedShare
-      // 会误判为就绪）。强制全量重连 + 重新挂载后重试一次。
-      Log.w('SMB', '首次下载失败，强制重连后重试 ($smbPath)');
-      _connected = false;
-      _mountedShare = null;
-      if (await ensureReady()) {
+      // 会误判为就绪）。按代数判定重建后重试一次。
+      Log.w('SMB', '首次下载失败，会话重建后重试 ($smbPath)');
+      if (await _retryReady(gen)) {
         path = await _doDownload(smbPath);
       }
     }

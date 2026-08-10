@@ -13,6 +13,7 @@ import '../../../../data/services/lrc_parser.dart';
 import '../../../../data/repositories/audio_engine_repository.dart';
 import '../../../../data/services/rust_service.dart' show AnalyzeResult;
 import '../../../core/providers/repositories.dart';
+import '../backends/playback_backend.dart';
 import '../../settings/view_models/dsp_provider.dart';
 import 'queue_provider.dart';
 import '../../../../data/services/log.dart';
@@ -122,15 +123,19 @@ class PlayerNotifier extends Notifier<PlayerState> {
   AudioEngineRepository get _engineRepo =>
       ref.read(audioEngineRepositoryProvider);
 
+  /// 传输层后端（play/pause/seek/位置/事件）；引擎专属能力
+  /// （DSP/probe/遥测/ReplayGain）仍走 [_engineRepo] 按能力守卫调用。
+  PlaybackBackend get _backend => ref.read(playbackBackendProvider);
+
   @override
   PlayerState build() {
-    // dispose 回调内禁用 ref.read，提前捕获引擎仓库引用
-    final engineRepo = ref.read(audioEngineRepositoryProvider);
+    // dispose 回调内禁用 ref.read，提前捕获后端引用
+    final backend = ref.read(playbackBackendProvider);
     ref.onDispose(() {
       _progressTimer?.cancel();
       _telemetryTimer?.cancel();
       _eventSub?.cancel();
-      engineRepo.deinitEngine();
+      backend.dispose();
       _nativeAudio.dispose();
     });
     return const PlayerState();
@@ -237,7 +242,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
     // 立即静音当前声音（Rust 引擎 pause 保留输出流）：否则在解析/下载新歌
     // 期间旧歌继续响，切换才有延迟感；且切歌瞬间旧 ringbuf 被覆盖会爆音。
-    await _engineRepo.pause();
+    await _backend.pause();
     await _nativeAudio.stop();
     if (token != _playToken || !ref.mounted) return;
 
@@ -266,7 +271,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
       );
       if (fallbackSong != null) {
         state = state.copyWith(currentSong: fallbackSong);
-        await _engineRepo.resume();
+        await _backend.resume();
         saveResume();
       }
       return;
@@ -309,7 +314,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
       Log.d('Audio', 'engine play: $resolvedPath');
       _lastResolvedPath = resolvedPath;
       await _applyReplayGain(resolvedPath);
-      await _engineRepo.play(resolvedPath);
+      await _backend.play(resolvedPath);
     } else {
       Log.w('Audio', 'engine play 跳过: rust=${_engineRepo.rustAvailable}');
     }
@@ -367,7 +372,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
   void pause() {
     Log.d('Audio', 'Dart pause() 被调用');
     _progressTimer?.cancel();
-    _engineRepo.pause();
+    _backend.pause();
     _nativeAudio.pause();
     // 事件驱动锚点：暂停时推当前位置，锁屏进度不再靠 250ms 轮询
     _nativeAudio.updatePosition(state.position);
@@ -382,7 +387,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     } else if (state.position > 0 && _engineLoaded) {
       // 暂停恢复播放（不从头开始）
       _startProgressTimer();
-      _engineRepo.resume();
+      _backend.resume();
       _nativeAudio.resume();
       _nativeAudio.updatePosition(state.position);
       state = state.copyWith(isPlaying: true);
@@ -450,8 +455,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
     if (song == null) return;
     final pos = posMs.clamp(0.0, song.duration.inMilliseconds.toDouble());
     state = state.copyWith(position: pos);
-    if (!_nativeReady || !_engineRepo.rustAvailable) return;
-    _engineRepo.seek(pos / 1000.0);
+    if (!_nativeReady || !_backend.available) return;
+    _backend.seek(pos / 1000.0);
     // 原生侧清 AudioTrack/ringbuf 里 seek 前的旧 PCM，避免旧声音先播出造成错位。
     // iOS 无 seek 通道实现 → MissingPluginException 被 _safeCall 静默吞掉。
     _nativeAudio.seek(pos);
@@ -560,7 +565,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
   Future<void> _tick() async {
     if (!state.isPlaying) return;
     try {
-      final event = await _engineRepo.pollEvents();
+      final event = await _backend.pollEvents();
       if (event != null) {
         Log.d('Audio', 'engine event: $event');
       }
@@ -571,7 +576,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
         onTrackEnd?.call();
         return;
       } else if (event == 'error') {
-        final err = await _engineRepo.lastError();
+        final err = await _backend.lastError();
         Log.e('Audio', '引擎错误: $err');
       }
     } catch (e) {
@@ -583,7 +588,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // 原实现 _position += 250 会随轮询累积虚高，越过时长线被误判为曲终而自停。
     double? enginePosMs;
     try {
-      enginePosMs = (await _engineRepo.positionSecs()) * 1000;
+      enginePosMs = (await _backend.positionSecs()) * 1000;
       state = state.copyWith(position: enginePosMs);
     } catch (e) {
       Log.e('Audio', '位置查询失败，保留上次位置: ${state.position.toInt()}ms');

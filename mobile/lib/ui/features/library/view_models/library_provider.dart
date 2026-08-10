@@ -8,6 +8,7 @@ import '../../../../data/services/smb_service.dart';
 import '../../../../domain/models/song.dart';
 import '../../../core/providers/repositories.dart';
 import '../../playback/view_models/queue_provider.dart';
+import 'cover_service.dart';
 import '../../../../data/services/log.dart';
 
 /// copyWith 哨兵值：区分「未传入」与「显式传 null 清空」
@@ -73,6 +74,21 @@ class LibraryState {
 
 class LibraryNotifier extends Notifier<LibraryState> {
   bool _isScanning = false;
+
+  /// 封面提取调度（拆分自本类）：完成后回调刷新 UI 并持久化
+  late final CoverService _covers = CoverService(
+    ref,
+    onCoversUpdated: _onCoversUpdated,
+  );
+
+  /// 封面就绪：Song.coverUrl 是可变字段，重建列表触发 UI 刷新，
+  /// 并落盘，否则重启后曲库恢复时封面全部丢失
+  void _onCoversUpdated() {
+    state = state.copyWith(
+      importedSongs: List<Song>.from(state.importedSongs),
+    );
+    ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
+  }
 
   /// 来源过滤开关变化后刷新曲库（allSongs 是 getter，需重建 state 触发监听）
   void refreshSources() => state = state.copyWith();
@@ -141,7 +157,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
   /// App 启动时恢复上次持久化的曲库（在系统扫描前调用，
   /// 后续 discoverSongs 增量合并不丢失这些歌曲）。
   /// 持久化已改为相对路径（LibraryCacheService），容器变更不再影响；
-  /// 此处存在性清洗仅兑底：缓存被系统清理、存量旧绝对路径数据。
+  /// 此处存在性清洗仅兜底：缓存被系统清理、存量旧绝对路径数据。
   void restoreCachedSongs(List<Song> songs) {
     if (songs.isEmpty) return;
     for (final s in songs) {
@@ -163,19 +179,14 @@ class LibraryNotifier extends Notifier<LibraryState> {
       scanDone: true,
     );
     // NAS 索引歌（无本地文件）：远端读头重提取封面
-    final pendingCovers = state.importedSongs
-        .where((s) =>
-            s.smbPath != null && s.path == null && s.coverUrl == null)
-        .toList();
+    final pendingCovers = CoverService.pendingNasCovers(state.importedSongs);
     if (pendingCovers.isNotEmpty) {
-      unawaited(_extractNasCovers(pendingCovers));
+      unawaited(_covers.extractNasCovers(pendingCovers));
     }
     // 有本地文件的歌（离线缓存/本地导入）：从文件重提取封面
-    final localPending = state.importedSongs
-        .where((s) => s.path != null && s.coverUrl == null)
-        .toList();
+    final localPending = CoverService.pendingLocalCovers(state.importedSongs);
     if (localPending.isNotEmpty) {
-      unawaited(batchExtractCovers(localPending));
+      unawaited(_covers.extractLocalCovers(localPending));
     }
   }
 
@@ -338,12 +349,9 @@ Future<bool> scanSmb(String sharePath) async {
     onSongsLoaded?.call();
     // 兜底：扫描完成后对仍未拿到封面的 NAS 歌再提取一次
     // （扫描中异步提取可能因取消/批次边界遗漏）
-    final pendingCovers = state.importedSongs
-        .where((s) =>
-            s.smbPath != null && s.path == null && s.coverUrl == null)
-        .toList();
+    final pendingCovers = CoverService.pendingNasCovers(state.importedSongs);
     if (pendingCovers.isNotEmpty) {
-      unawaited(_extractNasCovers(pendingCovers));
+      unawaited(_covers.extractNasCovers(pendingCovers));
     }
     return true;
   } finally {
@@ -352,23 +360,9 @@ Future<bool> scanSmb(String sharePath) async {
   }
 }
 
-  /// NAS 远端封面批量提取（限流并发 8），完成后刷新 UI 并持久化。
-  /// 失败静默：封面保持纯色占位，不影响曲库。
-  Future<void> _extractNasCovers(List<Song> songs) async {
-    const batchSize = 8;
-    for (var i = 0; i < songs.length; i += batchSize) {
-      final end = i + batchSize > songs.length ? songs.length : i + batchSize;
-      await Future.wait(
-        songs.sublist(i, end).map((s) => SmbService.fetchRemoteCover(s)),
-      );
-    }
-    // 封面就绪（Song.coverUrl 可变字段），触发刷新并落盘，
-    // 否则重启后曲库恢复时封面全部丢失
-    state = state.copyWith(
-      importedSongs: List<Song>.from(state.importedSongs),
-    );
-    ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
-  }
+  /// 本地文件封面批量提取（对外入口，委托 [CoverService]）
+  Future<void> batchExtractCovers(List<Song> songs) =>
+      _covers.extractLocalCovers(songs);
 
   /// 按歌曲 id 去重合并传入歌曲与现有曲库，保持已有顺序、新歌追加。
   /// NAS 索引歌曲 path 为 null，用 id（如 `smb_<hash>`）保证幂等，
@@ -380,56 +374,6 @@ Future<bool> scanSmb(String sharePath) async {
       if (seen.add(s.id)) out.add(s);
     }
     return out;
-  }
-
-  Future<void> batchExtractCovers(List<Song> songs) async {
-    final engineRepo = ref.read(audioEngineRepositoryProvider);
-    if (!engineRepo.rustAvailable) return;
-    final appDir = await getApplicationDocumentsDirectory();
-    final cacheDir = Directory('${appDir.path}/.covers');
-    if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
-
-    // 待处理的歌曲（无封面缓存、本地文件真实存在）。
-    // 不依赖 hasCover 标记（_fileToSong 降级导入时未设）；
-    // NAS 缓存路径的本地文件可能已被清理/未下载 → 跳过，
-    // 避免 lofty 读取不存在的文件（No such file or directory）。
-    final pending = <Song>[];
-    for (final s in songs) {
-      if (s.path == null || s.coverUrl != null) continue;
-      if (!await File(s.path!).exists()) continue;
-      pending.add(s);
-    }
-    if (pending.isEmpty) return;
-
-    var changed = false;
-    // 限制并发，避免一次性打满 FRB 线程池；每组并行完成后统一刷新
-    const batchSize = 4;
-    for (var i = 0; i < pending.length; i += batchSize) {
-      final batch = pending.sublist(
-        i,
-        i + batchSize > pending.length ? pending.length : i + batchSize,
-      );
-      await Future.wait(batch.map((song) async {
-        final cacheFile = File('${cacheDir.path}/${song.path!.hashCode}.jpg');
-        if (await cacheFile.exists()) {
-          song.coverUrl = cacheFile.path;
-          changed = true;
-          return;
-        }
-        try {
-          final bytes = await engineRepo.getCoverBytes(song.path!);
-          await cacheFile.writeAsBytes(bytes);
-          song.coverUrl = cacheFile.path;
-          changed = true;
-        } catch (e) {
-          Log.e('Library', '提取封面失败: $e');
-        }
-      }));
-    }
-    if (changed) {
-      // Song.coverUrl 是可变字段，触发一次状态更新以刷新 UI
-      state = state.copyWith(importedSongs: List<Song>.from(state.importedSongs));
-    }
   }
 
   Future<int> importFromPicker() async {
