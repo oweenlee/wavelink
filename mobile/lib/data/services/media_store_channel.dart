@@ -1,9 +1,8 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../domain/models/song.dart';
 import '../../ui/core/theme/app_theme.dart';
+import 'log.dart';
 
 /// 系统音乐库扫描通道（封装 Android MediaStore / iOS MPMediaQuery 原生调用）
 class MediaStoreChannel {
@@ -44,7 +43,7 @@ class MediaStoreChannel {
           .cast<Song>()
           .toList();
     } catch (e) {
-      debugPrint('[MediaStoreChannel] scanAll failed: $e');
+      Log.e('MediaStoreChannel', 'scanAll failed: $e');
       return [];
     }
   }

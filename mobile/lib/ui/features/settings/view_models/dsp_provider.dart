@@ -1,7 +1,7 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../domain/models/playback_types.dart';
 import '../../../core/providers/repositories.dart';
+import '../../../../data/services/log.dart';
 
 class DspState {
   final DspSettings dspSettings;
@@ -107,7 +107,7 @@ class DspNotifier extends Notifier<DspState> {
     try {
       return await engineRepo.autoEqCatalog();
     } catch (e) {
-      debugPrint('[AutoEQ] 获取目录失败: $e');
+      Log.e('AutoEQ', '获取目录失败: $e');
       return const [];
     }
   }
@@ -138,7 +138,7 @@ class DspNotifier extends Notifier<DspState> {
       await engineRepo.setNoiseShaping(on && dsp.noiseShaping);
       await engineRepo.setAutoEq(autoEq);
     } catch (e) {
-      debugPrint('[DSP] 应用设置失败: $e');
+      Log.e('DSP', '应用设置失败: $e');
     }
   }
 
@@ -186,7 +186,7 @@ class DspNotifier extends Notifier<DspState> {
         await engineRepo.setPeqBand(i, eqFrequencies[i], gains[i], eqDefaultQ);
       }
     } catch (e) {
-      debugPrint('[EQ] 启动恢复 EQ 失败: $e');
+      Log.e('EQ', '启动恢复 EQ 失败: $e');
     }
   }
 
@@ -242,7 +242,7 @@ class DspNotifier extends Notifier<DspState> {
     try {
       await engineRepo.applyPreset(_rustPresetNames[name] ?? name.toLowerCase());
     } catch (e) {
-      debugPrint('[EQ] applyPreset 失败: $e');
+      Log.e('EQ', 'applyPreset 失败: $e');
     }
   }
 
@@ -266,7 +266,7 @@ class DspNotifier extends Notifier<DspState> {
         eqDefaultQ,
       );
     } catch (e) {
-      debugPrint('[EQ] setPeqBand 失败: $e');
+      Log.e('EQ', 'setPeqBand 失败: $e');
     }
   }
 }

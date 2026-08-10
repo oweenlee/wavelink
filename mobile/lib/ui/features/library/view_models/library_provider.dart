@@ -8,6 +8,7 @@ import '../../../../data/services/smb_service.dart';
 import '../../../../domain/models/song.dart';
 import '../../../core/providers/repositories.dart';
 import '../../playback/view_models/queue_provider.dart';
+import '../../../../data/services/log.dart';
 
 /// copyWith 哨兵值：区分「未传入」与「显式传 null 清空」
 const _unset = Object();
@@ -300,7 +301,7 @@ Future<void> _runNasImport(String sharePath) async {
   } on NASImportCancelled {
     // 用户主动取消，静默结束
   } catch (e) {
-    debugPrint('[Library] NAS import failed: $e');
+    Log.e('Library', 'NAS import failed: $e');
     state = state.copyWith(nasImporting: false, nasImportError: '$e');
   } finally {
     onSongsLoaded?.call();
@@ -419,7 +420,7 @@ Future<bool> scanSmb(String sharePath) async {
           song.coverUrl = cacheFile.path;
           changed = true;
         } catch (e) {
-          debugPrint('[Library] 提取封面失败: $e');
+          Log.e('Library', '提取封面失败: $e');
         }
       }));
     }
@@ -473,7 +474,7 @@ Future<bool> scanSmb(String sharePath) async {
         try {
           await f.delete();
         } catch (e) {
-          debugPrint('[Library] removeSong 清理文件失败: $p ($e)');
+          Log.e('Library', 'removeSong 清理文件失败: $p ($e)');
         }
       }
     }

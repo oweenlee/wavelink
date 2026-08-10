@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import '../../domain/models/song.dart';
 import 'media_store_channel.dart';
+import 'log.dart';
 
 /// 通过平台系统音乐库（Android MediaStore / iOS MPMediaQuery）扫描音乐
 class MediaStoreService {
@@ -22,7 +22,7 @@ class MediaStoreService {
     try {
       return await MediaStoreChannel.requestPermission();
     } catch (e) {
-      debugPrint('[MediaStore] permission request failed: $e');
+      Log.e('MediaStore', 'permission request failed: $e');
       return false;
     }
   }
@@ -39,7 +39,7 @@ class MediaStoreService {
     try {
       return await MediaStoreChannel.scanAll();
     } catch (e) {
-      debugPrint('[MediaStore] scan failed: $e');
+      Log.e('MediaStore', 'scan failed: $e');
       return [];
     }
   }

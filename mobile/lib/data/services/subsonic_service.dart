@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import '../../domain/models/song.dart';
 import '../../ui/core/theme/app_theme.dart';
 import 'preferences_service.dart';
+import 'log.dart';
 
 /// Subsonic / Navidrome / Jellyfin / Emby API 客户端
 ///
@@ -54,7 +55,7 @@ class SubsonicService {
       final status = json['subsonic-response']?['status'] as String?;
       return status == 'ok';
     } catch (e) {
-      debugPrint('[Subsonic] ping failed: $e');
+      Log.e('Subsonic', 'ping failed: $e');
       return false;
     }
   }
@@ -143,7 +144,7 @@ class SubsonicService {
         offset += pageSize;
       }
     } catch (e) {
-      debugPrint('[Subsonic] scanLibrary failed: $e');
+      Log.e('Subsonic', 'scanLibrary failed: $e');
       return [];
     }
 
@@ -174,7 +175,7 @@ class SubsonicService {
           .whereType<Song>()
           .toList();
     } catch (e) {
-      debugPrint('[Subsonic] searchSongs failed: $e');
+      Log.e('Subsonic', 'searchSongs failed: $e');
       return [];
     }
   }

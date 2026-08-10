@@ -8,6 +8,7 @@ import '../../src/rust/api/cue.dart' as cue;
 import '../../src/rust/api/playlist.dart' as playlist;
 import '../../src/rust/api/engine.dart' as engine;
 import '../../src/rust/api/dsp.dart' as dsp;
+import 'log.dart';
 
 export '../../src/rust/api/decode.dart'
     show DecodeResult, DecodeChunk, StreamDecoder;
@@ -27,7 +28,7 @@ Future<void> initRust() async {
     await RustLib.init();
     rustAvailable = true;
   } catch (e) {
-    debugPrint('[Rust] 初始化失败: $e');
+    Log.e('Rust', '初始化失败: $e');
     rustAvailable = false;
   }
 }
@@ -214,7 +215,7 @@ Future<List<double>> getSpectrum() async {
     final raw = await audio_out.getSpectrum();
     return raw.map((e) => e.toDouble()).toList();
   } catch (e) {
-    debugPrint('[Rust] 获取频谱失败: $e');
+    Log.e('Rust', '获取频谱失败: $e');
     return List.filled(16, 0.0);
   }
 }
@@ -224,7 +225,7 @@ Future<int> getUnderrunCount() async {
   try {
     return (await audio_out.getUnderrunCount()).toInt();
   } catch (e) {
-    debugPrint('[Rust] 获取 underrun 失败: $e');
+    Log.e('Rust', '获取 underrun 失败: $e');
     return 0;
   }
 }
@@ -235,7 +236,7 @@ Future<int> getHwSampleRate() async {
   try {
     return await audio_out.getHwSampleRate();
   } catch (e) {
-    debugPrint('[Rust] 获取硬件采样率失败: $e');
+    Log.e('Rust', '获取硬件采样率失败: $e');
     return 0;
   }
 }

@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../domain/models/song.dart';
+import 'log.dart';
 
 /// 曲库列表的轻量持久化：整表 JSON 存 Documents/.library_cache.json
 ///
@@ -25,7 +25,7 @@ class LibraryCacheService {
       final data = jsonEncode(songs.map((s) => s.toJson()).toList());
       await file.writeAsString(data);
     } catch (e) {
-      debugPrint('[LibraryCache] 保存失败: $e');
+      Log.e('LibraryCache', '保存失败: $e');
     }
   }
 
@@ -41,7 +41,7 @@ class LibraryCacheService {
           .map((e) => Song.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (e) {
-      debugPrint('[LibraryCache] 读取失败: $e');
+      Log.e('LibraryCache', '读取失败: $e');
       return [];
     }
   }

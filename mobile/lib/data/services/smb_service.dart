@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../domain/models/song.dart';
 import '../../src/rust/api/smb.dart' as smb;
@@ -8,6 +7,7 @@ import '../../ui/core/theme/app_theme.dart';
 import 'import_service.dart';
 import 'preferences_service.dart';
 import 'rust_service.dart' as rs;
+import 'log.dart';
 
 /// SMB 直挂服务
 ///
@@ -109,7 +109,7 @@ class SmbService {
       lastError = null;
       return true;
     } catch (e) {
-      debugPrint('[SMB] connect failed: $e');
+      Log.e('SMB', 'connect failed: $e');
       _connected = false;
       lastError = _friendlyConnectError('$e');
       return false;
@@ -142,7 +142,7 @@ class SmbService {
       lastError = null;
       return true;
     } catch (e) {
-      debugPrint('[SMB] connectShare $shareName failed: $e');
+      Log.e('SMB', 'connectShare $shareName failed: $e');
       lastError = '$e';
       return false;
     }
@@ -169,7 +169,7 @@ class SmbService {
       final prefs = PreferencesService.instance;
       final host = prefs.nasHost;
       if (host == null || host.isEmpty) {
-        debugPrint('[SMB] ensureReady 失败：未配置 NAS host');
+        Log.e('SMB', 'ensureReady 失败：未配置 NAS host');
         return false;
       }
       final ok = await connect(
@@ -181,14 +181,14 @@ class SmbService {
     }
     final sharePath = PreferencesService.instance.nasShare;
     if (sharePath == null || sharePath.isEmpty) {
-      debugPrint('[SMB] ensureReady 失败：未配置 NAS 共享');
+      Log.e('SMB', 'ensureReady 失败：未配置 NAS 共享');
       return false;
     }
     // 与 scanSmbLibrary 对齐：nasShare 可能填“共享名/子目录”，
     // connectShare 只接受共享名（第一段），否则挂载失败导致无法播放。
     final parts = sharePath.split('/').where((s) => s.isNotEmpty).toList();
     if (parts.isEmpty) {
-      debugPrint('[SMB] ensureReady 失败：共享路径无效 ($sharePath)');
+      Log.e('SMB', 'ensureReady 失败：共享路径无效 ($sharePath)');
       return false;
     }
     final shareName = parts.first;
@@ -196,7 +196,7 @@ class SmbService {
     if (_mountedShare == shareName) return true;
     final ok = await connectShare(shareName);
     if (!ok) {
-      debugPrint('[SMB] ensureReady 失败：connectShare($shareName) 未成功: $lastError');
+      Log.e('SMB', 'ensureReady 失败：connectShare($shareName) 未成功: $lastError');
     }
     return ok;
   }
@@ -207,7 +207,7 @@ class SmbService {
     try {
       await smb.smbDisconnect();
     } catch (e) {
-      debugPrint('[SMB] disconnect failed: $e');
+      Log.e('SMB', 'disconnect failed: $e');
     }
     _connected = false;
     _mountedShare = null;
@@ -220,7 +220,7 @@ class SmbService {
       final shares = await smb.smbListShares();
       return shares.map((s) => s.name).toList();
     } catch (e) {
-      debugPrint('[SMB] listShares failed: $e');
+      Log.e('SMB', 'listShares failed: $e');
       return [];
     }
   }
@@ -231,7 +231,7 @@ class SmbService {
     try {
       return await smb.smbListDirectory(path: path);
     } catch (e) {
-      debugPrint('[SMB] listFiles($path) failed: $e');
+      Log.e('SMB', 'listFiles($path) failed: $e');
       return [];
     }
   }
@@ -261,7 +261,7 @@ class SmbService {
     try {
       await _scanDirectory(root, songs, onBatch);
     } catch (e) {
-      debugPrint('[SMB] scanSmbLibrary failed: $e');
+      Log.e('SMB', 'scanSmbLibrary failed: $e');
     } finally {
       _scanning = false;
     }
@@ -321,7 +321,7 @@ class SmbService {
       }
       flush();
     } catch (e) {
-      debugPrint('[SMB] scan directory $relPath failed: $e');
+      Log.e('SMB', 'scan directory $relPath failed: $e');
     }
   }
 
@@ -412,7 +412,7 @@ class SmbService {
             hasCover = true;
           }
         } catch (e) {
-          debugPrint('[SMB] Rust 元数据读取失败: $e');
+          Log.e('SMB', 'Rust 元数据读取失败: $e');
         }
       }
 
@@ -431,7 +431,7 @@ class SmbService {
       );
     } catch (e) {
       // 降级：下载/元数据提取失败，返回 null 跳过该文件
-      debugPrint('[SMB] 文件处理失败 ($smbPath): $e');
+      Log.e('SMB', '文件处理失败 ($smbPath): $e');
       return null;
     }
   }
@@ -449,15 +449,15 @@ class SmbService {
     try {
       await _fetchRemoteCoverOnce(song, smbPath);
     } catch (e) {
-      debugPrint('[SMB] 远端封面提取失败 ($e)，强制重连后重试');
+      Log.w('SMB', '远端封面提取失败 ($e)，强制重连后重试');
       if (!await _recoverSession()) {
-        debugPrint('[SMB] 封面重试中止：重连失败');
+        Log.e('SMB', '封面重试中止：重连失败');
         return;
       }
       try {
         await _fetchRemoteCoverOnce(song, smbPath);
       } catch (e2) {
-        debugPrint('[SMB] 远端封面提取重试仍失败: $e2');
+        Log.e('SMB', '远端封面提取重试仍失败: $e2');
       }
     }
   }
@@ -537,14 +537,14 @@ class SmbService {
     if (smbPath.isEmpty) return null;
     // 自愈：会话丢失（测试连接断开/重启等）时自动重连并挂载共享
     if (!await ensureReady()) {
-      debugPrint('[SMB] downloadToLocal 中止：会话不可用 (lastError=$lastError)');
+      Log.e('SMB', 'downloadToLocal 中止：会话不可用 (lastError=$lastError)');
       return null;
     }
     var path = await _doDownload(smbPath);
     if (path == null) {
       // 下载失败：连接可能已失效（尤其 iOS 后台回收后，缓存的 _mountedShare
       // 会误判为就绪）。强制全量重连 + 重新挂载后重试一次。
-      debugPrint('[SMB] 首次下载失败，强制重连后重试 ($smbPath)');
+      Log.w('SMB', '首次下载失败，强制重连后重试 ($smbPath)');
       _connected = false;
       _mountedShare = null;
       if (await ensureReady()) {
@@ -579,13 +579,13 @@ class SmbService {
       // 或空文件均视为失败，不留下半截缓存
       if (!await tmpFile.exists() || await tmpFile.length() == 0) {
         if (await tmpFile.exists()) await tmpFile.delete();
-        debugPrint('[SMB] 下载结果为空文件 ($smbPath)');
+        Log.w('SMB', '下载结果为空文件 ($smbPath)');
         return null;
       }
       await tmpFile.rename(localFile.path);
       return localFile.path;
     } catch (e) {
-      debugPrint('[SMB] downloadToLocal failed ($smbPath): $e');
+      Log.e('SMB', 'downloadToLocal failed ($smbPath): $e');
       return null;
     }
   }
@@ -614,7 +614,7 @@ class SmbService {
       }
       return dest.path;
     } catch (e) {
-      debugPrint('[SMB] copyToLocal failed: $e');
+      Log.e('SMB', 'copyToLocal failed: $e');
       return null;
     }
   }

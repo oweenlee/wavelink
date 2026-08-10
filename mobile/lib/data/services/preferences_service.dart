@@ -1,7 +1,7 @@
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/models/song.dart';
+import 'log.dart';
 
 /// 本地偏好持久化服务
 /// 统一管理音量、循环模式、DSP 设置、ReplayGain、搜索历史等
@@ -204,7 +204,7 @@ class PreferencesService {
       final decoded = _decodeMap(raw);
       return decoded.map((k, v) => MapEntry(k, List<String>.from(v)));
     } catch (e) {
-      debugPrint('[Prefs] 播放列表解码失败: $e');
+      Log.e('Prefs', '播放列表解码失败: $e');
       return {};
     }
   }

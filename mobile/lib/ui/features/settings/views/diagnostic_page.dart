@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../../data/services/rust_service.dart' as rs;
 import '../../../core/theme/app_theme.dart';
+import '../../../../data/services/log.dart';
 
 class DiagnosticPage extends StatefulWidget {
   const DiagnosticPage({super.key});
@@ -43,7 +44,7 @@ class _DiagnosticPageState extends State<DiagnosticPage> {
         _underrun = ur;
       });
     } catch (e) {
-      debugPrint('[Diagnostic] 刷新失败: $e');
+      Log.e('Diagnostic', '刷新失败: $e');
     }
   }
 

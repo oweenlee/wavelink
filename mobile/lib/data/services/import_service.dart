@@ -10,6 +10,7 @@ import 'media_store_service.dart';
 import 'media_store_channel.dart';
 import 'subsonic_service.dart';
 import 'smb_service.dart';
+import 'log.dart';
 
 /// 音乐文件导入服务
 ///
@@ -44,7 +45,7 @@ class ImportService {
   static Future<List<Song>> scanMediaStore() async {
     final hasPermission = await MediaStoreService.requestPermission();
     if (!hasPermission) {
-      debugPrint('[Import] 系统音乐库权限被拒绝');
+      Log.d('Import', '系统音乐库权限被拒绝');
       return [];
     }
 
@@ -233,11 +234,11 @@ class ImportService {
             song.coverUrl = cacheFile.path;
             song.hasCover = true;
           } catch (e) {
-            debugPrint('[Import] 封面缓存失败: $e');
+            Log.e('Import', '封面缓存失败: $e');
           }
         }
       } catch (e) {
-        debugPrint('[Import] Rust 元数据读取失败: $e');
+        Log.e('Import', 'Rust 元数据读取失败: $e');
       }
     }
   }
@@ -271,7 +272,7 @@ class ImportService {
               await cacheFile.writeAsBytes(meta.coverBytes);
               coverUrl = cacheFile.path;
             } catch (e) {
-              debugPrint('[Import] 封面缓存失败: $e');
+              Log.e('Import', '封面缓存失败: $e');
             }
           }
 
@@ -288,7 +289,7 @@ class ImportService {
             durationEstimated: durationEstimated,
           );
         } catch (e) {
-          debugPrint('[Import] Rust 元数据读取失败，降级到文件名猜测: $e');
+          Log.e('Import', 'Rust 元数据读取失败，降级到文件名猜测: $e');
         }
       }
 

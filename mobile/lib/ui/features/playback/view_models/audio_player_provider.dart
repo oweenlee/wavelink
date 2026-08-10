@@ -15,6 +15,7 @@ import '../../../../data/services/rust_service.dart' show AnalyzeResult;
 import '../../../core/providers/repositories.dart';
 import '../../settings/view_models/dsp_provider.dart';
 import 'queue_provider.dart';
+import '../../../../data/services/log.dart';
 
 class PlayerState {
   final bool isPlaying;
@@ -198,7 +199,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
         }
       }
     } catch (e) {
-      debugPrint('[Audio] 初始化原生音频失败: $e');
+      Log.e('Audio', '初始化原生音频失败: $e');
     }
   }
 
@@ -259,7 +260,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // 回滚 UI 到仍在播放的旧曲，避免"横条变了但音源没变"的错位。
     // 注意：上面已 pause 静音，回滚需 resume 恢复旧歌播放。
     if (resolvedPath == null) {
-      debugPrint('[Audio] 无法播放 ${song.id}（resolvedPath=null），回滚到上一曲');
+      Log.w('Audio', '无法播放 ${song.id}（resolvedPath=null），回滚到上一曲');
       ref.read(playErrorProvider.notifier).report(
         '无法播放「${song.title}」：文件不存在或下载失败',
       );
@@ -305,14 +306,12 @@ class PlayerNotifier extends Notifier<PlayerState> {
     }
 
     if (_engineRepo.rustAvailable) {
-      debugPrint('[Audio] engine play: $resolvedPath');
+      Log.d('Audio', 'engine play: $resolvedPath');
       _lastResolvedPath = resolvedPath;
       await _applyReplayGain(resolvedPath);
       await _engineRepo.play(resolvedPath);
     } else {
-      debugPrint(
-        '[Audio] engine play 跳过: rust=${_engineRepo.rustAvailable}',
-      );
+      Log.w('Audio', 'engine play 跳过: rust=${_engineRepo.rustAvailable}');
     }
     if (token != _playToken || !ref.mounted) return;
 
@@ -350,7 +349,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
       await _engineRepo.setReplaygainPeak(peak);
     } catch (e) {
       // 无标签/读取失败/引擎未就绪：回落原始响度，不阻塞播放
-      debugPrint('[Audio] ReplayGain 应用失败，回落原始响度: $e');
+      Log.e('Audio', 'ReplayGain 应用失败，回落原始响度: $e');
       try {
         await _engineRepo.setReplaygainGain(0);
         await _engineRepo.setReplaygainPeak(null);
@@ -366,7 +365,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
   }
 
   void pause() {
-    debugPrint('[Audio] Dart pause() 被调用');
+    Log.d('Audio', 'Dart pause() 被调用');
     _progressTimer?.cancel();
     _engineRepo.pause();
     _nativeAudio.pause();
@@ -544,7 +543,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
         state = state.copyWith(telemetry: next);
       }
     } catch (e) {
-      debugPrint('[Audio] 遥测轮询失败: $e');
+      Log.e('Audio', '遥测轮询失败: $e');
     }
   }
 
@@ -563,20 +562,20 @@ class PlayerNotifier extends Notifier<PlayerState> {
     try {
       final event = await _engineRepo.pollEvents();
       if (event != null) {
-        debugPrint('[Audio] engine event: $event');
+        Log.d('Audio', 'engine event: $event');
       }
       if (event == 'stopped') {
-        debugPrint('[Audio] 收到引擎 stopped 事件 → 队列结束，触发切歌/停止');
+        Log.d('Audio', '收到引擎 stopped 事件 → 队列结束，触发切歌/停止');
         _progressTimer?.cancel();
         state = state.copyWith(isPlaying: false);
         onTrackEnd?.call();
         return;
       } else if (event == 'error') {
         final err = await _engineRepo.lastError();
-        debugPrint('[Audio] 引擎错误: $err');
+        Log.e('Audio', '引擎错误: $err');
       }
     } catch (e) {
-      debugPrint('[Audio] 事件轮询失败: $e');
+      Log.e('Audio', '事件轮询失败: $e');
     }
 
     // 引擎位置（ms）。查询失败时保留上次合法值，绝不盲目累加：
@@ -587,7 +586,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
       enginePosMs = (await _engineRepo.positionSecs()) * 1000;
       state = state.copyWith(position: enginePosMs);
     } catch (e) {
-      debugPrint('[Audio] 位置查询失败，保留上次位置: ${state.position.toInt()}ms');
+      Log.e('Audio', '位置查询失败，保留上次位置: ${state.position.toInt()}ms');
     }
 
     final song = state.currentSong;
@@ -595,8 +594,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
     if (song != null &&
         enginePosMs != null &&
         enginePosMs >= song.duration.inMilliseconds) {
-      debugPrint(
-        '[Audio] 位置到达时长（${state.position.toInt()}ms >= '
+      Log.d(
+        'Audio',
+        '位置到达时长（${state.position.toInt()}ms >= '
         '${song.duration.inMilliseconds}ms）→ 视为曲终',
       );
       _progressTimer?.cancel();
@@ -628,7 +628,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
       if (!ref.mounted) return;
       state = state.copyWith(); // 分析完成，触发 UI 刷新
     } catch (e) {
-      debugPrint('[Audio] 分析音频失败: $e');
+      Log.e('Audio', '分析音频失败: $e');
     }
   }
 
@@ -650,7 +650,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
           }
         }
       } catch (e) {
-        debugPrint('[Audio] 歌词加载失败: $e');
+        Log.e('Audio', '歌词加载失败: $e');
       }
     }
     if (!ref.mounted) return;
@@ -658,7 +658,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
   }
 
   void _handleRemoteCommand(RemoteCommand cmd) {
-    debugPrint('[Audio] 收到远程命令: ${cmd.command}');
+    Log.d('Audio', '收到远程命令: ${cmd.command}');
     switch (cmd.command) {
       case 'play':
       case 'togglePlayPause':
@@ -710,21 +710,21 @@ class PlayerNotifier extends Notifier<PlayerState> {
         return cacheFile.path;
       }
 
-      debugPrint('[Audio] 下载流式文件: $title');
+      Log.d('Audio', '下载流式文件: $title');
       final response = await http
           .get(Uri.parse(url))
           .timeout(const Duration(seconds: 30));
       if (response.statusCode != 200) {
-        debugPrint('[Audio] 下载失败 HTTP ${response.statusCode}');
+        Log.e('Audio', '下载失败 HTTP ${response.statusCode}');
         return null;
       }
 
       await cacheFile.writeAsBytes(response.bodyBytes);
       _streamCache[songId] = cacheFile.path;
-      debugPrint('[Audio] 下载完成: ${cacheFile.path} (${response.bodyBytes.length} bytes)');
+      Log.d('Audio', '下载完成: ${cacheFile.path} (${response.bodyBytes.length} bytes)');
       return cacheFile.path;
     } catch (e) {
-      debugPrint('[Audio] 流式下载失败: $e');
+      Log.e('Audio', '流式下载失败: $e');
       return null;
     }
   }
@@ -801,7 +801,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
       song.coverUrl = cacheFile.path;
       state = state.copyWith(); // 封面就绪，触发 UI 刷新
     } catch (e) {
-      debugPrint('[Audio] 缓存封面失败: $e');
+      Log.e('Audio', '缓存封面失败: $e');
     }
   }
 }
