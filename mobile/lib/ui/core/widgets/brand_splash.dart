@@ -83,7 +83,7 @@ class SplashGate extends StatefulWidget {
   const SplashGate({
     super.key,
     required this.child,
-    this.hold = const Duration(milliseconds: 1600),
+    this.hold = const Duration(milliseconds: 1150),
   });
 
   @override
@@ -95,7 +95,7 @@ class _SplashGateState extends State<SplashGate>
   bool _showSplash = true;
   late final AnimationController _fade = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 450),
+    duration: const Duration(milliseconds: 350),
   );
 
   @override
