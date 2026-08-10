@@ -15,7 +15,9 @@ class Song {
   int? bpm;
   String? key;
   String? coverUrl;
-  final String? path;
+  /// 本地可播路径。可变：iOS 数据容器路径变更后启动清洗置空，
+  /// 播放下载成功后回写新路径。
+  String? path;
   /// HTTP(S) 流式播放 URL（Subsonic 等远程源），为空表示本地文件。
   /// 如果设置了此字段，播放前需先下载到本地临时缓存。
   final String? streamUrl;

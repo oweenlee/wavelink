@@ -139,12 +139,41 @@ class LibraryNotifier extends Notifier<LibraryState> {
 
   /// App 启动时恢复上次持久化的曲库（在系统扫描前调用，
   /// 后续 discoverSongs 增量合并不丢失这些歌曲）。
+  /// 启动时清洗失效绝对路径：iOS 重装/更新后数据容器路径会变，
+  /// 持久化的 path/coverUrl 指向旧容器，不清洗会导致封面永不恢复、
+  /// 分析/封面提取报 No such file。
   void restoreCachedSongs(List<Song> songs) {
     if (songs.isEmpty) return;
+    for (final s in songs) {
+      // 封面文件已不存在（容器变更/缓存被清）→ 置空走下方补提取
+      if (s.coverUrl != null && !File(s.coverUrl!).existsSync()) {
+        s.coverUrl = null;
+      }
+      // 本地文件已不存在：SMB 歌置空 path 回到按需下载模式；
+      // 其他来源无法自恢复，同样置空避免后续拿着死路径去解析
+      if (s.path != null && !File(s.path!).existsSync()) {
+        s.path = null;
+      }
+    }
     state = state.copyWith(
       importedSongs: [...songs, ...state.importedSongs],
       scanDone: true,
     );
+    // NAS 索引歌（无本地文件）：远端读头重提取封面
+    final pendingCovers = state.importedSongs
+        .where((s) =>
+            s.smbPath != null && s.path == null && s.coverUrl == null)
+        .toList();
+    if (pendingCovers.isNotEmpty) {
+      unawaited(_extractNasCovers(pendingCovers));
+    }
+    // 有本地文件的歌（离线缓存/本地导入）：从文件重提取封面
+    final localPending = state.importedSongs
+        .where((s) => s.path != null && s.coverUrl == null)
+        .toList();
+    if (localPending.isNotEmpty) {
+      unawaited(batchExtractCovers(localPending));
+    }
   }
 
   Future<bool> discoverSongs() async {
@@ -320,7 +349,7 @@ Future<bool> scanSmb(String sharePath) async {
   }
 }
 
-  /// NAS 远端封面批量提取（限流并发 8），完成后刷新 UI。
+  /// NAS 远端封面批量提取（限流并发 8），完成后刷新 UI 并持久化。
   /// 失败静默：封面保持纯色占位，不影响曲库。
   Future<void> _extractNasCovers(List<Song> songs) async {
     const batchSize = 8;
@@ -330,10 +359,12 @@ Future<bool> scanSmb(String sharePath) async {
         songs.sublist(i, end).map((s) => SmbService.fetchRemoteCover(s)),
       );
     }
-    // 封面就绪（Song.coverUrl 可变字段），触发一次刷新
+    // 封面就绪（Song.coverUrl 可变字段），触发刷新并落盘，
+    // 否则重启后曲库恢复时封面全部丢失
     state = state.copyWith(
       importedSongs: List<Song>.from(state.importedSongs),
     );
+    ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
   }
 
   /// 按歌曲 id 去重合并传入歌曲与现有曲库，保持已有顺序、新歌追加。

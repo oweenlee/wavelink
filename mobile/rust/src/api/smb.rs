@@ -73,6 +73,25 @@ fn err_str<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
+/// 池连接自愈挂载：池连接 tree 缺失时（重建后尚未挂载/初次挂载
+/// 失败）就地挂载当前共享，避免直接报 "no share connected" 导致
+/// 并发任务雪崩式失败后反复重连。
+async fn ensure_pooled_tree(sess: &mut SmbSession) {
+    if sess.tree.is_some() {
+        return;
+    }
+    let share = SESSION
+        .lock()
+        .await
+        .as_ref()
+        .and_then(|s| s.tree.as_ref().map(|t| t.share_name.clone()));
+    if let Some(share) = share {
+        if let Ok(t) = sess.client.connect_share(&share).await {
+            sess.tree = Some(t);
+        }
+    }
+}
+
 /// 连接 SMB 服务器（host 为裸 IP/域名，内部拼 :port）
 pub async fn smb_connect(
     host: String,
@@ -167,6 +186,7 @@ pub async fn smb_list_directory(path: String) -> Result<Vec<SmbDirEntry>, String
     let pooled = POOL.lock().await.pop();
     let entries: Vec<DirectoryEntry> = match pooled {
         Some(mut sess) => {
+            ensure_pooled_tree(&mut sess).await;
             let r = if let Some(tree) = sess.tree.as_mut() {
                 sess.client.list_directory(tree, &path).await.map_err(err_str)
             } else {
@@ -204,6 +224,7 @@ pub async fn smb_read_file(path: String) -> Result<Vec<u8>, String> {
     let pooled = POOL.lock().await.pop();
     let result = match pooled {
         Some(mut sess) => {
+            ensure_pooled_tree(&mut sess).await;
             let r = if let Some(tree) = sess.tree.as_mut() {
                 sess.client.read_file_pipelined(tree, &path).await.map_err(err_str)
             } else {
@@ -225,73 +246,22 @@ pub async fn smb_read_file(path: String) -> Result<Vec<u8>, String> {
 
 /// 流式读取远端文件（相对共享根目录的路径），分块经 FRB sink 推给 Dart。
 ///
-/// 复用读取池连接打开文件句柄后立即归还，reader 持有独立连接克隆并行下载；
-/// 每块 512KB 推送一次，Dart 端逐块追加写入，避免整文件跨 FFI 一次性拷贝。
+/// 会话在流存活期间独占（不回池）：FileReader 与池会话共享同一条
+/// 连接，若提前归还，后续任务会在同一链路上发并发请求（连接多路
+/// 复用），部分 NAS 固件无法处理，READ 返回空数据/Protocol error，
+/// 表现为下载得到 0 字节。独占后每路流一条独立链路，互不干扰；
+/// 并发上限仍由 POOL_SEM 控制。每块 512KB 推送一次，Dart 端逐块
+/// 追加写入，避免整文件跨 FFI 一次性拷贝。
 pub async fn smb_read_file_stream(
     path: String,
     sink: StreamSink<Vec<u8>>,
 ) -> Result<(), String> {
     let permit = POOL_SEM.acquire().await.map_err(err_str)?;
-    let pooled = POOL.lock().await.pop();
-    let reader = match pooled {
-        Some(sess) => {
-            let r = {
-                let tree = sess.tree.as_ref().ok_or("no share connected")?;
-                sess.client.open_file_reader(tree, &path).await.map_err(err_str)
-            };
-            POOL.lock().await.push(sess);
-            r
-        }
+    // from_pool：池连接用完归还；临时新建的用完 drop 关闭，不进池
+    let (mut sess, from_pool) = match POOL.lock().await.pop() {
+        Some(s) => (s, true),
         None => {
-            let mut guard = SESSION.lock().await;
-            let sess = guard.as_mut().ok_or("not connected")?;
-            let tree = sess.tree.as_ref().ok_or("no share connected")?;
-            sess.client.open_file_reader(tree, &path).await.map_err(err_str)
-        }
-    };
-    drop(permit);
-    let reader = reader?;
-
-    let total = reader.size();
-    let mut offset = 0u64;
-    const CHUNK: u64 = 512 * 1024;
-    let result: Result<(), String> = async {
-        while offset < total {
-            let data = reader.read_at(offset, CHUNK).await.map_err(err_str)?;
-            let n = data.len() as u64;
-            if n == 0 {
-                break;
-            }
-            sink.add(data).map_err(|e| e.to_string())?;
-            offset += n;
-        }
-        Ok(())
-    }
-    .await;
-
-    // 显式关闭句柄释放服务端资源（直接 drop 会泄漏句柄）
-    let _ = reader.close().await;
-    result
-}
-
-/// 读远端文件头部（最多 [max_len] 字节）：封面提取/格式探测用，避免整文件下载。
-/// 注意：池空时**绝不回退主会话**——主会话可能正被扫描（list_directory）使用，
-/// smb2 单连接不支持并发请求，混用会让服务器挂起（30s 无响应）。
-pub async fn smb_read_head(path: String, max_len: u64) -> Result<Vec<u8>, String> {
-    let permit = POOL_SEM.acquire().await.map_err(err_str)?;
-    let pooled = POOL.lock().await.pop();
-    let mut owned: Option<SmbSession> = None;
-    let reader = match pooled {
-        Some(sess) => {
-            let r = {
-                let tree = sess.tree.as_ref().ok_or("no share connected")?;
-                sess.client.open_file_reader(tree, &path).await.map_err(err_str)
-            };
-            POOL.lock().await.push(sess);
-            r
-        }
-        None => {
-            // 新建独立连接并挂载同一共享（避免与主会话并发冲突）
+            // 池空：新建独立连接并挂载当前共享
             let params = PARAMS.lock().await.clone().ok_or("not connected")?;
             let share = SESSION
                 .lock()
@@ -301,22 +271,86 @@ pub async fn smb_read_head(path: String, max_len: u64) -> Result<Vec<u8>, String
                 .ok_or("no share connected")?;
             let mut client = SmbClient::connect(params.to_config()).await.map_err(err_str)?;
             let tree = client.connect_share(&share).await.map_err(err_str)?;
-            let sess = SmbSession { client, tree: Some(tree) };
-            let r = {
-                let tree = sess.tree.as_ref().expect("just set");
-                sess.client.open_file_reader(tree, &path).await.map_err(err_str)
-            };
-            owned = Some(sess); // 用完 drop 关闭，不污染池
-            r
+            (SmbSession { client, tree: Some(tree) }, false)
         }
     };
+    ensure_pooled_tree(&mut sess).await;
+
+    let result: Result<(), String> = async {
+        let tree = sess.tree.as_ref().ok_or("no share connected")?;
+        let reader = sess.client.open_file_reader(tree, &path).await.map_err(err_str)?;
+        let total = reader.size();
+        if total == 0 {
+            // 空流（CREATE 返回 EndOfFile=0）：明确报错而非静默成功，
+            // 避免 Dart 侧得到空缓存文件
+            let _ = reader.close().await;
+            return Err(format!("remote file is empty (size 0): {path}"));
+        }
+        let mut offset = 0u64;
+        const CHUNK: u64 = 512 * 1024;
+        while offset < total {
+            let data = reader.read_at(offset, CHUNK).await.map_err(err_str)?;
+            let n = data.len() as u64;
+            if n == 0 {
+                return Err(format!("unexpected EOF at offset {offset}/{total}: {path}"));
+            }
+            sink.add(data).map_err(|e| e.to_string())?;
+            offset += n;
+        }
+        // 显式关闭句柄释放服务端资源（直接 drop 会泄漏句柄）
+        let _ = reader.close().await;
+        Ok(())
+    }
+    .await;
+
+    // 流结束才归还会话，保证独占
+    if from_pool {
+        POOL.lock().await.push(sess);
+    }
     drop(permit);
-    let reader = reader?;
-    let data = reader.read_at(0, max_len).await.map_err(err_str)?;
-    // 显式关闭句柄释放服务端资源（直接 drop 会泄漏句柄）
-    let _ = reader.close().await;
-    drop(owned);
-    Ok(data)
+    result
+}
+
+/// 读远端文件头部（最多 [max_len] 字节）：封面提取/格式探测用，避免整文件下载。
+/// 会话在读完前独占（不回池）：与 smb_read_file_stream 同理，提前归还
+/// 会让后续任务在同一连接上发并发请求，部分 NAS 无法处理。
+pub async fn smb_read_head(path: String, max_len: u64) -> Result<Vec<u8>, String> {
+    let permit = POOL_SEM.acquire().await.map_err(err_str)?;
+    // from_pool：池连接读完归还；临时新建的用完 drop 关闭，不进池
+    let (mut sess, from_pool) = match POOL.lock().await.pop() {
+        Some(s) => (s, true),
+        None => {
+            // 池空：新建独立连接并挂载当前共享（避免与主会话并发冲突）
+            let params = PARAMS.lock().await.clone().ok_or("not connected")?;
+            let share = SESSION
+                .lock()
+                .await
+                .as_ref()
+                .and_then(|s| s.tree.as_ref().map(|t| t.share_name.clone()))
+                .ok_or("no share connected")?;
+            let mut client = SmbClient::connect(params.to_config()).await.map_err(err_str)?;
+            let tree = client.connect_share(&share).await.map_err(err_str)?;
+            (SmbSession { client, tree: Some(tree) }, false)
+        }
+    };
+    ensure_pooled_tree(&mut sess).await;
+
+    let result: Result<Vec<u8>, String> = async {
+        let tree = sess.tree.as_ref().ok_or("no share connected")?;
+        let reader = sess.client.open_file_reader(tree, &path).await.map_err(err_str)?;
+        let data = reader.read_at(0, max_len).await.map_err(err_str)?;
+        // 显式关闭句柄释放服务端资源（直接 drop 会泄漏句柄）
+        let _ = reader.close().await;
+        Ok(data)
+    }
+    .await;
+
+    // 读完才归还，保证独占
+    if from_pool {
+        POOL.lock().await.push(sess);
+    }
+    drop(permit);
+    result
 }
 
 /// 远端文件大小（扫描时判断是否有变化，避免重复下载）

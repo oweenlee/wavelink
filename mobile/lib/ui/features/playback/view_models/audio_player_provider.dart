@@ -271,6 +271,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
       return;
     }
 
+    // 回写实际可播路径：持久化的 song.path 可能因 iOS 数据容器路径
+    // 变更而失效，后续分析/封面提取/锁屏元数据都依赖它
+    song.path = resolvedPath;
+
     // 探测文件采样率（轻量头部读取）：供乐器面板显示信号链，并复用于 bit-perfect 协调。
     if (_engineRepo.rustAvailable) {
       _currentFileRate = await _engineRepo.probeSampleRate(resolvedPath);
