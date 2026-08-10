@@ -449,6 +449,36 @@ Future<bool> scanSmb(String sharePath) async {
     return newSongs.length;
   }
 
+  /// 从曲库删除歌曲：移除条目并同步清理收藏；属于 App 沙盒内的
+  /// 物理文件（Imported/ 导入副本、.smb_cache/ NAS 下载缓存、
+  /// .covers/ 封面缓存、歌词文件）一并删除，不留孤儿文件。
+  /// 沙盒外文件（系统媒体库）无权删除，仅移除条目——下次
+  /// discoverSongs 扫描会重新收录，属预期行为。
+  Future<void> removeSong(Song song) async {
+    state = state.copyWith(
+      importedSongs: state.importedSongs
+          .where((s) => s.id != song.id)
+          .toList(),
+      favoriteIds: {...state.favoriteIds}..remove(song.id),
+    );
+    ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
+    _persistFavorites();
+
+    final appDir = await getApplicationDocumentsDirectory();
+    final sandboxPrefix = '${appDir.path}/';
+    for (final p in [song.path, song.coverUrl, song.lyricsPath]) {
+      if (p == null || !p.startsWith(sandboxPrefix)) continue;
+      final f = File(p);
+      if (await f.exists()) {
+        try {
+          await f.delete();
+        } catch (e) {
+          debugPrint('[Library] removeSong 清理文件失败: $p ($e)');
+        }
+      }
+    }
+  }
+
   // ── 播放列表 ──
 
   Map<String, List<String>> get playlists =>

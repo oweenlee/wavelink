@@ -328,6 +328,13 @@ class PlaybackController {
   Future<int> importFromPicker() => _library.importFromPicker();
   Future<bool> scanSubsonic() => _library.scanSubsonic();
   Future<bool> scanSmb(String sharePath) => _library.scanSmb(sharePath);
+
+  /// 从曲库删除歌曲：曲库条目/收藏/沙盒内物理文件清理 +
+  /// 播放队列同步移除。
+  Future<void> removeSong(Song song) async {
+    await _library.removeSong(song);
+    _queue.removeSongById(song.id);
+  }
   void toggleFavorite() => _library.toggleFavoriteFor(currentSong);
   void setFavorite(String songId, bool favorite) =>
       _library.setFavorite(songId, favorite);

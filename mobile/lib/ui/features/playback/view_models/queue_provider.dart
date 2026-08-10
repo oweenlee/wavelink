@@ -90,6 +90,25 @@ class QueueNotifier extends Notifier<QueueState> {
     state = state.copyWith(queue: queue, currentIndex: currentIndex);
   }
 
+  /// 按 id 移除队列中所有同 id 条目（曲库删除歌曲时同步清理）。
+  /// 移除当前曲时 currentIndex 保持指向同位置（即下一首），
+  /// 越界时夹紧到有效范围。
+  void removeSongById(String id) {
+    final queue = List<Song>.from(state.queue);
+    final before = queue.length;
+    var currentIndex = state.currentIndex;
+    for (var i = queue.length - 1; i >= 0; i--) {
+      if (queue[i].id != id) continue;
+      if (i < currentIndex) currentIndex--;
+      queue.removeAt(i);
+    }
+    if (queue.length == before) return;
+    if (currentIndex >= queue.length) {
+      currentIndex = queue.isEmpty ? 0 : queue.length - 1;
+    }
+    state = state.copyWith(queue: queue, currentIndex: currentIndex);
+  }
+
   void playSongById(Song song) {
     final idx = state.queue.indexWhere((s) => s.id == song.id);
     if (idx >= 0) {

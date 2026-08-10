@@ -1146,12 +1146,49 @@ void _showContextMenu(
             icon: LucideIcons.trash2,
             label: l10n.deleteFromLibrary,
             isDestructive: true,
-            onTap: () => Navigator.pop(ctx),
+            onTap: () {
+              Navigator.pop(ctx);
+              _confirmDelete(context, song, player);
+            },
           ),
         ],
       ),
     ),
   );
+}
+
+/// 删除确认对话框：确认后从曲库/收藏/队列移除，
+/// 并清理沙盒内物理文件（导入副本/下载缓存/封面）。
+Future<void> _confirmDelete(
+  BuildContext context,
+  Song song,
+  PlaybackController player,
+) async {
+  final l10n = AppLocalizations.of(context);
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppTheme.surfaceDark,
+      title: Text(l10n.deleteConfirmTitle),
+      content: Text(l10n.deleteConfirmBody(song.title)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text(l10n.cancel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text(
+            l10n.delete,
+            style: const TextStyle(color: AppTheme.danger),
+          ),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) {
+    await player.removeSong(song);
+  }
 }
 
 class _MenuItem extends StatelessWidget {
