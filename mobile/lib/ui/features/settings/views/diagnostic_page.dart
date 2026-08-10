@@ -19,11 +19,55 @@ class _DiagnosticPageState extends State<DiagnosticPage> {
   int _underrun = 0;
   int _prevUnderun = 0;
   int _underrunDelta = 0;
+  String _logSize = '-';
 
   @override
   void initState() {
     super.initState();
     _refresh();
+    _loadLogSize();
+  }
+
+  /// 日志落盘占用（与引擎状态无关，单独加载）
+  Future<void> _loadLogSize() async {
+    final bytes = await Log.totalBytes();
+    if (!mounted) return;
+    setState(() => _logSize = _fmtBytes(bytes));
+  }
+
+  static String _fmtBytes(int n) {
+    if (n < 1024) return '$n B';
+    if (n < 1024 * 1024) return '${(n / 1024).toStringAsFixed(1)} KB';
+    return '${(n / 1024 / 1024).toStringAsFixed(2)} MB';
+  }
+
+  Future<void> _confirmClearLogs() async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceDark,
+        title: Text(l10n.clear),
+        content: Text(l10n.logClearConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              l10n.clear,
+              style: const TextStyle(color: AppTheme.danger),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await Log.clear();
+      _loadLogSize();
+    }
   }
 
   Future<void> _refresh() async {
@@ -71,6 +115,28 @@ class _DiagnosticPageState extends State<DiagnosticPage> {
               l10n.diagnosticRecentUnderrun,
               '$_underrunDelta (500ms)',
               color: _underrunDelta > 0 ? AppTheme.danger : AppTheme.success,
+            ),
+            _card(l10n.logSize, _logSize),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                style: TextButton.styleFrom(
+                  backgroundColor: AppTheme.surfaceDark,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: _confirmClearLogs,
+                child: Text(
+                  l10n.clear,
+                  style: const TextStyle(
+                    color: AppTheme.danger,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             ),
             const SizedBox(height: 20),
             Text(

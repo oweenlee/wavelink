@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'data/services/library_cache_service.dart';
+import 'data/services/log.dart';
 import 'data/services/rust_service.dart';
 import 'data/services/preferences_service.dart';
 import 'data/services/subsonic_service.dart';
@@ -12,6 +13,10 @@ import 'ui/core/widgets/brand_splash.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 分级日志落盘（ring buffer，诊断页可查看/清空）。
+  // 尽早初始化，把启动阶段的日志也捕获下来。
+  await Log.init();
 
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,

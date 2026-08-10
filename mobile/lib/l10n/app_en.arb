@@ -152,6 +152,8 @@
   "diagnosticTotalUnderrun": "Total Underruns",
   "diagnosticRecentUnderrun": "Recent Underruns",
   "diagnosticHint": "If underruns keep increasing, try closing background apps or switching output device.",
+  "logSize": "Log Size",
+  "logClearConfirm": "This cannot be undone. Clear all local logs?",
 
   "pickFiles": "Pick Files",
   "pickFilesHint": "Choose audio files (FLAC, WAV, DSD, APE, CUE...) from device storage",
