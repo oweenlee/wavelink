@@ -140,19 +140,21 @@ class LibraryNotifier extends Notifier<LibraryState> {
 
   /// App 启动时恢复上次持久化的曲库（在系统扫描前调用，
   /// 后续 discoverSongs 增量合并不丢失这些歌曲）。
-  /// 启动时清洗失效绝对路径：iOS 重装/更新后数据容器路径会变，
-  /// 持久化的 path/coverUrl 指向旧容器，不清洗会导致封面永不恢复、
-  /// 分析/封面提取报 No such file。
+  /// 持久化已改为相对路径（LibraryCacheService），容器变更不再影响；
+  /// 此处存在性清洗仅兑底：缓存被系统清理、存量旧绝对路径数据。
   void restoreCachedSongs(List<Song> songs) {
     if (songs.isEmpty) return;
     for (final s in songs) {
-      // 封面文件已不存在（容器变更/缓存被清）→ 置空走下方补提取
+      // 封面文件已不存在（缓存被清/存量旧数据）→ 置空走下方补提取
       if (s.coverUrl != null && !File(s.coverUrl!).existsSync()) {
         s.coverUrl = null;
       }
       // 本地文件已不存在：SMB 歌置空 path 回到按需下载模式；
-      // 其他来源无法自恢复，同样置空避免后续拿着死路径去解析
-      if (s.path != null && !File(s.path!).existsSync()) {
+      // 其他来源无法自恢复，同样置空避免后续拿着死路径去解析。
+      // URL 型路径（ipod-library:// 等）不做存在性检查
+      if (s.path != null &&
+          !s.path!.contains('://') &&
+          !File(s.path!).existsSync()) {
         s.path = null;
       }
     }
