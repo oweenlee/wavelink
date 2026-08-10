@@ -117,15 +117,18 @@ class _SplashGateState extends State<SplashGate>
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        widget.child,
-        if (_showSplash)
-          FadeTransition(
-            opacity: Tween<double>(begin: 1, end: 0).animate(_fade),
-            child: const BrandSplash(),
-          ),
-      ],
+    return ColoredBox(
+      color: const Color(0xFF0A0A0A),
+      child: Stack(
+        children: [
+          widget.child,
+          if (_showSplash)
+            FadeTransition(
+              opacity: Tween<double>(begin: 1, end: 0).animate(_fade),
+              child: const BrandSplash(),
+            ),
+        ],
+      ),
     );
   }
 }

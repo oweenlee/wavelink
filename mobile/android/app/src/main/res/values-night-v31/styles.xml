@@ -8,6 +8,8 @@
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <item name="android:windowSplashScreenBackground">#0A0A0A</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/android12splash</item>
+        <!-- 与浅色 v31 一致：系统 SplashScreen 退出动画期间窗口背景透出，显式设为启动屏同色 -->
+        <item name="android:windowBackground">#0A0A0A</item>
     </style>
     <!-- Theme applied to the Android Window as soon as the process has started.
          This theme determines the color of the Android Window while your
@@ -16,6 +18,7 @@
          
          This Theme is only used starting with V2 of Flutter's Android embedding. -->
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
-        <item name="android:windowBackground">?android:colorBackground</item>
+        <!-- 与启动屏/品牌动效主色一致，避免 Flutter 首帧前的灰/白闪屏 -->
+        <item name="android:windowBackground">#0A0A0A</item>
     </style>
 </resources>
