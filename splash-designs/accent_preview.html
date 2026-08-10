@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=375, initial-scale=1">
+<title>WaveLink 强调色 / 播放按钮方案</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,'SF Pro Display','Helvetica Neue',sans-serif; background:#0a0a0a; color:#f0f1f3; display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+
+  /* ── 控制条 ── */
+  .ctrl { background:#000; border-bottom:1px solid rgba(255,255,255,.08); padding:8px 10px; flex-shrink:0; }
+  .ctrl-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .ctrl-row + .ctrl-row { margin-top:6px; }
+  .ctrl-label { font-size:9px; color:#5c6166; letter-spacing:1px; font-weight:700; width:46px; flex-shrink:0; }
+  .pick { font-size:10.5px; padding:4px 9px; border-radius:12px; cursor:pointer; border:1px solid rgba(255,255,255,.12); background:transparent; color:#9a9fa6; transition:all .15s; font-weight:500; white-space:nowrap; }
+  .pick:hover { border-color:rgba(255,255,255,.28); color:#f0f1f3; }
+  .pick.on { color:#fff; border-color:rgba(255,255,255,.5); background:rgba(255,255,255,.1); }
+  .note { font-size:10px; color:#5c6166; margin-top:6px; line-height:1.5; }
+
+  /* ── tabs ── */
+  .tabs { display:flex; background:#0e1011; border-bottom:1px solid rgba(255,255,255,.06); flex-shrink:0; }
+  .tab { flex:1; text-align:center; padding:11px 0 9px; font-size:12px; font-weight:600; cursor:pointer; color:#5c6166; position:relative; }
+  .tab.active { color:var(--accent); }
+  .tab.active::after { content:''; position:absolute; bottom:0; left:50%; transform:translateX(-50%); width:22px; height:2px; border-radius:1px; background:var(--accent); }
+
+  /* ── 列表 ── */
+  .list { flex:1; overflow-y:auto; padding:0 16px; }
+  .row { display:flex; align-items:center; padding:10px 0; gap:12px; border-bottom:1px solid rgba(255,255,255,.04); }
+  .row.playing { background:rgba(255,255,255,.035); border-radius:10px; margin:2px -8px; padding:10px 8px; border-bottom-color:transparent; }
+  .cover { width:44px; height:44px; border-radius:9px; background:#16191b; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:10px; color:#5c6166; overflow:hidden; }
+  .info { flex:1; min-width:0; }
+  .title { font-size:14.5px; font-weight:500; color:#f0f1f3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .title.accent { color:var(--accent); }
+  .sub { font-size:11.5px; color:#9a9fa6; margin-top:2px; }
+  .tag { font-size:9.5px; font-weight:600; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,.06); color:#9a9fa6; flex-shrink:0; }
+
+  /* 有封面模式：给 cover 上真实彩色渐变 */
+  body.withcover .cover { font-size:0; }
+  body.withcover .cover.c1 { background:linear-gradient(135deg,#8B4A3B,#2E1810); }
+  body.withcover .cover.c2 { background:linear-gradient(135deg,#3A5A78,#141E28); }
+  body.withcover .cover.c3 { background:linear-gradient(135deg,#6B5B3E,#231C10); }
+  body.withcover .cover.c4 { background:linear-gradient(135deg,#4A6B52,#16241A); }
+  body.withcover .cover.c5 { background:linear-gradient(135deg,#6B3E5B,#241020); }
+  body.withcover .cover.c6 { background:linear-gradient(160deg,#B8704A,#3A1E0E); }
+  body.withcover .cover.c7 { background:linear-gradient(135deg,#4E4A6B,#181624); }
+  body.withcover .cover.c8 { background:linear-gradient(135deg,#7A5540,#2A1A12); }
+  body.withcover .mini-cover { background:linear-gradient(160deg,#B8704A,#3A1E0E); }
+  body.withcover .mini-cover svg { display:none; }
+  /* 有封面时 accent 跟随当前曲封面主色（模拟 AccentScope） */
+  body.withcover { --accent: #D98A5F; }
+
+  /* ── mini player ── */
+  .mini { background:#0e1011; border-top:1px solid rgba(255,255,255,.08); padding:10px 16px 18px; display:flex; align-items:center; gap:12px; flex-shrink:0; }
+  .mini-cover { width:40px; height:40px; border-radius:8px; background:#16191b; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+  .mini-info { flex:1; min-width:0; }
+  .mini-title { font-size:13.5px; font-weight:600; color:var(--accent); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mini-sub { font-size:11px; color:#9a9fa6; margin-top:1px; }
+  .skip { width:34px; height:34px; display:flex; align-items:center; justify-content:center; cursor:pointer; opacity:.45; flex-shrink:0; }
+  .skip svg { width:17px; height:17px; fill:#f0f1f3; }
+
+  /* ── 播放按钮：形态方案 ── */
+  .play-btn { width:46px; height:46px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:transform .1s,background .2s,border-color .2s;
+              background:var(--accent); border:none; }
+  .play-btn:active { transform:scale(.94); }
+  .play-btn svg { width:19px; height:19px; margin-left:2px; fill:var(--btn-icon,#fff); }
+
+  /* 形态 2：半透明填充 + 细描边 */
+  body.form-soft .play-btn { background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.22); }
+  body.form-soft .play-btn svg { fill:var(--accent); }
+  /* 形态 3：纯描边 */
+  body.form-outline .play-btn { background:transparent; border:1.5px solid var(--accent); }
+  body.form-outline .play-btn svg { fill:var(--accent); }
+  /* 形态 4：小实心（缩到 40，降低视觉重量） */
+  body.form-small .play-btn { width:40px; height:40px; }
+  body.form-small .play-btn svg { width:17px; height:17px; }
+
+  /* ── nav ── */
+  .nav { background:#0e1011; display:flex; padding:6px 0 8px; border-top:1px solid rgba(255,255,255,.06); flex-shrink:0; }
+  .nav-item { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; padding:4px 0; cursor:pointer; }
+  .nav-icon { width:21px; height:21px; opacity:.35; color:#f0f1f3; }
+  .nav-item.active .nav-icon { opacity:1; color:var(--accent); }
+  .nav-label { font-size:9.5px; color:#5c6166; }
+  .nav-item.active .nav-label { color:var(--accent); font-weight:600; }
+
+  /* ── 色相方案 ── */
+  :root { --accent:#E8553F; }
+  body.sc-white   { --accent:#F0F1F3; }
+  body.sc-cool    { --accent:#C8CBD0; }
+  body.sc-warm    { --accent:#E0D5C6; }
+  body.sc-taupe   { --accent:#BFB0A0; }
+  body.sc-dim     { --accent:#8E9399; }
+  /* 有封面时强制覆盖为封面主色（模拟真实行为） */
+  body.withcover.sc-white, body.withcover.sc-cool, body.withcover.sc-warm,
+  body.withcover.sc-taupe, body.withcover.sc-dim, body.withcover { --accent:#D98A5F; }
+</style>
+<body>
+
+<div class="ctrl">
+  <div class="ctrl-row">
+    <span class="ctrl-label">色相</span>
+    <div class="pick on" data-g="sc" data-v="">A 橙红(现)</div>
+    <div class="pick" data-g="sc" data-v="sc-white">B 纯白</div>
+    <div class="pick" data-g="sc" data-v="sc-cool">C 冷灰</div>
+    <div class="pick" data-g="sc" data-v="sc-warm">D 暖米</div>
+    <div class="pick" data-g="sc" data-v="sc-taupe">E 灰褐</div>
+    <div class="pick" data-g="sc" data-v="sc-dim">F 压暗灰</div>
+  </div>
+  <div class="ctrl-row">
+    <span class="ctrl-label">按钮</span>
+    <div class="pick on" data-g="form" data-v="">1 实心</div>
+    <div class="pick" data-g="form" data-v="form-soft">2 半透+描边</div>
+    <div class="pick" data-g="form" data-v="form-outline">3 纯描边</div>
+    <div class="pick" data-g="form" data-v="form-small">4 小实心</div>
+  </div>
+  <div class="ctrl-row">
+    <span class="ctrl-label">封面</span>
+    <div class="pick on" data-g="cover" data-v="">无封面(现状)</div>
+    <div class="pick" data-g="cover" data-v="withcover">有封面(设计意图)</div>
+  </div>
+  <div class="note" id="note">当前 = 你截图里的状态。封面全灰 → 全部走 fallback 橙红。</div>
+</div>
+
+<div class="tabs">
+  <div class="tab active">歌曲</div><div class="tab">专辑</div><div class="tab">艺术家</div><div class="tab">播放列表</div>
+</div>
+
+<div class="list">
+  <div class="row"><div class="cover c1">05</div><div class="info"><div class="title">世界が終るまでは…</div><div class="sub">WANDS</div></div><div class="tag">FLAC</div></div>
+  <div class="row"><div class="cover c2">06</div><div class="info"><div class="title">李荣浩 - 恋人</div><div class="sub">李荣浩</div></div><div class="tag">AAC</div></div>
+  <div class="row"><div class="cover c3">07</div><div class="info"><div class="title">爱情三十六计</div><div class="sub">蔡依林</div></div><div class="tag">MP3</div></div>
+  <div class="row"><div class="cover c4">08</div><div class="info"><div class="title">hifi_ode_to_joy</div><div class="sub">Beethoven</div></div><div class="tag">WAV</div></div>
+  <div class="row"><div class="cover c5">09</div><div class="info"><div class="title">《起风了》原曲</div><div class="sub">高橋優</div></div><div class="tag">OPUS</div></div>
+  <div class="row playing"><div class="cover c6"><svg viewBox="0 0 24 24" width="17" height="17" fill="var(--accent)"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></div><div class="info"><div class="title accent">渡口【Hi-Res】</div><div class="sub">蔡琴</div></div><div class="tag">MP3</div></div>
+  <div class="row"><div class="cover c7">11</div><div class="info"><div class="title">恰似你的温柔</div><div class="sub">蔡琴</div></div><div class="tag">MP3</div></div>
+  <div class="row"><div class="cover c8">12</div><div class="info"><div class="title">无赖</div><div class="sub">郑中基</div></div><div class="tag">MP3</div></div>
+</div>
+
+<div class="mini">
+  <div class="mini-cover"><svg viewBox="0 0 24 24" width="19" height="19" fill="#5c6166"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg></div>
+  <div class="mini-info"><div class="mini-title">渡口【Hi-Res】</div><div class="mini-sub">蔡琴</div></div>
+  <button class="play-btn"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+  <div class="skip"><svg viewBox="0 0 24 24"><path d="M5 4l10 8-10 8V4zm12 0v16h2V4h-2z"/></svg></div>
+</div>
+
+<div class="nav">
+  <div class="nav-item active"><svg class="nav-icon" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg><span class="nav-label">曲库</span></div>
+  <div class="nav-item"><svg class="nav-icon" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/></svg><span class="nav-label">播放</span></div>
+  <div class="nav-item"><svg class="nav-icon" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span class="nav-label">设置</span></div>
+</div>
+
+<script>
+const sel = { sc:'', form:'', cover:'' };
+const notes = {
+  '':          '当前 = 你截图里的状态。封面全灰 → 全部走 fallback 橙红。',
+  'sc-white':  'B 纯白：实心时视觉重量过大，且与列表文字同色，层级坍塌。搭配「按钮2/3」可救。',
+  'sc-cool':   'C 冷灰 #C8CBD0：无色相、比正文白暗 15%，是最"安全"的 fallback。',
+  'sc-warm':   'D 暖米 #E0D5C6：几乎无色相但有纸质温度，与黑白体系不冲突。',
+  'sc-taupe':  'E 灰褐 #BFB0A0：更明显的暖度，像旧唱片封套。已接近"有色相"边界。',
+  'sc-dim':    'F 压暗灰 #8E9399：与 textSecondary 同级，最低调，但可能弱到不像可点控件。',
+};
+function apply() {
+  document.body.className = [sel.sc, sel.form, sel.cover].filter(Boolean).join(' ');
+  document.getElementById('note').textContent = sel.cover
+    ? '有封面时 accent 自动取封面主色（AccentScope），fallback 色只在无封面时出现——这才是设计意图。'
+    : (notes[sel.sc] || notes['']);
+}
+document.querySelectorAll('.pick').forEach(el => {
+  el.addEventListener('click', () => {
+    const g = el.dataset.g;
+    document.querySelectorAll(`.pick[data-g="${g}"]`).forEach(p => p.classList.remove('on'));
+    el.classList.add('on');
+    sel[g] = el.dataset.v;
+    apply();
+  });
+});
+</script>
+</body>
+</html>
