@@ -127,21 +127,24 @@ class SongTile extends StatelessWidget {
               _FormatBadge(song: song),
               const SizedBox(width: 6),
             ],
-            const SizedBox(width: 8),
             // 自定义 trailing（如收藏图标）
-            if (trailing != null) ...[trailing!, const SizedBox(width: 4)],
-            // More button
-            GestureDetector(
-              onTap: onMore,
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Icon(
-                  LucideIcons.moreHorizontal,
-                  size: 20,
-                  color: AppTheme.textTertiary,
+            if (trailing != null) ...[trailing!, const SizedBox(width: 8)],
+            // 仅当传入 onMore 时才显示「更多」按钮（三个小点）；
+            // 不传则不渲染，调用方据此控制是否在列表中暴露该菜单
+            if (onMore != null) ...[
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: onMore,
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(
+                    LucideIcons.moreHorizontal,
+                    size: 20,
+                    color: AppTheme.textTertiary,
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),

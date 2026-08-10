@@ -120,6 +120,11 @@ class _SplashGateState extends State<SplashGate>
     return ColoredBox(
       color: const Color(0xFF0A0A0A),
       child: Stack(
+        // SplashGate 位于 MaterialApp 之外（main.dart 第二段 runApp
+        // 直接包裹 WaveLinkApp），无 Directionality 祖先；
+        // 显式指定 textDirection 避免 Stack 默认
+        // AlignmentDirectional 触发 "No Directionality" 断言。
+        textDirection: TextDirection.ltr,
         children: [
           widget.child,
           if (_showSplash)

@@ -146,7 +146,6 @@ class SongListPage extends ConsumerWidget {
                   isPlaying: isPlaying && isCurrent,
                   trackNumber: i + 1,
                   onTap: () => player.playSong(song),
-                  onMore: () => _showContextMenu(ctx, song, player),
                 );
               }, childCount: songs.length),
             ),
@@ -156,94 +155,6 @@ class SongListPage extends ConsumerWidget {
     );
   }
 
-  void _showContextMenu(
-    BuildContext context,
-    Song song,
-    PlaybackController player,
-  ) {
-    final l10n = AppLocalizations.of(context);
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          color: AppTheme.surfaceDark,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        // 透明 Material：让 ListTile 的 ink 波纹有绘制祖先，
-        // 否则被 Container 背景色遮住（框架警告）
-        child: Material(
-          type: MaterialType.transparency,
-          child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(
-                LucideIcons.play,
-                color: AppTheme.textPrimary,
-              ),
-              title: Text(
-                l10n.play,
-                style: const TextStyle(color: AppTheme.textPrimary),
-              ),
-              onTap: () {
-                player.playSong(song);
-                Navigator.pop(ctx);
-              },
-            ),
-            ListTile(
-              leading: const Icon(
-                LucideIcons.skipForward,
-                color: AppTheme.textPrimary,
-              ),
-              title: Text(
-                l10n.playNext,
-                style: const TextStyle(color: AppTheme.textPrimary),
-              ),
-              onTap: () {
-                player.playNext(song);
-                Navigator.pop(ctx);
-              },
-            ),
-            ListTile(
-              leading: const Icon(
-                LucideIcons.listMusic,
-                color: AppTheme.textPrimary,
-              ),
-              title: Text(
-                l10n.addToQueue,
-                style: const TextStyle(color: AppTheme.textPrimary),
-              ),
-              onTap: () {
-                player.addToQueue(song);
-                Navigator.pop(ctx);
-              },
-            ),
-            ListTile(
-              leading: Icon(
-                player.isSongFavorite(song.id)
-                    ? LucideIcons.heart
-                    : LucideIcons.heart,
-                color: AppTheme.danger,
-              ),
-              title: Text(
-                player.isSongFavorite(song.id)
-                    ? l10n.unfavorite
-                    : l10n.favorite,
-                style: const TextStyle(color: AppTheme.textPrimary),
-              ),
-              onTap: () {
-                player.setFavorite(song.id, !player.isSongFavorite(song.id));
-                Navigator.pop(ctx);
-              },
-            ),
-          ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _RoundBtn extends StatelessWidget {

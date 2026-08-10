@@ -80,6 +80,7 @@
   "scanDir": "扫描目录",
   "scanNoPermission": "需要音乐库访问权限",
   "importPickerHint": "从设备存储中选择音频文件",
+  "importSystemMusicHint": "扫描设备音乐库以收录歌曲",
   "discoverSongs": "发现歌曲",
   "discoverSongsHint": "扫描设备音乐库（需授权媒体库访问）",
   "scanDone": "扫描完成",
