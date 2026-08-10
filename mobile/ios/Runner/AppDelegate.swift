@@ -103,6 +103,8 @@ import AVFoundation
             // 中断开始（来电/闹钟/系统提示音）：记录中断前状态，通知 Dart 暂停引擎与 UI。
             NSLog("[Audio] interruption begin, wasPlaying=%@", audio.isPlaying ? "true" : "false")
             wasPlayingBeforeInterruption = audio.isPlaying
+            // 引擎侧立即暂停（不走 Dart，中断时 Dart 可能被系统节流）
+            wavelink_session_interruption_began()
             audio.pause()
             audio.sendEvent("remote:pause")
         } else if type == AVAudioSession.InterruptionType.ended.rawValue {
@@ -119,8 +121,9 @@ import AVFoundation
             }
             if wasPlayingBeforeInterruption {
                 wasPlayingBeforeInterruption = false
-                // began 时 Dart 已走 pause（引擎暂停+门控关），此处让 Dart 走统一
-                // play 路径恢复全链路（resume 引擎+开门控+UI 状态），避免“中断后永久无声”
+                // 引擎侧恢复（与 began 对称）；随后的 remote:play 让 Dart 走统一
+                // play 路径恢复全链路（开门控+UI 状态），重复 resume 幂等无害
+                wavelink_session_interruption_ended()
                 audio.sendEvent("remote:play")
             }
             audio.refreshNowPlaying()

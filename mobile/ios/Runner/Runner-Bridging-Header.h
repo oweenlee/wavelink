@@ -15,3 +15,7 @@ void set_hw_sample_rate(unsigned int rate);
 
 // 系统运行时改变硬件采样率时，把引擎输出速率对齐到新速率（与重建 source node 配套）
 void engine_sync_output_rate(unsigned int rate);
+
+// 音频会话中断（来电/闹钟）：引擎暂停/恢复，不走 Dart（中断时可能被系统节流）
+void wavelink_session_interruption_began(void);
+void wavelink_session_interruption_ended(void);
