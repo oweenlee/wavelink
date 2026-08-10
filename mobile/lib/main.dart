@@ -8,6 +8,7 @@ import 'data/services/subsonic_service.dart';
 import 'ui/features/library/view_models/library_provider.dart';
 import 'ui/features/playback/view_models/playback_controller.dart';
 import 'ui/core/app.dart';
+import 'ui/core/widgets/brand_splash.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,7 +38,7 @@ Future<void> main() async {
   runApp(
     UncontrolledProviderScope(
       container: container,
-      child: const WaveLinkApp(),
+      child: SplashGate(child: const WaveLinkApp()),
     ),
   );
 }
