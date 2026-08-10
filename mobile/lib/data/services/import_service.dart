@@ -132,7 +132,13 @@ class ImportService {
       }
       final dest = File('${importDir.path}/$name');
       if (await dest.exists()) {
-        // 同名文件已存在（可能来自不同来源）→ 加时间戳后缀避免冲突
+        // 同名文件已存在：大小一致判定为同一文件（同一首歌重复导入），
+        // 直接复用已有副本，避免产生重复曲目；大小不同（来自不同
+        // 来源的同名文件）才加时间戳后缀保留两份。
+        if (await dest.length() == await file.length()) {
+          files.add(dest);
+          continue;
+        }
         final base = name.replaceAll(RegExp(r'\.[^.]+$'), '');
         final ts = DateTime.now().millisecondsSinceEpoch;
         final uniqueName = '${base}_$ts.$ext';
