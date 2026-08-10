@@ -101,18 +101,43 @@ class PreferencesService {
   static const _kWidener = 'dsp_widener';
   static const _kLimiter = 'dsp_limiter';
   static const _kDither = 'dsp_dither';
+  static const _kNoiseShaping = 'dsp_noise_shaping';
 
   bool get dspEnabled => _prefs.getBool(_kDspEnabled) ?? false;
   bool get dspCrossfeed => _prefs.getBool(_kCrossfeed) ?? false;
   bool get dspWidener => _prefs.getBool(_kWidener) ?? false;
   bool get dspLimiter => _prefs.getBool(_kLimiter) ?? false;
   bool get dspDither => _prefs.getBool(_kDither) ?? false;
+  bool get dspNoiseShaping => _prefs.getBool(_kNoiseShaping) ?? false;
 
   Future<void> setDspEnabled(bool v) => _prefs.setBool(_kDspEnabled, v);
   Future<void> setDspCrossfeed(bool v) => _prefs.setBool(_kCrossfeed, v);
   Future<void> setDspWidener(bool v) => _prefs.setBool(_kWidener, v);
   Future<void> setDspLimiter(bool v) => _prefs.setBool(_kLimiter, v);
   Future<void> setDspDither(bool v) => _prefs.setBool(_kDither, v);
+  Future<void> setDspNoiseShaping(bool v) =>
+      _prefs.setBool(_kNoiseShaping, v);
+
+  // ── AutoEQ 耳机校正（型号名；null = 关闭）──
+  static const _kAutoEqModel = 'auto_eq_model';
+  String? get autoEqModel => _prefs.getString(_kAutoEqModel);
+  Future<void> setAutoEqModel(String? model) => model == null
+      ? _prefs.remove(_kAutoEqModel)
+      : _prefs.setString(_kAutoEqModel, model);
+
+  // ── 参量 EQ（预设名 + 各频段增益；预设名为空表示手动曲线）──
+  static const _kEqPreset = 'eq_preset';
+  static const _kEqGains = 'eq_gains';
+  String get eqPreset => _prefs.getString(_kEqPreset) ?? '';
+  List<double> get eqGains =>
+      (_prefs.getStringList(_kEqGains) ?? const <String>[]).map(double.parse).toList();
+  Future<void> setEqState({required String preset, required List<double> gains}) async {
+    await _prefs.setString(_kEqPreset, preset);
+    await _prefs.setStringList(
+      _kEqGains,
+      gains.map((g) => g.toString()).toList(),
+    );
+  }
 
   // ── ReplayGain ──
   static const _kReplayGain = 'replay_gain';

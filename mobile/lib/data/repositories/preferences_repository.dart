@@ -28,6 +28,7 @@ class PreferencesRepository {
   bool get dspWidener => PreferencesService.instance.dspWidener;
   bool get dspLimiter => PreferencesService.instance.dspLimiter;
   bool get dspDither => PreferencesService.instance.dspDither;
+  bool get dspNoiseShaping => PreferencesService.instance.dspNoiseShaping;
 
   Future<void> setDspEnabled(bool v) =>
       PreferencesService.instance.setDspEnabled(v);
@@ -39,6 +40,19 @@ class PreferencesRepository {
       PreferencesService.instance.setDspLimiter(v);
   Future<void> setDspDither(bool v) =>
       PreferencesService.instance.setDspDither(v);
+  Future<void> setDspNoiseShaping(bool v) =>
+      PreferencesService.instance.setDspNoiseShaping(v);
+
+  // ── AutoEQ / 参量 EQ ──
+
+  String? get autoEqModel => PreferencesService.instance.autoEqModel;
+  Future<void> setAutoEqModel(String? model) =>
+      PreferencesService.instance.setAutoEqModel(model);
+
+  String get eqPreset => PreferencesService.instance.eqPreset;
+  List<double> get eqGains => PreferencesService.instance.eqGains;
+  Future<void> setEqState({required String preset, required List<double> gains}) =>
+      PreferencesService.instance.setEqState(preset: preset, gains: gains);
 
   // ── 收藏 ──
 

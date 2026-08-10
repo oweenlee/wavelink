@@ -36,6 +36,10 @@
   "stereoWidening": "Stereo Widening",
   "truePeakLimiter": "True Peak Limiter",
   "tpdfDither": "TPDF Dither",
+  "noiseShaping": "Noise Shaping",
+  "autoEq": "Headphone EQ (AutoEQ)",
+  "autoEqOff": "Off",
+  "autoEqHint": "Correct headphone response with oratory1990 measurements",
 
   "libSongs": "Songs",
   "libAlbums": "Albums",

@@ -98,6 +98,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
   /// 需走完整装载流程再 seek——断点续播恢复场景依赖此判定。
   bool _engineLoaded = false;
 
+  /// 当前曲目已解析的本地可播路径（ReplayGain 运行中切换开关时重读标签用）
+  String? _lastResolvedPath;
+
   /// 断点续播兜底节流：距上次持久化超过 5s 才写一次（避免每 250ms tick 刷盘）
   int _lastResumeSave = 0;
 
@@ -299,6 +302,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
     if (_engineRepo.rustAvailable) {
       debugPrint('[Audio] engine play: $resolvedPath');
+      _lastResolvedPath = resolvedPath;
+      await _applyReplayGain(resolvedPath);
       await _engineRepo.play(resolvedPath);
     } else {
       debugPrint(
@@ -321,6 +326,39 @@ class PlayerNotifier extends Notifier<PlayerState> {
         _seekToPosition(initialSeekMs);
       }
     }
+  }
+
+  /// 按曲目标签应用 ReplayGain 响度归一化（切歌时逐首调用）。
+  /// 开关关闭或无标签：增益置 0、峰值清除（引擎行为回到原始响度）。
+  /// track 标签优先，其次 album（与桌面端一致）。
+  Future<void> _applyReplayGain(String path) async {
+    final enabled = ref.read(preferencesRepositoryProvider).replayGain;
+    try {
+      if (!enabled) {
+        await _engineRepo.setReplaygainGain(0);
+        await _engineRepo.setReplaygainPeak(null);
+        return;
+      }
+      final rg = await _engineRepo.readReplaygain(path);
+      final gain = rg.trackGainDb ?? rg.albumGainDb ?? 0.0;
+      final peak = rg.trackPeak ?? rg.albumPeak;
+      await _engineRepo.setReplaygainGain(gain);
+      await _engineRepo.setReplaygainPeak(peak);
+    } catch (e) {
+      // 无标签/读取失败/引擎未就绪：回落原始响度，不阻塞播放
+      debugPrint('[Audio] ReplayGain 应用失败，回落原始响度: $e');
+      try {
+        await _engineRepo.setReplaygainGain(0);
+        await _engineRepo.setReplaygainPeak(null);
+      } catch (_) {}
+    }
+  }
+
+  /// 播放中切换 ReplayGain 开关：对当前曲目立即重新应用。
+  void applyReplayGainNow() {
+    final path = _lastResolvedPath;
+    if (path == null || !_engineRepo.rustAvailable) return;
+    _applyReplayGain(path);
   }
 
   void pause() {

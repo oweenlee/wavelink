@@ -26,8 +26,16 @@ class PlaybackController {
   /// （Riverpod 禁止在 provider 初始化期间修改其它 provider）。
   void bootstrap() {
     _loadPreferences();
-    _player.init();
+    unawaited(_initEngine());
     unawaited(_bootstrapLibrary());
+  }
+
+  /// 引擎初始化完成后再下发已持久化的 DSP/EQ 状态。
+  /// 顺序不能换：init 前引擎不存在，applyDsp 是空操作，重启后设置全丢。
+  Future<void> _initEngine() async {
+    await _player.init();
+    await _dsp.applyDsp();
+    await _dsp.applyEqToEngine();
   }
 
   /// 曲库就绪编排：以缓存曲库初始化队列并尝试恢复断点。
@@ -130,8 +138,7 @@ class PlaybackController {
       ),
     );
     _dsp.loadDspPrefs();
-    // 引擎初始化后应用已持久化的 DSP 状态（含总开关与 limiter/dither）
-    _dsp.applyDsp();
+    // 注：持久化 DSP/EQ 状态的下发在 _initEngine（引擎就绪后）执行
     _library.loadFavoritesPrefs();
   }
 
@@ -182,7 +189,11 @@ class PlaybackController {
   double get coverBlur => _prefsRepo.coverBlur;
   bool get bitPerfect => _prefsRepo.bitPerfect;
 
-  void setReplayGain(bool v) => _prefsRepo.setReplayGain(v);
+  void setReplayGain(bool v) {
+    _prefsRepo.setReplayGain(v);
+    // 对当前曲目立即生效（切歌时也会按偏好逐首应用）
+    _player.applyReplayGainNow();
+  }
   void setDynamicColor(bool v) => _prefsRepo.setDynamicColor(v);
   void setCoverBlur(double v) => _prefsRepo.setCoverBlur(v);
   void setBitPerfect(bool v) {
@@ -298,6 +309,12 @@ class PlaybackController {
   void toggleWidener() => _dsp.toggleWidener();
   void toggleLimiter() => _dsp.toggleLimiter();
   void toggleDither() => _dsp.toggleDither();
+  void toggleNoiseShaping() => _dsp.toggleNoiseShaping();
+
+  // ── AutoEQ ──
+  String? get autoEqModel => _ref.read(dspProvider).autoEqModel;
+  void setAutoEq(String? model) => _dsp.setAutoEq(model);
+  Future<List<String>> getAutoEqCatalog() => _dsp.getAutoEqCatalog();
 
   // ── EQ ──
   List<double> get eqValues => _ref.read(dspProvider).eqValues;

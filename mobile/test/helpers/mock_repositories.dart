@@ -25,6 +25,8 @@ class MockAudioEngineRepository extends AudioEngineRepository {
   @override
   Future<void> initEngine() async {}
   @override
+  Future<void> initEngineAt(int sampleRate) async {}
+  @override
   Future<void> deinitEngine() async {}
 
   @override
@@ -51,6 +53,9 @@ class MockAudioEngineRepository extends AudioEngineRepository {
   Future<int> probeSampleRate(String path) async => 44100;
 
   @override
+  Future<double> probeDurationSecs(String path) async => 100.0;
+
+  @override
   Future<void> setVolume(double vol) async {
     volumeCalls.add(vol);
   }
@@ -58,9 +63,34 @@ class MockAudioEngineRepository extends AudioEngineRepository {
   @override
   Future<void> applyPreset(String name) async {}
   @override
+  Future<void> setPeqBand(int index, double freq, double gainDb, double q) async {}
+  @override
   Future<void> setCrossfeed(bool enabled) async {}
   @override
   Future<void> setStereoWidener(bool enabled, double width) async {}
+  @override
+  Future<void> setLimiter(bool enabled) async {}
+  @override
+  Future<void> setDither(bool enabled) async {}
+  @override
+  Future<void> setNoiseShaping(bool enabled) async {}
+  @override
+  Future<void> setAutoEq(String? model) async {}
+  @override
+  Future<List<String>> autoEqCatalog() async => const [];
+
+  @override
+  Future<void> setReplaygainGain(double gainDb) async {}
+  @override
+  Future<void> setReplaygainPeak(double? peak) async {}
+  @override
+  Future<rs.ReplayGainResult> readReplaygain(String path) async =>
+      const rs.ReplayGainResult();
+
+  @override
+  Future<void> sessionInterruptionBegan() async {}
+  @override
+  Future<void> sessionInterruptionEnded() async {}
 
   @override
   Future<String?> pollEvents() async => nextEvent;

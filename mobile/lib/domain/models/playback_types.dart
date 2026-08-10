@@ -19,6 +19,7 @@ class DspSettings {
   final bool widener;
   final bool limiter;
   final bool dither;
+  final bool noiseShaping;
   final EqPresetKind preset;
 
   const DspSettings({
@@ -27,6 +28,7 @@ class DspSettings {
     this.widener = false,
     this.limiter = false,
     this.dither = false,
+    this.noiseShaping = false,
     this.preset = EqPresetKind.flat,
   });
 
@@ -36,6 +38,7 @@ class DspSettings {
     bool? widener,
     bool? limiter,
     bool? dither,
+    bool? noiseShaping,
     EqPresetKind? preset,
   }) => DspSettings(
     enabled: enabled ?? this.enabled,
@@ -43,6 +46,7 @@ class DspSettings {
     widener: widener ?? this.widener,
     limiter: limiter ?? this.limiter,
     dither: dither ?? this.dither,
+    noiseShaping: noiseShaping ?? this.noiseShaping,
     preset: preset ?? this.preset,
   );
 }

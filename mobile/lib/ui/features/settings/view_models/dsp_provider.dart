@@ -8,10 +8,14 @@ class DspState {
   final List<double> eqValues;
   final String eqPreset;
 
+  /// AutoEQ 耳机校正型号（null = 关闭）
+  final String? autoEqModel;
+
   DspState({
     DspSettings? dspSettings,
     List<double>? eqValues,
     this.eqPreset = 'Flat',
+    this.autoEqModel,
   }) : dspSettings = dspSettings ?? DspSettings(),
        eqValues = eqValues ?? List.filled(10, 0.0);
 
@@ -19,13 +23,19 @@ class DspState {
     DspSettings? dspSettings,
     List<double>? eqValues,
     String? eqPreset,
+    Object? autoEqModel = _sentinel,
   }) {
     return DspState(
       dspSettings: dspSettings ?? this.dspSettings,
       eqValues: eqValues ?? this.eqValues,
       eqPreset: eqPreset ?? this.eqPreset,
+      autoEqModel: identical(autoEqModel, _sentinel)
+          ? this.autoEqModel
+          : autoEqModel as String?,
     );
   }
+
+  static const Object _sentinel = Object();
 }
 
 class DspNotifier extends Notifier<DspState> {
@@ -77,18 +87,56 @@ class DspNotifier extends Notifier<DspState> {
     applyDsp();
   }
 
+  void toggleNoiseShaping() {
+    final s = state.dspSettings.copyWith(
+      noiseShaping: !state.dspSettings.noiseShaping,
+    );
+    state = state.copyWith(dspSettings: s);
+    ref
+        .read(preferencesRepositoryProvider)
+        .setDspNoiseShaping(s.noiseShaping);
+    applyDsp();
+  }
+
+  // ── AutoEQ 耳机校正 ──
+
+  /// 档案目录（型号名列表，设置页选择用）
+  Future<List<String>> getAutoEqCatalog() async {
+    final engineRepo = ref.read(audioEngineRepositoryProvider);
+    if (!engineRepo.rustAvailable) return const [];
+    try {
+      return await engineRepo.autoEqCatalog();
+    } catch (e) {
+      debugPrint('[AutoEQ] 获取目录失败: $e');
+      return const [];
+    }
+  }
+
+  /// 应用/清除耳机校正档案（null = 关闭）：持久化 + 下发引擎
+  void setAutoEq(String? model) {
+    state = state.copyWith(autoEqModel: model);
+    ref.read(preferencesRepositoryProvider).setAutoEqModel(model);
+    applyDsp();
+  }
+
   /// 把当前 DSP 设置同步到引擎。
   /// enabled 为总开关：关闭时全部子开关置 false，打开时恢复各子开关状态。
+  /// AutoEQ 独立于总开关（耳机校正不属于“音效渲染”范畴）。
   Future<void> applyDsp() async {
     final engineRepo = ref.read(audioEngineRepositoryProvider);
     if (!engineRepo.rustAvailable) return;
     final dsp = state.dspSettings;
     final on = dsp.enabled;
+    // async gap 后 provider 可能已 disposed，先取快照避免访问 ref/state
+    final autoEq = state.autoEqModel;
     try {
       await engineRepo.setCrossfeed(on && dsp.crossfeed);
       await engineRepo.setStereoWidener(on && dsp.widener, 0.5);
       await engineRepo.setLimiter(on && dsp.limiter);
       await engineRepo.setDither(on && dsp.dither);
+      // 噪声整形仅在 dither 生效时有意义，随 dither 门控
+      await engineRepo.setNoiseShaping(on && dsp.noiseShaping);
+      await engineRepo.setAutoEq(autoEq);
     } catch (e) {
       debugPrint('[DSP] 应用设置失败: $e');
     }
@@ -96,6 +144,12 @@ class DspNotifier extends Notifier<DspState> {
 
   void loadDspPrefs() {
     final prefs = ref.read(preferencesRepositoryProvider);
+    final eqGains = prefs.eqGains;
+    final eqPreset = prefs.eqPreset;
+    // 从未保存过 EQ（无预设且无手动曲线）：保持默认 Flat 高亮
+    final hasSavedEq =
+        eqPreset.isNotEmpty ||
+        (eqGains.length == 10 && eqGains.any((g) => g != 0.0));
     state = state.copyWith(
       dspSettings: DspSettings(
         enabled: prefs.dspEnabled,
@@ -103,8 +157,37 @@ class DspNotifier extends Notifier<DspState> {
         widener: prefs.dspWidener,
         limiter: prefs.dspLimiter,
         dither: prefs.dspDither,
+        noiseShaping: prefs.dspNoiseShaping,
       ),
+      autoEqModel: prefs.autoEqModel,
+      eqPreset: hasSavedEq ? eqPreset : null,
+      eqValues: hasSavedEq && eqGains.length == 10 ? eqGains : null,
     );
+  }
+
+  /// 把持久化的 EQ 曲线下发到引擎（启动时引擎初始化完成后调用；
+  /// 预设走 applyPreset 保证与 audio-core 单一事实来源一致，
+  /// 手动曲线逐频段下发）。
+  Future<void> applyEqToEngine() async {
+    final engineRepo = ref.read(audioEngineRepositoryProvider);
+    if (!engineRepo.rustAvailable) return;
+    // async gap 后 provider 可能已 disposed，先取快照避免访问 ref/state
+    final preset = state.eqPreset;
+    final gains = state.eqValues;
+    try {
+      final rustName = _rustPresetNames[preset];
+      if (rustName != null) {
+        await engineRepo.applyPreset(rustName);
+        return;
+      }
+      // 非预设（手动曲线或从未保存）：全零时无需下发
+      if (gains.every((g) => g == 0.0)) return;
+      for (var i = 0; i < gains.length && i < eqFrequencies.length; i++) {
+        await engineRepo.setPeqBand(i, eqFrequencies[i], gains[i], eqDefaultQ);
+      }
+    } catch (e) {
+      debugPrint('[EQ] 启动恢复 EQ 失败: $e');
+    }
   }
 
   // ── 10 段参量 EQ ──
@@ -146,11 +229,14 @@ class DspNotifier extends Notifier<DspState> {
     'Vocals': 'vocals',
   };
 
-  /// 应用 EQ 预设：更新本地曲线并下发引擎。
+  /// 应用 EQ 预设：更新本地曲线、持久化并下发引擎。
   Future<void> applyEqPreset(String name) async {
     final gains = eqPresets[name];
     if (gains == null) return;
     state = state.copyWith(eqPreset: name, eqValues: List.from(gains));
+    ref
+        .read(preferencesRepositoryProvider)
+        .setEqState(preset: name, gains: gains);
     final engineRepo = ref.read(audioEngineRepositoryProvider);
     if (!engineRepo.rustAvailable) return;
     try {
@@ -160,13 +246,16 @@ class DspNotifier extends Notifier<DspState> {
     }
   }
 
-  /// 手动调整单个频段增益：更新本地曲线并下发引擎，取消预设高亮。
+  /// 手动调整单个频段增益：更新本地曲线、持久化并下发引擎，取消预设高亮。
   Future<void> setEqBand(int index, double gainDb) async {
     if (index < 0 || index >= state.eqValues.length) return;
     final values = List<double>.from(state.eqValues);
     values[index] = gainDb;
     // 手动调整后不再是纯预设（eqPreset 置空）
     state = state.copyWith(eqValues: values, eqPreset: '');
+    ref
+        .read(preferencesRepositoryProvider)
+        .setEqState(preset: '', gains: values);
     final engineRepo = ref.read(audioEngineRepositoryProvider);
     if (!engineRepo.rustAvailable) return;
     try {

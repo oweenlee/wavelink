@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `err_str`, `to_config`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ConnectParams`, `SmbSession`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`, `fmt`
 
 /// 连接 SMB 服务器（host 为裸 IP/域名，内部拼 :port）
 Future<void> smbConnect({
@@ -63,6 +63,8 @@ Stream<Uint8List> smbReadFileStream({required String path}) =>
     RustLib.instance.api.crateApiSmbSmbReadFileStream(path: path);
 
 /// 读远端文件头部（最多 [max_len] 字节）：封面提取/格式探测用，避免整文件下载。
+/// 注意：池空时**绝不回退主会话**——主会话可能正被扫描（list_directory）使用，
+/// smb2 单连接不支持并发请求，混用会让服务器挂起（30s 无响应）。
 Future<Uint8List> smbReadHead({required String path, required BigInt maxLen}) =>
     RustLib.instance.api.crateApiSmbSmbReadHead(path: path, maxLen: maxLen);
 

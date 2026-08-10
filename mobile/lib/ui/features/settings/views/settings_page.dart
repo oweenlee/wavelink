@@ -60,6 +60,18 @@ class SettingsPage extends ConsumerWidget {
               onChanged: (_) => player.toggleDither(),
             ),
             _SwitchItem(
+              icon: LucideIcons.waves,
+              label: l10n.noiseShaping,
+              value: dsp.noiseShaping,
+              onChanged: (_) => player.toggleNoiseShaping(),
+            ),
+            _SettingItem(
+              icon: LucideIcons.headphones,
+              label: l10n.autoEq,
+              trailing: player.autoEqModel ?? l10n.autoEqOff,
+              onTap: () => _showAutoEqSheet(context, ref),
+            ),
+            _SwitchItem(
               icon: LucideIcons.sparkles,
               label: l10n.replayGain,
               value: player.replayGain,
@@ -166,6 +178,97 @@ class SettingsPage extends ConsumerWidget {
       ],
     );
   }
+}
+
+/// AutoEQ 耳机校正选择 sheet：“关闭” + oratory1990 实测档案列表
+Future<void> _showAutoEqSheet(BuildContext context, WidgetRef ref) {
+  final l10n = AppLocalizations.of(context);
+  final player = ref.read(playbackControllerProvider);
+  final accent = AccentScope.of(context);
+  final current = player.autoEqModel;
+  final catalogFuture = player.getAutoEqCatalog();
+
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (_) => SheetShell(
+      title: l10n.autoEq,
+      builder: (scroll) => FutureBuilder<List<String>>(
+        future: catalogFuture,
+        builder: (context, snap) {
+          final models = snap.data ?? const <String>[];
+          return ListView(
+            controller: scroll,
+            padding: const EdgeInsets.only(top: 8, bottom: 32),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text(
+                  l10n.autoEqHint,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textTertiary,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: Icon(
+                  current == null
+                      ? LucideIcons.checkCircle2
+                      : LucideIcons.circle,
+                  color: current == null ? accent : AppTheme.textTertiary,
+                  size: 20,
+                ),
+                title: Text(
+                  l10n.autoEqOff,
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: current == null
+                        ? accent
+                        : AppTheme.textPrimary,
+                    fontWeight: current == null ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+                dense: true,
+                onTap: () {
+                  ref.read(playbackControllerProvider).setAutoEq(null);
+                  Navigator.of(context).pop();
+                },
+              ),
+              if (!snap.hasData)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              ...models.map((model) {
+                final selected = current == model;
+                return ListTile(
+                  leading: Icon(
+                    selected ? LucideIcons.checkCircle2 : LucideIcons.circle,
+                    color: selected ? accent : AppTheme.textTertiary,
+                    size: 20,
+                  ),
+                  title: Text(
+                    model,
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: selected ? accent : AppTheme.textPrimary,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                  dense: true,
+                  onTap: () {
+                    ref.read(playbackControllerProvider).setAutoEq(model);
+                    Navigator.of(context).pop();
+                  },
+                );
+              }),
+            ],
+          );
+        },
+      ),
+    ),
+  );
 }
 
 class _LanguageItem extends ConsumerWidget {

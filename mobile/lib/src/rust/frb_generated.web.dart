@@ -11,6 +11,7 @@ import 'api/audio_output.dart';
 import 'api/cue.dart';
 import 'api/decode.dart';
 import 'api/device.dart';
+import 'api/dsp.dart';
 import 'api/engine.dart';
 import 'api/metadata.dart';
 import 'api/playlist.dart';

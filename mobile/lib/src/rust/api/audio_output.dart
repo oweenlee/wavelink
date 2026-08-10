@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `clear_ringbuf_impl`, `fill_buffer_stereo_impl`, `fill_buffer_stereo_inner`, `fill_interleaved_impl`, `probe_log`, `set_hw_sample_rate_impl`, `set_playing_impl`, `update_spectrum`
+// These functions are ignored because they are not marked as `pub`: `clear_ringbuf_impl`, `fill_buffer_stereo_impl`, `fill_buffer_stereo_inner`, `probe_log`, `set_hw_sample_rate_impl`, `set_playing_impl`, `update_spectrum`
 
 /// 由 Swift 通过 extern "C" 调用，设置硬件采样率
 Future<void> setHwSampleRate({required int rate}) =>

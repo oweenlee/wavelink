@@ -131,6 +131,31 @@ Future<void> engineClearIr() =>
 Future<void> engineSetReplaygainGain({required double gainDb}) =>
     RustLib.instance.api.crateApiEngineEngineSetReplaygainGain(gainDb: gainDb);
 
+/// 设置 ReplayGain 真峰值上限（防过载；None 清除）。
+/// 与 [`engine_set_replaygain_gain`] 配套，切歌时按曲目标签逐首下发。
+Future<void> engineSetReplaygainPeak({double? peak}) =>
+    RustLib.instance.api.crateApiEngineEngineSetReplaygainPeak(peak: peak);
+
+/// 启用/禁用抖动噪声整形（配合 dither 使用，默认关）
+Future<void> engineSetNoiseShaping({required bool enabled}) =>
+    RustLib.instance.api.crateApiEngineEngineSetNoiseShaping(enabled: enabled);
+
+/// 应用/清除 AutoEQ 耳机校正档案。
+/// 型号名取自 `auto_eq_catalog()`；传 None 清除（档案 preamp 自动经
+/// ReplayGain 通道叠加防削峰）。
+Future<void> engineSetAutoEq({String? model}) =>
+    RustLib.instance.api.crateApiEngineEngineSetAutoEq(model: model);
+
+/// 音频会话中断开始（如来电）：引擎暂停。
+/// iOS 由 Swift 经 C FFI（`wavelink_session_interruption_began`）直接调用，
+/// 同时暴露给 Dart 以便未来 Android 音频焦点场景复用。
+Future<void> engineSessionInterruptionBegan() =>
+    RustLib.instance.api.crateApiEngineEngineSessionInterruptionBegan();
+
+/// 音频会话中断结束：引擎恢复播放（调用方需自行确认中断前在播）
+Future<void> engineSessionInterruptionEnded() =>
+    RustLib.instance.api.crateApiEngineEngineSessionInterruptionEnded();
+
 Future<double> enginePositionSecs() =>
     RustLib.instance.api.crateApiEngineEnginePositionSecs();
 

@@ -307,6 +307,36 @@ pub fn engine_set_replaygain_gain(gain_db: f32) {
     with_engine(|h| h.set_replaygain_gain_db(gain_db));
 }
 
+/// 设置 ReplayGain 真峰值上限（防过载；None 清除）。
+/// 与 [`engine_set_replaygain_gain`] 配套，切歌时按曲目标签逐首下发。
+pub fn engine_set_replaygain_peak(peak: Option<f32>) {
+    with_engine(|h| h.set_replaygain_peak(peak));
+}
+
+/// 启用/禁用抖动噪声整形（配合 dither 使用，默认关）
+pub fn engine_set_noise_shaping(enabled: bool) {
+    with_engine(|h| h.set_noise_shaping(enabled));
+}
+
+/// 应用/清除 AutoEQ 耳机校正档案。
+/// 型号名取自 `auto_eq_catalog()`；传 None 清除（档案 preamp 自动经
+/// ReplayGain 通道叠加防削峰）。
+pub fn engine_set_auto_eq(model: Option<String>) {
+    with_engine(|h| h.set_auto_eq(model.as_deref()));
+}
+
+/// 音频会话中断开始（如来电）：引擎暂停。
+/// iOS 由 Swift 经 C FFI（`wavelink_session_interruption_began`）直接调用，
+/// 同时暴露给 Dart 以便未来 Android 音频焦点场景复用。
+pub fn engine_session_interruption_began() {
+    with_engine(|h| h.session_interruption_began());
+}
+
+/// 音频会话中断结束：引擎恢复播放（调用方需自行确认中断前在播）
+pub fn engine_session_interruption_ended() {
+    with_engine(|h| h.session_interruption_ended());
+}
+
 // ── 查询 ──
 
 pub fn engine_position_secs() -> f64 {

@@ -36,6 +36,10 @@
   "stereoWidening": "立体声展宽",
   "truePeakLimiter": "真峰值限幅器",
   "tpdfDither": "TPDF 抖动",
+  "noiseShaping": "噪声整形",
+  "autoEq": "耳机校正 (AutoEQ)",
+  "autoEqOff": "关闭",
+  "autoEqHint": "按 oratory1990 实测档案校正耳机频响",
 
   "libSongs": "歌曲",
   "libAlbums": "专辑",

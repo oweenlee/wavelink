@@ -59,6 +59,28 @@ class AudioEngineRepository {
       rs.engineSetLimiter(enabled: enabled);
   Future<void> setDither(bool enabled) =>
       rs.engineSetDither(enabled: enabled);
+  Future<void> setNoiseShaping(bool enabled) =>
+      rs.engineSetNoiseShaping(enabled: enabled);
+
+  /// AutoEQ 耳机校正：应用型号档案（null 清除）
+  Future<void> setAutoEq(String? model) => rs.engineSetAutoEq(model: model);
+
+  /// AutoEQ 档案目录（型号名列表，设置页选择用）
+  Future<List<String>> autoEqCatalog() => rs.autoEqCatalog();
+
+  // ── ReplayGain（切歌时按曲目标签逐首下发）──
+
+  Future<void> setReplaygainGain(double gainDb) =>
+      rs.engineSetReplaygainGain(gainDb: gainDb);
+  Future<void> setReplaygainPeak(double? peak) =>
+      rs.engineSetReplaygainPeak(peak: peak);
+  Future<rs.ReplayGainResult> readReplaygain(String path) =>
+      rs.readReplaygain(path);
+
+  // ── 会话中断（引擎级暂停/恢复）──
+
+  Future<void> sessionInterruptionBegan() => rs.engineSessionInterruptionBegan();
+  Future<void> sessionInterruptionEnded() => rs.engineSessionInterruptionEnded();
 
   // ── 状态 ──
 

@@ -35,3 +35,12 @@ impl From<EqPreset> for PresetName {
         }
     }
 }
+
+/// AutoEQ 耳机校正档案目录（oratory1990 实测，型号名供设置页展示，
+/// 选中后经 `engine_set_auto_eq` 应用）
+pub fn auto_eq_catalog() -> Vec<String> {
+    audio_core::dsp::autoeq::catalog()
+        .iter()
+        .map(|p| p.name.to_string())
+        .collect()
+}

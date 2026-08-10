@@ -7,6 +7,7 @@ import '../../src/rust/api/audio_output.dart' as audio_out;
 import '../../src/rust/api/cue.dart' as cue;
 import '../../src/rust/api/playlist.dart' as playlist;
 import '../../src/rust/api/engine.dart' as engine;
+import '../../src/rust/api/dsp.dart' as dsp;
 
 export '../../src/rust/api/decode.dart'
     show DecodeResult, DecodeChunk, StreamDecoder;
@@ -170,6 +171,20 @@ Future<void> engineSetStereoWidener({
 }) => engine.engineSetStereoWidener(enabled: enabled, width: width);
 Future<void> engineSetPlayMode({required int mode}) =>
     engine.engineSetPlayMode(mode: mode);
+Future<void> engineSetReplaygainGain({required double gainDb}) =>
+    engine.engineSetReplaygainGain(gainDb: gainDb);
+Future<void> engineSetReplaygainPeak({double? peak}) =>
+    engine.engineSetReplaygainPeak(peak: peak);
+Future<void> engineSetNoiseShaping({required bool enabled}) =>
+    engine.engineSetNoiseShaping(enabled: enabled);
+Future<void> engineSetAutoEq({String? model}) =>
+    engine.engineSetAutoEq(model: model);
+Future<List<String>> autoEqCatalog() => dsp.autoEqCatalog();
+Future<void> engineSessionInterruptionBegan() =>
+    engine.engineSessionInterruptionBegan();
+Future<void> engineSessionInterruptionEnded() =>
+    engine.engineSessionInterruptionEnded();
+
 Future<void> enginePause() => engine.enginePause();
 Future<void> engineResume() => engine.engineResume();
 Future<void> engineStop() => engine.engineStop();

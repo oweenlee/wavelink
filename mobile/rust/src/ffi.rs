@@ -100,6 +100,21 @@ pub extern "C" fn engine_sync_output_rate(rate: u32) {
     crate::api::engine::engine_set_output_sample_rate(rate);
 }
 
+/// iOS 音频会话中断开始（来电/闹钟）：引擎暂停。
+/// 不走 Dart（中断时 Dart 可能被系统节流），Swift 收到
+/// AVAudioSession.interruptionNotification 后直接调用。
+#[no_mangle]
+pub extern "C" fn wavelink_session_interruption_began() {
+    crate::api::engine::engine_session_interruption_began();
+}
+
+/// iOS 音频会话中断结束：引擎恢复播放。
+/// Swift 仅在确认中断前在播（wasPlayingBeforeInterruption）时调用。
+#[no_mangle]
+pub extern "C" fn wavelink_session_interruption_ended() {
+    crate::api::engine::engine_session_interruption_ended();
+}
+
 // ─────────────────────────────────────────────────────────────
 // Android JNI 直读绑定（Kotlin AudioEngine）
 //
