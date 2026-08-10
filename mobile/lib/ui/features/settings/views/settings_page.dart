@@ -169,6 +169,11 @@ class SettingsPage extends ConsumerWidget {
           title: l10n.settingsAbout,
           children: [
             _SettingItem(
+              icon: LucideIcons.activity,
+              label: l10n.diagnosticEntry,
+              onTap: () => context.push('/diagnostic'),
+            ),
+            _SettingItem(
               icon: LucideIcons.info,
               label: l10n.version,
               trailing: l10n.versionValue,

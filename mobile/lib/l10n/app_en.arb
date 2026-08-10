@@ -148,6 +148,7 @@
   "eqPresetVocals": "Vocals",
 
   "diagnosticTitle": "Playback Diagnostics",
+  "diagnosticEntry": "Diagnostics & Logs",
   "audioDiagnostic": "Audio Diagnostics",
   "diagnosticTotalUnderrun": "Total Underruns",
   "diagnosticRecentUnderrun": "Recent Underruns",

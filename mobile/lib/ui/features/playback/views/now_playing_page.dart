@@ -993,12 +993,14 @@ class _LyricsPreview extends StatelessWidget {
 // ── Blurred Cover Backdrop ──
 
 /// 模糊封面底色 — 对齐 HTML prototype `#backdrop`
-class _Backdrop extends StatelessWidget {
+class _Backdrop extends ConsumerWidget {
   final String? coverUrl;
   const _Backdrop({required this.coverUrl});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 模糊强度偏好（0–1，默认 0.7）映射到 sigma 0–40；0 = 不模糊
+    final sigma = ref.watch(playbackControllerProvider).coverBlur * 40;
     return RepaintBoundary(
       child: Stack(
         children: [
@@ -1019,7 +1021,7 @@ class _Backdrop extends StatelessWidget {
           // 模糊层（静态背景用 RepaintBoundary 隔离，避免上层动画触发整屏重模糊）
           Positioned.fill(
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
               child: Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(

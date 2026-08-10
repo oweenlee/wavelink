@@ -148,6 +148,7 @@
   "eqPresetVocals": "人声",
 
   "diagnosticTitle": "播放诊断",
+  "diagnosticEntry": "诊断与日志",
   "audioDiagnostic": "音频诊断",
   "diagnosticTotalUnderrun": "累计欠载次数",
   "diagnosticRecentUnderrun": "近期欠载",
