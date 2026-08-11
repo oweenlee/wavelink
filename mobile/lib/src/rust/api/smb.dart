@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `err_str`, `to_config`
+// These functions are ignored because they are not marked as `pub`: `ensure_pooled_tree`, `err_str`, `to_config`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ConnectParams`, `SmbSession`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`, `fmt`
 
@@ -24,6 +24,20 @@ Future<void> smbConnect({
   password: password,
   domain: domain,
 );
+
+/// 前台保活：对主会话 + 读取池每条连接发一次 fs_info，返回是否全部健康。
+///
+/// smb2 crate 的 keepalive 只探测「有请求在途但线路静默」的连接，
+/// 完全空闲的连接从不被探测；而多数 NAS 会话空闲超时（常见几分钟）
+/// 会在前台闲置时悄悄回收连接，下次真实 IO 踩到死连接只能
+/// 白等 crate 硬编码的 30s RESPONSE_TIMEOUT 才判死。故由 Dart 侧
+/// 每隔一段时间主动调本函数，让每条连接保持活跃、NAS 不回收。
+/// fs_info 是只读轻量请求，语义与 reviver 可重放的读操作一致。
+///
+/// 返回 false：任一连接探活失败（含 5s 超时）——Dart 侧据此 force
+/// 重建会话。早期版本用 let _ = 吞错导致探活永远"成功"，死连接
+/// 无人清理、真实 IO 反复白等 30s（封面批量提取连环超时的根因）。
+Future<bool> smbKeepalive() => RustLib.instance.api.crateApiSmbSmbKeepalive();
 
 /// 断开 SMB 连接（含读取池）
 Future<void> smbDisconnect() => RustLib.instance.api.crateApiSmbSmbDisconnect();
@@ -57,14 +71,18 @@ Future<Uint8List> smbReadFile({required String path}) =>
 
 /// 流式读取远端文件（相对共享根目录的路径），分块经 FRB sink 推给 Dart。
 ///
-/// 复用读取池连接打开文件句柄后立即归还，reader 持有独立连接克隆并行下载；
-/// 每块 512KB 推送一次，Dart 端逐块追加写入，避免整文件跨 FFI 一次性拷贝。
+/// 会话在流存活期间独占（不回池）：FileReader 与池会话共享同一条
+/// 连接，若提前归还，后续任务会在同一链路上发并发请求（连接多路
+/// 复用），部分 NAS 固件无法处理，READ 返回空数据/Protocol error，
+/// 表现为下载得到 0 字节。独占后每路流一条独立链路，互不干扰；
+/// 并发上限仍由 POOL_SEM 控制。每块 512KB 推送一次，Dart 端逐块
+/// 追加写入，避免整文件跨 FFI 一次性拷贝。
 Stream<Uint8List> smbReadFileStream({required String path}) =>
     RustLib.instance.api.crateApiSmbSmbReadFileStream(path: path);
 
 /// 读远端文件头部（最多 [max_len] 字节）：封面提取/格式探测用，避免整文件下载。
-/// 注意：池空时**绝不回退主会话**——主会话可能正被扫描（list_directory）使用，
-/// smb2 单连接不支持并发请求，混用会让服务器挂起（30s 无响应）。
+/// 会话在读完前独占（不回池）：与 smb_read_file_stream 同理，提前归还
+/// 会让后续任务在同一连接上发并发请求，部分 NAS 无法处理。
 Future<Uint8List> smbReadHead({required String path, required BigInt maxLen}) =>
     RustLib.instance.api.crateApiSmbSmbReadHead(path: path, maxLen: maxLen);
 

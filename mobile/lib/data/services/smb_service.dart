@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -54,7 +55,49 @@ class SmbService {
   /// 最近一次操作的具体错误信息（用于 UI 展示排查）
   static String? lastError;
 
+  /// 前台保活定时器：防止 NAS 会话空闲超时回收闲置连接。
+  /// smb2 crate 只探测"请求在途但线路静默"的连接，完全空闲的
+  /// 连接从不被探测，被 NAS 悄悄回收后下次 IO 白等 30s 才判死。
+  /// 定时器每个 tick 发一条 fs_info 轻请求，让每条连接保持活跃。
+  static Timer? _keepaliveTimer;
+
   static bool get isConnected => _connected;
+
+  /// 启动前台保活（幂等）：已有定时器则不重复创建。连接/重建
+  /// 成功后由 [ensureReady] 链路调用。
+  static void startKeepalive() {
+    if (_keepaliveTimer?.isActive == true) return;
+    _keepaliveTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      // 已断开则不空转；保活本身轻量，直接静默执行
+      if (!_connected) return;
+      _keepaliveTick();
+    });
+  }
+
+  /// 停止前台保活：断开连接时调用。
+  static void stopKeepalive() {
+    _keepaliveTimer?.cancel();
+    _keepaliveTimer = null;
+  }
+
+  /// 一次保活：探活返回 false（任一连接失败/超时）说明连接已被
+  /// NAS/网络回收，主动 force 重建，把 30s 判死消化在后台定时器里，
+  /// 而不是下一次真实 IO 上。早期 Rust 侧吞错导致探活永远"成功"，
+  /// 死连接无人清理——现在探活结果真实上报。
+  static Future<void> _keepaliveTick() async {
+    bool healthy;
+    try {
+      healthy = await smb.smbKeepalive();
+    } catch (e) {
+      Log.w('SMB', '保活探测异常($e)，主动重建会话');
+      healthy = false;
+    }
+    if (healthy) return;
+    Log.w('SMB', '保活探测发现死连接，主动重建会话');
+    // 重建失败（NAS 真下线）则停掉定时器，避免每 30s 空转重连
+    final ok = await ensureReady(force: true);
+    if (!ok) stopKeepalive();
+  }
 
   /// 连接 SMB 服务器（host 为裸 IP/域名，内部拼 :port）。
   /// 共享挂载在扫描/列目录前按需调用 [connectShare]。
@@ -103,6 +146,7 @@ class SmbService {
       _mountedShare = null;
       _sessionGen++;
       lastError = null;
+      startKeepalive();
       return true;
     } catch (e) {
       Log.e('SMB', 'connect failed: $e');
@@ -149,8 +193,11 @@ class SmbService {
   /// 会话未恢复等场景），并确保共享 tree 已挂载。返回是否就绪。
   /// [force]=true：忽略缓存的 _connected/_mountedShare 强制重建
   ///（操作失败后判定会话失效时使用）。会话守卫内串行。
-  static Future<bool> ensureReady({bool force = false}) =>
-      _inGate(() => _ensureReadyImpl(force: force));
+  static Future<bool> ensureReady({bool force = false}) async {
+    final ok = await _inGate(() => _ensureReadyImpl(force: force));
+    if (ok) startKeepalive();
+    return ok;
+  }
 
   static Future<bool> _ensureReadyImpl({bool force = false}) async {
     // 扫描进行中禁止强制重建：重连会重置 tree，扫描中的 read 会报
@@ -199,6 +246,21 @@ class SmbService {
     return ok;
   }
 
+  /// app 从后台恢复时调用：主动销毁重建会话，绕开 smb2 crate
+  /// 30s 响应超时的「死连接惩罚」。
+  ///
+  /// iOS/Android 后台挂起会掐掉 SMB socket，但 Rust 全局会话无感知
+  /// （乐观缓存 _connected 仍为 true），下次 IO 会在这条假活连接上
+  /// 白等 RESPONSE_TIMEOUT=30s 才宣判 ServerUnresponsive。与其等踩坑，
+  /// 不如恢复瞬间主动 force 重建——connect/协商/认证本地局域网内
+  /// 几十 ms 即可完成。后台停留过短（<30s）时连接大概率仍健康，跳过。
+  static Future<void> recoverAfterBackground(Duration gap) async {
+    if (gap < const Duration(seconds: 30)) return;
+    if (!_connected) return;
+    Log.i('SMB', '后台停留 ${gap.inSeconds}s，主动重建会话');
+    await ensureReady(force: true);
+  }
+
   static Future<void> disconnect() => _inGate(() async {
     // 扫描进行中：保持会话，避免打断扫描
     if (_scanning) return;
@@ -207,6 +269,7 @@ class SmbService {
     } catch (e) {
       Log.e('SMB', 'disconnect failed: $e');
     }
+    stopKeepalive();
     _connected = false;
     _mountedShare = null;
     _sessionGen++;

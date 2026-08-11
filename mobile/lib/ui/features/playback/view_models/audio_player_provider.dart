@@ -96,6 +96,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
   bool _nativeReady = false;
   int _playToken = 0;
 
+  /// 当前曲是否已预取过下一曲（每首只预取一次）。
+  /// shuffle 模式下下一曲随机，预取一首是尽力而为的优化。
+  bool _prefetchedNext = false;
+
   /// 引擎是否已装载当前曲目。false 时即使 position>0 也不能 resume（引擎空），
   /// 需走完整装载流程再 seek——断点续播恢复场景依赖此判定。
   bool _engineLoaded = false;
@@ -236,6 +240,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     final song = state.currentSong;
     if (song == null) return;
     final token = ++_playToken;
+    _prefetchedNext = false;
 
     _progressTimer?.cancel();
     state = state.copyWith(position: 0.0);
@@ -644,6 +649,27 @@ class PlayerNotifier extends Notifier<PlayerState> {
       // 播放中周期对账：锁屏按钮态与 Dart 状态强制一致（原生侧判重幂等）
       _nativeAudio.syncPlaying(true);
     }
+
+    _prefetchNextIfNeeded(song);
+  }
+
+  /// 下一曲预取：SMB 歌切歌需先整文件下载才能播（慢的直观来源），
+  /// 播放进度过 60% 时后台提前下载下一曲，切歌直接命中缓存。
+  /// downloadToLocal 内部按路径去重 + 缓存命中即返，重复调用无害。
+  void _prefetchNextIfNeeded(Song? current) {
+    if (_prefetchedNext) return;
+    if (current == null || current.duration.inMilliseconds <= 0) return;
+    if (state.position < current.duration.inMilliseconds * 0.6) return;
+    final q = ref.read(queueProvider);
+    if (q.queue.length < 2 || q.loopMode == LoopMode.single) return;
+    final next = q.queue[ref.read(queueProvider.notifier).findNextIndex()];
+    final smbPath = next.smbPath;
+    if (smbPath == null || smbPath.isEmpty) return;
+    _prefetchedNext = true;
+    Log.d('Audio', '预取下一曲: ${next.title}');
+    unawaited(
+      SmbService.downloadToLocal(smbPath).catchError((Object _) => null),
+    );
   }
 
   Future<void> _analyzeCurrent() async {
