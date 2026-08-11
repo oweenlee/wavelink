@@ -84,6 +84,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
       password: pass,
     );
 
+    if (!mounted) return;
     setState(() {
       _connecting = false;
       _connectionStatus = ok ? 'connected' : 'failed';

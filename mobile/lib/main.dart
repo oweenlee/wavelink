@@ -1,9 +1,13 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'data/services/library_cache_service.dart';
 import 'data/services/log.dart';
 import 'data/services/rust_service.dart';
+import 'data/services/smb_service.dart';
 import 'data/services/preferences_service.dart';
 import 'data/services/subsonic_service.dart';
 import 'ui/features/library/view_models/library_provider.dart';
@@ -54,6 +58,11 @@ Future<void> main() async {
   // 触发编排层接线，随后启动副作用（偏好加载、播放器 init、曲库扫描）
   container.read(playbackControllerProvider).bootstrap();
 
+  // NAS/SMB 会话自愈：后台挂起会掐掉 SMB socket 但 Rust 侧无感知，
+  // 恢复前台时主动重建会话，避免下次 IO 在假活连接上白等 30s 超时。
+  if (kIsWeb) return;
+  WidgetsBinding.instance.addObserver(_SmbLifecycleObserver());
+
   // 第二步：初始化完成，挂载品牌动效 + 主应用。
   // 两段均为黑底，视觉上无缝（黑 → BrandSplash 脉冲 → 淡出主界面）。
   runApp(
@@ -62,4 +71,33 @@ Future<void> main() async {
       child: SplashGate(child: const WaveLinkApp()),
     ),
   );
+}
+
+/// 监听 app 前后台切换，后台停留超过阈值后恢复时重建 SMB 会话。
+/// 需要而无需手动挂载生命周期：
+/// - 后台挂起期间 iOS 会回收网络 socket，Rust SMB 会话无感知变成「假活」；
+/// - 恢复时主动 force 重建，避免首 IO 白等 smb2 的 30s 超时。
+class _SmbLifecycleObserver with WidgetsBindingObserver {
+  DateTime? _backgroundedAt;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused) {
+      // iOS 进入后台通常先 inactive→paused；只记第一次的时间
+      _backgroundedAt ??= DateTime.now();
+      return;
+    }
+    if (state == AppLifecycleState.resumed) {
+      _backgroundedAt ??= DateTime.now();
+      final gap = DateTime.now().difference(_backgroundedAt!);
+      _backgroundedAt = null;
+      if (gap.inSeconds >= 30) {
+        unawaited(SmbService.recoverAfterBackground(gap));
+      }
+      return;
+    }
+    _backgroundedAt = null;
+  }
 }
