@@ -229,12 +229,32 @@ class AudioOutputManager {
         if let artwork = lastArtwork {
             info[MPMediaItemPropertyArtwork] = artwork
         }
+        NSLog("[Audio] refreshNowPlaying: rate=%@ title=%@ pos=%.1f",
+              isPlayingFlag ? "1(播放)" : "0(暂停)", nowTitle, nowPosition)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    /// 清空锁屏卡片（启动时清上次会话的残留：nowPlayingInfo 系统侧按
+    /// bundle 缓存不随进程退出清除，残留会让锁屏停在旧的播放态）
+    func clearNowPlaying() {
+        NSLog("[Audio] clearNowPlaying")
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
     // ── 播放控制 ──
 
     var isPlaying: Bool { isPlayingFlag }
+
+    /// 幂等状态对账：Dart 周期性把权威播放态推下来，只刷锁屏按钮态。
+    /// 不动音频门控/不重启 engine：偶发的 pause/resume 通道丢失在这自愈。
+    func syncPlaying(_ playing: Bool) {
+        guard playing != isPlayingFlag else { return }
+        NSLog("[Audio] syncPlaying: 对账修正 %@ → %@",
+              isPlayingFlag ? "播放" : "暂停", playing ? "播放" : "暂停")
+        isPlayingFlag = playing
+        if playing { hasActiveTrack = true }
+        refreshNowPlaying()
+    }
 
     func play() {
         NSLog("[Audio] play() nodeRate=%.0f sessionRate=%.0f", currentSourceRate, AVAudioSession.sharedInstance().sampleRate)
@@ -251,6 +271,11 @@ class AudioOutputManager {
     func pause() {
         isPlayingFlag = false
         audio_output_set_playing(false)
+        // 停掉 engine 使音频会话与实际状态一致：仅写 PlaybackRate=0 不够，
+        // engine 持续运行时系统媒体面板仍按"正在输出"判为播放态，锁屏
+        // 停在 ⏸ 图标不跟随。各恢复路径（play/resume/resync/中断恢复）
+        // 均有 !engine.isRunning 守卫，恢复时自动重启，无新增负担。
+        engine.stop()
         refreshNowPlaying()
     }
 
@@ -270,6 +295,7 @@ class AudioOutputManager {
         isPlayingFlag = false
         hasActiveTrack = false
         audio_output_set_playing(false)
+        engine.stop() // 与 pause 同理：会话状态与实际对齐，锁屏按钮才跟随
         refreshNowPlaying()
     }
 

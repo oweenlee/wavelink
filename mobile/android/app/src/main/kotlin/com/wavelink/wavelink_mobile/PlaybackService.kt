@@ -326,4 +326,7 @@ class PlaybackService : Service() {
         mediaSession?.let { updatePosition(lastPositionMs, playing) }
         updateNotification(buildNotification())
     }
+
+    /** 当前锁屏/通知按钮态（供 syncPlaying 对账判重） */
+    fun isPlayingState(): Boolean = isPlaying
 }

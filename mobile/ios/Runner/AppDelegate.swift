@@ -36,6 +36,10 @@ import AVFoundation
         // session 激活后速率可能与存储属性 init 时不同，以实际速率重建 source node
         audio.resyncToSessionRate()
 
+        // 清上次会话残留的锁屏卡片：nowPlayingInfo 由系统按 bundle 缓存，
+        // 不随进程退出清除——残留会让锁屏停在旧的"播放中"态，与 app 内背离
+        audio.clearNowPlaying()
+
         // 监听音频中断（电话/闹钟/快速前后台切换），中断结束时清空 ringbuf 避免噪声
         NotificationCenter.default.addObserver(
             self,
@@ -114,13 +118,14 @@ import AVFoundation
             audio.resyncToSessionRateIfNeeded()
             // 清空 ringbuf 避免累积脏数据
             audio_output_clear_ringbuf()
-            // 确保 AudioUnit 恢复运行
-            if !audio.engine.isRunning {
-                try? AVAudioSession.sharedInstance().setActive(true)
-                try? audio.engine.start()
-            }
             if wasPlayingBeforeInterruption {
                 wasPlayingBeforeInterruption = false
+                // 确保 AudioUnit 恢复运行（pause 会停 engine，中断前在播才需重启；
+                // 中断前手动暂停的不能被误恢复成"会话在输出"）
+                if !audio.engine.isRunning {
+                    try? AVAudioSession.sharedInstance().setActive(true)
+                    try? audio.engine.start()
+                }
                 // 引擎侧恢复（与 began 对称）；随后的 remote:play 让 Dart 走统一
                 // play 路径恢复全链路（开门控+UI 状态），重复 resume 幂等无害
                 wavelink_session_interruption_ended()

@@ -88,6 +88,13 @@ class NativeAudioService {
     _methodChannel.invokeMethod('updatePosition', {'positionMs': positionMs}),
   );
 
+  /// 幂等状态对账：只同步锁屏按钮态（iOS PlaybackRate / Android
+  /// PlaybackState），不动音频门控、不重启 engine。供 Dart 周期性把
+  /// 权威状态推给原生——偶发的通道调用丢失/延迟可在下个对账周期自愈。
+  Future<void> syncPlaying(bool isPlaying) => _safeCall(
+    _methodChannel.invokeMethod('syncPlaying', {'isPlaying': isPlaying}),
+  );
+
   /// 查询 Android 设备原生输出采样率（AudioTrack.getNativeOutputSampleRate）。
   /// iOS 无此通道实现（MissingPluginException）→ 返回 0。
   Future<int> getNativeOutputRate() async {

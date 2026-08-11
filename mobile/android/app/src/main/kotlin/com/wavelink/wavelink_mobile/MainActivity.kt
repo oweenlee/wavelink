@@ -247,6 +247,11 @@ class MainActivity : FlutterActivity() {
             "pause" -> {
                 Log.i("WaveLinkDiag", "通道 pause：Dart 调用")
                 audioEngine.pause()
+                // 防御：服务被系统回收时以暂停态重建，与 resume 对称；
+                // 否则锁屏/通知的播放状态停在回收前的旧值，与 app 内背离
+                if (PlaybackService.instance == null) {
+                    PlaybackService.start(this, playing = false)
+                }
                 PlaybackService.instance?.setPlaying(false)
                 result.success(null)
             }
@@ -261,6 +266,9 @@ class MainActivity : FlutterActivity() {
             }
             "stop" -> {
                 audioEngine.stop()
+                if (PlaybackService.instance == null) {
+                    PlaybackService.start(this, playing = false)
+                }
                 PlaybackService.instance?.setPlaying(false)
                 // 不销毁服务：Dart 每次切歌前都会先 stop 再 play，销毁会让
                 // MediaSession/通知按首歌周期重建（锁屏卡片闪断、状态竞态丢失）。
@@ -272,6 +280,20 @@ class MainActivity : FlutterActivity() {
                 val args = arguments as? Map<String, Any>
                 val posMs = (args?.get("positionMs") as? Number)?.toInt() ?: 0
                 audioEngine.seek(posMs)
+                result.success(null)
+            }
+            "syncPlaying" -> {
+                // 幂等状态对账：Dart 周期性推权威播放态，只刷锁屏/通知按钮态，
+                // 不动音频焦点/引擎；偶发的 pause/resume 通道丢失在这自愈
+                @Suppress("UNCHECKED_CAST")
+                val args = arguments as? Map<String, Any>
+                val isPlaying = (args?.get("isPlaying") as? Boolean) ?: false
+                PlaybackService.instance?.let {
+                    if (it.isPlayingState() != isPlaying) {
+                        Log.i("WaveLinkDiag", "syncPlaying: 对账修正 → $isPlaying")
+                        it.setPlaying(isPlaying)
+                    }
+                }
                 result.success(null)
             }
             "updateMetadata" -> {

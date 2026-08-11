@@ -245,6 +245,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
     await _backend.pause();
     await _nativeAudio.stop();
     if (token != _playToken || !ref.mounted) return;
+    // 切歌窗口内实际无声：isPlaying 与锁屏（stop 已置暂停态）同步，
+    // 避免 app 内"播放中"/锁屏"已暂停"按钮背离（SMB 下载慢时尤为明显）。
+    state = state.copyWith(isPlaying: false);
 
     // 解析本地可播放路径：SMB 远端先按需下载，HTTP 流式源先下载到本地缓存
     String? resolvedPath;
@@ -270,8 +273,15 @@ class PlayerNotifier extends Notifier<PlayerState> {
         '无法播放「${song.title}」：文件不存在或下载失败',
       );
       if (fallbackSong != null) {
-        state = state.copyWith(currentSong: fallbackSong);
+        state = state.copyWith(currentSong: fallbackSong, isPlaying: true);
         await _backend.resume();
+        // 原生侧同步恢复：上面已 _nativeAudio.stop()（iOS isPlayingFlag=false /
+        // Android playing=false），只 resume 引擎不同步原生会导致锁屏/通知
+        // 停在"非播放"态，与实际出声状态背离。
+        _nativeAudio.resume();
+        _nativeAudio.updatePosition(state.position);
+        // 开头已 cancel 进度定时器：回滚后必须重启，否则进度冻结、曲终判断失效
+        _startProgressTimer();
         saveResume();
       }
       return;
@@ -377,6 +387,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // 事件驱动锚点：暂停时推当前位置，锁屏进度不再靠 250ms 轮询
     _nativeAudio.updatePosition(state.position);
     state = state.copyWith(isPlaying: false);
+    // 延迟对账：即时 pause 通道偶发未达原生时，1s 后以 Dart 状态为准修正
+    // 锁屏按钮态（syncPlaying 幂等，正常路径下无操作）
+    _scheduleStateSync();
     saveResume();
   }
 
@@ -391,6 +404,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
       _nativeAudio.resume();
       _nativeAudio.updatePosition(state.position);
       state = state.copyWith(isPlaying: true);
+      _scheduleStateSync();
     } else {
       // 从未真正播放过（如程序启动后曲库当前曲尚未载入引擎，或断点恢复的曲目）：
       // resume 对空引擎无效，需走完整装载/播放流程，并在装载后 seek 到保存位置
@@ -468,6 +482,14 @@ class PlayerNotifier extends Notifier<PlayerState> {
     final volume = v.clamp(0.0, 1.0);
     state = state.copyWith(volume: volume);
     _engineRepo.setVolume(volume);
+  }
+
+  /// 延迟状态对账：把 Dart 权威播放态推给原生（幂等，一致时无操作）。
+  /// 兜底即时 pause/resume 通道调用偶发未达原生的场景，避免锁屏按钮背离。
+  void _scheduleStateSync() {
+    Timer(const Duration(seconds: 1), () {
+      if (ref.mounted) _nativeAudio.syncPlaying(state.isPlaying);
+    });
   }
 
   void _startProgressTimer() {
@@ -619,6 +641,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
     if (nowMs - _lastResumeSave >= 5000) {
       _lastResumeSave = nowMs;
       saveResume();
+      // 播放中周期对账：锁屏按钮态与 Dart 状态强制一致（原生侧判重幂等）
+      _nativeAudio.syncPlaying(true);
     }
   }
 

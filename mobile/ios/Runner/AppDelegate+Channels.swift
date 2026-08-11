@@ -38,6 +38,12 @@ extension AppDelegate {
         case "pause": NSLog("[Audio] channel pause"); audio.pause(); result(nil)
         case "resume": NSLog("[Audio] channel resume"); audio.resume(); result(nil)
         case "stop": NSLog("[Audio] channel stop"); audio.stop(); result(nil)
+        case "syncPlaying":
+            if let args = call.arguments as? [String: Any],
+               let isPlaying = args["isPlaying"] as? Bool {
+                audio.syncPlaying(isPlaying)
+            }
+            result(nil)
         case "updateMetadata":
             if let args = call.arguments as? [String: Any],
                let title = args["title"] as? String,
