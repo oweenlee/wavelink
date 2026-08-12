@@ -33,7 +33,9 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → 输出
 │  │ ⑥ 立体声展宽 (Mid/Side)                           │         │
 │  │ ⑦ 真峰值限幅 (4x 过采样)                          │         │
 │  │ ⑧ Volume                                         │         │
-│  │ ⑨ TPDF 抖动                                      │         │
+│  │ ⑨ 链尾软限幅 (音量正增益防削波)                   │         │
+│  │ ⑩ 淡入淡出 (防 pause/stop 爆音)                    │         │
+│  │ ⑪ TPDF 抖动 / ATH 噪声整形                        │         │
 │  ├─────────────────────────────────────────────────┤         │
 │  │  实时频谱分析 (1024-pt FFT, 16 频段, Hann 窗)     │         │
 │  │  交叉淡入 (可配置, 余弦曲线)                       │         │
@@ -132,7 +134,7 @@ let (engine, events) = EngineHandle::start_with_config(config);
 | DC offset HPF (~2Hz) | ✅ |
 | ReplayGain Pre-amp (DSP 管线内, 独立于音量) | ✅ |
 | FIR 卷积 EQ (加载 IR WAV) | ✅ |
-| 房间校正 (REW 测量导入 → FIR IR 生成) | ✅ 离线模块（P1 引擎命令/UI 接入待做） |
+| 房间校正 (REW 测量导入 → FIR IR 生成) | ✅ 离线模块（IR 经 `load_ir` 引擎命令应用，UI 接入待做） |
 | IIR PEQ (31 段 ISO, 运行时调参) | ✅ |
 | 耳机串音模拟 (Bauer crossfeed) | ✅ |
 | 立体声展宽 (Mid/Side) | ✅ |
@@ -184,8 +186,7 @@ let (engine, events) = EngineHandle::start_with_config(config);
 ## 测试
 
 ```bash
-cargo test -p audio-core    # 279 个测试 (单元 + 集成)
-cargo test -p audio-core -- --ignored  # 含 FFmpeg 依赖的格式验证
+cargo test -p audio-core    # 288 个测试 (单元 + 集成)
 ```
 
 诊断型样例（依赖本机样本文件，非 CI 测试）见 `examples/`：
@@ -209,7 +210,7 @@ use audio_core::{EngineHandle, EngineConfig};
 let (engine, events) = EngineHandle::start();
 
 // 播放文件（异步）
-engine.play("/path/to/audio.flac");
+engine.play("/path/to/audio.flac".into());
 
 // 事件循环
 for event in events {
@@ -242,7 +243,11 @@ stream.signal_eof();
 use audio_core::output::enumerate_devices;
 
 for dev in enumerate_devices() {
-    println!("{}: {}Hz/{}ch", dev.name, dev.sample_rate, dev.channels);
+    let configs = dev.configs.iter()
+        .map(|c| format!("{}Hz/{}ch", c.sample_rate, c.channels))
+        .collect::<Vec<_>>()
+        .join(", ");
+    println!("{} ({}): {}", dev.name, if dev.is_default { "默认" } else { "非默认" }, configs);
 }
 ```
 
