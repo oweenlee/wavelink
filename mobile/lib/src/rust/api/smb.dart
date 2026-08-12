@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `ensure_pooled_tree`, `err_str`, `feed_stream_to_core`, `to_config`
+// These functions are ignored because they are not marked as `pub`: `acquire_pool_permit`, `connect_share_with_timeout`, `connect_with_timeout`, `ensure_pooled_tree`, `err_str`, `feed_stream_to_core`, `to_config`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ConnectParams`, `SmbSession`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`, `fmt`
 
@@ -79,6 +79,9 @@ Future<Uint8List> smbReadFile({required String path}) =>
 /// 追加写入，避免整文件跨 FFI 一次性拷贝。
 Stream<Uint8List> smbReadFileStream({required String path}) =>
     RustLib.instance.api.crateApiSmbSmbReadFileStream(path: path);
+
+Future<Uint8List> smbReadTail({required String path, required BigInt maxLen}) =>
+    RustLib.instance.api.crateApiSmbSmbReadTail(path: path, maxLen: maxLen);
 
 /// 读远端文件头部（最多 [max_len] 字节）：封面提取/格式探测用，避免整文件下载。
 /// 会话在读完前独占（不回池）：与 smb_read_file_stream 同理，提前归还

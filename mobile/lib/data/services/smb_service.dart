@@ -38,6 +38,10 @@ class SmbService {
   /// 封面批每轮都 10s 超时熔断，期间播放/下载被连接竞争拖垮）。
   static DateTime _coverCooldownUntil = DateTime.fromMillisecondsSinceEpoch(0);
 
+  /// 熔断冷却是否生效（封面提取暂停中）。
+  static bool get coverCooldownActive =>
+      DateTime.now().isBefore(_coverCooldownUntil);
+
   /// 播放/下载活动计数 + 最近活动时间：封面提取（后台低优先级任务）
   /// 在播放/下载进行时让路，避免与播放竞争 NAS 连接数（历史事故：
   /// 封面批在跑时点歌，喂流拿不到连接 → 3s 超时杀流 → 回退下载
@@ -615,6 +619,31 @@ class SmbService {
       maxLen: BigInt.from(1024 * 1024),
     );
     if (head.isEmpty) return;
+    // 头部解析出封面则完成；否则读尾部兑底：M4A/AAC/ALAC 的 moov
+    // 元数据块（含内嵌封面 covr）常在文件末尾，头部读不到封面。
+    if (!await _extractCoverFromBytes(song, smbPath, head)) {
+      try {
+        final tail = await smb.smbReadTail(
+          path: smbPath,
+          maxLen: BigInt.from(1024 * 1024),
+        );
+        if (tail.isNotEmpty) {
+          await _extractCoverFromBytes(song, smbPath, tail);
+        }
+      } catch (e) {
+        // 尾部读取失败（会话断/格式不支持）：头部已失败过，静默跳过
+        Log.d('SMB', '封面尾部兑底失败 ($smbPath): $e');
+      }
+    }
+  }
+
+  /// 从远端读到的字节解析内嵌封面：写带真实扩展名的临时文件（lofty 按
+  /// 扩展名探测格式），成功后写 .covers 缓存。返回是否解析到封面。
+  static Future<bool> _extractCoverFromBytes(
+    Song song,
+    String smbPath,
+    List<int> bytes,
+  ) async {
     final appDir = await getApplicationDocumentsDirectory();
     final headDir = Directory('${appDir.path}/.smb_head');
     if (!await headDir.exists()) await headDir.create(recursive: true);
@@ -622,7 +651,7 @@ class SmbService {
     // 未知后缀会直接探测失败，封面静默丢失（历史 bug：用 .head）
     final ext = smbPath.split('.').last.toLowerCase();
     final headFile = File('${headDir.path}/${smbPath.hashCode}.$ext');
-    await headFile.writeAsBytes(head);
+    await headFile.writeAsBytes(bytes);
     try {
       final meta = await rs.readMetadata(headFile.path);
       if (meta.hasCover && meta.coverBytes.isNotEmpty) {
@@ -633,11 +662,16 @@ class SmbService {
         await coverFile.writeAsBytes(meta.coverBytes);
         song.coverUrl = coverFile.path;
         song.hasCover = true;
+        return true;
       }
+    } catch (e) {
+      // 截断数据/格式不支持：解析失败不致命，交由兑底或保持占位色
+      Log.d('SMB', '封面字节解析失败 ($smbPath): $e');
     } finally {
       // 头部临时文件用完即删
       if (await headFile.exists()) await headFile.delete();
     }
+    return false;
   }
 
   /// 播放时按需下载单曲到本地缓存，返回可播放的本地路径（已存在则直接复用）。

@@ -27,24 +27,94 @@ class CoverService {
   /// 失败静默：封面保持纯色占位，不影响曲库。
   /// 每批前先探活：发现死连接先重建，避免整批请求同时踩
   /// 死连接各白等超时；会话不可用则中止剩余批次，下轮扫描再提。
-  /// 串行提取（并发 1）：封面读头部会在池连接被占时新建独立 SMB 连接，
-  /// 并发过高容易触发 NAS 连接数限制（历史事故：封面批在跑时点歌，
-  /// 播放喂流拿不到连接 → 3s 超时杀流 → 回退下载又撞封面批，点歌 34s
-  /// 才出声）。串行 + 播放让路把封面降到最低优先级。
+  /// 待提取队列（防重入 + 续跑）：多次触发（启动恢复/扫描完成）合并，
+  /// 已拿到封面的歌自动剔除。
+  final List<Song> _nasQueue = [];
+  bool _extractingNas = false;
+
+  /// 单曲连续失败计数：提取 3 轮仍无封面（真无封面/格式不支持）→ 放弃
+  /// 保持占位色，避免永远留在队列里被无限重试。
+  final Map<String, int> _nasFailCount = {};
+
+  /// NAS 封面提取：低优先级后台任务，播放/下载时让路但**自动续跑**
+  /// （历史问题：让路 break 后整个提取永久退出，剩余封面再也不提，
+  /// 表现为"封面没有全解析出来"）。
+  ///
+  /// 并发 2（串行太慢：数百首歌每首一次 SMB 读头+解析，单并发要几分钟；
+  /// 4 并发曾触发 NAS 连接数限制导致整批超时）。播放让路 + 熔断冷却
+  /// 保护仍保留，配合续跑循环在播放间隙自动补齐。
   Future<void> extractNasCovers(List<Song> songs) async {
-    for (var i = 0; i < songs.length; i++) {
-      // 播放/下载进行中：让路，剩余封面下轮再提（不打断播放）
-      if (SmbService.playbackActive) {
-        Log.d('Cover', '播放/下载活跃，暂停封面提取（已完成 $i/${songs.length}）');
-        break;
+    if (songs.isEmpty) return;
+    _nasQueue.addAll(songs);
+    if (_extractingNas) return; // 已有提取循环在跑，新请求已并入队列
+    _extractingNas = true;
+    try {
+      var idleRounds = 0; // 连续无进展轮数（会话死亡/熔断冷却），超限停止避免空转
+      while (true) {
+        final pending = pendingNasCovers(_nasQueue);
+        if (pending.isEmpty) {
+          _nasQueue.clear();
+          break;
+        }
+        final progressed = await _extractNasPass(pending);
+        // 本轮已成功的从队列剔除；连续 3 轮无封面（真无封面/格式不支持）
+        // 也剔除，避免无限重试
+        _nasQueue.removeWhere((s) =>
+            s.coverUrl != null || (_nasFailCount[s.id] ?? 0) >= 3);
+        if (progressed) {
+          idleRounds = 0;
+        } else {
+          idleRounds++;
+          if (idleRounds >= 8) {
+            Log.w('Cover', '封面提取连续无进展，暂停续跑（剩余 ${pendingNasCovers(_nasQueue).length}）');
+            break;
+          }
+        }
+        // 播放让路/熔断冷却/失败后：等 15s 再续（播放间隙自动补齐）
+        await Future.delayed(const Duration(seconds: 15));
       }
-      if (!await SmbService.ensureHealthy()) {
-        Log.w('Cover', '会话不可用，中止剩余封面提取（已完成 $i/${songs.length}）');
-        break;
-      }
-      await SmbService.fetchRemoteCover(songs[i]);
+    } finally {
+      _extractingNas = false;
     }
     onCoversUpdated?.call();
+  }
+
+  /// 单轮提取：并发 2，播放/下载活跃或会话不可用时让路返回。
+  /// 返回本轮是否有进展（至少解析出一张封面）。
+  Future<bool> _extractNasPass(List<Song> songs) async {
+    var progressed = false;
+    for (var i = 0; i < songs.length; i += 2) {
+      // 播放/下载进行中：让路（不打断播放），由外层循环稍后继续
+      if (SmbService.playbackActive) {
+        Log.d('Cover', '播放/下载活跃，暂停封面提取（已完成 $i/${songs.length}）');
+        return progressed || i > 0;
+      }
+      // 熔断冷却中：本轮跳过（未尝试不算失败，避免冷却轮误计单曲失败）
+      if (SmbService.coverCooldownActive) {
+        Log.d('Cover', '封面提取冷却中，本轮跳过（已完成 $i/${songs.length}）');
+        return progressed || i > 0;
+      }
+      if (!await SmbService.ensureHealthy()) {
+        Log.w('Cover', '会话不可用，中止本轮封面提取（已完成 $i/${songs.length}）');
+        return progressed || i > 0;
+      }
+      final end = (i + 2 > songs.length) ? songs.length : i + 2;
+      final batch = songs.sublist(i, end);
+      await Future.wait(batch.map((s) => SmbService.fetchRemoteCover(s)));
+      for (final s in batch) {
+        if (s.coverUrl != null) {
+          _nasFailCount.remove(s.id);
+          progressed = true;
+        } else {
+          final c = (_nasFailCount[s.id] ?? 0) + 1;
+          _nasFailCount[s.id] = c;
+          if (c >= 3) {
+            Log.d('Cover', '3 轮无封面，放弃提取: ${s.title}');
+          }
+        }
+      }
+    }
+    return progressed;
   }
 
   /// 本地文件封面批量提取（限流并发 4，避免打满 FRB 线程池），

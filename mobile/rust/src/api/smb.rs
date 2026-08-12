@@ -470,6 +470,55 @@ pub async fn smb_read_file_stream(
     result
 }
 
+pub async fn smb_read_tail(path: String, max_len: u64) -> Result<Vec<u8>, String> {
+    let permit = acquire_pool_permit().await?;
+    // from_pool：池连接读完归还；临时新建的用完 drop 关闭，不进池
+    let (mut sess, from_pool) = match POOL.lock().await.pop() {
+        Some(s) => (s, true),
+        None => {
+            // 池空：新建独立连接并挂载当前共享（避免与主会话并发冲突）
+            let params = PARAMS.lock().await.clone().ok_or("not connected")?;
+            let share = SESSION
+                .lock()
+                .await
+                .as_ref()
+                .and_then(|s| s.tree.as_ref().map(|t| t.share_name.clone()))
+                .ok_or("no share connected")?;
+            let mut client = connect_with_timeout(&params).await?;
+            let tree = connect_share_with_timeout(&mut client, &share).await?;
+            (SmbSession { client, tree: Some(tree) }, false)
+        }
+    };
+    ensure_pooled_tree(&mut sess).await;
+
+    let result: Result<Vec<u8>, String> = async {
+        let tree = sess.tree.as_ref().ok_or("no share connected")?;
+        // 全程包超时：与 smb_read_head 一致，死连接 10s 快速失败
+        match tokio::time::timeout(IO_READ_TIMEOUT, async {
+            let reader = sess.client.open_file_reader(tree, &path).await.map_err(err_str)?;
+            let size = reader.size();
+            let offset = size.saturating_sub(max_len);
+            let data = reader.read_at(offset, max_len).await.map_err(err_str)?;
+            // 显式关闭句柄释放服务端资源（直接 drop 会泄漏句柄）
+            let _ = reader.close().await;
+            Ok::<Vec<u8>, String>(data)
+        })
+        .await
+        {
+            Ok(r) => r,
+            Err(_) => Err("response timeout (10s)".to_string()),
+        }
+    }
+    .await;
+
+    // 读完才归还，保证独占；失败/超时的连接丢弃不回池
+    if from_pool && result.is_ok() {
+        POOL.lock().await.push(sess);
+    }
+    drop(permit);
+    result
+}
+
 /// 读远端文件头部（最多 [max_len] 字节）：封面提取/格式探测用，避免整文件下载。
 /// 会话在读完前独占（不回池）：与 smb_read_file_stream 同理，提前归还
 /// 会让后续任务在同一连接上发并发请求，部分 NAS 无法处理。
