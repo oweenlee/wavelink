@@ -9,6 +9,7 @@ use smb2::rpc::srvsvc::ShareInfo;
 use smb2::ClientConfig;
 use tokio::sync::{Mutex, Semaphore};
 
+use audio_core::stream::StreamHandle;
 use crate::frb_generated::StreamSink;
 
 /// 读取连接池大小：多条独立 SMB 连接并行下载，打满 Wi-Fi 带宽
@@ -87,6 +88,35 @@ fn err_str<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
+/// 带超时建立 SMB 连接：死 NAS/连接数打满时快速失败（10s），
+/// 避免无超时包裹白挂（smb2 crate 内部超时 + auto_reconnect 可叠到 30s+）。
+async fn connect_with_timeout(params: &ConnectParams) -> Result<SmbClient, String> {
+    tokio::time::timeout(IO_READ_TIMEOUT, SmbClient::connect(params.to_config()))
+        .await
+        .map_err(|_| "connect timeout (10s)".to_string())?
+        .map_err(err_str)
+}
+
+/// 带超时挂载共享：同上，connect_share 在死连接/NAS 拒绝时同样会挂。
+async fn connect_share_with_timeout(
+    client: &mut SmbClient,
+    share: &str,
+) -> Result<Tree, String> {
+    tokio::time::timeout(IO_READ_TIMEOUT, client.connect_share(share))
+        .await
+        .map_err(|_| "connect_share timeout (10s)".to_string())?
+        .map_err(err_str)
+}
+
+/// 带超时获取池 permit：池被挂起任务占满时快速失败，由 Dart 重试链路
+/// 接管，而不是无限等待（历史事故：下载任务挂在 acquire 上 30s+）。
+async fn acquire_pool_permit() -> Result<tokio::sync::SemaphorePermit<'static>, String> {
+    tokio::time::timeout(IO_READ_TIMEOUT, POOL_SEM.acquire())
+        .await
+        .map_err(|_| "acquire pool permit timeout (10s)".to_string())?
+        .map_err(err_str)
+}
+
 /// 池连接自愈挂载：池连接 tree 缺失时（重建后尚未挂载/初次挂载
 /// 失败）就地挂载当前共享，避免直接报 "no share connected" 导致
 /// 并发任务雪崩式失败后反复重连。
@@ -100,7 +130,7 @@ async fn ensure_pooled_tree(sess: &mut SmbSession) {
         .as_ref()
         .and_then(|s| s.tree.as_ref().map(|t| t.share_name.clone()));
     if let Some(share) = share {
-        if let Ok(t) = sess.client.connect_share(&share).await {
+        if let Ok(t) = connect_share_with_timeout(&mut sess.client, &share).await {
             sess.tree = Some(t);
         }
     }
@@ -121,7 +151,7 @@ pub async fn smb_connect(
         password,
         domain,
     };
-    let client = SmbClient::connect(params.to_config()).await.map_err(err_str)?;
+    let client = connect_with_timeout(&params).await?;
 
     let mut guard = SESSION.lock().await;
     *guard = Some(SmbSession { client, tree: None });
@@ -134,9 +164,21 @@ pub async fn smb_connect(
         password: params.password.clone(),
         domain: params.domain.clone(),
     });
-    let mut pool = Vec::new();
+    // 并发建池：死 NAS 上串行建 8 条连接最坏 8×10s（历史事故：
+    // 播放下载挂 30s+ 的元凶之一），并发 + 单条 5s 超时压到 ~5s。
+    // 池是优化项而非必需：失败连接跳过即可，池空时读操作回退主会话。
+    const POOL_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+    let mut handles = Vec::new();
     for _ in 0..READ_POOL_SIZE {
-        if let Ok(c) = SmbClient::connect(params.to_config()).await {
+        let params = params.clone();
+        handles.push(tokio::spawn(async move {
+            tokio::time::timeout(POOL_CONNECT_TIMEOUT, SmbClient::connect(params.to_config()))
+                .await
+        }));
+    }
+    let mut pool = Vec::new();
+    for h in handles {
+        if let Ok(Ok(Ok(c))) = h.await {
             pool.push(SmbSession { client: c, tree: None });
         }
     }
@@ -161,13 +203,23 @@ pub async fn smb_keepalive() -> bool {
     // 主会话
     if let Ok(mut guard) = SESSION.try_lock() {
         if let Some(sess) = guard.as_mut() {
-            if let Some(tree) = sess.tree.as_mut() {
-                let probe = tokio::time::timeout(
-                    KEEPALIVE_PROBE_TIMEOUT,
-                    sess.client.fs_info(tree),
-                )
-                .await;
-                if matches!(probe, Err(_) | Ok(Err(_))) {
+            match sess.tree.as_mut() {
+                Some(tree) => {
+                    let probe = tokio::time::timeout(
+                        KEEPALIVE_PROBE_TIMEOUT,
+                        sess.client.fs_info(tree),
+                    )
+                    .await;
+                    if matches!(probe, Err(_) | Ok(Err(_))) {
+                        healthy = false;
+                    }
+                }
+                None => {
+                    // 会话存在但共享未挂载：Dart 侧乐观缓存 _connected/_mountedShare
+                    // 与 Rust 实际状态脱节（重建中断/并发 force 竞争导致 tree 丢失，
+                    // 真实 IO 报 "no share connected"）。探活不覆盖此状态，
+                    // 判不健康让 Dart force 重建恢复挂载（历史事故：死会话
+                    // 因探活空转永远不重建，播放/封面连环超时）。
                     healthy = false;
                 }
             }
@@ -223,13 +275,13 @@ pub async fn smb_list_shares() -> Result<Vec<SmbShareInfo>, String> {
 pub async fn smb_connect_share(share_name: String) -> Result<(), String> {
     let mut guard = SESSION.lock().await;
     let sess = guard.as_mut().ok_or("not connected")?;
-    let tree = sess.client.connect_share(&share_name).await.map_err(err_str)?;
+    let tree = connect_share_with_timeout(&mut sess.client, &share_name).await?;
     sess.tree = Some(tree);
     drop(guard);
 
     let mut pool = POOL.lock().await;
     for s in pool.iter_mut() {
-        if let Ok(t) = s.client.connect_share(&share_name).await {
+        if let Ok(t) = connect_share_with_timeout(&mut s.client, &share_name).await {
             s.tree = Some(t);
         }
     }
@@ -243,7 +295,7 @@ pub async fn smb_connect_share(share_name: String) -> Result<(), String> {
 /// 优先从读取池借独立连接，使多个目录可并行列出（避免主会话串行排队）；
 /// 池空时回退主会话。
 pub async fn smb_list_directory(path: String) -> Result<Vec<SmbDirEntry>, String> {
-    let permit = POOL_SEM.acquire().await.map_err(err_str)?;
+    let permit = acquire_pool_permit().await?;
     let pooled = POOL.lock().await.pop();
     let entries: Vec<DirectoryEntry> = match pooled {
         Some(mut sess) => {
@@ -281,7 +333,7 @@ pub async fn smb_list_directory(path: String) -> Result<Vec<SmbDirEntry>, String
 /// 大于该值的文件（几乎所有音频）会报错。
 /// 优先从读取池借独立连接（并行下载），池空时回退主会话。
 pub async fn smb_read_file(path: String) -> Result<Vec<u8>, String> {
-    let permit = POOL_SEM.acquire().await.map_err(err_str)?;
+    let permit = acquire_pool_permit().await?;
     let pooled = POOL.lock().await.pop();
     let result = match pooled {
         Some(mut sess) => {
@@ -336,7 +388,7 @@ pub async fn smb_read_file_stream(
     path: String,
     sink: StreamSink<Vec<u8>>,
 ) -> Result<(), String> {
-    let permit = POOL_SEM.acquire().await.map_err(err_str)?;
+    let permit = acquire_pool_permit().await?;
     // from_pool：池连接用完归还；临时新建的用完 drop 关闭，不进池
     let (mut sess, from_pool) = match POOL.lock().await.pop() {
         Some(s) => (s, true),
@@ -349,8 +401,8 @@ pub async fn smb_read_file_stream(
                 .as_ref()
                 .and_then(|s| s.tree.as_ref().map(|t| t.share_name.clone()))
                 .ok_or("no share connected")?;
-            let mut client = SmbClient::connect(params.to_config()).await.map_err(err_str)?;
-            let tree = client.connect_share(&share).await.map_err(err_str)?;
+            let mut client = connect_with_timeout(&params).await?;
+            let tree = connect_share_with_timeout(&mut client, &share).await?;
             (SmbSession { client, tree: Some(tree) }, false)
         }
     };
@@ -380,7 +432,23 @@ pub async fn smb_read_file_stream(
         let mut offset = 0u64;
         const CHUNK: u64 = 512 * 1024;
         while offset < total {
-            let data = reader.read_at(offset, CHUNK).await.map_err(err_str)?;
+            // 分块读也包超时：死连接上 READ 同样挂满 crate 30s（open 阶段
+            // 的 10s 只挡住了建句柄，读第一块时连接可能刚被回收）。逐块
+            // 10s 快速失败，让 Dart 重试链路尽早重建，不白等 30s。
+            let data = match tokio::time::timeout(
+                IO_READ_TIMEOUT,
+                reader.read_at(offset, CHUNK),
+            )
+            .await
+            {
+                Ok(d) => d.map_err(err_str)?,
+                Err(_) => {
+                    let _ = reader.close().await;
+                    return Err(format!(
+                        "read timeout (10s) at offset {offset}/{total}: {path}"
+                    ));
+                }
+            };
             let n = data.len() as u64;
             if n == 0 {
                 return Err(format!("unexpected EOF at offset {offset}/{total}: {path}"));
@@ -406,7 +474,7 @@ pub async fn smb_read_file_stream(
 /// 会话在读完前独占（不回池）：与 smb_read_file_stream 同理，提前归还
 /// 会让后续任务在同一连接上发并发请求，部分 NAS 无法处理。
 pub async fn smb_read_head(path: String, max_len: u64) -> Result<Vec<u8>, String> {
-    let permit = POOL_SEM.acquire().await.map_err(err_str)?;
+    let permit = acquire_pool_permit().await?;
     // from_pool：池连接读完归还；临时新建的用完 drop 关闭，不进池
     let (mut sess, from_pool) = match POOL.lock().await.pop() {
         Some(s) => (s, true),
@@ -419,8 +487,8 @@ pub async fn smb_read_head(path: String, max_len: u64) -> Result<Vec<u8>, String
                 .as_ref()
                 .and_then(|s| s.tree.as_ref().map(|t| t.share_name.clone()))
                 .ok_or("no share connected")?;
-            let mut client = SmbClient::connect(params.to_config()).await.map_err(err_str)?;
-            let tree = client.connect_share(&share).await.map_err(err_str)?;
+            let mut client = connect_with_timeout(&params).await?;
+            let tree = connect_share_with_timeout(&mut client, &share).await?;
             (SmbSession { client, tree: Some(tree) }, false)
         }
     };
@@ -468,4 +536,198 @@ pub async fn smb_file_size(path: String) -> Result<u64, String> {
         .find(|e| !e.is_directory)
         .map(|e| e.size)
         .ok_or_else(|| "file not found".to_string())
+}
+
+/// 边下边播：SMB 远端文件 → core 流式解码（首帧即出声）＋并行写本地缓存。
+///
+/// 流程：启动 core `play_stream` 拿到 StreamHandle → spawn 后台喂流 task，
+/// 独占一条池连接从远端读 512KB 分块，每块 `handle.write` 喂给 core 解码
+/// （同时追加写 `.smb_cache/*.part`），读尽后 `signal_eof` 并 rename 成正式
+/// 缓存（下次播放秒起）；若流被关闭（切歌/stop，`write` 返回 0）立即退出
+/// 并清理残留 `.part`，避免半截缓存被误命中。
+///
+/// [format_hint]：远端文件扩展名（"mp3"/"flac"…），core 据此选择解码器，
+/// 传 None 则纯靠 symphonia 自动探测。返回 Ok 即表示流已启动且**首块已喂入
+/// core**（probe 拿到数据，ready 大概率达成）。失败（连接不可用/流被关）
+/// 返回 Err，Dart 回退全量下载；不再 fire-and-forget 导致失败静默。
+pub async fn engine_play_smb_stream(
+    smb_path: String,
+    format_hint: Option<String>,
+    cache_final_path: Option<String>,
+) -> Result<(), String> {
+    let handle = crate::api::engine::engine_start_stream(format_hint, None)?;
+    // 首块喂流成功信号：喂流 task 写入第一块后通知，主函数据此确认流已启动
+    let (first_tx, first_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let first_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(first_tx)));
+    // spawn 后台喂流 task：从池独占连接读远端 → 喂 core + 写缓存
+    tokio::spawn(async move {
+        let result = feed_stream_to_core(
+            &handle,
+            &smb_path,
+            cache_final_path.as_deref(),
+            Some(std::sync::Arc::clone(&first_tx)),
+        )
+        .await;
+        if let Ok(mut guard) = first_tx.lock() {
+            if let Some(tx) = guard.take() {
+                let _ = tx.send(result);
+                return;
+            }
+        }
+        // 走到这里说明首块已成功（sender 已被 consume）：
+        // 若此时失败 = 播放中途断流，主动注入 error 事件让 Dart 兜底回退；
+        // 若 Ok = 正常播完/切歌关流，无需通知。
+        if let Err(e) = result {
+            let msg = format!("SMB 流播放中断: {e}");
+            eprintln!("[SMB] 喂流失败(后台): {e}");
+            crate::api::engine::engine_notify_stream_error(msg);
+        }
+    });
+    // 同步等首块喂流结果（probe 有数据 → ready 达成），最多等 OPEN_TIMEOUT
+    match tokio::time::timeout(
+        IO_READ_TIMEOUT,
+        first_rx,
+    )
+    .await
+    {
+        Ok(Ok(Ok(()))) => Ok(()),
+        Ok(Ok(Err(e))) => Err(format!("首块喂流失败: {e}")),
+        Ok(Err(_)) => Err("喂流 task 未返回结果".to_string()),
+        Err(_) => Err("等待首块喂流超时".to_string()),
+    }
+}
+
+/// 喂流核心：独占池连接，读远端分块喂给 core 并并行写 `.part` 缓存。
+/// [first_notify]：第一块成功喂入 core 时触发（变 None），用于主流程同步确认
+/// 流已启动（probe 拿到字节 ready 达成）。
+async fn feed_stream_to_core(
+    handle: &StreamHandle,
+    smb_path: &str,
+    cache_final_path: Option<&str>,
+    first_notify: Option<
+        std::sync::Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<(), String>>>>>,
+    >,
+) -> Result<(), String> {
+    // 获取池 permit：不无限等待。池被占满（如批量封面提取并发）时直接
+    // 新建独立临时连接喂流，保证「点歌出声」不被后台任务阻塞。
+    let _permit = POOL_SEM.try_acquire().ok();
+    let (mut sess, from_pool) = match POOL.lock().await.pop() {
+        Some(s) => (s, true),
+        None => {
+            let params = PARAMS.lock().await.clone().ok_or("not connected")?;
+            let share = SESSION
+                .lock()
+                .await
+                .as_ref()
+                .and_then(|s| s.tree.as_ref().map(|t| t.share_name.clone()))
+                .ok_or("no share connected")?;
+            let mut client = connect_with_timeout(&params).await?;
+            let tree = connect_share_with_timeout(&mut client, &share).await?;
+            (SmbSession { client, tree: Some(tree) }, false)
+        }
+    };
+    ensure_pooled_tree(&mut sess).await;
+
+    // .part 路径：正式缓存路径 + ".part"；读完 rename 成正式缓存
+    let part_path = cache_final_path.map(|p| format!("{p}.part"));
+    let part_path = part_path.as_deref();
+
+    let result: Result<(), String> = async {
+        let tree = sess.tree.as_ref().ok_or("no share connected")?;
+        // open 包 10s 超时：死连接上 CREATE 快速失败，喂流 task 尽早结束
+        let reader = match tokio::time::timeout(
+            IO_READ_TIMEOUT,
+            sess.client.open_file_reader(tree, smb_path),
+        )
+        .await
+        {
+            Ok(r) => r.map_err(err_str)?,
+            Err(_) => return Err("open timeout (10s)".to_string()),
+        };
+        let total = reader.size();
+        if total == 0 {
+            let _ = reader.close().await;
+            return Err(format!("remote file is empty (size 0): {smb_path}"));
+        }
+
+        // 并行写 .part 缓存（覆盖式写入，确保干净）
+        let mut cache_file = match part_path {
+            Some(p) => {
+                let f = std::fs::File::create(p).map_err(err_str)?;
+                Some(f)
+            }
+            None => None,
+        };
+
+        let mut offset = 0u64;
+        const CHUNK: u64 = 512 * 1024;
+        while offset < total {
+            // 分块读也包 10s 超时：死连接上 READ 快速失败，不白等 crate 30s
+            let data = match tokio::time::timeout(
+                IO_READ_TIMEOUT,
+                reader.read_at(offset, CHUNK),
+            )
+            .await
+            {
+                Ok(d) => d.map_err(err_str)?,
+                Err(_) => {
+                    let _ = reader.close().await;
+                    return Err(format!(
+                        "read timeout (10s) at offset {offset}/{total}: {smb_path}"
+                    ));
+                }
+            };
+            let n = data.len() as u64;
+            if n == 0 {
+                return Err(format!("unexpected EOF at offset {offset}/{total}: {smb_path}"));
+            }
+            // 喂给 core：流被关闭（切歌/stop）时 write 返回 0，停止拉取
+            let written = handle.write(&data);
+            if written == 0 {
+                let _ = reader.close().await;
+                return Err("流已被关闭（切歌/停止），喂流中止".to_string());
+            }
+            // 首块喂入成功：通知主流程流已启动（probe 有数据，ready 大概率达成）
+            if let Some(ref notify) = first_notify {
+                if let Ok(mut guard) = notify.lock() {
+                    if let Some(tx) = guard.take() {
+                        let _ = tx.send(Ok(()));
+                    }
+                }
+            }
+            // 并行写缓存
+            if let Some(f) = cache_file.as_mut() {
+                use std::io::Write;
+                f.write_all(&data).map_err(err_str)?;
+            }
+            offset += n;
+        }
+        // 读尽：通知 EOF 并落缓存（完整读到文件末尾）
+        let _ = reader.close().await;
+        handle.signal_eof();
+        if let Some(f) = cache_file.as_mut() {
+            use std::io::Write;
+            f.flush().map_err(err_str)?;
+        }
+        drop(cache_file);
+        if let Some(part) = part_path {
+            if let Some(final_path) = cache_final_path {
+                std::fs::rename(part, final_path).map_err(err_str)?;
+            }
+        }
+        Ok(())
+    }
+    .await;
+
+    // 失败/超时/流被关闭：清理残留 .part 并丢弃连接；成功回池
+    if result.is_err() {
+        if let Some(part) = part_path {
+            let _ = std::fs::remove_file(part);
+        }
+    }
+    if from_pool && result.is_ok() {
+        POOL.lock().await.push(sess);
+    }
+    drop(_permit);
+    result
 }

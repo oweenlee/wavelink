@@ -66,11 +66,16 @@ mod underrun_probe {
         }
     }
 
-    /// 门控开着但 ringbuf 完全空（限流 1s 一条，防爆日志）
+    /// 门控开着但 ringbuf 完全空（限流 5s 一条，且 burst 进行中跳过——
+    /// burst 开始已打过一条，避免失败曲目挂起期间每 1s 刷屏）
     pub fn starve() {
+        // IN_BURST 进行中：burst 开始日志已记录，starve 细节交给 burst 结束统计
+        if IN_BURST.load(Ordering::Acquire) {
+            return;
+        }
         let now = T0.elapsed().as_millis() as u64;
         let last = LAST_STARVE_LOG.load(Ordering::Acquire);
-        if now.saturating_sub(last) > 1000
+        if now.saturating_sub(last) > 5000
             && LAST_STARVE_LOG
                 .compare_exchange(last, now, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok()

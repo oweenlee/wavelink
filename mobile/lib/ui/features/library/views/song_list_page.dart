@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../../../../data/services/log.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../../domain/models/song.dart';
 import '../../playback/view_models/playback_controller.dart';
@@ -145,7 +146,10 @@ class SongListPage extends ConsumerWidget {
                   isCurrent: isCurrent,
                   isPlaying: isPlaying && isCurrent,
                   trackNumber: i + 1,
-                  onTap: () => player.playSong(song),
+                  onTap: () {
+                    Log.d('Audio', '[pt] 用户点击 ${song.title}');
+                    player.playSong(song);
+                  },
                 );
               }, childCount: songs.length),
             ),

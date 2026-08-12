@@ -8,6 +8,7 @@ class ProgressSliderWidget extends StatelessWidget {
   final String total;
   final ValueChanged<double> onChanged;
   final ValueChanged<double>? onDragging;
+  final ValueChanged<double>? onDragStart;
   final ValueChanged<double>? onChangeEnd;
 
   const ProgressSliderWidget({
@@ -18,6 +19,7 @@ class ProgressSliderWidget extends StatelessWidget {
     required this.total,
     required this.onChanged,
     this.onDragging,
+    this.onDragStart,
     this.onChangeEnd,
   });
 
@@ -45,6 +47,7 @@ class ProgressSliderWidget extends StatelessWidget {
             ),
             child: Slider(
               value: progress.clamp(0.0, 1.0),
+              onChangeStart: onDragStart,
               onChanged: (v) {
                 onChanged(v);
                 onDragging?.call(v);

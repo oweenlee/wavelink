@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../data/services/log.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
@@ -337,7 +338,10 @@ class _SongsTab extends ConsumerWidget {
             isCurrent: isCurrent,
             isPlaying: isPlaying && isCurrent,
             trackNumber: trackNumbers[song.id] ?? index + 1,
-            onTap: () => player.playSong(song),
+            onTap: () {
+              Log.d('Audio', '[pt] 用户点击 ${song.title}');
+              player.playSong(song);
+            },
             onMore: () => _showContextMenu(context, song, player),
             trailing: player.isSongFavorite(song.id)
                 ? const Icon(

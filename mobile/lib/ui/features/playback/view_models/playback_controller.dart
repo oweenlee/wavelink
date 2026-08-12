@@ -217,6 +217,7 @@ class PlaybackController {
   void startPlayback() => _player.startPlayback();
   void seek(double value, {bool immediate = false}) =>
       _player.seek(value, immediate: immediate);
+  void setDragging(bool dragging) => _player.setDragging(dragging);
   void skipForward() => _player.skipForward();
   void skipBackward() => _player.skipBackward();
   set volume(double v) => _player.setVolume(v);

@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `ensure_pooled_tree`, `err_str`, `to_config`
+// These functions are ignored because they are not marked as `pub`: `ensure_pooled_tree`, `err_str`, `feed_stream_to_core`, `to_config`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ConnectParams`, `SmbSession`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`, `fmt`
 
@@ -89,6 +89,28 @@ Future<Uint8List> smbReadHead({required String path, required BigInt maxLen}) =>
 /// 远端文件大小（扫描时判断是否有变化，避免重复下载）
 Future<BigInt> smbFileSize({required String path}) =>
     RustLib.instance.api.crateApiSmbSmbFileSize(path: path);
+
+/// 边下边播：SMB 远端文件 → core 流式解码（首帧即出声）＋并行写本地缓存。
+///
+/// 流程：启动 core `play_stream` 拿到 StreamHandle → spawn 后台喂流 task，
+/// 独占一条池连接从远端读 512KB 分块，每块 `handle.write` 喂给 core 解码
+/// （同时追加写 `.smb_cache/*.part`），读尽后 `signal_eof` 并 rename 成正式
+/// 缓存（下次播放秒起）；若流被关闭（切歌/stop，`write` 返回 0）立即退出
+/// 并清理残留 `.part`，避免半截缓存被误命中。
+///
+/// [format_hint]：远端文件扩展名（"mp3"/"flac"…），core 据此选择解码器，
+/// 传 None 则纯靠 symphonia 自动探测。返回 Ok 即表示流已启动且**首块已喂入
+/// core**（probe 拿到数据，ready 大概率达成）。失败（连接不可用/流被关）
+/// 返回 Err，Dart 回退全量下载；不再 fire-and-forget 导致失败静默。
+Future<void> enginePlaySmbStream({
+  required String smbPath,
+  String? formatHint,
+  String? cacheFinalPath,
+}) => RustLib.instance.api.crateApiSmbEnginePlaySmbStream(
+  smbPath: smbPath,
+  formatHint: formatHint,
+  cacheFinalPath: cacheFinalPath,
+);
 
 /// 目录条目（list_directory 用）
 class SmbDirEntry {

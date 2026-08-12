@@ -23,6 +23,16 @@ class AudioEngineRepository {
   // ── 播放控制 ──
 
   Future<void> play(String path) => rs.enginePlay(path);
+
+  /// SMB 边下边播：Rust 侧启动 core 流式播放（首帧即出声）并后台喂流，
+  /// 并行把内容写入 [cacheFinalPath]（完成后 rename 成正式缓存）。
+  /// 返回即代表流已启动（引擎正在解码远端字节流）。
+  Future<void> playSmbStream(String smbPath, String? formatHint, String? cacheFinalPath) =>
+      rs.enginePlaySmbStream(
+        smbPath: smbPath,
+        formatHint: formatHint,
+        cacheFinalPath: cacheFinalPath,
+      );
   Future<void> pause() => rs.enginePause();
   Future<void> resume() => rs.engineResume();
   Future<void> stop() => rs.engineStop();

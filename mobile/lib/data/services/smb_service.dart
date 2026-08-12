@@ -27,6 +27,39 @@ class SmbService {
   /// 否则扫描中的 read 会因 tree 被重置而报 "no share connected"。
   static bool _scanning = false;
 
+  /// 封面提取连续失败计数（会话级熔断）。死会话上批量封面提取
+  /// 每条都白等 10s 再重建，实测 6~8 条连刷；计数达阈值后停止
+  /// 逐条重试，先主动重建一次再继续。
+  static int _coverFailStreak = 0;
+  static const int _coverFailThreshold = 3;
+
+  /// 封面熔断冷却：达到熔断阈值后暂停封面提取一段时间，
+  /// 避免死会话上批间无冷却反复刷超时（历史日志：连续 4 轮
+  /// 封面批每轮都 10s 超时熔断，期间播放/下载被连接竞争拖垮）。
+  static DateTime _coverCooldownUntil = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// 播放/下载活动计数 + 最近活动时间：封面提取（后台低优先级任务）
+  /// 在播放/下载进行时让路，避免与播放竞争 NAS 连接数（历史事故：
+  /// 封面批在跑时点歌，喂流拿不到连接 → 3s 超时杀流 → 回退下载
+  /// 又撞封面批 → 点歌 34s 才出声）。
+  static int _activePlayback = 0;
+  static DateTime _lastPlaybackAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// 播放/下载是否活跃（含 5s 余量窗口，覆盖 playSmbStream 后台喂流期）。
+  static bool get playbackActive =>
+      _activePlayback > 0 ||
+      DateTime.now().difference(_lastPlaybackAt).inSeconds < 5;
+
+  static void enterPlayback() {
+    _activePlayback++;
+    _lastPlaybackAt = DateTime.now();
+  }
+
+  static void exitPlayback() {
+    if (_activePlayback > 0) _activePlayback--;
+    _lastPlaybackAt = DateTime.now();
+  }
+
   // ── 会话守卫：所有会话变更（连接/重连/挂载/断开）的唯一串行入口 ──
   //
   // 历史教训：并发任务各自重建会话互相摧毁（Protocol error 雪崩、
@@ -521,21 +554,46 @@ class SmbService {
   static Future<void> fetchRemoteCover(Song song) async {
     final smbPath = song.smbPath;
     if (smbPath == null || smbPath.isEmpty || song.coverUrl != null) return;
-    // App 后台挂起后 SMB 会话常已失效而 _connected 仍为 true，
-    // 直接读会失败；先走自愈入口确保会话与共享挂载就绪
-    if (!await ensureReady()) return;
+    // 熔断冷却：死会话上连续失败后暂停封面提取，避免批间无冷却
+    // 反复刷 10s 超时（历史日志：连续 4 轮封面批每轮全挂，期间
+    // 播放/下载被连接竞争拖垮，点歌 34s 才出声）。
+    if (DateTime.now().isBefore(_coverCooldownUntil)) return;
+    // 播放/下载让路：后台封面提取不与前台播放竞争 NAS 连接数。
+    if (playbackActive) return;
+    // 会话熔断：连续封面失败超过阈值，判定会话不健康，直接走重建而非逐条 10s 白等。
+    // 避免死会话上批量封面提取每条都挂满超时再重试的雪崩（实测 6~8 条连刷）。
+    if (_coverFailStreak >= _coverFailThreshold) {
+      Log.w('SMB', '封面提取熔断：连续失败 $_coverFailStreak 次，主动重建会话');
+      await ensureReady(force: true);
+      _coverFailStreak = 0;
+      if (song.coverUrl != null) return;
+      if (!await ensureReady()) return;
+    } else {
+      if (!await ensureReady()) return;
+    }
     final gen = _sessionGen;
     try {
       await _fetchRemoteCoverOnce(song, smbPath);
+      _coverFailStreak = 0;
     } catch (e) {
-      Log.w('SMB', '远端封面提取失败 ($e)，会话重建后重试');
+      _coverFailStreak++;
+      Log.w('SMB', '远端封面提取失败 ($e)，会话重建后重试 (连续失败 $_coverFailStreak)');
+      if (_coverFailStreak >= _coverFailThreshold) {
+        Log.w('SMB', '封面提取达到熔断阈值，本批剩余封面跳过');
+        // 冷却 60s：让死会话自愈/重建期间不再反复踩雷
+        _coverCooldownUntil =
+            DateTime.now().add(const Duration(seconds: 60));
+        return;
+      }
       if (!await _retryReady(gen)) {
         Log.e('SMB', '封面重试中止：会话不可用');
         return;
       }
       try {
         await _fetchRemoteCoverOnce(song, smbPath);
+        _coverFailStreak = 0;
       } catch (e2) {
+        _coverFailStreak++;
         Log.e('SMB', '远端封面提取重试仍失败: $e2');
       }
     }
@@ -587,22 +645,46 @@ class SmbService {
   /// 同一 smbPath 的并发调用去重：共享同一次下载，避免 .part 写入竞态。
   static Future<String?> downloadToLocal(String smbPath) async {
     if (smbPath.isEmpty) return null;
-    final pending = _downloading[smbPath];
-    if (pending != null) return pending;
-    final fut = _downloadToLocalImpl(smbPath);
-    _downloading[smbPath] = fut;
+    // 防御：历史歌单脏数据可能混入 .lrc 歌词条目（旧版本扫描把歌词
+    // 当音频收录），直接拒绝下载，避免预取/播放把歌词文件拉进缓存
+    // 当音频播放（解码报 "no suitable format reader"）。
+    final ext = smbPath.split('.').last.toLowerCase();
+    if (!ImportService.extensions.contains(ext)) {
+      Log.w('SMB', 'downloadToLocal 拒绝非音频路径 ($smbPath)');
+      return null;
+    }
+    enterPlayback();
     try {
-      return await fut;
+      final pending = _downloading[smbPath];
+      if (pending != null) return await pending;
+      final fut = _downloadToLocalImpl(smbPath);
+      _downloading[smbPath] = fut;
+      try {
+        return await fut;
+      } finally {
+        _downloading.remove(smbPath);
+      }
     } finally {
-      _downloading.remove(smbPath);
+      exitPlayback();
     }
   }
 
   static Future<String?> _downloadToLocalImpl(String smbPath) async {
     if (smbPath.isEmpty) return null;
+    // 缓存命中短路：本地缓存已存在即直接返回，不碰 SMB 会话。
+    // 原实现在 ensureReady + 探活（可能触发局域网往返/锁等待）之后
+    // 才查缓存，缓存命中场景白耗 2~3s（实测 2842ms）。
+    final cached = await cachedLocalPath(smbPath);
+    if (cached != null) return cached;
     // 自愈：会话丢失（测试连接断开/重启等）时自动重连并挂载共享
     if (!await ensureReady()) {
       Log.e('SMB', 'downloadToLocal 中止：会话不可用 (lastError=$lastError)');
+      return null;
+    }
+    // 播放前探活：死连接上首块读会白挂超时（open 10s + 分块 30s），
+    // 先探活发现死连接立即 force 重建，把等待消化在 IO 之前
+    if (!await ensureHealthy()) {
+      Log.e('SMB', 'downloadToLocal 探活失败：会话不可用');
       return null;
     }
     final gen = _sessionGen;
@@ -616,6 +698,40 @@ class SmbService {
       }
     }
     return path;
+  }
+
+  /// 计算单曲本地缓存路径；已存在且非空则返回，否则返回 null。
+  static Future<String?> cachedLocalPath(String smbPath) async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final cacheDir = Directory('${appDir.path}/.smb_cache');
+      if (!await cacheDir.exists()) return null;
+      final name = smbPath.split('/').last;
+      final localFile = File('${cacheDir.path}/${smbPath.hashCode}_$name');
+      if (await localFile.exists() && await localFile.length() > 0) {
+        return localFile.path;
+      }
+      return null;
+    } catch (e) {
+      Log.e('SMB', '缓存路径检查失败: $e');
+      return null;
+    }
+  }
+
+  /// 计算单曲缓存目标完整路径（与 [cachedLocalPath] 命名一致）；
+  /// 边下边播时把该路径传给 enginePlaySmbStream 作 cacheFinalPath，
+  /// 流读完 rename 成正式缓存后，下次播放直接命中。
+  static Future<String?> cacheTargetFor(String smbPath) async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final cacheDir = Directory('${appDir.path}/.smb_cache');
+      if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
+      final name = smbPath.split('/').last;
+      return '${cacheDir.path}/${smbPath.hashCode}_$name';
+    } catch (e) {
+      Log.e('SMB', '缓存目标路径计算失败: $e');
+      return null;
+    }
   }
 
   /// 实际下载单曲到本地缓存，返回可播放路径；失败返回 null。

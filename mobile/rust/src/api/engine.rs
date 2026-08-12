@@ -6,6 +6,7 @@
 use arc_swap::ArcSwapOption;
 use audio_core::dsp::PeqBand;
 use audio_core::engine::{EngineEvent, EngineHandle, PlayMode};
+use audio_core::stream::StreamHandle;
 use audio_core::EngineConfig;
 use flutter_rust_bridge::frb;
 use once_cell::sync::OnceCell;
@@ -185,6 +186,18 @@ pub fn engine_take_event() -> Option<String> {
     } else {
         None
     }
+}
+
+/// 主动推送引擎错误事件（非引擎线程/流式喂流 task 用）。
+///
+/// 背景：SMB 边下边播的喂流 task 在首块成功后若中途失败（连接断/读超时/
+/// 网络波动），core 侧解码线程只看到 channel 断开 → EOF → 播完缓冲后发
+/// `stopped`，Dart 无法区分「正常播完」与「断流」，会当曲终切歌。此处
+/// 让喂流 task 失败时主动注入 error 事件，Dart `_tick` 的 error 分支
+/// （_playingFromStream 时回退全量下载）即可接管。
+pub fn engine_notify_stream_error(message: String) {
+    *LAST_ERROR.lock().unwrap() = message;
+    push_event("error");
 }
 
 // ── 播放控制 ──
@@ -408,4 +421,16 @@ pub fn engine_queue_path_at(index: i32) -> String {
 
 pub fn engine_remove_from_queue(index: i32) {
     with_engine(|h| h.remove_from_queue(index as usize));
+}
+
+/// 启动流式播放，返回写入句柄（SMB 边下边播喂流用）。
+/// 内部 crate 可见：smb.rs 的 engine_play_smb_stream 通过本函数拿到
+/// StreamHandle，再起后台 task 从 SMB 拉字节喂入 core 解码。
+pub(crate) fn engine_start_stream(
+    format_hint: Option<String>,
+    content_length: Option<u64>,
+) -> Result<StreamHandle, String> {
+    with_engine(|h| h.play_stream_sync(format_hint, content_length))
+        .ok_or_else(|| "引擎未初始化".to_string())?
+        .map_err(|e| e.to_string())
 }

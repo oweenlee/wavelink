@@ -491,7 +491,20 @@ fn run_from_stream(
     }
     let mut format = symphonia::default::get_probe().probe(
         &hint, mss, FormatOptions::default(), MetadataOptions::default(),
-    ).map_err(|e| EngineError::DecodeFailed { path: "stream".into(), reason: format!("流式探测失败: {e}") })?;
+    ).map_err(|e| {
+        // probe 失败多为「远端字节不足/非音频数据/连接中断」，原始
+        // symphonia 报错对用户不可读，包装常见场景辅助定位
+        let reason = format!("流式探测失败: {e}");
+        error!("{reason}");
+        EngineError::DecodeFailed {
+            path: "stream".into(),
+            reason: if e.to_string().contains("no suitable format reader") {
+                "远端数据不是可播放的音频，或字节流尚未就绪（连接/格式问题）".into()
+            } else {
+                reason
+            },
+        }
+    })?;
     let (track_id, audio_cp) = {
         let track = format.default_track(TrackType::Audio)
             .ok_or_else(|| EngineError::DecodeFailed { path: "stream".into(), reason: "无音频轨".into() })?;

@@ -8,6 +8,7 @@ import '../../src/rust/api/cue.dart' as cue;
 import '../../src/rust/api/playlist.dart' as playlist;
 import '../../src/rust/api/engine.dart' as engine;
 import '../../src/rust/api/dsp.dart' as dsp;
+import '../../src/rust/api/smb.dart' as smb;
 import 'log.dart';
 
 export '../../src/rust/api/decode.dart'
@@ -144,6 +145,20 @@ Future<void> initEngineAt(int sampleRate) => engine.engineInitEx(
 Future<void> deinitEngine() => engine.engineDeinit();
 
 Future<void> enginePlay(String path) => engine.enginePlay(path: path);
+
+/// SMB 边下边播：Rust 侧启动 core 流式播放（首帧即出声）并后台喂流，
+/// 并行把内容写入 [cacheFinalPath]（完成后 rename 成正式缓存）。
+Future<void> enginePlaySmbStream({
+  required String smbPath,
+  String? formatHint,
+  String? cacheFinalPath,
+}) =>
+    smb.enginePlaySmbStream(
+      smbPath: smbPath,
+      formatHint: formatHint,
+      cacheFinalPath: cacheFinalPath,
+    );
+
 Future<void> enginePlayQueue(List<String> paths) =>
     engine.enginePlayQueue(paths: paths);
 Future<void> engineSetPeqBand({

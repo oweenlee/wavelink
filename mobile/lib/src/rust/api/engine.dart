@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `engine_probe`, `push_event`, `with_engine`
+// These functions are ignored because they are not marked as `pub`: `engine_probe`, `engine_start_stream`, `push_event`, `with_engine`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `engine_read_samples`
 
 /// 初始化引擎，使用 HW_SAMPLE_RATE（由 Swift 设 set_hw_sample_rate 传入）
@@ -48,6 +48,18 @@ Future<String?> enginePollEvents() =>
 /// 检查是否有新的事件发生并返回事件类型
 Future<String?> engineTakeEvent() =>
     RustLib.instance.api.crateApiEngineEngineTakeEvent();
+
+/// 主动推送引擎错误事件（非引擎线程/流式喂流 task 用）。
+///
+/// 背景：SMB 边下边播的喂流 task 在首块成功后若中途失败（连接断/读超时/
+/// 网络波动），core 侧解码线程只看到 channel 断开 → EOF → 播完缓冲后发
+/// `stopped`，Dart 无法区分「正常播完」与「断流」，会当曲终切歌。此处
+/// 让喂流 task 失败时主动注入 error 事件，Dart `_tick` 的 error 分支
+/// （_playingFromStream 时回退全量下载）即可接管。
+Future<void> engineNotifyStreamError({required String message}) => RustLib
+    .instance
+    .api
+    .crateApiEngineEngineNotifyStreamError(message: message);
 
 Future<void> enginePlay({required String path}) =>
     RustLib.instance.api.crateApiEngineEnginePlay(path: path);

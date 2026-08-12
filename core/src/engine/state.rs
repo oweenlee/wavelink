@@ -365,6 +365,12 @@ impl EngineState {
         stream_handle_out: Option<std::sync::Arc<crossbeam_channel::Sender<StreamHandle>>>,
     ) {
         self.stop_playback();
+        // 重置播放位置：play_entry 有 store(0)，此处此前遗漏 → 边下边播
+        // （SMB 流式）的进度跨曲目累积，表现为切歌后进度条不从零开始，
+        // 且预取/曲终判断按虚高位置误触发。
+        self.position.store(0, Ordering::SeqCst);
+        // 时长同样清零：避免 engine_duration_secs 返回旧曲时长
+        self.duration_us.store(0, Ordering::Release);
         self.stream_handle = None;
         self.current_entry = None;
 
@@ -434,7 +440,27 @@ impl EngineState {
             Some(o) => o,
             None => { error!("流式播放时输出设备未初始化"); self.stop_playback(); self.fail_stream(ack, EngineError::InvalidState("未初始化输出设备".into())); return; }
         };
-        match ready_rx.recv_timeout(Duration::from_secs(3)) {
+
+        // ── 关键时序修复：宿主必须先拿到 handle 才能喂流，而首帧（ready）
+        // 需要宿主喂数据才会产生。原实现在 ready 成功后才发 handle+ack，
+        // 导致「等首帧 → 要数据 → 要 handle → 等 ready」鸡生蛋死锁（实测
+        // 必现「无有效音频帧」）。现将 handle+ack 提前到 ready 等待之前发出：
+        // 宿主收到 ack 即开始喂流，probe 拿到字节后首帧自然产出。
+        self.stream_handle = Some(handle.clone());
+        if let Some(tx) = stream_handle_out {
+            let _ = tx.send(handle);
+        }
+        if let Some(tx) = ack {
+            let _ = tx.send(Ok(()));
+        }
+
+        // 引擎侧继续等首帧：用于 resume 出声 + 播放状态。失败不 fail ack
+        // （ack 已消费），而是 signal_eof 终止解码线程 + 停止播放 + 发 error
+        // 事件；宿主喂流线程经 handle.write 返回 0 感知失败自行清理。
+        // 6s 而非 3s：慢 NAS/连接竞争下首块喂流可能 >3s（历史事故：封面
+        // 提取与播放争连接时首块 4~7s 才到，3s 超时误杀正常流 → 回退全量
+        // 下载，点歌 34s 才出声）。
+        match ready_rx.recv_timeout(Duration::from_secs(6)) {
             Ok(true) => {
                 output.resume();
                 info!("流式播放已启动");
@@ -445,8 +471,9 @@ impl EngineState {
             _ => {
                 error!("流式: 解码失败（无有效音频帧）");
                 self.emit(EngineEvent::Error("流式解码失败: 无有效音频数据".into()));
+                if let Some(h) = &self.stream_handle { h.signal_eof(); }
+                self.stream_handle = None;
                 self.stop_playback();
-                self.fail_stream(ack, EngineError::DecodeFailed { path: "stream".into(), reason: "无有效音频帧".into() });
                 return;
             }
         }
@@ -455,21 +482,10 @@ impl EngineState {
         self.consumer_thread = Some(consumer);
         self.dsp = Some(dsp);
         self.consumer_stop = Some(stop_flag);
-        self.stream_handle = Some(handle.clone());
         self.apply_pending_replaygain();
         self.reload_pending_ir();
 
         self.sync_dsp_latency();
-
-        // 发送 ack 成功
-        if let Some(tx) = ack {
-            let _ = tx.send(Ok(()));
-        }
-
-        // 将 StreamHandle 克隆一份发送给宿主层
-        if let Some(tx) = stream_handle_out {
-            let _ = tx.send(handle);
-        }
     }
 
     fn fail_stream(&mut self, ack: CmdAck, err: EngineError) {

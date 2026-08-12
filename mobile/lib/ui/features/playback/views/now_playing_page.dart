@@ -758,7 +758,11 @@ class _ProgressRow extends StatelessWidget {
       current: _fmt(player.position),
       total: song.formattedDuration,
       onChanged: (v) => player.seek(v),
-      onChangeEnd: (v) => player.seek(v, immediate: true),
+      onDragStart: (_) => player.setDragging(true),
+      onChangeEnd: (v) {
+        player.setDragging(false);
+        player.seek(v, immediate: true);
+      },
     );
   }
 }
