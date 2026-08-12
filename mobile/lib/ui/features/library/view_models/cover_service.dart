@@ -61,6 +61,9 @@ class CoverService {
         // 也剔除，避免无限重试
         _nasQueue.removeWhere((s) =>
             s.coverUrl != null || (_nasFailCount[s.id] ?? 0) >= 3);
+        // 每轮结束即刷新：已解析的封面及时上屏（历史问题：只在全部
+        // 完成/放弃后刷一次，数百首歌要等几分钟 UI 才更新）
+        onCoversUpdated?.call();
         if (progressed) {
           idleRounds = 0;
         } else {
@@ -109,7 +112,7 @@ class CoverService {
           final c = (_nasFailCount[s.id] ?? 0) + 1;
           _nasFailCount[s.id] = c;
           if (c >= 3) {
-            Log.d('Cover', '3 轮无封面，放弃提取: ${s.title}');
+            Log.d('Cover', '3 轮无封面，放弃提取: ${s.title} (${s.smbPath})');
           }
         }
       }

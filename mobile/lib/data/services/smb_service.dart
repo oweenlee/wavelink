@@ -581,7 +581,7 @@ class SmbService {
       _coverFailStreak = 0;
     } catch (e) {
       _coverFailStreak++;
-      Log.w('SMB', '远端封面提取失败 ($e)，会话重建后重试 (连续失败 $_coverFailStreak)');
+      Log.w('SMB', '远端封面提取失败 ($smbPath): $e，会话重建后重试 (连续失败 $_coverFailStreak)');
       if (_coverFailStreak >= _coverFailThreshold) {
         Log.w('SMB', '封面提取达到熔断阈值，本批剩余封面跳过');
         // 冷却 60s：让死会话自愈/重建期间不再反复踩雷
@@ -598,7 +598,7 @@ class SmbService {
         _coverFailStreak = 0;
       } catch (e2) {
         _coverFailStreak++;
-        Log.e('SMB', '远端封面提取重试仍失败: $e2');
+        Log.e('SMB', '远端封面提取重试仍失败 ($smbPath): $e2');
       }
     }
   }
@@ -618,7 +618,10 @@ class SmbService {
       path: smbPath,
       maxLen: BigInt.from(1024 * 1024),
     );
-    if (head.isEmpty) return;
+    if (head.isEmpty) {
+      Log.w('SMB', '封面提取：头部为空 ($smbPath)');
+      return;
+    }
     // 头部解析出封面则完成；否则读尾部兑底：M4A/AAC/ALAC 的 moov
     // 元数据块（含内嵌封面 covr）常在文件末尾，头部读不到封面。
     if (!await _extractCoverFromBytes(song, smbPath, head)) {
@@ -627,13 +630,66 @@ class SmbService {
           path: smbPath,
           maxLen: BigInt.from(1024 * 1024),
         );
-        if (tail.isNotEmpty) {
-          await _extractCoverFromBytes(song, smbPath, tail);
+        if (tail.isEmpty) {
+          Log.d('SMB', '封面提取：头部无封面且尾部为空 ($smbPath, head=${head.length}B)');
+          return;
+        }
+        if (!await _extractCoverFromBytes(song, smbPath, tail)) {
+          // 打点：头尾都读到数据但均无封面（真无封面 / 封面超出
+          // 1MB 读取窗口 / 标签布局特殊）。用户反馈"文件都有封面却
+          // 解析不出"时，此日志用于定位具体文件与原因。
+          Log.d(
+            'SMB',
+            '封面提取：头/尾均无封面标签 ($smbPath, head=${head.length}B, '
+            'tail=${tail.length}B)',
+          );
+          // 兜底：小文件整文件下载后解析（覆盖 ID3v2 标签超出 1MB
+          // 头/尾窗口被截断的场景，如大尺寸内嵌封面）
+          await _fetchCoverByFullDownload(song, smbPath);
         }
       } catch (e) {
         // 尾部读取失败（会话断/格式不支持）：头部已失败过，静默跳过
         Log.d('SMB', '封面尾部兑底失败 ($smbPath): $e');
       }
+    }
+  }
+
+  /// 兜底：整文件下载后解析封面。仅限小文件（≤30MB），
+  /// 覆盖 ID3v2 标签超出 1MB 头/尾读取窗口被截断的场景。
+  /// 下载复用播放缓存（downloadToLocal），小文件局域网秒级完成。
+  static Future<void> _fetchCoverByFullDownload(
+    Song song,
+    String smbPath,
+  ) async {
+    try {
+      final size = await smb.smbFileSize(path: smbPath);
+      if (size > BigInt.from(30 * 1024 * 1024)) {
+        Log.d('SMB', '封面整文件兑底跳过（文件过大 ${size}B）: $smbPath');
+        return;
+      }
+      final localPath = await downloadToLocal(smbPath);
+      if (localPath == null) {
+        Log.d('SMB', '封面整文件兑底下载失败: $smbPath');
+        return;
+      }
+      final meta = await rs.readMetadata(localPath);
+      if (meta.hasCover && meta.coverBytes.isNotEmpty) {
+        final appDir = await getApplicationDocumentsDirectory();
+        final coversDir = Directory('${appDir.path}/.covers');
+        if (!await coversDir.exists()) {
+          await coversDir.create(recursive: true);
+        }
+        final coverFile =
+            File('${coversDir.path}/smb_${smbPath.hashCode}.jpg');
+        await coverFile.writeAsBytes(meta.coverBytes);
+        song.coverUrl = coverFile.path;
+        song.hasCover = true;
+        Log.d('SMB', '封面整文件兑底成功: $smbPath');
+      } else {
+        Log.d('SMB', '封面整文件兑底仍无封面: $smbPath');
+      }
+    } catch (e) {
+      Log.d('SMB', '封面整文件兑底失败: $smbPath: $e');
     }
   }
 
