@@ -8,14 +8,10 @@ import '../../l10n/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'theme/app_theme.dart';
-import '../../data/services/preferences_service.dart';
 import '../../data/services/smb_service.dart';
 import '../../data/services/subsonic_service.dart';
-import '../../domain/models/song.dart';
-import '../features/library/view_models/library_provider.dart';
 import '../features/settings/view_models/locale_provider.dart';
 import '../features/library/view_models/library_header_notifier.dart';
-import 'widgets/wl_toggle.dart';
 import '../features/playback/view_models/playback_controller.dart';
 import 'widgets/mini_player_bar.dart';
 import 'routes.dart';
@@ -308,29 +304,9 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
     });
   }
 
-  Future<void> _toggleSource(SongSource source, bool value) async {
-    final prefs = PreferencesService.instance;
-    switch (source) {
-      case SongSource.nas:
-        await prefs.setShowNas(value);
-      case SongSource.appleMusic:
-        await prefs.setShowAppleMusic(value);
-      case SongSource.subsonic:
-        await prefs.setShowSubsonic(value);
-      case SongSource.imported:
-        await prefs.setShowImported(value);
-      case SongSource.local:
-        await prefs.setShowLocal(value);
-    }
-    if (!mounted) return;
-    setState(() {}); // 刷新抽屉开关状态
-    ref.read(libraryProvider.notifier).refreshSources(); // 刷新曲库
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final prefs = PreferencesService.instance;
     return Drawer(
       backgroundColor: AppTheme.surfaceDark,
       width: 280,
@@ -374,7 +350,7 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
               color: AppTheme.textTertiary.withValues(alpha: 0.1),
             ),
             const SizedBox(height: 4),
-            // 音源管理：一行 = 一个音源（点击行=添加/扫描/管理，右侧开关=曲库过滤）
+            // 音源管理：一行 = 一个音源（点击行=添加/扫描/管理，左侧点=连接状态）
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
               child: Text(
@@ -394,11 +370,7 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
               subtitle: Platform.isIOS
                   ? l10n.sourceAppleMusicHint
                   : l10n.sourceDeviceLibraryHint,
-              value: Platform.isIOS ? prefs.showAppleMusic : prefs.showLocal,
-              onChanged: (v) => _toggleSource(
-                Platform.isIOS ? SongSource.appleMusic : SongSource.local,
-                v,
-              ),
+              connected: true,
               loading: _discovering,
               onTap: _handleDiscover,
             ),
@@ -407,8 +379,7 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
               icon: LucideIcons.folderOpen,
               label: l10n.sourceFileImport,
               subtitle: l10n.sourceFileImportHint,
-              value: prefs.showImported,
-              onChanged: (v) => _toggleSource(SongSource.imported, v),
+              connected: true,
               onTap: _handlePickFiles,
             ),
             // NAS
@@ -418,8 +389,7 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
               subtitle: SmbService.isConnected
                   ? l10n.sourceNasConnected
                   : l10n.sourceNasHint,
-              value: prefs.showNas,
-              onChanged: (v) => _toggleSource(SongSource.nas, v),
+              connected: SmbService.isConnected,
               onTap: _handleNas,
             ),
             // 音乐服务器（Subsonic 兼容）
@@ -429,8 +399,7 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
               subtitle: SubsonicService.isConfigured
                   ? l10n.sourceMusicServerReady
                   : l10n.sourceMusicServerHint,
-              value: prefs.showSubsonic,
-              onChanged: (v) => _toggleSource(SongSource.subsonic, v),
+              connected: SubsonicService.isConfigured,
               loading: _subsonicScanning,
               result: _subsonicResult,
               onTap: _handleSubsonic,
@@ -451,14 +420,13 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
   }
 }
 
-/// 抽屉音源行：图标 + 名称 + 副标题，右侧状态（loading/结果/开关）。
-/// 点击行 = 添加/扫描/管理该音源；开关 = 曲库是否展示该来源音乐。
+/// 抽屉音源行：左侧连接状态点（绿=已连接 / 红=未连接）+ 图标 + 名称 + 副标题，
+/// 右侧在扫描时显示进度、扫描后显示结果。点击整行 = 添加/扫描/管理该音源。
 class _SourceRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String? subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
+  final bool connected;
   final VoidCallback onTap;
   final bool loading;
   final String? result;
@@ -467,8 +435,7 @@ class _SourceRow extends StatelessWidget {
     required this.icon,
     required this.label,
     this.subtitle,
-    required this.value,
-    required this.onChanged,
+    required this.connected,
     required this.onTap,
     this.loading = false,
     this.result,
@@ -476,6 +443,8 @@ class _SourceRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dotColor =
+        connected ? const Color(0xFF34C759) : const Color(0xFFFF3B30);
     return GestureDetector(
       onTap: loading ? null : onTap,
       behavior: HitTestBehavior.opaque,
@@ -483,6 +452,23 @@ class _SourceRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
         child: Row(
           children: [
+            // 左侧连接状态点
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: dotColor,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: dotColor.withValues(alpha: 0.45),
+                    blurRadius: 4,
+                    spreadRadius: 0,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
             Icon(icon, size: 18, color: AppTheme.textSecondary),
             const SizedBox(width: 12),
             Expanded(
@@ -512,7 +498,7 @@ class _SourceRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // 右侧状态：扫描中 / 结果 / 过滤开关
+            // 右侧状态：扫描中 / 结果（不再显示过滤开关）
             if (loading)
               const SizedBox(
                 width: 16,
@@ -529,9 +515,7 @@ class _SourceRow extends StatelessWidget {
                   fontSize: 11,
                   color: AppTheme.textTertiary,
                 ),
-              )
-            else
-              WlToggle(value: value, onChanged: () => onChanged(!value)),
+              ),
           ],
         ),
       ),

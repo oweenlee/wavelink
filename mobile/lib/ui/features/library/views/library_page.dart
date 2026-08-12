@@ -7,6 +7,8 @@ import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../../domain/models/song.dart';
+import '../../../../data/services/preferences_service.dart';
+import '../../../core/widgets/wl_toggle.dart';
 import '../../../../data/services/rust_service.dart' as rs;
 import '../../../../data/services/file_picker_service.dart';
 import '../../playback/view_models/playback_controller.dart';
@@ -19,6 +21,148 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/song_tile.dart';
 import '../../../core/widgets/album_cover.dart';
 
+
+/// 曲库标签栏右侧「音源过滤」按钮：点击从底部弹出过滤 sheet，
+/// 复用抽屉里同一套来源开关策略（PreferencesService.showSource + refreshSources）。
+class _SourceFilterButton extends StatelessWidget {
+  final VoidCallback onOpen;
+  const _SourceFilterButton({required this.onOpen});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Tooltip(
+      message: l10n.sourcesSection,
+      child: SizedBox(
+        width: 36,
+        height: 38,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onOpen,
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Icon(
+              LucideIcons.filter,
+              size: 18,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 音源过滤底部 sheet：列出全部音源的开关，勾选即过滤曲库。
+/// 逻辑与抽屉 _SourceRow 的开关完全一致（仅做过滤，不触发扫描）。
+class _SourceFilterSheet extends StatefulWidget {
+  final Future<void> Function(SongSource, bool) onChanged;
+  const _SourceFilterSheet({required this.onChanged});
+
+  @override
+  State<_SourceFilterSheet> createState() => _SourceFilterSheetState();
+}
+
+class _SourceFilterSheetState extends State<_SourceFilterSheet> {
+  final PreferencesService _prefs = PreferencesService.instance;
+
+  Future<void> _toggle(SongSource source, bool value) async {
+    await widget.onChanged(source, value);
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final isIos = Platform.isIOS;
+    final localSource = isIos ? SongSource.appleMusic : SongSource.local;
+    final localValue = isIos ? _prefs.showAppleMusic : _prefs.showLocal;
+    final rows = <Widget>[
+      _FilterRow(
+        icon: isIos ? LucideIcons.apple : LucideIcons.smartphone,
+        label: isIos ? l10n.sourceAppleMusic : l10n.sourceDeviceLibrary,
+        value: localValue,
+        onChanged: () => _toggle(localSource, !localValue),
+      ),
+      _FilterRow(
+        icon: LucideIcons.folderOpen,
+        label: l10n.sourceFileImport,
+        value: _prefs.showImported,
+        onChanged: () => _toggle(SongSource.imported, !_prefs.showImported),
+      ),
+      _FilterRow(
+        icon: LucideIcons.hardDrive,
+        label: l10n.sourceNas,
+        value: _prefs.showNas,
+        onChanged: () => _toggle(SongSource.nas, !_prefs.showNas),
+      ),
+      _FilterRow(
+        icon: LucideIcons.server,
+        label: l10n.sourceMusicServer,
+        value: _prefs.showSubsonic,
+        onChanged: () => _toggle(SongSource.subsonic, !_prefs.showSubsonic),
+      ),
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceDark,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.sourcesSection,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...rows,
+        ],
+      ),
+    );
+  }
+}
+
+/// 过滤 sheet 的单项：图标 + 名称 + 右侧 WlToggle 开关
+class _FilterRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool value;
+  final VoidCallback onChanged;
+  const _FilterRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: AppTheme.textSecondary),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
+            ),
+          ),
+          WlToggle(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
 
 class LibraryPage extends ConsumerStatefulWidget {
   const LibraryPage({super.key});
@@ -43,6 +187,33 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  // 来源按钮 → 弹出音源过滤底部 sheet（复用抽屉开关策略）
+  void _openSourceSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => _SourceFilterSheet(
+        onChanged: (SongSource source, bool value) async {
+          final prefs = PreferencesService.instance;
+          switch (source) {
+            case SongSource.nas:
+              await prefs.setShowNas(value);
+            case SongSource.appleMusic:
+              await prefs.setShowAppleMusic(value);
+            case SongSource.subsonic:
+              await prefs.setShowSubsonic(value);
+            case SongSource.imported:
+              await prefs.setShowImported(value);
+            case SongSource.local:
+              await prefs.setShowLocal(value);
+          }
+          if (mounted) ref.read(libraryProvider.notifier).refreshSources();
+        },
+      ),
+    );
   }
 
   @override
@@ -107,44 +278,53 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
             ),
           ),
 
-        // ── Segmented tab control ──
+        // ── 紧凑标签栏：与内容列对齐（水平 16）、不平分、下划线指示器 ──
+        // 最右侧「来源」图标按钮：弹出音源菜单，复用 PlaybackController / 路由
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Container(
-            decoration: BoxDecoration(
-              color: AppTheme.s2,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            padding: const EdgeInsets.all(2),
-            child: TabBar(
-              controller: _tabController,
-              indicator: BoxDecoration(
-                color: AppTheme.s4,
-                borderRadius: BorderRadius.circular(6),
+          child: Row(
+            children: [
+              Expanded(
+                child: TabBar(
+                  controller: _tabController,
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  padding: EdgeInsets.zero,
+                  indicatorSize: TabBarIndicatorSize.label,
+                  indicator: const UnderlineTabIndicator(
+                    borderSide: BorderSide(width: 2, color: AppTheme.textPrimary),
+                    insets: EdgeInsets.symmetric(horizontal: 0),
+                  ),
+                  dividerColor: Colors.transparent,
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+                  labelColor: AppTheme.textPrimary,
+                  unselectedLabelColor: AppTheme.textTertiary,
+                  labelStyle: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  unselectedLabelStyle: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w400,
+                  ),
+                  tabs: [
+                    Tab(height: 38, text: l10n.libSongs),
+                    Tab(height: 38, text: l10n.libAlbums),
+                    Tab(height: 38, text: l10n.libArtists),
+                    Tab(height: 38, text: l10n.libPlaylists),
+                  ],
+                  onTap: (_) {
+                    // 切 tab 时关闭搜索
+                    if (ref.read(libraryHeaderProvider).isSearchVisible) {
+                      ref.read(libraryHeaderProvider.notifier).closeSearch();
+                      _searchController.clear();
+                    }
+                  },
+                ),
               ),
-              indicatorSize: TabBarIndicatorSize.tab,
-              dividerColor: Colors.transparent,
-              labelColor: AppTheme.textPrimary,
-              unselectedLabelColor: AppTheme.textTertiary,
-              labelStyle: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-              unselectedLabelStyle: const TextStyle(fontSize: 12),
-              tabs: [
-                Tab(text: l10n.libSongs,height: 44,),
-                Tab(text: l10n.libAlbums,height: 44,),
-                Tab(text: l10n.libArtists,height: 44,),
-                Tab(text: l10n.libPlaylists,height: 44,),
-              ],
-              onTap: (_) {
-                // 切 tab 时关闭搜索
-                if (ref.read(libraryHeaderProvider).isSearchVisible) {
-                  ref.read(libraryHeaderProvider.notifier).closeSearch();
-                  _searchController.clear();
-                }
-              },
-            ),
+              // ── 来源图标按钮 ──
+              _SourceFilterButton(onOpen: _openSourceSheet),
+            ],
           ),
         ),
         const SizedBox(height: 8),
@@ -370,10 +550,12 @@ class _AlbumsTab extends ConsumerWidget {
     final songs = ref.watch(libraryProvider).allSongs;
 
     // 按专辑分组：单次 O(N) 遍历（保留首次出现顺序），
-    // 避免原来每次 build 的 map/toSet + itemBuilder 内逐专辑 where 扫描
+    // 避免原来每次 build 的 map/toSet + itemBuilder 内逐专辑 where 扫描。
+    // 键用「艺人+专辑名」复合：仅按专辑名会把不同艺人的同名专辑
+    //（精选集/金曲等常见名）合并成一张，歌曲混排、艺人信息丢失。
     final albums = <String, List<Song>>{};
     for (final s in songs) {
-      (albums[s.album] ??= []).add(s);
+      (albums['${s.artist}\u0000${s.album}'] ??= []).add(s);
     }
     final albumNames = albums.keys.toList();
     if (albumNames.isEmpty) {
@@ -395,11 +577,15 @@ class _AlbumsTab extends ConsumerWidget {
       ),
       itemCount: albumNames.length,
       itemBuilder: (context, index) {
-        final name = albumNames[index];
-        final albumSongs = albums[name]!;
+        final albumSongs = albums[albumNames[index]]!;
+        // 展示/判定一律以首曲元数据为准（同组内艺人+专辑名一致）
+        final name = albumSongs.first.album;
+        final artist = albumSongs.first.artist;
         final color = albumSongs.first.dominantColor;
         final isPlayingAlbum =
-            queueState.currentSong?.album == name && isPlaying;
+            queueState.currentSong?.album == name &&
+            queueState.currentSong?.artist == artist &&
+            isPlaying;
 
         return AppAnim.listEntrance(
         GestureDetector(
@@ -407,9 +593,9 @@ class _AlbumsTab extends ConsumerWidget {
           onTap: () => context.push(
             '/album',
             extra: Album(
-              id: name,
+              id: '$artist\u0000$name',
               title: name,
-              artist: albumSongs.first.artist,
+              artist: artist,
               year: 0,
               songs: albumSongs,
               dominantColor: color,
