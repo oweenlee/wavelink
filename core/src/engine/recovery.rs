@@ -108,6 +108,7 @@ impl EngineState {
         self.apply_dsp_settings(&dsp);
         self.dsp = Some(dsp.clone());
         self.reload_pending_ir();
+        self.sync_dsp_latency();
 
         // 启动消费者线程
         let stop_flag = Arc::new(AtomicBool::new(false));

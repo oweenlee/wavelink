@@ -72,6 +72,9 @@ pub struct EngineState {
     pub(crate) output_sample_rate_shared: Option<Arc<AtomicU32>>,
     /// 共享的实际输出共享模式（与 EngineHandle 同步）：0=未知/不适用，1=Exclusive，2=Shared
     pub(crate) output_mode_shared: Option<Arc<AtomicU8>>,
+    /// 共享的 DSP 固定延迟（样本数，与 EngineHandle 同步）。
+    /// 用于播放位置补偿：position_display = 输出位置 - dsp_latency / sample_rate。
+    pub(crate) dsp_latency_shared: Option<Arc<AtomicU64>>,
     /// 当前播放是否已获取排他模式（跟踪实际状态，避免 config 被修改后不一致）
     pub(crate) exclusive_mode_acquired: bool,
     /// 当前输出位深（dither 用，默认 24）
@@ -129,6 +132,7 @@ impl EngineState {
             stream_handle: None,
             output_sample_rate_shared: None,
             output_mode_shared: None,
+            dsp_latency_shared: None,
             exclusive_mode_acquired: false,
             output_bit_depth: 24,
             capture_inner_shared: None,
@@ -170,6 +174,19 @@ impl EngineState {
                 .map(|exclusive| if exclusive { 1u8 } else { 2u8 })
                 .unwrap_or(0);
             shared.store(mode, Ordering::Release);
+        }
+    }
+
+    /// 将当前 DSP 管线固定延迟（样本数）同步到共享原子（供 EngineHandle 读取）。
+    /// 管线重建、加载/清除卷积 IR 时调用；无管线时为 0。
+    pub(crate) fn sync_dsp_latency(&self) {
+        if let Some(ref shared) = self.dsp_latency_shared {
+            let lat = self
+                .dsp
+                .as_ref()
+                .map(|d| d.lock().latency_samples() as u64)
+                .unwrap_or(0);
+            shared.store(lat, Ordering::Release);
         }
     }
 
@@ -333,8 +350,9 @@ impl EngineState {
         self.dop_active = dop_active;
         self.apply_pending_replaygain();
 
-        self.reload_pending_ir();
+                self.reload_pending_ir();
 
+        self.sync_dsp_latency();
         self.preload_next();
     }
 
@@ -440,6 +458,8 @@ impl EngineState {
         self.stream_handle = Some(handle.clone());
         self.apply_pending_replaygain();
         self.reload_pending_ir();
+
+        self.sync_dsp_latency();
 
         // 发送 ack 成功
         if let Some(tx) = ack {
@@ -564,6 +584,7 @@ impl EngineState {
         self.consumer_stop = Some(stop_flag);
         self.apply_pending_replaygain();
         self.reload_pending_ir();
+        self.sync_dsp_latency();
 
         let _ = self.external_tx.send(EngineEvent::Position(pos));
     }
@@ -737,6 +758,7 @@ impl EngineState {
             return false;
         }
         dsp.lock().set_conv_ir(conv);
+        self.sync_dsp_latency();
         true
     }
 
@@ -755,6 +777,7 @@ impl EngineState {
         if let Some(dsp) = &self.dsp {
             dsp.lock().clear_conv_ir();
         }
+        self.sync_dsp_latency();
     }
 
     pub(crate) fn set_peq_band(&mut self, index: usize, band: PeqBand) {
@@ -900,6 +923,7 @@ impl EngineState {
         *self.next_rx.lock() = None;
         self.consumer_stop = None;
         self.dsp = None;
+        self.sync_dsp_latency();
     }
 
     // ── 事件 ──
@@ -975,6 +999,7 @@ pub(crate) mod tests {
             stream_handle: None,
             output_sample_rate_shared: None,
             output_mode_shared: None,
+            dsp_latency_shared: None,
             exclusive_mode_acquired: false,
             output_bit_depth: 24,
             capture_inner_shared: None,
@@ -997,6 +1022,48 @@ pub(crate) mod tests {
         assert!(state.playing.load(Ordering::Acquire), "resume 后应为 true");
         state.pause();
         assert!(!state.playing.load(Ordering::Acquire), "pause 后应为 false");
+    }
+
+    #[test]
+    fn test_sync_dsp_latency_reflects_pipeline() {
+        let (mut state, _rx) = make_state(vec![], PlayMode::Normal);
+        let shared = Arc::new(AtomicU64::new(0));
+        state.dsp_latency_shared = Some(shared.clone());
+        state.sync_dsp_latency();
+        assert_eq!(shared.load(Ordering::Acquire), 0, "无 DSP 时延迟应为 0");
+    }
+
+    #[test]
+    fn test_sync_dsp_latency_with_conv_pipeline() {
+        // 带卷积 EQ 的管线 → 延迟应同步为自适应 block_size
+        let path = "/tmp/_test_state_conv_latency.wav";
+        let mut ir = vec![0.0f32; 64];
+        ir[0] = 1.0;
+        if !std::path::Path::new(path).exists() {
+            let spec = hound::WavSpec {
+                channels: 1,
+                sample_rate: 44100,
+                bits_per_sample: 32,
+                sample_format: hound::SampleFormat::Float,
+            };
+            let mut w = hound::WavWriter::create(path, spec).unwrap();
+            for &s in &ir {
+                w.write_sample(s).unwrap();
+            }
+            w.finalize().unwrap();
+        }
+
+        let (mut state, _rx) = make_state(vec![], PlayMode::Normal);
+        let mut p = crate::dsp::DspPipeline::new(44100, 2, &[], false, 1.0, 24);
+        p.load_conv_ir(path).unwrap();
+        state.dsp = Some(Arc::new(Mutex::new(p)));
+
+        let shared = Arc::new(AtomicU64::new(0));
+        state.dsp_latency_shared = Some(shared.clone());
+        state.sync_dsp_latency();
+        assert_eq!(shared.load(Ordering::Acquire), 64, "卷积延迟应同步为 64");
+
+        std::fs::remove_file(path).ok();
     }
 
     #[test]

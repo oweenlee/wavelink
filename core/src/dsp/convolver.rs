@@ -140,6 +140,17 @@ impl ConvolutionEq {
     pub fn is_active(&self) -> bool {
         !self.convolvers.is_empty()
     }
+
+    /// 卷积引入的固定延迟（样本数）：分区 FFT 卷积的 block_size。
+    /// 未加载 IR（bypass）时为 0。用于播放位置补偿
+    /// （position_display = 输出位置 - latency_samples / sample_rate）。
+    pub fn latency_samples(&self) -> usize {
+        if self.convolvers.is_empty() {
+            0
+        } else {
+            self.block_size
+        }
+    }
 }
 
 #[cfg(test)]
@@ -165,6 +176,7 @@ mod tests {
     fn test_convolver_bypass() {
         let mut conv = ConvolutionEq::new(2);
         assert!(!conv.is_active());
+        assert_eq!(conv.latency_samples(), 0, "空卷积器延迟应为 0");
         let mut buf = vec![0.5, -0.3, 0.1, -0.7];
         conv.process(&mut buf);
         assert_eq!(buf, [0.5, -0.3, 0.1, -0.7]);
@@ -245,6 +257,22 @@ mod tests {
         let mut conv = ConvolutionEq::new(1);
         conv.load_wav(path, 256, 44100).unwrap();
         assert!(conv.is_active());
+
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_latency_equals_adaptive_block_size() {
+        // 100 帧 IR → block_size 自适应为 min(256, 100).max(16) = 100
+        let path = "/tmp/_test_conv_latency.wav";
+        let mut ir = vec![0.0f32; 100];
+        ir[0] = 1.0;
+        write_ir_wav(path, &ir);
+
+        let mut conv = ConvolutionEq::new(2);
+        assert_eq!(conv.latency_samples(), 0, "未加载 IR 时延迟应为 0");
+        conv.load_wav(path, 256, 44100).unwrap();
+        assert_eq!(conv.latency_samples(), 100, "延迟应等于自适应 block_size(100)");
 
         std::fs::remove_file(path).ok();
     }

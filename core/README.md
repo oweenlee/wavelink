@@ -67,7 +67,7 @@ Symphonia 流式解码 → 声道混音 → rubato SRC → DSP 管线 → 输出
 | `dsp::widener` | Mid/Side 立体声展宽 |
 | `dsp::limiter` | 4x 过采样真峰值限幅 |
 | `dsp::dither` | TPDF 抖动 (声道独立噪声序列) |
-| `dsp::pipeline` | `DspPipeline` 串联所有滤波器；10 种 EQ 预设；AutoEQ 档案整体替换 (`replace_peq_bands`)；运行时调参 |
+| `dsp::pipeline` | `DspPipeline` 串联所有滤波器；10 种 EQ 预设；AutoEQ 档案整体替换 (`replace_peq_bands`)；运行时调参；`latency_samples()` 上报固定管线延迟（卷积 EQ 分区 FFT 的 block_size） |
 | `engine` | Actor 模型引擎线程；队列 + 4 种播放模式 + 无缝预加载 + CUE 分轨虚拟队列 + 交叉淡入 + 实时频谱 + 实时电平 + 变速播放 + 会话管理 + 坏帧保护 + 排他模式状态跟踪 |
 | `output` | 多后端输出 (cpal / WASAPI / AudioUnit / Oboe) + `swap_consumer` + 采样率 fallback + underrun 计数 + 设备枚举 + 设备热插拔监视 + 输出决策 |
 | `analysis` | BPM (自相关) + 调性 (Chromagram + Krumhansl-Schmuckler) + 能量 |
@@ -152,6 +152,7 @@ let (engine, events) = EngineHandle::start_with_config(config);
 | 采样率 fallback | ✅ |
 | 实时频谱 (16 频段, FFT) | ✅ |
 | 实时电平表 (RMS/Peak/Clipping) | ✅ |
+| DSP 固定延迟补偿 (位置显示扣除卷积 EQ 延迟) | ✅ |
 | 坏帧保护 | ✅ |
 | underrun 计数 | ✅ |
 | 上一首/下一首 | ✅ |

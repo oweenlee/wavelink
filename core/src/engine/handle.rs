@@ -41,6 +41,8 @@ pub struct EngineHandle {
     /// 捕获缓冲（替代全局 CAPTURE_INNER，供宿主层读取捕获数据）
     #[allow(dead_code)] // 仅通过宿主层访问
     pub(crate) capture_inner: Arc<RwLock<Option<Arc<CaptureInner>>>>,
+    /// 当前 DSP 管线固定延迟（样本数），position_secs 补偿用
+    pub(crate) dsp_latency: Arc<AtomicU64>,
 }
 
 impl EngineHandle {
@@ -61,6 +63,7 @@ impl EngineHandle {
         let output_sample_rate = Arc::new(AtomicU32::new(config.sample_rate));
         let output_mode = Arc::new(AtomicU8::new(0));
         let capture_inner: Arc<RwLock<Option<Arc<CaptureInner>>>> = Arc::new(RwLock::new(None));
+        let dsp_latency = Arc::new(AtomicU64::new(0));
         let pos_clone = Arc::clone(&position);
         let dur_clone = Arc::clone(&duration_us);
         let playing_clone = Arc::clone(&playing);
@@ -69,10 +72,11 @@ impl EngineHandle {
         let output_sr_clone = Arc::clone(&output_sample_rate);
         let output_mode_clone = Arc::clone(&output_mode);
         let capture_inner_clone = Arc::clone(&capture_inner);
+        let dsp_latency_clone = Arc::clone(&dsp_latency);
         let config_shared = Arc::new(RwLock::new(config.clone()));
         let config_for_engine = Arc::clone(&config_shared);
-        thread::spawn(move || run_engine(cmd_rx, event_tx, pos_clone, dur_clone, playing_clone, config, config_for_engine, levels_clone, output_inner_clone, output_sr_clone, output_mode_clone, capture_inner_clone));
-        (EngineHandle { tx, position, duration_us, playing, config: config_shared, levels, output_inner, output_sample_rate, output_mode, capture_inner }, event_rx)
+        thread::spawn(move || run_engine(cmd_rx, event_tx, pos_clone, dur_clone, playing_clone, config, config_for_engine, levels_clone, output_inner_clone, output_sr_clone, output_mode_clone, capture_inner_clone, dsp_latency_clone));
+        (EngineHandle { tx, position, duration_us, playing, config: config_shared, levels, output_inner, output_sample_rate, output_mode, capture_inner, dsp_latency }, event_rx)
     }
 
     /// 当前实际输出共享模式：0=未知/不适用，1=Exclusive，2=Shared（Android Oboe）
@@ -198,12 +202,19 @@ impl EngineHandle {
     pub fn set_output_sample_rate(&self, rate: u32) {
         let _ = self.tx.send(EngineCommand::SetOutputSampleRate(rate));
     }
-    /// 获取当前播放位置（秒）
+    /// 获取当前播放位置（秒）。
+    /// 已扣除 DSP 管线固定延迟（卷积 EQ 的分区 FFT 延迟），
+    /// 使显示位置与实际听到的音频内容对齐。
     pub fn position_secs(&self) -> f64 {
         let samples = self.position.load(Ordering::Acquire);
         let sr = self.output_sample_rate.load(Ordering::Acquire) as f64;
         let ch = self.config.read().unwrap_or_else(|e| e.into_inner()).channels as f64;
-        if sr > 0.0 && ch > 0.0 { samples as f64 / (sr * ch) } else { 0.0 }
+        if sr > 0.0 && ch > 0.0 {
+            let latency = self.dsp_latency.load(Ordering::Acquire) as f64;
+            (samples.saturating_sub(latency as u64) as f64) / (sr * ch)
+        } else {
+            0.0
+        }
     }
     /// 获取当前曲目时长（秒），0 表示未知
     pub fn duration_secs(&self) -> f64 {

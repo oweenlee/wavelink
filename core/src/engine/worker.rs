@@ -45,12 +45,14 @@ pub(crate) fn run_engine(
     output_sample_rate_shared: Arc<std::sync::atomic::AtomicU32>,
     output_mode_shared: Arc<std::sync::atomic::AtomicU8>,
     capture_inner_shared: Arc<std::sync::RwLock<Option<Arc<crate::capture::CaptureInner>>>>,
+    dsp_latency_shared: Arc<AtomicU64>,
 ) {
     let mut state = EngineState::new(config, position, duration_us, playing, external_tx.clone(), levels);
     state.output_inner_shared = Some(output_inner_shared);
     state.output_sample_rate_shared = Some(output_sample_rate_shared);
     state.output_mode_shared = Some(output_mode_shared);
     state.capture_inner_shared = Some(capture_inner_shared);
+    state.dsp_latency_shared = Some(dsp_latency_shared);
     info!("引擎线程启动");
 
     // 创建内部事件 channel：消费者发 "曲目结束" 走这
@@ -196,10 +198,13 @@ pub(crate) fn run_engine(
                             state.recover_output();
                         }
                     }
-                    let pos_samples = state.position.load(Ordering::Acquire) as f64;
+                    let pos_samples = state.position.load(Ordering::Acquire);
+                    let latency = state.dsp_latency_shared.as_ref()
+                        .map(|l| l.load(Ordering::Acquire))
+                        .unwrap_or(0);
                     let sr = state.output_sample_rate as f64;
                     let ch = state.config.channels as f64;
-                    let pos_secs = pos_samples / (sr * ch);
+                    let pos_secs = pos_samples.saturating_sub(latency) as f64 / (sr * ch);
                     let _ = external_tx.send(EngineEvent::Position(pos_secs));
                     // 定期发送电平事件（与 Position 同频，200ms）
                     let lv = *state.levels.lock();

@@ -2,11 +2,13 @@
 //!
 //! 管线顺序：
 //!   DC offset HPF → ReplayGain Pre-amp → 卷积 EQ → IIR PEQ →
-//!   Crossfeed → 立体声展宽 → 真峰值限幅 → 音量 → 淡入淡出 → TPDF 抖动
+//!   Crossfeed → 立体声展宽 → 真峰值限幅 → 音量 → 链尾软限幅 → 淡入淡出 → TPDF 抖动
 //!
 //! ReplayGain（响度归一化增益）在 HPF 后、EQ 前作为 Pre-amp 应用，
 //! 确保限幅器看到的是归一化后的信号，不会因 ReplayGain 增益过载。
 //! 用户音量（Volume）在限幅器之后，不会破坏限幅器的保护效果。
+//! 但音量允许 0~2.0（最高 +6dB），volume > 1.0 的正增益会在限幅器之后
+//! 重新越过 0dBFS，故在音量后加一级链尾软限幅兜底，防整数输出后端硬削波。
 
 use crate::dsp::biquad::Biquad;
 use crate::dsp::convolver::ConvolutionEq;
@@ -28,7 +30,7 @@ enum FadeState {
 }
 
 
-/// DSP 管线，按顺序串联：DC HPF → ReplayGain → 卷积 EQ → PEQ → Crossfeed → 展宽 → 限幅 → 音量 → 淡入淡出 → 抖动
+/// DSP 管线，按顺序串联：DC HPF → ReplayGain → 卷积 EQ → PEQ → Crossfeed → 展宽 → 限幅 → 音量 → 链尾软限幅 → 淡入淡出 → 抖动
 pub struct DspPipeline {
     channels: usize,
     /// 每声道一个 DC HPF（独立状态）
@@ -46,6 +48,8 @@ pub struct DspPipeline {
     /// 抖动/噪声整形开关（默认真启用，可独立关闭）
     dither_enabled: bool,
     volume: f32,
+    /// 音量为正增益（>1.0）时启用链尾软限幅，防 post-gain 越过 0dBFS
+    post_clip_enabled: bool,
     sample_rate: f32,
     /// 预分配的工作缓冲区（避免热路径分配）
     ch_buf: Vec<f32>,
@@ -135,6 +139,7 @@ impl DspPipeline {
             limiter_enabled: true,
             dither_enabled: true,
             volume: volume.clamp(0.0, 2.0),
+            post_clip_enabled: volume > 1.0,
             sample_rate: sr,
             ch_buf: Vec::new(),
             fade: FadeState::Idle,
@@ -207,6 +212,14 @@ impl DspPipeline {
             }
         }
 
+        // 7.4 链尾软限幅：仅当音量正增益（>1.0）时启用，
+        //     防 post-gain 越过 0dBFS 后被整数输出后端硬 clamp 削波
+        if self.post_clip_enabled {
+            for s in buf.iter_mut() {
+                *s = post_gain_soft_clip(*s);
+            }
+        }
+
         // 7.5 淡入淡出（防 pause/stop 爆音）
         match &mut self.fade {
             FadeState::FadeIn { ref mut remaining, total } => {
@@ -271,6 +284,19 @@ impl DspPipeline {
         self.sample_rate as u32
     }
 
+    /// 管线累计固定延迟（样本数）。
+    ///
+    /// 目前唯一延迟源是 FIR 卷积 EQ（分区 FFT 卷积的 block_size）。
+    /// 其余级（IIR PEQ / Crossfeed / 限幅 / 抖动）均为因果直通，
+    /// 只引入相位或亚样本延迟，无可补偿的样本偏移。
+    /// 播放位置补偿用：`position_display = 输出位置 - latency_samples / sample_rate`。
+    pub fn latency_samples(&self) -> usize {
+        if self.bypass {
+            return 0;
+        }
+        self.conv_eq.as_ref().map(|c| c.latency_samples()).unwrap_or(0)
+    }
+
     /// 管线声道数
     pub fn channels(&self) -> usize {
         self.channels
@@ -308,6 +334,8 @@ impl DspPipeline {
     /// 运行时调整音量 (0.0 ~ 2.0)，限幅器之后应用
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume.clamp(0.0, 2.0);
+        // 仅当音量提升到正增益（>1.0）时才需要链尾软限幅兜底
+        self.post_clip_enabled = self.volume > 1.0;
     }
 
     /// 开始淡入（暂停→恢复时消 pop）
@@ -425,6 +453,22 @@ fn process_biquads_per_channel(bqs: &mut [Biquad], buf: &mut [f32], ch: usize) {
     }
 }
 
+/// 链尾软限幅：|x| ≤ 1 原样直通，超出部分沿双曲曲线平滑压向饱和值。
+///
+/// 曲线在 ±1 处一阶连续（`t/(1+t)` 在 t=0 处导数为 1，与直通段衔接），
+/// 不会引入硬削波那样的额外谐波；纯算术运算，实时路径安全。
+fn post_gain_soft_clip(v: f32) -> f32 {
+    // 饱和值略高于 1.0（≈ +0.17dB），保留极小软过渡，避免拍平产生方波
+    const SAT: f32 = 1.02;
+    let a = v.abs();
+    if a <= 1.0 {
+        v
+    } else {
+        let t = a - 1.0;
+        v.signum() * (1.0 + t / (1.0 + t) * (SAT - 1.0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -459,6 +503,61 @@ mod tests {
             "音量未生效: {}",
             buf[0]
         );
+    }
+
+    // ── 链尾软限幅（post-gain > 0dBFS 兜底）──
+
+    #[test]
+    fn test_post_clip_caps_output_when_volume_boost() {
+        let mut p = DspPipeline::new(44100, 2, &[], false, 2.0, 24);
+        // 峰值输入经 +6dB 增益后理论达 2.0，软限幅应压回 SAT(1.02) 以内
+        let mut buf = vec![1.0f32; 512];
+        p.process(&mut buf);
+        for &s in &buf {
+            assert!(s.abs() <= 1.03, "volume=2.0 时输出应被限幅: {s}");
+        }
+        assert!(
+            buf.iter().all(|&s| s > 0.9),
+            "大信号下应进入饱和区: {}",
+            buf[0]
+        );
+    }
+
+    #[test]
+    fn test_post_clip_flag_tracks_volume() {
+        let mut p = DspPipeline::new(44100, 2, &[], false, 1.0, 24);
+        assert!(!p.post_clip_enabled, "volume=1.0 不应启用软限幅");
+        p.set_volume(0.5);
+        assert!(!p.post_clip_enabled, "volume<1.0 不应启用软限幅");
+        p.set_volume(1.5);
+        assert!(p.post_clip_enabled, "volume>1.0 应启用软限幅");
+        p.set_volume(1.0);
+        assert!(!p.post_clip_enabled, "回到 volume=1.0 应关闭软限幅");
+    }
+
+    #[test]
+    fn test_post_clip_soft_clip_function() {
+        // ≤1.0 原样直通
+        assert_eq!(post_gain_soft_clip(0.5), 0.5);
+        assert_eq!(post_gain_soft_clip(-0.5), -0.5);
+        assert_eq!(post_gain_soft_clip(1.0), 1.0);
+        // 超出部分软饱和，但不越过 SAT(1.02)
+        let clipped = post_gain_soft_clip(2.0);
+        assert!((1.0..=1.02).contains(&clipped), "正半轴应软饱和: {clipped}");
+        let neg = post_gain_soft_clip(-2.0);
+        assert!((-1.02..-1.0).contains(&neg), "负半轴应软饱和: {neg}");
+        for &v in &[4.0f32, 8.0, 100.0] {
+            let c = post_gain_soft_clip(v).abs();
+            assert!((1.0..=1.02).contains(&c), "大输入应压向 SAT: {c}");
+        }
+        // 正半轴单调不减（与直通段无缝衔接，不产生非单调跳变）
+        let mut prev = 0.0f32;
+        for i in 0..2000 {
+            let v = i as f32 / 1000.0; // 0.0 ~ 2.0
+            let c = post_gain_soft_clip(v);
+            assert!(c >= prev - 1e-6, "soft clip 应单调: {v} -> {c}");
+            prev = c;
+        }
     }
 
     #[test]
@@ -588,6 +687,53 @@ mod tests {
         );
         eprintln!("DSP benchmark: {total_frames}帧, avg {avg_process_us:.0}µs/帧 ({frame_audio_ms:.1}ms 音频/帧), 实时比 {:.1}x",
             frame_audio_ms * 1000.0 / avg_process_us);
+    }
+
+    // ── DSP 管线延迟上报 ──
+    // latency_samples() 应仅在卷积 EQ 激活时返回 block_size，其余情况为 0。
+
+    #[test]
+    fn test_pipeline_latency_no_conv() {
+        let p = DspPipeline::new(44100, 2, &[], false, 1.0, 24);
+        assert_eq!(p.latency_samples(), 0, "无卷积 EQ 时延迟应为 0");
+    }
+
+    #[test]
+    fn test_pipeline_latency_with_conv() {
+        let path = "/tmp/_test_pipe_conv_latency.wav";
+        // 64 帧单位冲激 IR：block_size 会被自适应为 min(256, 64).max(16) = 64
+        let mut ir = vec![0.0f32; 64];
+        ir[0] = 1.0;
+        if !std::path::Path::new(path).exists() {
+            let spec = hound::WavSpec {
+                channels: 1,
+                sample_rate: 44100,
+                bits_per_sample: 32,
+                sample_format: hound::SampleFormat::Float,
+            };
+            let mut w = hound::WavWriter::create(path, spec).unwrap();
+            for &s in &ir {
+                w.write_sample(s).unwrap();
+            }
+            w.finalize().unwrap();
+        }
+
+        let mut p = DspPipeline::new(44100, 2, &[], false, 1.0, 24);
+        p.load_conv_ir(path).unwrap();
+        assert_eq!(
+            p.latency_samples(),
+            64,
+            "激活卷积 EQ 后延迟应等于自适应 block_size(64)"
+        );
+
+        p.set_bypass(true);
+        assert_eq!(p.latency_samples(), 0, "bypass 时延迟应为 0");
+
+        p.set_bypass(false);
+        p.clear_conv_ir();
+        assert_eq!(p.latency_samples(), 0, "清除卷积 EQ 后延迟应为 0");
+
+        std::fs::remove_file(path).ok();
     }
 
     // ── 淡入淡出测试 ──
