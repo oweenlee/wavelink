@@ -99,6 +99,22 @@ class SmbService {
     if (!ok) stopKeepalive();
   }
 
+  /// 批量任务前的会话健康闸门：探活（单条 5s 超时）发现死连接先
+  /// force 重建，避免整批请求同时踩死连接各白等超时。返回是否可用。
+  static Future<bool> ensureHealthy() async {
+    if (!_connected) return false;
+    bool healthy;
+    try {
+      healthy = await smb.smbKeepalive();
+    } catch (e) {
+      Log.w('SMB', '批前探活异常($e)，主动重建会话');
+      healthy = false;
+    }
+    if (healthy) return true;
+    Log.w('SMB', '批前探活发现死连接，主动重建会话');
+    return ensureReady(force: true);
+  }
+
   /// 连接 SMB 服务器（host 为裸 IP/域名，内部拼 :port）。
   /// 共享挂载在扫描/列目录前按需调用 [connectShare]。
   /// 会话守卫内串行：并发连接排队复用同一过程，不互相覆盖。

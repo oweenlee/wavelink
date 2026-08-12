@@ -25,9 +25,15 @@ class CoverService {
 
   /// NAS 远端封面批量提取（限流并发 8），完成后回调刷新。
   /// 失败静默：封面保持纯色占位，不影响曲库。
+  /// 每批前先探活：发现死连接先重建，避免整批 8 个请求同时踩
+  /// 死连接各白等超时；会话不可用则中止剩余批次，下轮扫描再提。
   Future<void> extractNasCovers(List<Song> songs) async {
     const batchSize = 8;
     for (var i = 0; i < songs.length; i += batchSize) {
+      if (!await SmbService.ensureHealthy()) {
+        Log.w('Cover', '会话不可用，中止剩余封面提取（已完成 $i/${songs.length}）');
+        break;
+      }
       final end = i + batchSize > songs.length ? songs.length : i + batchSize;
       await Future.wait(
         songs.sublist(i, end).map((s) => SmbService.fetchRemoteCover(s)),

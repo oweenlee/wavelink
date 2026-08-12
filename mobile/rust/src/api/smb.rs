@@ -22,6 +22,12 @@ const POOL_SEM_PERMITS: usize = READ_POOL_SIZE + 2;
 /// 30s RESPONSE_TIMEOUT，包一层 5s 超时快速判死，避免保活 tick 被拖死
 const KEEPALIVE_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// 读取请求快速失败超时：保活只能探测池中空闲连接，借出在用的
+/// 探不到——恰好踩到死连接的请求仍会挂满 crate 硬编码 30s。
+/// 包一层 10s 超时把白等压缩到三分之一，超时连接丢弃不回池
+/// （避免残留响应污染后续请求），Dart 侧重试链路重建后重试。
+const IO_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// 一次 SMB 会话：底层连接 + 已挂载的共享（tree）
 struct SmbSession {
     client: SmbClient,
@@ -281,18 +287,37 @@ pub async fn smb_read_file(path: String) -> Result<Vec<u8>, String> {
         Some(mut sess) => {
             ensure_pooled_tree(&mut sess).await;
             let r = if let Some(tree) = sess.tree.as_mut() {
-                sess.client.read_file_pipelined(tree, &path).await.map_err(err_str)
+                match tokio::time::timeout(
+                    IO_READ_TIMEOUT,
+                    sess.client.read_file_pipelined(tree, &path),
+                )
+                .await
+                {
+                    Ok(r) => r.map_err(err_str),
+                    Err(_) => Err("response timeout (10s)".to_string()),
+                }
             } else {
                 Err("no share connected".to_string())
             };
-            POOL.lock().await.push(sess);
+            // 成功才回池：失败/超时的连接可能已死，丢弃避免污染后续请求
+            if r.is_ok() {
+                POOL.lock().await.push(sess);
+            }
             r
         }
         None => {
             let mut guard = SESSION.lock().await;
             let sess = guard.as_mut().ok_or("not connected")?;
             let tree = sess.tree.as_mut().ok_or("no share connected")?;
-            sess.client.read_file_pipelined(tree, &path).await.map_err(err_str)
+            match tokio::time::timeout(
+                IO_READ_TIMEOUT,
+                sess.client.read_file_pipelined(tree, &path),
+            )
+            .await
+            {
+                Ok(r) => r.map_err(err_str),
+                Err(_) => Err("response timeout (10s)".to_string()),
+            }
         }
     };
     drop(permit);
@@ -333,7 +358,18 @@ pub async fn smb_read_file_stream(
 
     let result: Result<(), String> = async {
         let tree = sess.tree.as_ref().ok_or("no share connected")?;
-        let reader = sess.client.open_file_reader(tree, &path).await.map_err(err_str)?;
+        // open 阶段包超时：死连接上 CREATE 会挂满 crate 30s，
+        // 10s 快速失败让播放下载的 Dart 重试链路尽早重建。
+        // （后续分块读暂不逐块包超时，避免大文件误杀）
+        let reader = match tokio::time::timeout(
+            IO_READ_TIMEOUT,
+            sess.client.open_file_reader(tree, &path),
+        )
+        .await
+        {
+            Ok(r) => r.map_err(err_str)?,
+            Err(_) => return Err("open timeout (10s)".to_string()),
+        };
         let total = reader.size();
         if total == 0 {
             // 空流（CREATE 返回 EndOfFile=0）：明确报错而非静默成功，
@@ -358,8 +394,8 @@ pub async fn smb_read_file_stream(
     }
     .await;
 
-    // 流结束才归还会话，保证独占
-    if from_pool {
+    // 流结束才归还会话，保证独占；失败/超时的连接丢弃不回池
+    if from_pool && result.is_ok() {
         POOL.lock().await.push(sess);
     }
     drop(permit);
@@ -392,16 +428,25 @@ pub async fn smb_read_head(path: String, max_len: u64) -> Result<Vec<u8>, String
 
     let result: Result<Vec<u8>, String> = async {
         let tree = sess.tree.as_ref().ok_or("no share connected")?;
-        let reader = sess.client.open_file_reader(tree, &path).await.map_err(err_str)?;
-        let data = reader.read_at(0, max_len).await.map_err(err_str)?;
-        // 显式关闭句柄释放服务端资源（直接 drop 会泄漏句柄）
-        let _ = reader.close().await;
-        Ok(data)
+        // 全程包超时：封面批量提取踩到死连接时 10s 快速失败，
+        // 不再白等 crate 硬编码的 30s（此前 6 个任务各等满 30s）
+        match tokio::time::timeout(IO_READ_TIMEOUT, async {
+            let reader = sess.client.open_file_reader(tree, &path).await.map_err(err_str)?;
+            let data = reader.read_at(0, max_len).await.map_err(err_str)?;
+            // 显式关闭句柄释放服务端资源（直接 drop 会泄漏句柄）
+            let _ = reader.close().await;
+            Ok::<Vec<u8>, String>(data)
+        })
+        .await
+        {
+            Ok(r) => r,
+            Err(_) => Err("response timeout (10s)".to_string()),
+        }
     }
     .await;
 
-    // 读完才归还，保证独占
-    if from_pool {
+    // 读完才归还，保证独占；失败/超时的连接丢弃不回池
+    if from_pool && result.is_ok() {
         POOL.lock().await.push(sess);
     }
     drop(permit);
