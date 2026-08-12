@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../domain/models/song.dart';
+import '../../src/rust/api/metadata.dart' show MetadataResult;
 import '../../src/rust/api/smb.dart' as smb;
 import '../../ui/core/theme/app_theme.dart';
 import 'import_service.dart';
@@ -91,6 +92,19 @@ class SmbService {
 
   /// 最近一次操作的具体错误信息（用于 UI 展示排查）
   static String? lastError;
+
+  /// 扫描期元数据占位标记（离线缓存关时不读元数据，统一用这些值占位）。
+  /// 远端封面提取时据此判断"需回填真实元数据"。
+  static const albumPlaceholder = 'NAS Music';
+  static const artistPlaceholder = 'Unknown Artist';
+
+  /// 元数据是否仍为扫描期占位值：离线缓存关（默认）时扫描只按
+  /// 文件名建索引，album/artist 统一占位，导致 700+ 首歌全挤在
+  /// 一张"NAS Music"里。远端读头提取封面时一并回填真实值。
+  static bool needsMetadata(Song song) =>
+      song.album == albumPlaceholder ||
+      song.artist == artistPlaceholder ||
+      song.durationEstimated;
 
   /// 前台保活定时器：防止 NAS 会话空闲超时回收闲置连接。
   /// smb2 crate 只探测"请求在途但线路静默"的连接，完全空闲的
@@ -462,8 +476,8 @@ class SmbService {
       return Song(
         id: 'smb_${smbPath.hashCode}',
         title: parsed.title,
-        artist: parsed.artist ?? 'Unknown Artist',
-        album: 'NAS Music',
+        artist: parsed.artist ?? artistPlaceholder,
+        album: albumPlaceholder,
         duration: ImportService.estimateDuration(remoteSize, name),
         dominantColor: AppTheme.s2,
         smbPath: smbPath,
@@ -498,8 +512,8 @@ class SmbService {
 
       // 用 Rust 读取真实元数据
       String title = fallbackTitle;
-      String artist = 'Unknown Artist';
-      String album = 'NAS Music';
+      String artist = artistPlaceholder;
+      String album = albumPlaceholder;
       Duration duration = ImportService.estimateDuration(
         await localFile.length(),
         localPath,
@@ -551,30 +565,36 @@ class SmbService {
     }
   }
 
-  /// 读 SMB 远端文件头部提取内嵌封面（离线缓存关模式：不下载整文件）。
+  /// 读 SMB 远端文件头部提取内嵌封面，并一并回填真实元数据
+  ///（album/artist/时长：离线缓存关模式扫描时是占位值）。
+  /// 返回是否有进展（新拿到封面或回填了元数据），供上层统计。
   /// 成功设置 song.coverUrl/hasCover；失败静默（封面保持纯色占位）。
   /// 会话可能已断开（服务器空闲超时、iOS 后台回收等）：
   /// 首次尝试前先自愈就绪，失败后按会话代数判定是否需要重连再试。
-  static Future<void> fetchRemoteCover(Song song) async {
+  static Future<bool> fetchRemoteCover(Song song) async {
     final smbPath = song.smbPath;
-    if (smbPath == null || smbPath.isEmpty || song.coverUrl != null) return;
+    if (smbPath == null || smbPath.isEmpty) return false;
+    // 封面与元数据都已就绪的不重复处理
+    if (song.coverUrl != null && !needsMetadata(song)) return false;
     // 熔断冷却：死会话上连续失败后暂停封面提取，避免批间无冷却
     // 反复刷 10s 超时（历史日志：连续 4 轮封面批每轮全挂，期间
     // 播放/下载被连接竞争拖垮，点歌 34s 才出声）。
-    if (DateTime.now().isBefore(_coverCooldownUntil)) return;
+    if (DateTime.now().isBefore(_coverCooldownUntil)) return false;
     // 播放/下载让路：后台封面提取不与前台播放竞争 NAS 连接数。
-    if (playbackActive) return;
+    if (playbackActive) return false;
     // 会话熔断：连续封面失败超过阈值，判定会话不健康，直接走重建而非逐条 10s 白等。
     // 避免死会话上批量封面提取每条都挂满超时再重试的雪崩（实测 6~8 条连刷）。
     if (_coverFailStreak >= _coverFailThreshold) {
       Log.w('SMB', '封面提取熔断：连续失败 $_coverFailStreak 次，主动重建会话');
       await ensureReady(force: true);
       _coverFailStreak = 0;
-      if (song.coverUrl != null) return;
-      if (!await ensureReady()) return;
+      if (song.coverUrl != null && !needsMetadata(song)) return false;
+      if (!await ensureReady()) return false;
     } else {
-      if (!await ensureReady()) return;
+      if (!await ensureReady()) return false;
     }
+    final hadCover = song.coverUrl != null;
+    final neededMeta = needsMetadata(song);
     final gen = _sessionGen;
     try {
       await _fetchRemoteCoverOnce(song, smbPath);
@@ -587,11 +607,11 @@ class SmbService {
         // 冷却 60s：让死会话自愈/重建期间不再反复踩雷
         _coverCooldownUntil =
             DateTime.now().add(const Duration(seconds: 60));
-        return;
+        return false;
       }
       if (!await _retryReady(gen)) {
         Log.e('SMB', '封面重试中止：会话不可用');
-        return;
+        return false;
       }
       try {
         await _fetchRemoteCoverOnce(song, smbPath);
@@ -601,6 +621,35 @@ class SmbService {
         Log.e('SMB', '远端封面提取重试仍失败 ($smbPath): $e2');
       }
     }
+    final gotCover = !hadCover && song.coverUrl != null;
+    final gotMeta = neededMeta && !needsMetadata(song);
+    return gotCover || gotMeta;
+  }
+
+  /// 元数据占位回填：仅覆盖仍为占位值的字段（album/artist/估算时长），
+  /// 已有真实值不动。返回是否有字段被回填。
+  static bool _backfillMetadata(Song song, MetadataResult meta) {
+    var changed = false;
+    final album = meta.album;
+    if (song.album == albumPlaceholder && album != null && album.isNotEmpty) {
+      song.album = album;
+      changed = true;
+    }
+    final artist = meta.artist;
+    if (song.artist == artistPlaceholder && artist != null && artist.isNotEmpty) {
+      song.artist = artist;
+      changed = true;
+    }
+    if (song.durationEstimated && meta.durationSecs > 0) {
+      song.duration =
+          Duration(milliseconds: (meta.durationSecs * 1000).round());
+      song.durationEstimated = false;
+      changed = true;
+    }
+    if (changed) {
+      Log.d('SMB', '元数据回填 (${song.title}): album=${song.album}, artist=${song.artist}');
+    }
+    return changed;
   }
 
   /// 操作失败后的会话重建：发起时记录的代数为 [gen]，若期间已被
@@ -622,7 +671,7 @@ class SmbService {
       Log.w('SMB', '封面提取：头部为空 ($smbPath)');
       return;
     }
-    // 头部解析出封面则完成；否则读尾部兑底：M4A/AAC/ALAC 的 moov
+    // 头部解析出封面则完成；否则读尾部兜底：M4A/AAC/ALAC 的 moov
     // 元数据块（含内嵌封面 covr）常在文件末尾，头部读不到封面。
     if (!await _extractCoverFromBytes(song, smbPath, head)) {
       try {
@@ -649,7 +698,7 @@ class SmbService {
         }
       } catch (e) {
         // 尾部读取失败（会话断/格式不支持）：头部已失败过，静默跳过
-        Log.d('SMB', '封面尾部兑底失败 ($smbPath): $e');
+        Log.d('SMB', '封面尾部兜底失败 ($smbPath): $e');
       }
     }
   }
@@ -664,15 +713,17 @@ class SmbService {
     try {
       final size = await smb.smbFileSize(path: smbPath);
       if (size > BigInt.from(30 * 1024 * 1024)) {
-        Log.d('SMB', '封面整文件兑底跳过（文件过大 ${size}B）: $smbPath');
+        Log.d('SMB', '封面整文件兜底跳过（文件过大 ${size}B）: $smbPath');
         return;
       }
       final localPath = await downloadToLocal(smbPath);
       if (localPath == null) {
-        Log.d('SMB', '封面整文件兑底下载失败: $smbPath');
+        Log.d('SMB', '封面整文件兜底下载失败: $smbPath');
         return;
       }
       final meta = await rs.readMetadata(localPath);
+      // 与读头路径一致：顺手回填占位元数据（无封面也生效）
+      _backfillMetadata(song, meta);
       if (meta.hasCover && meta.coverBytes.isNotEmpty) {
         final appDir = await getApplicationDocumentsDirectory();
         final coversDir = Directory('${appDir.path}/.covers');
@@ -684,12 +735,12 @@ class SmbService {
         await coverFile.writeAsBytes(meta.coverBytes);
         song.coverUrl = coverFile.path;
         song.hasCover = true;
-        Log.d('SMB', '封面整文件兑底成功: $smbPath');
+        Log.d('SMB', '封面整文件兜底成功: $smbPath');
       } else {
-        Log.d('SMB', '封面整文件兑底仍无封面: $smbPath');
+        Log.d('SMB', '封面整文件兜底仍无封面: $smbPath');
       }
     } catch (e) {
-      Log.d('SMB', '封面整文件兑底失败: $smbPath: $e');
+      Log.d('SMB', '封面整文件兜底失败: $smbPath: $e');
     }
   }
 
@@ -710,7 +761,10 @@ class SmbService {
     await headFile.writeAsBytes(bytes);
     try {
       final meta = await rs.readMetadata(headFile.path);
-      if (meta.hasCover && meta.coverBytes.isNotEmpty) {
+      // 元数据回填：解析出的 album/artist/时长此前只用来提封面就被丢弃，
+      // 现在顺手覆盖占位值（幂等：已有真实值不动），无封面也生效。
+      _backfillMetadata(song, meta);
+      if (meta.hasCover && meta.coverBytes.isNotEmpty && song.coverUrl == null) {
         final coversDir = Directory('${appDir.path}/.covers');
         if (!await coversDir.exists()) await coversDir.create(recursive: true);
         final coverFile =
@@ -721,7 +775,7 @@ class SmbService {
         return true;
       }
     } catch (e) {
-      // 截断数据/格式不支持：解析失败不致命，交由兑底或保持占位色
+      // 截断数据/格式不支持：解析失败不致命，交由兜底或保持占位色
       Log.d('SMB', '封面字节解析失败 ($smbPath): $e');
     } finally {
       // 头部临时文件用完即删

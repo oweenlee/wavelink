@@ -23,12 +23,12 @@ class CoverService {
   /// 封面就绪回调（上层刷新 UI + 持久化曲库）
   final VoidCallback? onCoversUpdated;
 
-  /// NAS 远端封面批量提取（限流并发 4），完成后回调刷新。
+  /// NAS 远端封面/元数据批量提取（并发 2），完成后回调刷新。
   /// 失败静默：封面保持纯色占位，不影响曲库。
   /// 每批前先探活：发现死连接先重建，避免整批请求同时踩
-  /// 死连接各白等超时；会话不可用则中止剩余批次，下轮扫描再提。
+  /// 死连接各白等超时；会话不可用则中止本轮，续跑循环稍后再提。
   /// 待提取队列（防重入 + 续跑）：多次触发（启动恢复/扫描完成）合并，
-  /// 已拿到封面的歌自动剔除。
+  /// 封面与元数据都已就绪的歌自动剔除。
   final List<Song> _nasQueue = [];
   bool _extractingNas = false;
 
@@ -43,6 +43,7 @@ class CoverService {
   /// 并发 2（串行太慢：数百首歌每首一次 SMB 读头+解析，单并发要几分钟；
   /// 4 并发曾触发 NAS 连接数限制导致整批超时）。播放让路 + 熔断冷却
   /// 保护仍保留，配合续跑循环在播放间隙自动补齐。
+  /// 有进展时仅短暂防抖立即续跑，无进展（让路/冷却/失败）才等长间隔。
   Future<void> extractNasCovers(List<Song> songs) async {
     if (songs.isEmpty) return;
     _nasQueue.addAll(songs);
@@ -57,24 +58,28 @@ class CoverService {
           break;
         }
         final progressed = await _extractNasPass(pending);
-        // 本轮已成功的从队列剔除；连续 3 轮无封面（真无封面/格式不支持）
-        // 也剔除，避免无限重试
+        // 封面+元数据都已就绪的从队列剔除；连续 3 轮无进展
+        //（真无封面且文件无标签）也剔除，避免无限重试
         _nasQueue.removeWhere((s) =>
-            s.coverUrl != null || (_nasFailCount[s.id] ?? 0) >= 3);
+            (s.coverUrl != null && !SmbService.needsMetadata(s)) ||
+            (_nasFailCount[s.id] ?? 0) >= 3);
         // 每轮结束即刷新：已解析的封面及时上屏（历史问题：只在全部
         // 完成/放弃后刷一次，数百首歌要等几分钟 UI 才更新）
         onCoversUpdated?.call();
         if (progressed) {
           idleRounds = 0;
+          // 有进展：仅短暂防抖立即续跑。历史 bug：无条件等 15s，
+          // 700 首歌回填要 350 轮 × 15s ≈ 90 分钟，专辑分组迟迟不出现
+          await Future.delayed(const Duration(milliseconds: 300));
         } else {
           idleRounds++;
           if (idleRounds >= 8) {
             Log.w('Cover', '封面提取连续无进展，暂停续跑（剩余 ${pendingNasCovers(_nasQueue).length}）');
             break;
           }
+          // 播放让路/熔断冷却/失败后：等 15s 再续（播放间隙自动补齐）
+          await Future.delayed(const Duration(seconds: 15));
         }
-        // 播放让路/熔断冷却/失败后：等 15s 再续（播放间隙自动补齐）
-        await Future.delayed(const Duration(seconds: 15));
       }
     } finally {
       _extractingNas = false;
@@ -82,11 +87,13 @@ class CoverService {
     onCoversUpdated?.call();
   }
 
-  /// 单轮提取：并发 2，播放/下载活跃或会话不可用时让路返回。
-  /// 返回本轮是否有进展（至少解析出一张封面）。
+  /// 单轮提取：一轮 8 首、组内并发 2（NAS 连接数限制），
+  /// 播放/下载活跃或会话不可用时让路返回。
+  /// 返回本轮是否有进展（至少解析出一张封面/回填一组元数据）。
   Future<bool> _extractNasPass(List<Song> songs) async {
     var progressed = false;
-    for (var i = 0; i < songs.length; i += 2) {
+    const roundSize = 8;
+    for (var i = 0; i < songs.length; i += roundSize) {
       // 播放/下载进行中：让路（不打断播放），由外层循环稍后继续
       if (SmbService.playbackActive) {
         Log.d('Cover', '播放/下载活跃，暂停封面提取（已完成 $i/${songs.length}）');
@@ -101,18 +108,28 @@ class CoverService {
         Log.w('Cover', '会话不可用，中止本轮封面提取（已完成 $i/${songs.length}）');
         return progressed || i > 0;
       }
-      final end = (i + 2 > songs.length) ? songs.length : i + 2;
+      final end = (i + roundSize > songs.length) ? songs.length : i + roundSize;
       final batch = songs.sublist(i, end);
-      await Future.wait(batch.map((s) => SmbService.fetchRemoteCover(s)));
-      for (final s in batch) {
-        if (s.coverUrl != null) {
-          _nasFailCount.remove(s.id);
-          progressed = true;
-        } else {
-          final c = (_nasFailCount[s.id] ?? 0) + 1;
-          _nasFailCount[s.id] = c;
-          if (c >= 3) {
-            Log.d('Cover', '3 轮无封面，放弃提取: ${s.title} (${s.smbPath})');
+      // 组内并发 2 串行处理组：4 并发曾触发 NAS 连接数限制整批超时
+      for (var j = 0; j < batch.length; j += 2) {
+        final subEnd = (j + 2 > batch.length) ? batch.length : j + 2;
+        final sub = batch.sublist(j, subEnd);
+        // fetchRemoteCover 返回是否有进展（拿到封面或回填了元数据），
+        // 只盯 coverUrl 会把"无封面但元数据已回填"的歌误判为失败
+        final results = await Future.wait(
+          sub.map((s) => SmbService.fetchRemoteCover(s)),
+        );
+        for (var k = 0; k < sub.length; k++) {
+          final s = sub[k];
+          if (results[k]) {
+            _nasFailCount.remove(s.id);
+            progressed = true;
+          } else {
+            final c = (_nasFailCount[s.id] ?? 0) + 1;
+            _nasFailCount[s.id] = c;
+            if (c >= 3) {
+              Log.d('Cover', '3 轮无进展，放弃提取: ${s.title} (${s.smbPath})');
+            }
           }
         }
       }
@@ -168,9 +185,13 @@ class CoverService {
     if (changed) onCoversUpdated?.call();
   }
 
-  /// 筛选缺封面的 NAS 索引歌（无本地文件，需远端读头提取）
+  /// 筛选待处理的 NAS 索引歌（无本地文件，需远端读头）：
+  /// 缺封面，或元数据仍是扫描期占位值（album/artist/时长需回填）。
   static List<Song> pendingNasCovers(List<Song> songs) => songs
-      .where((s) => s.smbPath != null && s.path == null && s.coverUrl == null)
+      .where((s) =>
+          s.smbPath != null &&
+          s.path == null &&
+          (s.coverUrl == null || SmbService.needsMetadata(s)))
       .toList();
 
   /// 筛选缺封面且有本地文件的歌（从文件提取）
