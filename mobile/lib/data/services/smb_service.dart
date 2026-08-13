@@ -648,7 +648,7 @@ class SmbService {
       changed = true;
     }
     if (changed) {
-      Log.d('SMB', '元数据回填 (${song.title}): album=${song.album}, artist=${song.artist}');
+      Log.v('SMB', '元数据回填 (${song.title}): album=${song.album}, artist=${song.artist}');
     }
     return changed;
   }
@@ -699,25 +699,31 @@ class SmbService {
           maxLen: BigInt.from(1024 * 1024),
         );
         if (tail.isEmpty) {
-          Log.d('SMB', '封面提取：头部无封面且尾部为空 ($smbPath, head=${head.length}B)');
+          Log.v('SMB', '封面提取：头部无封面且尾部为空 ($smbPath, head=${head.length}B)');
           return;
         }
         if (!await _extractCoverFromBytes(song, smbPath, tail)) {
           // 打点：头尾都读到数据但均无封面（真无封面 / 封面超出
           // 1MB 读取窗口 / 标签布局特殊）。用户反馈"文件都有封面却
           // 解析不出"时，此日志用于定位具体文件与原因。
-          Log.d(
+          Log.v(
             'SMB',
             '封面提取：头/尾均无封面标签 ($smbPath, head=${head.length}B, '
             'tail=${tail.length}B)',
           );
-          // 兜底：小文件整文件下载后解析（覆盖 ID3v2 标签超出 1MB
-          // 头/尾窗口被截断的场景，如大尺寸内嵌封面）
-          await _fetchCoverByFullDownload(song, smbPath);
+          // 仅当元数据仍未从片段回填（如 M4A，moov 在尾部无法从 head/tail
+          // 片段解析）才整文件下载兜底。FLAC/MP3/OGG 的封面与元数据都在
+          // 头部，head 已回填元数据，此时再整文件下载纯属浪费（启动批量
+          // 提取会灌入数百 MB 流量、徒增 SMB 操作触发偶发 NOT_A_DIRECTORY）。
+          if (needsMetadata(song)) {
+            await _fetchCoverByFullDownload(song, smbPath);
+          } else {
+            Log.v('SMB', '封面提取：头/尾均无封面（元数据已回填，跳过整文件兜底）($smbPath)');
+          }
         }
       } catch (e) {
         // 尾部读取失败（会话断/格式不支持）：头部已失败过，静默跳过
-        Log.d('SMB', '封面尾部兜底失败 ($smbPath): $e');
+        Log.v('SMB', '封面尾部兜底失败 ($smbPath): $e');
       }
     }
   }
@@ -732,12 +738,12 @@ class SmbService {
     try {
       final size = await smb.smbFileSize(path: smbPath);
       if (size > BigInt.from(30 * 1024 * 1024)) {
-        Log.d('SMB', '封面整文件兜底跳过（文件过大 ${size}B）: $smbPath');
+        Log.v('SMB', '封面整文件兜底跳过（文件过大 ${size}B）: $smbPath');
         return;
       }
       final localPath = await downloadToLocal(smbPath);
       if (localPath == null) {
-        Log.d('SMB', '封面整文件兜底下载失败: $smbPath');
+        Log.v('SMB', '封面整文件兜底下载失败: $smbPath');
         return;
       }
       final meta = await rs.readMetadata(localPath);
@@ -754,12 +760,12 @@ class SmbService {
         await coverFile.writeAsBytes(meta.coverBytes);
         song.coverUrl = coverFile.path;
         song.hasCover = true;
-        Log.d('SMB', '封面整文件兜底成功: $smbPath');
+        Log.v('SMB', '封面整文件兜底成功: $smbPath');
       } else {
-        Log.d('SMB', '封面整文件兜底仍无封面: $smbPath');
+        Log.v('SMB', '封面整文件兜底仍无封面: $smbPath');
       }
     } catch (e) {
-      Log.d('SMB', '封面整文件兜底失败: $smbPath: $e');
+      Log.v('SMB', '封面整文件兜底失败: $smbPath: $e');
     }
   }
 
@@ -795,7 +801,7 @@ class SmbService {
       }
     } catch (e) {
       // 截断数据/格式不支持：解析失败不致命，交由兜底或保持占位色
-      Log.d('SMB', '封面字节解析失败 ($smbPath): $e');
+      Log.v('SMB', '封面字节解析失败 ($smbPath): $e');
     } finally {
       // 头部临时文件用完即删
       if (await headFile.exists()) await headFile.delete();

@@ -58,3 +58,6 @@ lib/l10n/app_localizations_zh.dart
 # Agent / 工具本地目录
 .pi/
 .opencode/
+
+# Workbuddy agent tooling
+.workbuddy/

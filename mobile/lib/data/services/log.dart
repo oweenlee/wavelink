@@ -14,10 +14,14 @@ import 'package:path_provider/path_provider.dart';
 ///
 /// release 包丢弃 D 级，只保留 I/W/E，避免刷屏。
 abstract final class Log {
-  static const _d = 0, _i = 1, _w = 2, _e = 3;
+  static const _v = -1, _d = 0, _i = 1, _w = 2, _e = 3;
 
   /// release 构建只保留 info 及以上
   static final int _minLevel = kReleaseMode ? _i : _d;
+
+  /// 详细日志开关：默认关闭。开启后 [v] 级（逐首封面提取、元数据
+  /// 回填等高频诊断信息）才会输出，避免开发/调试时控制台被刷屏。
+  static bool verbose = false;
 
   // ── 落盘：缓冲 + 串行写，不阻塞调用方 ──
 
@@ -31,6 +35,10 @@ abstract final class Log {
 
   /// 调试跟踪（默认级别：流程节点、状态变化）
   static void d(String tag, Object? msg) => _write(_d, 'D', tag, msg);
+
+  /// 详细诊断（逐首封面提取、元数据回填等高频信息），默认不输出，
+  /// 需 [verbose]=true 才打印。定位批量提取行为时临时开启。
+  static void v(String tag, Object? msg) => _write(_v, 'V', tag, msg);
 
   /// 关键节点（连接建立、导入完成等值得长期保留的信息）
   static void i(String tag, Object? msg) => _write(_i, 'I', tag, msg);
@@ -51,6 +59,7 @@ abstract final class Log {
 
   static void _write(int level, String mark, String tag, Object? msg) {
     if (level < _minLevel) return;
+    if (level == _v && !verbose) return;
     final line = '${_ts()} [$tag] $mark: $msg';
     debugPrint(line);
     // 落盘进缓冲，微任务批处理写入：同一轮事件循环内的多条日志
