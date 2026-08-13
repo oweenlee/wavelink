@@ -280,6 +280,8 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
                 child: ListTile(
                   dense: true,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                  // 整行可点（与设置页开关行为一致）
+                  onTap: () => _toggleOfflineCache(),
                   leading: const Icon(
                     LucideIcons.download,
                     color: AppTheme.textSecondary,

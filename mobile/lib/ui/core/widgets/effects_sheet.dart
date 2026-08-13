@@ -137,9 +137,7 @@ class _EqSection extends ConsumerWidget {
                           : AppTheme.s4.withValues(alpha: 0.4),
                       borderRadius: BorderRadius.circular(8),
                       border: active
-                          ? Border.all(
-                              color: accent.withValues(alpha: 0.4),
-                            )
+                          ? Border.all(color: accent.withValues(alpha: 0.4))
                           : null,
                     ),
                     child: Text(
@@ -156,81 +154,84 @@ class _EqSection extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 8),
+
         // 10 条竖滑块 + 曲线
-
-         SizedBox(
-
-            height: 180,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 12,right: 12,top: 4,bottom: 4),
-              child: Stack(
-                children: [
-                  // 曲线连线
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _EqCurvePainter(values, accent),
-                    ),
-                  ),
-                  // 滑块
-                  Row(
-                    children: List.generate(values.length, (i) {
-                  return Expanded(
-                    child: Column(
-                      children: [
-                        // dB 值
-                        Text(
-                          '${values[i] >= 0 ? '+' : ''}${values[i].toStringAsFixed(1)}',
-                          style: WlText.mono(
-                            fontSize: 9,
-                            height: 1.1,
-                            color: AppTheme.textSecondary,
+        SizedBox(
+          height: 180,
+          child: Padding(
+            padding: const EdgeInsets.only(
+              left: 12,
+              right: 12,
+              top: 4,
+              bottom: 4,
+            ),
+            child: Stack(
+              children: [
+                // 曲线连线
+                Positioned.fill(
+                  child: CustomPaint(painter: _EqCurvePainter(values, accent)),
+                ),
+                // 滑块
+                Row(
+                  children: List.generate(values.length, (i) {
+                    return Expanded(
+                      child: Column(
+                        children: [
+                          // dB 值
+                          Text(
+                            '${values[i] >= 0 ? '+' : ''}${values[i].toStringAsFixed(1)}',
+                            style: WlText.mono(
+                              fontSize: 9,
+                              height: 1.1,
+                              color: AppTheme.textSecondary,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 3),
-                        // 竖滑块
-                        Expanded(
-                          child: RotatedBox(
-                            quarterTurns: 3, // 竖直方向
-                            child: SliderTheme(
-                              data: SliderThemeData(
-                                trackHeight: 3,
-                                thumbShape: const RoundSliderThumbShape(
-                                  enabledThumbRadius: 6,
+                          const SizedBox(height: 3),
+                          // 竖滑块
+                          Expanded(
+                            child: RotatedBox(
+                              quarterTurns: 3, // 竖直方向
+                              child: SliderTheme(
+                                data: SliderThemeData(
+                                  trackHeight: 3,
+                                  thumbShape: const RoundSliderThumbShape(
+                                    enabledThumbRadius: 6,
+                                  ),
+                                  activeTrackColor: accent,
+                                  inactiveTrackColor: AppTheme.s4.withValues(
+                                    alpha: 0.5,
+                                  ),
+                                  overlayColor: accent.withValues(alpha: 0.1),
                                 ),
-                                activeTrackColor: accent,
-                                inactiveTrackColor: AppTheme.s4
-                                    .withValues(alpha: 0.5),
-                                overlayColor: accent.withValues(alpha: 0.1),
-                              ),
-                              child: Slider(
-                                value: values[i].clamp(-12.0, 12.0),
-                                min: -12,
-                                max: 12,
-                                divisions: 48,
-                                onChanged: (v) => dsp.setEqBand(i, v),
+                                child: Slider(
+                                  value: values[i].clamp(-12.0, 12.0),
+                                  min: -12,
+                                  max: 12,
+                                  divisions: 48,
+                                  onChanged: (v) => dsp.setEqBand(i, v),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 3),
-                        // 频率标签
-                        Text(
-                          _bandLabel(freqs[i]),
-                          style: WlText.mono(
-                            fontSize: 9,
-                            height: 1.1,
-                            color: AppTheme.textTertiary,
+                          const SizedBox(height: 3),
+                          // 频率标签
+                          Text(
+                            _bandLabel(freqs[i]),
+                            style: WlText.mono(
+                              fontSize: 9,
+                              height: 1.1,
+                              color: AppTheme.textTertiary,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                    }),
-                  ),
-                ],
-              ),
+                        ],
+                      ),
+                    );
+                  }),
+                ),
+              ],
             ),
           ),
+        ),
         const Divider(height: 1, color: AppTheme.divider),
       ],
     );
@@ -312,43 +313,48 @@ class _EffectItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: Row(
-        children: [
-          // 图标在图标区内垂直居中，与文字起点严格对齐
-          SizedBox(
-            width: 24,
-            height: 24,
-            child: Icon(icon, size: 20, color: AppTheme.textSecondary),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    height: 1.2,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  enabled ? '${l10n.enabled} · $subtitle' : subtitle,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    height: 1.2,
-                    color: AppTheme.textTertiary,
-                  ),
-                ),
-              ],
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      // 整行可点：点任意位置（含文字）切换开关
+      onTap: onToggle,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Row(
+          children: [
+            // 图标在图标区内垂直居中，与文字起点严格对齐
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: Icon(icon, size: 20, color: AppTheme.textSecondary),
             ),
-          ),
-          WlToggle(value: enabled, onChanged: onToggle),
-        ],
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      height: 1.2,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    enabled ? '${l10n.enabled} · $subtitle' : subtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      height: 1.2,
+                      color: AppTheme.textTertiary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            WlToggle(value: enabled, onChanged: onToggle),
+          ],
+        ),
       ),
     );
   }

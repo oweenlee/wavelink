@@ -368,7 +368,9 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
             // 系统音乐库（iOS=Apple Music / Android=设备音乐库）
             _SourceRow(
               icon: Platform.isIOS ? LucideIcons.apple : LucideIcons.smartphone,
-              label: Platform.isIOS ? l10n.sourceAppleMusic : l10n.sourceDeviceLibrary,
+              label: Platform.isIOS
+                  ? l10n.sourceAppleMusic
+                  : l10n.sourceDeviceLibrary,
               subtitle: Platform.isIOS
                   ? l10n.sourceAppleMusicHint
                   : l10n.sourceDeviceLibraryHint,
@@ -395,7 +397,11 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
               onTap: _handleNas,
               trailing: SmbService.isConnected
                   ? _NasSyncButton(
-                      syncing: ref.watch(libraryProvider).nasImporting,
+                      // select 只盯同步标志：NAS 导入逐批入库时曲库 state 高频变化，
+                      // watch 整个 state 会让 app 壳（含当前页）跟着每批重建
+                      syncing: ref.watch(
+                        libraryProvider.select((s) => s.nasImporting),
+                      ),
                     )
                   : null,
             ),
@@ -452,8 +458,9 @@ class _SourceRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dotColor =
-        connected ? const Color(0xFF34C759) : const Color(0xFFFF3B30);
+    final dotColor = connected
+        ? const Color(0xFF34C759)
+        : const Color(0xFFFF3B30);
     return GestureDetector(
       onTap: loading ? null : onTap,
       behavior: HitTestBehavior.opaque,

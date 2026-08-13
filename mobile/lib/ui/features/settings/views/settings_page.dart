@@ -9,6 +9,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/sheet_shell.dart';
 import '../../../core/widgets/wl_toggle.dart';
 import '../../playback/view_models/playback_controller.dart';
+import '../../playback/view_models/audio_player_provider.dart';
 import '../view_models/dsp_provider.dart';
 import '../view_models/locale_provider.dart';
 
@@ -20,6 +21,15 @@ class SettingsPage extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final player = ref.watch(playbackControllerProvider);
     final dsp = ref.watch(dspProvider).dspSettings;
+    // 这四个开关/滑块 read 的是偏好内存值（controller 的 getter 非响应式），
+    // 必须 watch playerProvider 的对应字段才能点击后立即刷新；
+    // 用 select 隔离，telemetry 高频更新不会带动本页重建
+    final bitPerfect = ref.watch(playerProvider.select((s) => s.bitPerfect));
+    final replayGain = ref.watch(playerProvider.select((s) => s.replayGain));
+    final dynamicColor = ref.watch(
+      playerProvider.select((s) => s.dynamicColor),
+    );
+    final coverBlur = ref.watch(playerProvider.select((s) => s.coverBlur));
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
@@ -74,20 +84,17 @@ class SettingsPage extends ConsumerWidget {
             _SwitchItem(
               icon: LucideIcons.sparkles,
               label: l10n.replayGain,
-              value: player.replayGain,
-              onChanged: (_) => player.setReplayGain(!player.replayGain),
+              value: replayGain,
+              onChanged: (_) => player.setReplayGain(!replayGain),
             ),
             _SwitchItem(
               icon: LucideIcons.badgeCheck,
               label: l10n.bitPerfect,
-              value: player.bitPerfect,
-              onChanged: (_) => player.setBitPerfect(!player.bitPerfect),
+              value: bitPerfect,
+              onChanged: (_) => player.setBitPerfect(!bitPerfect),
               subtitle: _bitPerfectStatus(player),
             ),
-            _SettingItem(
-              icon: LucideIcons.volume2,
-              label: l10n.outputDevice,
-            ),
+            _SettingItem(icon: LucideIcons.volume2, label: l10n.outputDevice),
           ],
         ),
         const SizedBox(height: 24),
@@ -97,7 +104,9 @@ class SettingsPage extends ConsumerWidget {
             _SettingItem(
               icon: LucideIcons.server,
               label: l10n.sourceMusicServer,
-              trailing: SubsonicService.isConfigured ? l10n.subsonicConnected : null,
+              trailing: SubsonicService.isConfigured
+                  ? l10n.subsonicConnected
+                  : null,
               onTap: () => context.push('/subsonic'),
             ),
           ],
@@ -114,13 +123,13 @@ class SettingsPage extends ConsumerWidget {
             _SwitchItem(
               icon: LucideIcons.pipette,
               label: l10n.dynamicColor,
-              value: player.dynamicColor,
-              onChanged: (_) => player.setDynamicColor(!player.dynamicColor),
+              value: dynamicColor,
+              onChanged: (_) => player.setDynamicColor(!dynamicColor),
             ),
             _SliderItem(
               icon: LucideIcons.droplets,
               label: l10n.coverBlur,
-              value: player.coverBlur,
+              value: coverBlur,
               onChanged: player.setCoverBlur,
             ),
           ],
@@ -228,10 +237,10 @@ Future<void> _showAutoEqSheet(BuildContext context, WidgetRef ref) {
                   l10n.autoEqOff,
                   style: TextStyle(
                     fontSize: 15,
-                    color: current == null
-                        ? accent
-                        : AppTheme.textPrimary,
-                    fontWeight: current == null ? FontWeight.w600 : FontWeight.w400,
+                    color: current == null ? accent : AppTheme.textPrimary,
+                    fontWeight: current == null
+                        ? FontWeight.w600
+                        : FontWeight.w400,
                   ),
                 ),
                 dense: true,
@@ -306,10 +315,7 @@ class _LanguageItem extends ConsumerWidget {
     );
   }
 
-  Future<void> _showLanguageSheet(
-    BuildContext context,
-    WidgetRef ref,
-  ) {
+  Future<void> _showLanguageSheet(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final localeMode = ref.read(localeProvider);
     final accent = AccentScope.of(context);
@@ -438,12 +444,12 @@ class _SettingItem extends StatelessWidget {
               ),
             )
           : onTap != null
-              ? const Icon(
-                  LucideIcons.chevronRight,
-                  color: AppTheme.textTertiary,
-                  size: 20,
-                )
-              : null,
+          ? const Icon(
+              LucideIcons.chevronRight,
+              color: AppTheme.textTertiary,
+              size: 20,
+            )
+          : null,
       onTap: onTap,
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -469,6 +475,8 @@ class _SwitchItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      // 整行可点：行内任意位置（含文字/图标）都能切换，且有 ink 涟漪反馈
+      onTap: () => onChanged(!value),
       leading: Icon(icon, color: AppTheme.textSecondary, size: 22),
       title: Text(
         label,
@@ -585,10 +593,7 @@ class _ActionItem extends StatelessWidget {
     final accent = AccentScope.of(context);
     return ListTile(
       leading: Icon(icon, color: accent, size: 22),
-      title: Text(
-        label,
-        style: TextStyle(fontSize: 15, color: accent),
-      ),
+      title: Text(label, style: TextStyle(fontSize: 15, color: accent)),
       onTap: onTap,
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),

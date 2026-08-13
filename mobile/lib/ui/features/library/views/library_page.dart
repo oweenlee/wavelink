@@ -21,7 +21,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/song_tile.dart';
 import '../../../core/widgets/album_cover.dart';
 
-
 /// 曲库标签栏右侧「音源过滤」按钮：点击从底部弹出过滤 sheet，
 /// 复用抽屉里同一套来源开关策略（PreferencesService.showSource + refreshSources）。
 class _SourceFilterButton extends StatelessWidget {
@@ -145,20 +144,28 @@ class _FilterRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: AppTheme.textSecondary),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      // 整行可点：行内任意位置（含文字）切换开关
+      onTap: onChanged,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: AppTheme.textSecondary),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
             ),
-          ),
-          WlToggle(value: value, onChanged: onChanged),
-        ],
+            WlToggle(value: value, onChanged: onChanged),
+          ],
+        ),
       ),
     );
   }
@@ -292,7 +299,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                   padding: EdgeInsets.zero,
                   indicatorSize: TabBarIndicatorSize.label,
                   indicator: const UnderlineTabIndicator(
-                    borderSide: BorderSide(width: 2, color: AppTheme.textPrimary),
+                    borderSide: BorderSide(
+                      width: 2,
+                      color: AppTheme.textPrimary,
+                    ),
                     insets: EdgeInsets.symmetric(horizontal: 0),
                   ),
                   dividerColor: Colors.transparent,
@@ -381,10 +391,7 @@ class _NasImportBanner extends ConsumerWidget {
             Expanded(
               child: Text(
                 error,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppTheme.danger,
-                ),
+                style: const TextStyle(fontSize: 13, color: AppTheme.danger),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -412,15 +419,11 @@ class _NasImportBanner extends ConsumerWidget {
           Expanded(
             child: Text(
               l10n.nasImportingProgress(lib.nasImportedCount),
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppTheme.textPrimary,
-              ),
+              style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary),
             ),
           ),
           GestureDetector(
-            onTap: () =>
-                ref.read(libraryProvider.notifier).cancelNasImport(),
+            onTap: () => ref.read(libraryProvider.notifier).cancelNasImport(),
             child: const Icon(
               LucideIcons.x,
               size: 16,
@@ -494,11 +497,13 @@ class _SongsTab extends ConsumerWidget {
     final displayed = query.isEmpty
         ? allSongs
         : allSongs
-            .where((s) =>
-                s.title.toLowerCase().contains(query) ||
-                s.artist.toLowerCase().contains(query) ||
-                s.album.toLowerCase().contains(query))
-            .toList();
+              .where(
+                (s) =>
+                    s.title.toLowerCase().contains(query) ||
+                    s.artist.toLowerCase().contains(query) ||
+                    s.album.toLowerCase().contains(query),
+              )
+              .toList();
 
     if (displayed.isEmpty) {
       return _EmptyLibrary(
@@ -563,12 +568,7 @@ class _AlbumsTab extends ConsumerWidget {
     }
 
     return GridView.builder(
-      padding: const EdgeInsets.only(
-        bottom: 80,
-        left: 16,
-        right: 16,
-        top: 8,
-      ),
+      padding: const EdgeInsets.only(bottom: 80, left: 16, right: 16, top: 8),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         mainAxisSpacing: 16,
@@ -588,80 +588,80 @@ class _AlbumsTab extends ConsumerWidget {
             isPlaying;
 
         return AppAnim.listEntrance(
-        GestureDetector(
-          behavior: HitTestBehavior.opaque, // 行内空白也可点
-          onTap: () => context.push(
-            '/album',
-            extra: Album(
-              id: '$artist\u0000$name',
-              title: name,
-              artist: artist,
-              year: 0,
-              songs: albumSongs,
-              dominantColor: color,
+          GestureDetector(
+            behavior: HitTestBehavior.opaque, // 行内空白也可点
+            onTap: () => context.push(
+              '/album',
+              extra: Album(
+                id: '$artist\u0000$name',
+                title: name,
+                artist: artist,
+                year: 0,
+                songs: albumSongs,
+                dominantColor: color,
+              ),
             ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 专辑封面
-              Expanded(
-                child: WlCover(
-                  coverUrl: albumSongs.first.coverUrl,
-                  fallbackColor: color,
-                  borderRadius: 10,
-                  width: double.infinity,
-                  height: double.infinity,
-                  overlay: isPlayingAlbum
-                      ? Align(
-                          alignment: Alignment.bottomRight,
-                          child: Container(
-                            margin: const EdgeInsets.all(8),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppTheme.accentFallback,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              'NOW',
-                              style: WlText.mono(
-                                fontSize: 9,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 专辑封面
+                Expanded(
+                  child: WlCover(
+                    coverUrl: albumSongs.first.coverUrl,
+                    fallbackColor: color,
+                    borderRadius: 10,
+                    width: double.infinity,
+                    height: double.infinity,
+                    overlay: isPlayingAlbum
+                        ? Align(
+                            alignment: Alignment.bottomRight,
+                            child: Container(
+                              margin: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppTheme.accentFallback,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'NOW',
+                                style: WlText.mono(
+                                  fontSize: 9,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
-                          ),
-                        )
-                      : null,
+                          )
+                        : null,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              // 专辑标题
-              Text(
-                name,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.textPrimary,
+                const SizedBox(height: 8),
+                // 专辑标题
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 2),
-              // 单行元信息
-              Text(
-                '${albumSongs.length} songs',
-                style: WlText.mono(
-                  fontSize: 11,
-                  color: AppTheme.textTertiary,
+                const SizedBox(height: 2),
+                // 单行元信息
+                Text(
+                  '${albumSongs.length} songs',
+                  style: WlText.mono(
+                    fontSize: 11,
+                    color: AppTheme.textTertiary,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
           index,
         );
       },
@@ -746,16 +746,14 @@ class _ArtistsTab extends ConsumerWidget {
         ),
         // 艺术家列表
         SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final name = artistNames[index];
-              final artistSongs = artists[name]!;
-              final count = artistSongs.length;
-              final albumCount =
-                  artistSongs.map((s) => s.album).toSet().length;
-              final artistColor = artistSongs.first.dominantColor;
+          delegate: SliverChildBuilderDelegate((context, index) {
+            final name = artistNames[index];
+            final artistSongs = artists[name]!;
+            final count = artistSongs.length;
+            final albumCount = artistSongs.map((s) => s.album).toSet().length;
+            final artistColor = artistSongs.first.dominantColor;
 
-              return AppAnim.listEntrance(
+            return AppAnim.listEntrance(
               GestureDetector(
                 behavior: HitTestBehavior.opaque, // 行内空白也可点
                 onTap: () => context.push(
@@ -820,11 +818,9 @@ class _ArtistsTab extends ConsumerWidget {
                   ),
                 ),
               ),
-                index,
-              );
-            },
-            childCount: artistNames.length,
-          ),
+              index,
+            );
+          }, childCount: artistNames.length),
         ),
         const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
       ],
@@ -868,82 +864,79 @@ class _PlaylistsTab extends ConsumerWidget {
       itemBuilder: (context, index) {
         if (index == 0) {
           return AppAnim.listEntrance(
-          Container(
-            margin: const EdgeInsets.only(bottom: 16),
-            child: Row(
-              children: [
-                // 新建播放列表
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => _showCreatePlaylist(context, player),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: AppTheme.s3,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            LucideIcons.plus,
-                            color: AppTheme.textPrimary,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            l10n.newPlaylist,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              child: Row(
+                children: [
+                  // 新建播放列表
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => _showCreatePlaylist(context, player),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.s3,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              LucideIcons.plus,
                               color: AppTheme.textPrimary,
+                              size: 16,
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                // 导入/导出
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => _openPlaylistIo(context, player),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: AppTheme.s2,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: AppTheme.s4,
-                          width: 1,
+                            const SizedBox(width: 6),
+                            Text(
+                              l10n.newPlaylist,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: AppTheme.textPrimary,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            LucideIcons.download,
-                            color: AppTheme.textSecondary,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'M3U · PLS',
-                            style: WlText.mono(
-                              fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  // 导入/导出
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => _openPlaylistIo(context, player),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.s2,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppTheme.s4, width: 1),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              LucideIcons.download,
                               color: AppTheme.textSecondary,
-                              fontWeight: FontWeight.w500,
+                              size: 16,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 6),
+                            Text(
+                              'M3U · PLS',
+                              style: WlText.mono(
+                                fontSize: 12,
+                                color: AppTheme.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
             index,
           );
         }
@@ -953,79 +946,82 @@ class _PlaylistsTab extends ConsumerWidget {
         // 行区域（含文字/封面之外的空白），并带水波纹反馈——裸 GestureDetector
         // 只响应实际渲染元素，点行内空白会"无响应"。
         return AppAnim.listEntrance(
-        Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Material(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            child: InkWell(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Material(
+              color: Colors.transparent,
               borderRadius: BorderRadius.circular(10),
-              onTap: () => context.push(
-                '/song-list',
-                extra: {
-                  'title': pl.name,
-                  'songs': pl.songs,
-                  'accentColor': pl.color,
-                  'isFavoriteList': pl.builtIn,
-                },
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                child: Row(
-                  children: [
-                    WlCover(
-                      coverUrl: pl.songs.isNotEmpty
-                          ? pl.songs.first.coverUrl
-                          : null,
-                      fallbackColor: pl.color,
-                      borderRadius: 10,
-                      width: 48,
-                      height: 48,
-                      placeholder: Center(
-                        child: Icon(
-                          pl.builtIn
-                              ? LucideIcons.heart
-                              : LucideIcons.listMusic,
-                          color: Colors.white.withValues(alpha: 0.6),
-                          size: 22,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => context.push(
+                  '/song-list',
+                  extra: {
+                    'title': pl.name,
+                    'songs': pl.songs,
+                    'accentColor': pl.color,
+                    'isFavoriteList': pl.builtIn,
+                  },
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    children: [
+                      WlCover(
+                        coverUrl: pl.songs.isNotEmpty
+                            ? pl.songs.first.coverUrl
+                            : null,
+                        fallbackColor: pl.color,
+                        borderRadius: 10,
+                        width: 48,
+                        height: 48,
+                        placeholder: Center(
+                          child: Icon(
+                            pl.builtIn
+                                ? LucideIcons.heart
+                                : LucideIcons.listMusic,
+                            color: Colors.white.withValues(alpha: 0.6),
+                            size: 22,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            pl.name,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500,
-                              color: AppTheme.textPrimary,
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              pl.name,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                                color: AppTheme.textPrimary,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            l10n.songsCount(pl.count),
-                            style: WlText.mono(
-                              fontSize: 11,
-                              color: AppTheme.textTertiary,
+                            const SizedBox(height: 3),
+                            Text(
+                              l10n.songsCount(pl.count),
+                              style: WlText.mono(
+                                fontSize: 11,
+                                color: AppTheme.textTertiary,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    const Icon(
-                      LucideIcons.chevronRight,
-                      color: AppTheme.textTertiary,
-                      size: 18,
-                    ),
-                  ],
+                      const Icon(
+                        LucideIcons.chevronRight,
+                        color: AppTheme.textTertiary,
+                        size: 18,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
           index,
         );
       },
@@ -1155,8 +1151,8 @@ class _PlaylistsTab extends ConsumerWidget {
         return;
       }
       final songs = entries.map((e) {
-        final isStream = e.path.startsWith('http://') ||
-            e.path.startsWith('https://');
+        final isStream =
+            e.path.startsWith('http://') || e.path.startsWith('https://');
         final name = (e.title == null || e.title!.isEmpty)
             ? e.path.split(RegExp(r'[/\\]')).last
             : e.title!;
@@ -1195,7 +1191,8 @@ class _PlaylistsTab extends ConsumerWidget {
       for (final s in queue) {
         final artist = s.artist.isEmpty ? '' : '${s.artist} - ';
         buffer.writeln(
-            '#EXTINF:${s.durationEstimated ? 0 : s.duration.inSeconds},$artist${s.title}');
+          '#EXTINF:${s.durationEstimated ? 0 : s.duration.inSeconds},$artist${s.title}',
+        );
         buffer.writeln(s.path ?? s.streamUrl ?? '');
       }
       final docs = await getApplicationDocumentsDirectory();
@@ -1463,10 +1460,7 @@ void _showAddToPlaylist(
             ),
           ...saved.entries.map(
             (e) => ListTile(
-              leading: const Icon(
-                LucideIcons.listMusic,
-                color: AppTheme.brand,
-              ),
+              leading: const Icon(LucideIcons.listMusic, color: AppTheme.brand),
               title: Text(
                 e.key,
                 style: const TextStyle(color: AppTheme.textPrimary),

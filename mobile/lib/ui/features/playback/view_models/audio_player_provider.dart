@@ -12,7 +12,8 @@ import '../../../../data/services/smb_service.dart';
 import '../../../../data/services/import_service.dart';
 import '../../../../data/services/lrc_parser.dart';
 import '../../../../data/repositories/audio_engine_repository.dart';
-import '../../../../data/services/rust_service.dart' show AnalyzeResult, readMetadata;
+import '../../../../data/services/rust_service.dart'
+    show AnalyzeResult, readMetadata;
 import '../../../core/providers/repositories.dart';
 import '../backends/playback_backend.dart';
 import '../../settings/view_models/dsp_provider.dart';
@@ -31,6 +32,15 @@ class PlayerState {
   /// 开启后切歌时把输出速率对齐到文件速率（iOS 经 AVAudioSession），相等时不重采样。
   final bool bitPerfect;
 
+  /// ReplayGain 开关（由 PlaybackController 从偏好同步，供设置页响应式显示）
+  final bool replayGain;
+
+  /// 动态取色开关（同上）
+  final bool dynamicColor;
+
+  /// 封面模糊程度（同上，设置页滑块用）
+  final double coverBlur;
+
   const PlayerState({
     this.isPlaying = false,
     this.position = 0.0,
@@ -39,6 +49,9 @@ class PlayerState {
     this.lyrics,
     this.telemetry = EngineTelemetry.idle,
     this.bitPerfect = false,
+    this.replayGain = true,
+    this.dynamicColor = true,
+    this.coverBlur = 0.7,
   });
 
   double get progress {
@@ -73,6 +86,9 @@ class PlayerState {
     Object? lyrics = _sentinel,
     EngineTelemetry? telemetry,
     bool? bitPerfect,
+    bool? replayGain,
+    bool? dynamicColor,
+    double? coverBlur,
   }) {
     return PlayerState(
       isPlaying: isPlaying ?? this.isPlaying,
@@ -86,6 +102,9 @@ class PlayerState {
           : lyrics as List<LyricLine>?,
       telemetry: telemetry ?? this.telemetry,
       bitPerfect: bitPerfect ?? this.bitPerfect,
+      replayGain: replayGain ?? this.replayGain,
+      dynamicColor: dynamicColor ?? this.dynamicColor,
+      coverBlur: coverBlur ?? this.coverBlur,
     );
   }
 }
@@ -169,6 +188,12 @@ class PlayerNotifier extends Notifier<PlayerState> {
   void setBitPerfect(bool v) {
     state = state.copyWith(bitPerfect: v);
   }
+
+  /// 以下三个仅用于设置页响应式展示（值以偏好为唯一事实源，
+  /// 由 PlaybackController 同步写入）：
+  void setReplayGain(bool v) => state = state.copyWith(replayGain: v);
+  void setDynamicColor(bool v) => state = state.copyWith(dynamicColor: v);
+  void setCoverBlur(double v) => state = state.copyWith(coverBlur: v);
 
   /// 有效 bit-perfect：请求偏好 && 实际链路 && 无 DSP 改动信号。
   /// - 速率维度：文件速率 == 实际输出速率（不等于时引擎在重采样）
@@ -269,7 +294,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
       Log.d(
         'Audio',
         '[pt] $stage: ${DateTime.now().difference(f).inMilliseconds}ms '
-        '(${song.id} ${song.title})',
+            '(${song.id} ${song.title})',
       );
     }
 
@@ -323,7 +348,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
         }
       }
     } else if (song.streamUrl != null && song.streamUrl!.isNotEmpty) {
-      resolvedPath = await _downloadToCache(song.streamUrl!, song.id, song.title);
+      resolvedPath = await _downloadToCache(
+        song.streamUrl!,
+        song.id,
+        song.title,
+      );
     } else {
       resolvedPath = await _resolvePlayablePath(song.path);
       // 校验本地文件存在性（避免 Subsonic server-local 路径被误判）
@@ -342,7 +371,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
         resolvedPath = null;
       }
     }
-    probeStage('路径解析完成', );
+    probeStage('路径解析完成');
 
     // 流式播放中：无需本地路径，跳过 probe/seek/回滚分支
     if (_playingFromStream) {
@@ -371,9 +400,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // 注意：上面已 pause 静音，回滚需 resume 恢复旧歌播放。
     if (resolvedPath == null) {
       Log.w('Audio', '无法播放 ${song.id}（resolvedPath=null），回滚到上一曲');
-      ref.read(playErrorProvider.notifier).report(
-        '无法播放「${song.title}」：文件不存在或下载失败',
-      );
+      ref
+          .read(playErrorProvider.notifier)
+          .report('无法播放「${song.title}」：文件不存在或下载失败');
       if (fallbackSong != null) {
         state = state.copyWith(currentSong: fallbackSong, isPlaying: true);
         await _backend.resume();
@@ -550,11 +579,13 @@ class PlayerNotifier extends Notifier<PlayerState> {
   void saveResume() {
     final q = ref.read(queueProvider);
     if (q.queue.isEmpty || state.currentSong == null) return;
-    ref.read(preferencesRepositoryProvider).setResume(
-      queueIds: q.queue.map((s) => s.id).toList(),
-      index: q.currentIndex,
-      positionMs: state.position,
-    );
+    ref
+        .read(preferencesRepositoryProvider)
+        .setResume(
+          queueIds: q.queue.map((s) => s.id).toList(),
+          index: q.currentIndex,
+          positionMs: state.position,
+        );
   }
 
   void seek(double value, {bool immediate = false}) {
@@ -574,7 +605,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
     final song = state.currentSong;
     if (song == null) return;
     _seekToPosition(
-      (state.position + 10000).clamp(0, song.duration.inMilliseconds.toDouble()),
+      (state.position + 10000).clamp(
+        0,
+        song.duration.inMilliseconds.toDouble(),
+      ),
     );
   }
 
@@ -582,7 +616,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
     final song = state.currentSong;
     if (song == null) return;
     _seekToPosition(
-      (state.position - 10000).clamp(0, song.duration.inMilliseconds.toDouble()),
+      (state.position - 10000).clamp(
+        0,
+        song.duration.inMilliseconds.toDouble(),
+      ),
     );
   }
 
@@ -625,9 +662,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
         if (path == null) {
           // 下载失败：保持流式继续播，仅提示（不打断播放）
           Log.w('Audio', '流式 seek 回退下载失败: ${song.title}');
-          ref.read(playErrorProvider.notifier).report(
-                '无法跳转到「${song.title}」：下载失败',
-              );
+          ref
+              .read(playErrorProvider.notifier)
+              .report('无法跳转到「${song.title}」：下载失败');
           return;
         }
         // 切本地播放并 seek（_playCurrent 内部：pause 流 → 缓存命中 →
@@ -878,7 +915,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
       Log.d(
         'Audio',
         '位置到达时长（${state.position.toInt()}ms >= '
-        '${song.duration.inMilliseconds}ms）→ 视为曲终',
+            '${song.duration.inMilliseconds}ms）→ 视为曲终',
       );
       _progressTimer?.cancel();
       state = state.copyWith(isPlaying: false);
@@ -982,7 +1019,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
   Future<List<LyricLine>?> _loadRemoteLyrics(String smbPath) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
-      final cacheFile = File('${appDir.path}/.lrc_cache/${smbPath.hashCode}.lrc');
+      final cacheFile = File(
+        '${appDir.path}/.lrc_cache/${smbPath.hashCode}.lrc',
+      );
       if (await cacheFile.exists()) {
         final parsed = parseLrc(await cacheFile.readAsString());
         if (parsed.isNotEmpty) return parsed;
@@ -1060,7 +1099,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
   /// 缓存命中直接返回，避免重复下载。
   final Map<String, String> _streamCache = {};
 
-  Future<String?> _downloadToCache(String url, String songId, String title) async {
+  Future<String?> _downloadToCache(
+    String url,
+    String songId,
+    String title,
+  ) async {
     // 检查内存缓存
     final cached = _streamCache[songId];
     if (cached != null && await File(cached).exists()) return cached;
@@ -1090,7 +1133,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
       await cacheFile.writeAsBytes(response.bodyBytes);
       _streamCache[songId] = cacheFile.path;
-      Log.d('Audio', '下载完成: ${cacheFile.path} (${response.bodyBytes.length} bytes)');
+      Log.d(
+        'Audio',
+        '下载完成: ${cacheFile.path} (${response.bodyBytes.length} bytes)',
+      );
       return cacheFile.path;
     } catch (e) {
       Log.e('Audio', '流式下载失败: $e');
@@ -1102,8 +1148,20 @@ class PlayerNotifier extends Notifier<PlayerState> {
     final uri = Uri.tryParse(url);
     if (uri == null) return '.audio';
     final path = uri.path.toLowerCase();
-    for (final ext in ['.flac', '.wav', '.mp3', '.aac', '.ogg', '.m4a',
-                       '.opus', '.dsf', '.dff', '.aiff', '.ape', '.wv']) {
+    for (final ext in [
+      '.flac',
+      '.wav',
+      '.mp3',
+      '.aac',
+      '.ogg',
+      '.m4a',
+      '.opus',
+      '.dsf',
+      '.dff',
+      '.aiff',
+      '.ape',
+      '.wv',
+    ]) {
       if (path.endsWith(ext)) return ext;
     }
     return '.audio';

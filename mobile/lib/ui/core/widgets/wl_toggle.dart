@@ -16,6 +16,7 @@ class WlToggle extends StatelessWidget {
       width: 44,
       height: 24,
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: onChanged,
         child: Container(
           decoration: BoxDecoration(

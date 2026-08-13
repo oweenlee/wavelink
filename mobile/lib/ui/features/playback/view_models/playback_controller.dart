@@ -53,10 +53,7 @@ class PlaybackController {
     final host = prefs.nasHost;
     final share = prefs.nasShare;
     // NAS 无「启用」开关：配置了 host/share 即视为启用，启动自动导入
-    if (host != null &&
-        host.isNotEmpty &&
-        share != null &&
-        share.isNotEmpty) {
+    if (host != null && host.isNotEmpty && share != null && share.isNotEmpty) {
       _library.startNasImport(share);
     }
   }
@@ -115,9 +112,7 @@ class PlaybackController {
       if (s != null) restored.add(s);
     }
     if (restored.isEmpty) return;
-    final idx = prefs.resumeIndex < restored.length
-        ? prefs.resumeIndex
-        : 0;
+    final idx = prefs.resumeIndex < restored.length ? prefs.resumeIndex : 0;
     _queue.setQueue(restored, startIndex: idx);
     _player.setCurrentSong(restored[idx]);
     _player.setPosition(prefs.resumePositionMs);
@@ -130,6 +125,10 @@ class PlaybackController {
   void _loadPreferences() {
     _player.setVolume(_prefsRepo.volume);
     _player.setBitPerfect(_prefsRepo.bitPerfect);
+    // 设置页响应式字段同样从偏好同步（重启后显示与偏好一致）
+    _player.setReplayGain(_prefsRepo.replayGain);
+    _player.setDynamicColor(_prefsRepo.dynamicColor);
+    _player.setCoverBlur(_prefsRepo.coverBlur);
     if (_prefsRepo.shuffle) _queue.toggleShuffle();
     _queue.setLoopMode(
       LoopMode.values.firstWhere(
@@ -191,11 +190,22 @@ class PlaybackController {
 
   void setReplayGain(bool v) {
     _prefsRepo.setReplayGain(v);
+    // 同步到播放器状态供设置页响应式刷新（偏好为唯一事实源）
+    _player.setReplayGain(v);
     // 对当前曲目立即生效（切歌时也会按偏好逐首应用）
     _player.applyReplayGainNow();
   }
-  void setDynamicColor(bool v) => _prefsRepo.setDynamicColor(v);
-  void setCoverBlur(double v) => _prefsRepo.setCoverBlur(v);
+
+  void setDynamicColor(bool v) {
+    _prefsRepo.setDynamicColor(v);
+    _player.setDynamicColor(v);
+  }
+
+  void setCoverBlur(double v) {
+    _prefsRepo.setCoverBlur(v);
+    _player.setCoverBlur(v);
+  }
+
   void setBitPerfect(bool v) {
     _prefsRepo.setBitPerfect(v);
     _player.setBitPerfect(v);
@@ -205,8 +215,7 @@ class PlaybackController {
 
   bool autoPlayOnQueueSet = true;
 
-  Future<void> Function(Song) get startDecoderHook =>
-      _player.startDecoderHook;
+  Future<void> Function(Song) get startDecoderHook => _player.startDecoderHook;
   set startDecoderHook(Future<void> Function(Song) hook) {
     _player.startDecoderHook = hook;
   }
@@ -336,6 +345,7 @@ class PlaybackController {
     await _library.removeSong(song);
     _queue.removeSongById(song.id);
   }
+
   void toggleFavorite() => _library.toggleFavoriteFor(currentSong);
   void setFavorite(String songId, bool favorite) =>
       _library.setFavorite(songId, favorite);
