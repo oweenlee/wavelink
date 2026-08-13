@@ -115,7 +115,6 @@
   "nasEmptyShare": "NAS 已连接 · 共享路径为空，歌曲未导入",
   "nasScanShare": "扫描共享",
   "nasImport": "从 NAS 导入",
-  "nasImportingProgress": "正在从 NAS 导入… {count} 首",
   "smbOfflineCache": "离线缓存",
   "smbOfflineCacheHint": "把整个 NAS 音乐库下载到本机",
   "smbOfflineCacheTitle": "开启离线缓存？",

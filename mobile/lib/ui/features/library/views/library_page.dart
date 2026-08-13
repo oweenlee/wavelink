@@ -339,9 +339,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         ),
         const SizedBox(height: 8),
 
-        // ── NAS 后台导入进度条 ──
-        if (ref.watch(libraryProvider).nasImporting ||
-            ref.watch(libraryProvider).nasImportError != null)
+        // ── NAS 导入失败提示 ──
+        if (ref.watch(libraryProvider).nasImportError != null)
           const _NasImportBanner(),
 
         Expanded(
@@ -360,16 +359,14 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   }
 }
 
-// ── NAS 后台导入进度条 ──
+// ── NAS 导入失败提示 ──
 
 class _NasImportBanner extends ConsumerWidget {
   const _NasImportBanner();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final l10n = AppLocalizations.of(context);
     final lib = ref.watch(libraryProvider);
-    final accent = AccentScope.of(context);
     final error = lib.nasImportError;
 
     if (error != null) {
@@ -401,38 +398,7 @@ class _NasImportBanner extends ConsumerWidget {
       );
     }
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppTheme.s2,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2, color: accent),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              l10n.nasImportingProgress(lib.nasImportedCount),
-              style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary),
-            ),
-          ),
-          GestureDetector(
-            onTap: () => ref.read(libraryProvider.notifier).cancelNasImport(),
-            child: const Icon(
-              LucideIcons.x,
-              size: 16,
-              color: AppTheme.textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
+    return const SizedBox.shrink();
   }
 }
 

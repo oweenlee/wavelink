@@ -115,7 +115,6 @@
   "nasEmptyShare": "NAS connected · empty share path, songs not imported",
   "nasScanShare": "Scan Share",
   "nasImport": "Import from NAS",
-  "nasImportingProgress": "Importing from NAS… {count} songs",
   "smbOfflineCache": "Offline cache",
   "smbOfflineCacheHint": "Download the whole NAS library to this device",
   "smbOfflineCacheTitle": "Enable offline cache?",
