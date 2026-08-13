@@ -2,7 +2,9 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../../../domain/models/song.dart';
 import '../theme/app_theme.dart';
+import 'now_playing_indicator.dart';
 
 /// 统一封面组件：优先显示真实封面图（coverUrl），无图时降级为精致色块。
 /// 用于专辑网格、艺人头像、播放列表缩略图、MiniPlayer、详情页大封面等，
@@ -142,6 +144,81 @@ class _VinylPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// 歌曲行内封面：有封面文件显示图片（当前播放叠加指示器遮罩），
+/// 否则纯色占位。供曲库列表（SongTile）/艺人详情页等行的左侧缩略图使用。
+class SongCoverArt extends StatelessWidget {
+  final Song song;
+  final bool isCurrent;
+  final bool isPlaying;
+
+  const SongCoverArt({
+    super.key,
+    required this.song,
+    required this.isCurrent,
+    required this.isPlaying,
+  });
+
+  /// 获取封面缓存文件（coverUrl 优先，否则按 path hash 查找）
+  File? _coverFile() {
+    if (song.coverUrl != null) {
+      final f = File(song.coverUrl!);
+      if (f.existsSync()) return f;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final coverFile = _coverFile();
+    final hasCover = coverFile != null && coverFile.existsSync();
+
+    // 当前曲目且未在播放：静态暂停图标（保留选择态，不跳动画）
+    final pausedIndicator = !isPlaying && isCurrent
+        ? Icon(Icons.pause, size: 14, color: AccentScope.of(context))
+        : null;
+
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: hasCover ? song.dominantColor : AppTheme.s2,
+        borderRadius: BorderRadius.circular(8),
+        border: hasCover
+            ? null
+            : Border.all(color: AppTheme.s4, width: 0.5),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: hasCover
+          ? Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.file(
+                  coverFile,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const CoverPlaceholder(size: 40),
+                ),
+                if (isPlaying)
+                  Container(
+                    color: Colors.black26,
+                    child: const Center(
+                      child: NowPlayingIndicator(baseHeight: 4, barScale: 6),
+                    ),
+                  )
+                else if (pausedIndicator != null)
+                  Container(
+                    color: Colors.black26,
+                    child: Center(child: pausedIndicator),
+                  ),
+              ],
+            )
+          : isPlaying
+              ? const Center(
+                  child: NowPlayingIndicator(baseHeight: 4, barScale: 6))
+              : pausedIndicator ?? const CoverPlaceholder(size: 40),
+    );
+  }
 }
 
 class AlbumCover extends StatefulWidget {

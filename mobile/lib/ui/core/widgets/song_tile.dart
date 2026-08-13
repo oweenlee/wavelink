@@ -1,10 +1,8 @@
-import 'dart:io';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/material.dart';
 import '../../../domain/models/song.dart';
 import '../theme/app_theme.dart';
 import 'album_cover.dart';
-import 'now_playing_indicator.dart';
 
 class SongTile extends StatelessWidget {
   final Song song;
@@ -70,11 +68,7 @@ class SongTile extends StatelessWidget {
               const SizedBox(width: 4),
             ],
             // Album art
-            _AlbumArt(
-              song: song,
-              isCurrent: isCurrent,
-              isPlaying: isPlaying,
-            ),
+            SongCoverArt(song: song, isCurrent: isCurrent, isPlaying: isPlaying),
             const SizedBox(width: 8),
             // Title & artist
             Expanded(
@@ -193,76 +187,3 @@ IconData _sourceIcon(SongSource source) => switch (source) {
       SongSource.imported => LucideIcons.folderOpen,
       SongSource.local => LucideIcons.music,
     };
-
-/// 专辑封面组件：有缓存封面则显示图片，否则显示纯色占位
-class _AlbumArt extends StatelessWidget {
-  final Song song;
-  final bool isCurrent;
-  final bool isPlaying;
-
-  const _AlbumArt({
-    required this.song,
-    required this.isCurrent,
-    required this.isPlaying,
-  });
-
-  /// 获取封面缓存文件（coverUrl 优先，否则按 path hash 查找）
-  File? _coverFile() {
-    if (song.coverUrl != null) {
-      final f = File(song.coverUrl!);
-      if (f.existsSync()) return f;
-    }
-    return null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final coverFile = _coverFile();
-    final hasCover = coverFile != null && coverFile.existsSync();
-
-    // 当前曲目且未在播放：静态暂停图标（保留选择态，不跳动画）
-    final pausedIndicator = !isPlaying && isCurrent
-        ? Icon(Icons.pause, size: 14, color: AccentScope.of(context))
-        : null;
-
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: hasCover ? song.dominantColor : AppTheme.s2,
-        borderRadius: BorderRadius.circular(8),
-        border: hasCover
-            ? null
-            : Border.all(color: AppTheme.s4, width: 0.5),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: hasCover
-          ? Stack(
-              fit: StackFit.expand,
-              children: [
-                Image.file(
-                  coverFile,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const CoverPlaceholder(size: 40),
-                ),
-                if (isPlaying)
-                  Container(
-                    color: Colors.black26,
-                    child: const Center(
-                      child: NowPlayingIndicator(baseHeight: 4, barScale: 6),
-                    ),
-                  )
-                else if (pausedIndicator != null)
-                  Container(
-                    color: Colors.black26,
-                    child: Center(child: pausedIndicator),
-                  ),
-              ],
-            )
-          : isPlaying
-              ? const Center(
-                  child: NowPlayingIndicator(baseHeight: 4, barScale: 6))
-              : pausedIndicator ?? const CoverPlaceholder(size: 40),
-    );
-  }
-}

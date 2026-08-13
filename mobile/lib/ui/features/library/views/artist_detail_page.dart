@@ -8,7 +8,6 @@ import '../../playback/view_models/audio_player_provider.dart';
 import '../../playback/view_models/queue_provider.dart';
 import '../view_models/library_provider.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/now_playing_indicator.dart';
 import '../../../core/widgets/album_cover.dart';
 
 class ArtistDetailPage extends ConsumerWidget {
@@ -172,29 +171,8 @@ class _TrackTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
         child: Row(
           children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: AppTheme.s2,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: isCurrent
-                  ? Center(
-                      child: isPlaying
-                          ? const NowPlayingIndicator(
-                              baseHeight: 4,
-                              barScale: 8,
-                              maxHeight: 12,
-                            )
-                          : Icon(
-                              Icons.pause,
-                              size: 14,
-                              color: AppTheme.brand,
-                            ),
-                    )
-                  : null,
-            ),
+            // 行内封面：有图显示图，否则纯色占位；当前播放叠加指示器
+            SongCoverArt(song: song, isCurrent: isCurrent, isPlaying: isPlaying),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
