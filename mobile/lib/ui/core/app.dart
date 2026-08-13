@@ -8,10 +8,12 @@ import '../../l10n/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'theme/app_theme.dart';
+import '../../data/services/preferences_service.dart';
 import '../../data/services/smb_service.dart';
 import '../../data/services/subsonic_service.dart';
 import '../features/settings/view_models/locale_provider.dart';
 import '../features/library/view_models/library_header_notifier.dart';
+import '../features/library/view_models/library_provider.dart';
 import '../features/playback/view_models/playback_controller.dart';
 import 'widgets/mini_player_bar.dart';
 import 'routes.dart';
@@ -382,7 +384,7 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
               connected: true,
               onTap: _handlePickFiles,
             ),
-            // NAS
+            // NAS：已连接时右侧显示同步按钮，点击重新扫描 NAS 合并曲库
             _SourceRow(
               icon: LucideIcons.hardDrive,
               label: l10n.sourceNas,
@@ -391,6 +393,11 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
                   : l10n.sourceNasHint,
               connected: SmbService.isConnected,
               onTap: _handleNas,
+              trailing: SmbService.isConnected
+                  ? _NasSyncButton(
+                      syncing: ref.watch(libraryProvider).nasImporting,
+                    )
+                  : null,
             ),
             // 音乐服务器（Subsonic 兼容）
             _SourceRow(
@@ -430,6 +437,7 @@ class _SourceRow extends StatelessWidget {
   final VoidCallback onTap;
   final bool loading;
   final String? result;
+  final Widget? trailing;
 
   const _SourceRow({
     required this.icon,
@@ -439,6 +447,7 @@ class _SourceRow extends StatelessWidget {
     required this.onTap,
     this.loading = false,
     this.result,
+    this.trailing,
   });
 
   @override
@@ -498,7 +507,7 @@ class _SourceRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // 右侧状态：扫描中 / 结果（不再显示过滤开关）
+            // 右侧状态：扫描中 / trailing（NAS 同步按钮等）/ 结果
             if (loading)
               const SizedBox(
                 width: 16,
@@ -508,6 +517,8 @@ class _SourceRow extends StatelessWidget {
                   color: AppTheme.textSecondary,
                 ),
               )
+            else if (trailing != null)
+              trailing!
             else if (result != null)
               Text(
                 result!,
@@ -517,6 +528,53 @@ class _SourceRow extends StatelessWidget {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// NAS 行右侧同步按钮：点击重新扫描 NAS 并合并曲库（同步新增/删除）；
+/// 同步中显示转圈，点击行仍可进设置页。
+class _NasSyncButton extends ConsumerWidget {
+  final bool syncing;
+
+  const _NasSyncButton({required this.syncing});
+
+  void _sync(WidgetRef ref) {
+    final share = PreferencesService.instance.nasShare;
+    if (share == null || share.isEmpty) return;
+    ref.read(libraryProvider.notifier).startNasImport(share);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (syncing) {
+      return const SizedBox(
+        width: 36,
+        height: 36,
+        child: Center(
+          child: SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+        ),
+      );
+    }
+    return GestureDetector(
+      // 热区 36×36（含空隙），图标视觉 16×16 不变
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _sync(ref),
+      child: const Padding(
+        padding: EdgeInsets.all(10),
+        child: Icon(
+          LucideIcons.refreshCw,
+          size: 16,
+          color: AppTheme.textSecondary,
         ),
       ),
     );

@@ -347,6 +347,9 @@ Future<bool> scanSmb(String sharePath) async {
     state = state.copyWith(importedSongs: merged);
     songRepo.setCachedSongs(merged);
     onSongsLoaded?.call();
+    // NAS 同步：清理 NAS 上已删除的歌曲（仅扫描成功完成后执行；
+    // 中途取消/失败走异常分支不会触达这里）
+    _pruneNasRemoved(sharePath, songs);
     // 兜底：扫描完成后对仍未拿到封面的 NAS 歌再提取一次
     // （扫描中异步提取可能因取消/批次边界遗漏）
     final pendingCovers = CoverService.pendingNasCovers(state.importedSongs);
@@ -410,7 +413,13 @@ Future<bool> scanSmb(String sharePath) async {
     );
     ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
     _persistFavorites();
+    await _deleteSandboxFiles(song);
+  }
 
+  /// 删除歌曲在 App 沙盒内的关联文件（Imported/ 导入副本、.smb_cache/
+  /// NAS 下载缓存、.covers/ 封面缓存、歌词文件），不留孤儿文件；
+  /// 沙盒外文件（系统媒体库）无权删除，仅跳过。
+  Future<void> _deleteSandboxFiles(Song song) async {
     final appDir = await getApplicationDocumentsDirectory();
     final sandboxPrefix = '${appDir.path}/';
     for (final p in [song.path, song.coverUrl, song.lyricsPath]) {
@@ -420,10 +429,43 @@ Future<bool> scanSmb(String sharePath) async {
         try {
           await f.delete();
         } catch (e) {
-          Log.e('Library', 'removeSong 清理文件失败: $p ($e)');
+          Log.e('Library', '清理缓存文件失败: $p ($e)');
         }
       }
     }
+  }
+
+  /// NAS 同步清理：把 NAS 上已不存在的歌曲移出曲库（含收藏），并异步
+  /// 删除其沙盒缓存文件（下载副本/封面/歌词）。仅处理 smbPath 前缀匹配
+  /// 本次扫描目录的 NAS 歌——换目录/子集扫描时保守保留，杜绝误删；
+  /// 本地导入与系统媒体库歌曲不受影响。
+  void _pruneNasRemoved(String sharePath, List<Song> scanned) {
+    final root = sharePath.split('/').skip(1).join('/');
+    // root 为空（扫描 share 根目录）时全部 NAS 歌参与比对
+    bool inRoot(String p) =>
+        root.isEmpty || p == root || p.startsWith('$root/');
+    final livePaths = {
+      for (final s in scanned)
+        if (s.smbPath != null) s.smbPath!,
+    };
+    final gone = state.importedSongs
+        .where((s) =>
+            s.smbPath != null &&
+            inRoot(s.smbPath!) &&
+            !livePaths.contains(s.smbPath))
+        .toList();
+    if (gone.isEmpty) return;
+    final goneIds = {for (final s in gone) s.id};
+    state = state.copyWith(
+      importedSongs: state.importedSongs
+          .where((s) => !goneIds.contains(s.id))
+          .toList(),
+      favoriteIds: {...state.favoriteIds}..removeAll(goneIds),
+    );
+    ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
+    _persistFavorites();
+    Log.i('Library', 'NAS 同步：移除 ${gone.length} 首 NAS 已删除的歌曲');
+    unawaited(Future.wait(gone.map(_deleteSandboxFiles)));
   }
 
   // ── 播放列表 ──
