@@ -72,7 +72,6 @@
   "replayGain": "ReplayGain",
   "bitPerfect": "Bit-perfect (sample rate follow)",
   "versionValue": "v0.1.0",
-  "outputDevice": "Output Device",
   "settingsAppearance": "Appearance",
   "theme": "Theme",
   "themeDark": "Dark",

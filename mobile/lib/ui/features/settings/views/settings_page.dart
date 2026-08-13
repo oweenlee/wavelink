@@ -93,7 +93,6 @@ class SettingsPage extends ConsumerWidget {
               onChanged: (_) => player.setBitPerfect(!bitPerfect),
               subtitle: _bitPerfectStatus(player),
             ),
-            _SettingItem(icon: LucideIcons.volume2, label: l10n.outputDevice),
           ],
         ),
         const SizedBox(height: 24),
