@@ -88,9 +88,14 @@ class PlaybackController {
 
   void _onLibrarySongsLoaded() {
     final songs = _ref.read(libraryProvider).importedSongs;
-    _queue.onImportedSongsLoaded(songs);
+    // 仅首次以曲库初始化队列并尝试恢复断点；之后的 onSongsLoaded 回调
+    // （NAS 导入、Discover/Subsonic 扫描等）不再整体替换队列，否则会把
+    // 已恢复的断点队列冲成全库顺序（onImportedSongsLoaded 置 currentIndex=0）。
+    // 语义：队列 = 用户会话上下文，扫描新增歌不自动入队；用户点播时经
+    // playSongById 兜底追加到队尾（可播性不丢）。
     if (!_resumeRestored) {
       _resumeRestored = true;
+      _queue.onImportedSongsLoaded(songs);
       _restoreResume();
     }
     _player.setCurrentSong(_ref.read(queueProvider).currentSong);

@@ -82,8 +82,11 @@ class LibraryNotifier extends Notifier<LibraryState> {
   );
 
   /// 封面就绪：Song.coverUrl 是可变字段，重建列表触发 UI 刷新，
-  /// 并落盘，否则重启后曲库恢复时封面全部丢失
+  /// 并落盘，否则重启后曲库恢复时封面全部丢失。
   void _onCoversUpdated() {
+    // 封面提取是异步 fire-and-forget，测试/生命周期切换时容器可能已
+    // dispose，此时再写 state 会抛 "Ref after it has been disposed"
+    if (!ref.mounted) return;
     state = state.copyWith(
       importedSongs: List<Song>.from(state.importedSongs),
     );

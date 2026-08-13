@@ -366,6 +366,36 @@ void main() {
       check(p.isPlaying).isFalse(); // 不自动播放
     });
 
+    test('断点恢复后二次 onSongsLoaded（NAS 导入/扫描）不冲掉队列', () async {
+      final prefs = PreferencesRepository();
+      await prefs.setResume(
+        queueIds: ['s2', 's3'],
+        index: 1,
+        positionMs: 30000,
+      );
+
+      final (container, p) = buildContainer(bootstrap: false);
+      container.read(libraryProvider.notifier).restoreCachedSongs(
+        [_song('s1'), _song('s2'), _song('s3')],
+      );
+      p.bootstrap();
+      await Future<void>.delayed(const Duration(milliseconds: 30)); // 等扫描+恢复
+
+      // 断点已恢复
+      check(p.queue.map((s) => s.id).toList()).deepEquals(['s2', 's3']);
+      check(p.currentIndex).equals(1);
+      check(p.currentSong?.id).equals('s3');
+
+      // 模拟 NAS 导入成功/失败后再次触发 onSongsLoaded（_runNasImport finally 必回调）
+      container.read(libraryProvider.notifier).onSongsLoaded?.call();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      // 队列不能被整体替换成全库顺序（含 s1 且 currentIndex 归 0）
+      check(p.queue.map((s) => s.id).toList()).deepEquals(['s2', 's3']);
+      check(p.currentIndex).equals(1);
+      check(p.currentSong?.id).equals('s3');
+    });
+
     test('恢复断点后播放：完整装载并从保存位置继续', () async {
       final prefs = PreferencesRepository();
       await prefs.setResume(queueIds: ['s1'], index: 0, positionMs: 42000);
