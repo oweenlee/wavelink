@@ -182,15 +182,28 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    // 键盘收起（点外部/按完成键等导致失焦）时关闭搜索框，回到列表态
+    _searchFocusNode.addListener(_onSearchFocusChanged);
+  }
+
+  void _onSearchFocusChanged() {
+    if (!_searchFocusNode.hasFocus &&
+        ref.read(libraryHeaderProvider).isSearchVisible) {
+      ref.read(libraryHeaderProvider.notifier).closeSearch();
+      _searchController.clear();
+    }
   }
 
   @override
   void dispose() {
+    _searchFocusNode.removeListener(_onSearchFocusChanged);
+    _searchFocusNode.dispose();
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -259,6 +272,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
               ),
               child: TextField(
                 controller: _searchController,
+                focusNode: _searchFocusNode,
                 autofocus: true,
                 onChanged: (v) => headerNotifier.setQuery(v.toLowerCase()),
                 style: const TextStyle(
@@ -267,6 +281,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                   fontFamily: 'Inter',
                 ),
                 cursorColor: AppTheme.accentFallback,
+                // 外层 Container 固化 40 高度，文字默认 baseline 对齐会偏上；
+                // 用 contentPadding 归零 + 垂直居中，保证 hint 与输入文字居中
+                textAlignVertical: TextAlignVertical.center,
                 decoration: InputDecoration(
                   prefixIcon: const Icon(
                     LucideIcons.search,
@@ -279,7 +296,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                     color: AppTheme.textTertiary,
                   ),
                   border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  contentPadding: EdgeInsets.zero,
                 ),
               ),
             ),
