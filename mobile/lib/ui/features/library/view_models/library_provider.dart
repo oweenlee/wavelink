@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../../data/services/preferences_service.dart';
 import '../../../../data/services/smb_service.dart';
+import '../../../../data/services/webdav_service.dart';
 import '../../../../domain/models/song.dart';
 import '../../../core/providers/repositories.dart';
 import '../../playback/view_models/queue_provider.dart';
@@ -26,12 +27,18 @@ class LibraryState {
 
   /// NAS 后台导入是否进行中（曲库顶部展示进度条）
   final bool nasImporting;
+
   /// NAS 后台导入已入库的首批歌曲数增量
   final int nasImportedCount;
+
   /// NAS 后台导入失败信息（空表示无错误）
   final String? nasImportError;
+
   /// 音乐服务器（Subsonic）扫描失败信息（空表示无错误）
   final String? subsonicError;
+
+  /// WebDAV 音乐源扫描失败信息（空表示无错误）
+  final String? webdavError;
 
   const LibraryState({
     this.importedSongs = const [],
@@ -41,6 +48,7 @@ class LibraryState {
     this.nasImportedCount = 0,
     this.nasImportError,
     this.subsonicError,
+    this.webdavError,
   });
 
   /// 曲库可见歌曲：按来源开关过滤（关闭的来源不在曲库展示）。
@@ -48,9 +56,7 @@ class LibraryState {
   /// 队列/收藏/播放不受影响（各自独立数据源）。
   List<Song> get allSongs {
     final prefs = PreferencesService.instance;
-    return importedSongs
-        .where((s) => prefs.showSource(s.source))
-        .toList();
+    return importedSongs.where((s) => prefs.showSource(s.source)).toList();
   }
 
   bool isSongFavorite(String songId) => favoriteIds.contains(songId);
@@ -63,6 +69,7 @@ class LibraryState {
     int? nasImportedCount,
     Object? nasImportError = _unset,
     Object? subsonicError = _unset,
+    Object? webdavError = _unset,
   }) {
     return LibraryState(
       importedSongs: importedSongs ?? this.importedSongs,
@@ -70,11 +77,15 @@ class LibraryState {
       favoriteIds: favoriteIds ?? this.favoriteIds,
       nasImporting: nasImporting ?? this.nasImporting,
       nasImportedCount: nasImportedCount ?? this.nasImportedCount,
-      nasImportError:
-          identical(nasImportError, _unset) ? this.nasImportError : nasImportError as String?,
+      nasImportError: identical(nasImportError, _unset)
+          ? this.nasImportError
+          : nasImportError as String?,
       subsonicError: identical(subsonicError, _unset)
           ? this.subsonicError
           : subsonicError as String?,
+      webdavError: identical(webdavError, _unset)
+          ? this.webdavError
+          : webdavError as String?,
     );
   }
 }
@@ -94,9 +105,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
     // 封面提取是异步 fire-and-forget，测试/生命周期切换时容器可能已
     // dispose，此时再写 state 会抛 "Ref after it has been disposed"
     if (!ref.mounted) return;
-    state = state.copyWith(
-      importedSongs: List<Song>.from(state.importedSongs),
-    );
+    state = state.copyWith(importedSongs: List<Song>.from(state.importedSongs));
     ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
   }
 
@@ -265,10 +274,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
       // server-local 路径，与本地/NAS 路径不互通，按 path 差集去重会
       // 顺序重置甚至重复累积；id（sub_<serverId>）服务端稳定。
       final merged = _mergeById(songs);
-      state = state.copyWith(
-        importedSongs: merged,
-        subsonicError: null,
-      );
+      state = state.copyWith(importedSongs: merged, subsonicError: null);
       songRepo.setCachedSongs(merged);
       // 服务器已删歌曲清理：仅扫描成功完成后执行（失败/空库走下方
       // 分支不触达，避免掉线时误删曲库条目与收藏）。
@@ -284,97 +290,145 @@ class LibraryNotifier extends Notifier<LibraryState> {
     }
   }
 
-/// 取消 NAS 后台导入（下次扫描批次检查到此标志即中止）
-bool _nasImportCancelled = false;
-
-void cancelNasImport() {
-  _nasImportCancelled = true;
-  state = state.copyWith(nasImporting: false);
-}
-
-/// 触发 NAS 后台导入（fire-and-forget，不阻塞调用方），立即返回。
-/// 若未连接则用已保存的配置补连；进度经 onBatch 增量入库并更新曲库 UI。
-void startNasImport(String sharePath) {
-  _nasImportCancelled = false;
-  unawaited(_runNasImport(sharePath));
-}
-
-Future<void> _runNasImport(String sharePath) async {
-  if (_isScanning) return;
-  state = state.copyWith(nasImporting: true, nasImportedCount: 0, nasImportError: null);
-  try {
-    if (!SmbService.isConnected) {
-      final prefs = PreferencesService.instance;
-      final host = prefs.nasHost;
-      if (host == null || host.isEmpty) {
-        throw const FormatException('NAS host not configured');
-      }
-      final ok = await SmbService.connect(
-        host: host,
-        username: prefs.nasUsername ?? '',
-        password: prefs.nasPassword,
+  /// 扫描 WebDAV 音乐源并入库。增量批次实时合并（onBatch），
+  /// 完成后再整体合并 + 服务器已删歌曲清理。失败返回 false 并
+  /// 置 [LibraryState.webdavError]，与「服务器真空库返回 true」可区分。
+  Future<bool> scanWebdav() async {
+    if (_isScanning) return false;
+    _isScanning = true;
+    try {
+      final songRepo = ref.read(songRepositoryProvider);
+      final songs = await songRepo.scanWebdav(
+        onBatch: (batch) {
+          state = state.copyWith(importedSongs: _mergeById(batch));
+          songRepo.setCachedSongs(state.importedSongs);
+          Log.d(
+            'Library',
+            'WebDAV 增量入库 +${batch.length} 首'
+                '（曲库共 ${state.importedSongs.length}）',
+          );
+          onSongsLoaded?.call();
+        },
       );
-      if (!ok) {
-        state = state.copyWith(
-          nasImporting: false,
-          nasImportError: SmbService.lastError ?? 'NAS connection failed',
-        );
-        return;
-      }
-    }
-    await scanSmb(sharePath);
-    state = state.copyWith(nasImporting: false);
-  } on NASImportCancelled {
-    // 用户主动取消，静默结束
-  } catch (e) {
-    Log.e('Library', 'NAS import failed: $e');
-    state = state.copyWith(nasImporting: false, nasImportError: '$e');
-  } finally {
-    onSongsLoaded?.call();
-  }
-}
-
-Future<bool> scanSmb(String sharePath) async {
-  if (_isScanning) return false;
-  _isScanning = true;
-  state = state.copyWith(nasImporting: true);
-  try {
-    final songRepo = ref.read(songRepositoryProvider);
-    // 增量合并：每批下载完立即入库+持久化，
-    // UI 实时可见、中途退出也保留已扫部分
-    final songs = await songRepo.scanSmb(sharePath, onBatch: (batch) {
-      if (_nasImportCancelled) {
-        throw const NASImportCancelled();
-      }
-      state = state.copyWith(
-        importedSongs: _mergeById(batch),
-        nasImportedCount: state.nasImportedCount + batch.length,
+      final merged = _mergeById(songs);
+      state = state.copyWith(importedSongs: merged, webdavError: null);
+      songRepo.setCachedSongs(merged);
+      // 服务器已删歌曲清理：仅扫描成功完成后执行（失败/空库不触达）
+      if (songs.isNotEmpty) _pruneWebdavRemoved(songs);
+      Log.i(
+        'Library',
+        'WebDAV 入库完成：扫描 ${songs.length} 首，'
+            '曲库共 ${state.importedSongs.length} 首',
       );
-      songRepo.setCachedSongs(state.importedSongs);
       onSongsLoaded?.call();
-    });
-    // 注意：scanSmb 内部吞掉单文件失败；此处正常只可能因取消抛出
-    if (songs.isEmpty) return false;
-    // 最终一致性合并（与增量幂等），保证返回值统计准确
-    final merged = _mergeById(songs);
-    state = state.copyWith(importedSongs: merged);
-    songRepo.setCachedSongs(merged);
-    onSongsLoaded?.call();
-    // NAS 同步：清理 NAS 上已删除的歌曲（仅扫描成功完成后执行；
-    // 中途取消/失败走异常分支不会触达这里）
-    _pruneNasRemoved(sharePath, songs);
-    // 兜底：扫描完成后对仍未拿到封面的 NAS 歌再提取一次
-    // （扫描中异步提取可能因取消/批次边界遗漏）
-    final pendingCovers = CoverService.pendingNasCovers(state.importedSongs);
-    if (pendingCovers.isNotEmpty) {
-      unawaited(_covers.extractNasCovers(pendingCovers));
+      return songs.isNotEmpty;
+    } catch (e) {
+      Log.e('Library', 'WebDAV scan failed: $e');
+      state = state.copyWith(webdavError: '$e');
+      return false;
+    } finally {
+      _isScanning = false;
     }
-    return true;
-  } finally {
-    _isScanning = false;
+  }
+
+  /// 取消 NAS 后台导入（下次扫描批次检查到此标志即中止）
+  bool _nasImportCancelled = false;
+
+  void cancelNasImport() {
+    _nasImportCancelled = true;
     state = state.copyWith(nasImporting: false);
   }
-}
+
+  /// 触发 NAS 后台导入（fire-and-forget，不阻塞调用方），立即返回。
+  /// 若未连接则用已保存的配置补连；进度经 onBatch 增量入库并更新曲库 UI。
+  void startNasImport(String sharePath) {
+    _nasImportCancelled = false;
+    unawaited(_runNasImport(sharePath));
+  }
+
+  Future<void> _runNasImport(String sharePath) async {
+    if (_isScanning) return;
+    state = state.copyWith(
+      nasImporting: true,
+      nasImportedCount: 0,
+      nasImportError: null,
+    );
+    try {
+      if (!SmbService.isConnected) {
+        final prefs = PreferencesService.instance;
+        final host = prefs.nasHost;
+        if (host == null || host.isEmpty) {
+          throw const FormatException('NAS host not configured');
+        }
+        final ok = await SmbService.connect(
+          host: host,
+          username: prefs.nasUsername ?? '',
+          password: prefs.nasPassword,
+        );
+        if (!ok) {
+          state = state.copyWith(
+            nasImporting: false,
+            nasImportError: SmbService.lastError ?? 'NAS connection failed',
+          );
+          return;
+        }
+      }
+      await scanSmb(sharePath);
+      state = state.copyWith(nasImporting: false);
+    } on NASImportCancelled {
+      // 用户主动取消，静默结束
+    } catch (e) {
+      Log.e('Library', 'NAS import failed: $e');
+      state = state.copyWith(nasImporting: false, nasImportError: '$e');
+    } finally {
+      onSongsLoaded?.call();
+    }
+  }
+
+  Future<bool> scanSmb(String sharePath) async {
+    if (_isScanning) return false;
+    _isScanning = true;
+    state = state.copyWith(nasImporting: true);
+    try {
+      final songRepo = ref.read(songRepositoryProvider);
+      // 增量合并：每批下载完立即入库+持久化，
+      // UI 实时可见、中途退出也保留已扫部分
+      final songs = await songRepo.scanSmb(
+        sharePath,
+        onBatch: (batch) {
+          if (_nasImportCancelled) {
+            throw const NASImportCancelled();
+          }
+          state = state.copyWith(
+            importedSongs: _mergeById(batch),
+            nasImportedCount: state.nasImportedCount + batch.length,
+          );
+          songRepo.setCachedSongs(state.importedSongs);
+          onSongsLoaded?.call();
+        },
+      );
+      // 注意：scanSmb 内部吞掉单文件失败；此处正常只可能因取消抛出
+      if (songs.isEmpty) return false;
+      // 最终一致性合并（与增量幂等），保证返回值统计准确
+      final merged = _mergeById(songs);
+      state = state.copyWith(importedSongs: merged);
+      songRepo.setCachedSongs(merged);
+      onSongsLoaded?.call();
+      // NAS 同步：清理 NAS 上已删除的歌曲（仅扫描成功完成后执行；
+      // 中途取消/失败走异常分支不会触达这里）
+      _pruneNasRemoved(sharePath, songs);
+      // 兜底：扫描完成后对仍未拿到封面的 NAS 歌再提取一次
+      // （扫描中异步提取可能因取消/批次边界遗漏）
+      final pendingCovers = CoverService.pendingNasCovers(state.importedSongs);
+      if (pendingCovers.isNotEmpty) {
+        unawaited(_covers.extractNasCovers(pendingCovers));
+      }
+      return true;
+    } finally {
+      _isScanning = false;
+      state = state.copyWith(nasImporting: false);
+    }
+  }
 
   /// 本地文件封面批量提取（对外入口，委托 [CoverService]）
   Future<void> batchExtractCovers(List<Song> songs) =>
@@ -419,9 +473,7 @@ Future<bool> scanSmb(String sharePath) async {
   /// discoverSongs 扫描会重新收录，属预期行为。
   Future<void> removeSong(Song song) async {
     state = state.copyWith(
-      importedSongs: state.importedSongs
-          .where((s) => s.id != song.id)
-          .toList(),
+      importedSongs: state.importedSongs.where((s) => s.id != song.id).toList(),
       favoriteIds: {...state.favoriteIds}..remove(song.id),
     );
     ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
@@ -430,8 +482,8 @@ Future<bool> scanSmb(String sharePath) async {
   }
 
   /// 删除歌曲在 App 沙盒内的关联文件（Imported/ 导入副本、.smb_cache/
-  /// NAS 下载缓存、.covers/ 封面缓存、歌词文件），不留孤儿文件；
-  /// 沙盒外文件（系统媒体库）无权删除，仅跳过。
+  /// NAS 下载缓存、.webdav_cache/ WebDAV 下载缓存、.covers/ 封面缓存、
+  /// 歌词文件），不留孤儿文件；沙盒外文件（系统媒体库）无权删除，仅跳过。
   Future<void> _deleteSandboxFiles(Song song) async {
     final appDir = await getApplicationDocumentsDirectory();
     final sandboxPrefix = '${appDir.path}/';
@@ -442,6 +494,9 @@ Future<bool> scanSmb(String sharePath) async {
       // NAS 远端歌词的本地缓存（.lrc_cache/）
       if (song.smbPath != null && song.smbPath!.isNotEmpty)
         '${appDir.path}/.lrc_cache/${song.smbPath.hashCode}.lrc',
+      // WebDAV 下载缓存（{davPath.hashCode}_{name}，与 webdav_service 命名一致）
+      if (song.davPath != null && song.davPath!.isNotEmpty)
+        '${appDir.path}/.webdav_cache/${song.davPath!.hashCode}_${song.davPath!.split('/').last}',
     ]) {
       if (p == null || !p.startsWith(sandboxPrefix)) continue;
       final f = File(p);
@@ -469,10 +524,12 @@ Future<bool> scanSmb(String sharePath) async {
         if (s.smbPath != null) s.smbPath!,
     };
     final gone = state.importedSongs
-        .where((s) =>
-            s.smbPath != null &&
-            inRoot(s.smbPath!) &&
-            !livePaths.contains(s.smbPath))
+        .where(
+          (s) =>
+              s.smbPath != null &&
+              inRoot(s.smbPath!) &&
+              !livePaths.contains(s.smbPath),
+        )
         .toList();
     if (gone.isEmpty) return;
     final goneIds = {for (final s in gone) s.id};
@@ -507,6 +564,41 @@ Future<bool> scanSmb(String sharePath) async {
     ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
     _persistFavorites();
     Log.i('Library', 'Subsonic 同步：移除 ${gone.length} 首服务器已删除的歌曲');
+  }
+
+  /// WebDAV 同步清理：把服务器上已不存在的歌曲移出曲库（含收藏），并异步
+  /// 删除其本地下载缓存。仅处理 davPath 前缀匹配本次扫描根目录的歌——
+  /// 换目录/子集扫描时保守保留，杜绝误删；其他来源歌曲不受影响。
+  /// 仅扫描成功完成后执行，失败/空库路径不触达，避免掉线时误删。
+  void _pruneWebdavRemoved(List<Song> scanned) {
+    final root = WebdavService.rootPath ?? '';
+    // root 为空（扫描服务器根目录）时全部 WebDAV 歌参与比对
+    bool inRoot(String p) =>
+        root.isEmpty || p == root || p.startsWith('$root/');
+    final livePaths = {
+      for (final s in scanned)
+        if (s.davPath != null) s.davPath!,
+    };
+    final gone = state.importedSongs
+        .where(
+          (s) =>
+              s.davPath != null &&
+              inRoot(s.davPath!) &&
+              !livePaths.contains(s.davPath),
+        )
+        .toList();
+    if (gone.isEmpty) return;
+    final goneIds = {for (final s in gone) s.id};
+    state = state.copyWith(
+      importedSongs: state.importedSongs
+          .where((s) => !goneIds.contains(s.id))
+          .toList(),
+      favoriteIds: {...state.favoriteIds}..removeAll(goneIds),
+    );
+    ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
+    _persistFavorites();
+    Log.i('Library', 'WebDAV 同步：移除 ${gone.length} 首服务器已删除的歌曲');
+    unawaited(Future.wait(gone.map(_deleteSandboxFiles)));
   }
 
   // ── 播放列表 ──

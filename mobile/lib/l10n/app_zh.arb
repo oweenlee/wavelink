@@ -184,6 +184,17 @@
   "subsonicConnected": "已连接",
   "subsonicEnterUrl": "请输入服务器地址和用户名",
   "subsonicFailed": "连接失败——请检查地址与凭据",
+  "webdavTitle": "WebDAV",
+  "webdavUrl": "服务器地址",
+  "webdavPath": "目录路径（可选）",
+  "webdavUsername": "用户名（可选）",
+  "webdavPassword": "密码（可选）",
+  "webdavCompatible": "兼容 Nextcloud / Seafile / 群晖 WebDAV / 阿里云盘 / rclone 等",
+  "webdavEnterUrl": "请输入服务器地址",
+  "webdavInvalidUrl": "请输入含 http:// 或 https:// 的完整地址",
+  "sourceWebdav": "WebDAV",
+  "sourceWebdavHint": "配置 WebDAV 网络存储",
+  "sourceWebdavReady": "点击扫描服务器曲库",
   "settingsMusicSources": "音乐源",
   "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS"
 }

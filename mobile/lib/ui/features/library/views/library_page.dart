@@ -96,6 +96,12 @@ class _SourceFilterSheetState extends State<_SourceFilterSheet> {
         onChanged: () => _toggle(SongSource.nas, !_prefs.showNas),
       ),
       _FilterRow(
+        icon: LucideIcons.cloud,
+        label: l10n.sourceWebdav,
+        value: _prefs.showWebdav,
+        onChanged: () => _toggle(SongSource.webdav, !_prefs.showWebdav),
+      ),
+      _FilterRow(
         icon: LucideIcons.server,
         label: l10n.sourceMusicServer,
         value: _prefs.showSubsonic,
@@ -221,6 +227,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           switch (source) {
             case SongSource.nas:
               await prefs.setShowNas(value);
+            case SongSource.webdav:
+              await prefs.setShowWebdav(value);
             case SongSource.appleMusic:
               await prefs.setShowAppleMusic(value);
             case SongSource.subsonic:
@@ -281,7 +289,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                   fontFamily: 'Inter',
                 ),
                 cursorColor: AppTheme.accentFallback,
-                // 外层 Container 固化 40 高度，文字默认 baseline 对齐会偏上；
+                // 外层 Container 固定 40 高度，文字默认 baseline 对齐会偏上；
                 // 用 contentPadding 归零 + 垂直居中，保证 hint 与输入文字居中
                 textAlignVertical: TextAlignVertical.center,
                 decoration: InputDecoration(

@@ -39,6 +39,10 @@ class SongRepository {
 
   Future<List<Song>> scanSubsonic() => ImportService.scanSubsonic();
 
+  Future<List<Song>> scanWebdav({
+    void Function(List<Song> batch)? onBatch,
+  }) => ImportService.scanWebdav(onBatch: onBatch);
+
   Future<List<Song>> scanSmb(
     String sharePath, {
     void Function(List<Song> batch)? onBatch,

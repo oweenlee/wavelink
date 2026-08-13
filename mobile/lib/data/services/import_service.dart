@@ -10,6 +10,7 @@ import 'media_store_service.dart';
 import 'media_store_channel.dart';
 import 'subsonic_service.dart';
 import 'smb_service.dart';
+import 'webdav_service.dart';
 import 'log.dart';
 
 /// 音乐文件导入服务
@@ -199,6 +200,14 @@ class ImportService {
   }) async {
     if (!SmbService.isConnected) return [];
     return await SmbService.scanSmbLibrary(sharePath, onBatch: onBatch);
+  }
+
+  /// 从 WebDAV 服务器扫描音频文件（[onBatch] 增量回调透传）
+  static Future<List<Song>> scanWebdav({
+    void Function(List<Song> batch)? onBatch,
+  }) async {
+    if (!WebdavService.isConfigured) return [];
+    return await WebdavService.scanWebdav(onBatch: onBatch);
   }
 
   // ── 内部方法 ──

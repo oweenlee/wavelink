@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 
 /// 歌曲来源（用于列表行来源图标）
-enum SongSource { nas, subsonic, appleMusic, imported, local }
+enum SongSource { nas, webdav, subsonic, appleMusic, imported, local }
 
 class Song {
   String id;
@@ -24,6 +24,9 @@ class Song {
   /// SMB 共享内相对路径（离线模式为 null 时歌曲尚未下载到本地）。
   /// 设置了此字段表示文件在远端共享，播放时先按需下载到本地缓存。
   final String? smbPath;
+  /// WebDAV 服务器内相对路径。设置了此字段表示文件在远端 WebDAV，
+  /// 播放时先按需下载到本地缓存。
+  final String? davPath;
   String? lyricsPath;
   /// 时长是否为估算值（NAS 等无法读取元数据时按文件大小估算）。
   /// 估算值不参与曲库列表显示；播放时引擎探测到真实时长后回填并置 false。
@@ -44,6 +47,7 @@ class Song {
     this.path,
     this.streamUrl,
     this.smbPath,
+    this.davPath,
     this.lyricsPath,
     this.hasCover = false,
     this.durationEstimated = false,
@@ -64,6 +68,7 @@ class Song {
         'path': path,
         'streamUrl': streamUrl,
         'smbPath': smbPath,
+        'davPath': davPath,
         'lyricsPath': lyricsPath,
         'hasCover': hasCover,
         'durationEstimated': durationEstimated,
@@ -84,6 +89,7 @@ class Song {
         path: json['path'] as String?,
         streamUrl: json['streamUrl'] as String?,
         smbPath: json['smbPath'] as String?,
+        davPath: json['davPath'] as String?,
         lyricsPath: json['lyricsPath'] as String?,
         hasCover: json['hasCover'] as bool? ?? false,
         durationEstimated: json['durationEstimated'] as bool? ?? false,
@@ -96,9 +102,10 @@ class Song {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
-  /// 来源判断优先级：NAS > 流式(Subsonic) > Apple Music 同步 > 文件导入 > 本地媒体库
+  /// 来源判断优先级：NAS > WebDAV > 流式(Subsonic) > Apple Music 同步 > 文件导入 > 本地媒体库
   SongSource get source {
     if (smbPath != null && smbPath!.isNotEmpty) return SongSource.nas;
+    if (davPath != null && davPath!.isNotEmpty) return SongSource.webdav;
     if (streamUrl != null && streamUrl!.isNotEmpty) return SongSource.subsonic;
     if (path != null && path!.startsWith('ipod-library://')) {
       return SongSource.appleMusic;
@@ -137,9 +144,9 @@ class Song {
 
   /// 格式标签，如 "FLAC"、"DSD"、"MP3 320"、"WAV"
   /// 从文件路径扩展名推断，用于 SongTile 的格式 pill。
-  /// 本地文件看 [path]；NAS 未下载（仅索引）看 [smbPath]；流式源看 [streamUrl]（取 URL path 去 query）。
+  /// 本地文件看 [path]；NAS/WebDAV 未下载（仅索引）看 [smbPath]/[davPath]；流式源看 [streamUrl]（取 URL path 去 query）。
   String? get formatInfo {
-    final src = path ?? smbPath ?? streamUrl;
+    final src = path ?? smbPath ?? davPath ?? streamUrl;
     if (src == null) return null;
     final ext = src.split('?').first.split('.').last.toUpperCase();
     switch (ext) {
@@ -174,7 +181,7 @@ class Song {
 
   /// 是否为无损格式（用于格式 pill 高亮）
   bool get isLossless {
-    final src = path ?? smbPath ?? streamUrl;
+    final src = path ?? smbPath ?? davPath ?? streamUrl;
     if (src == null) return false;
     final ext = src.split('?').first.split('.').last.toUpperCase();
     return ['FLAC', 'WAV', 'DSF', 'DFF', 'AIFF', 'AIF', 'APE', 'WV'].contains(ext);

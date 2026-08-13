@@ -346,6 +346,7 @@ class PlaybackController {
   Future<bool> discoverSongs() => _library.discoverSongs();
   Future<int> importFromPicker() => _library.importFromPicker();
   Future<bool> scanSubsonic() => _library.scanSubsonic();
+  Future<bool> scanWebdav() => _library.scanWebdav();
   Future<bool> scanSmb(String sharePath) => _library.scanSmb(sharePath);
 
   /// 从曲库删除歌曲：曲库条目/收藏/沙盒内物理文件清理 +

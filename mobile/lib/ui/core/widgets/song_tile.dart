@@ -179,9 +179,10 @@ class _FormatBadge extends StatelessWidget {
   }
 }
 
-/// 来源图标映射：NAS=硬盘、Apple Music 同步=苹果、Subsonic=服务器、文件导入=文件夹（与导入弹窗 Pick Files 一致）、本地媒体库=音乐
+/// 来源图标映射：NAS=硬盘、WebDAV=云、Apple Music 同步=苹果、Subsonic=服务器、文件导入=文件夹（与导入弹窗 Pick Files 一致）、本地媒体库=音乐
 IconData _sourceIcon(SongSource source) => switch (source) {
       SongSource.nas => LucideIcons.hardDrive,
+      SongSource.webdav => LucideIcons.cloud,
       SongSource.appleMusic => LucideIcons.apple,
       SongSource.subsonic => LucideIcons.server,
       SongSource.imported => LucideIcons.folderOpen,

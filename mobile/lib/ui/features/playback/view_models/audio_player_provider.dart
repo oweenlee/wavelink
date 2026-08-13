@@ -9,6 +9,7 @@ import '../../../../domain/models/lyric_line.dart';
 import '../../../../domain/models/playback_types.dart';
 import '../../../../data/services/native_audio_service.dart';
 import '../../../../data/services/smb_service.dart';
+import '../../../../data/services/webdav_service.dart';
 import '../../../../data/services/import_service.dart';
 import '../../../../data/services/lrc_parser.dart';
 import '../../../../data/repositories/audio_engine_repository.dart';
@@ -346,6 +347,20 @@ class PlayerNotifier extends Notifier<PlayerState> {
           _ghostStreamUntilMs = DateTime.now().millisecondsSinceEpoch + 12000;
           resolvedPath = await SmbService.downloadToLocal(song.smbPath!);
         }
+      }
+    } else if (song.davPath != null && song.davPath!.isNotEmpty) {
+      // WebDAV：全量下载再播（缓存命中 → 秒起；未命中 → 按需下载）
+      final davSw = Stopwatch()..start();
+      resolvedPath = await WebdavService.cachedLocalPath(song.davPath!);
+      resolvedPath ??= await WebdavService.downloadToLocal(song.davPath!);
+      if (resolvedPath == null) {
+        Log.w('Audio', 'WebDAV 路径解析失败（下载未成功）: ${song.davPath}');
+      } else {
+        Log.d(
+          'Audio',
+          'WebDAV 路径解析完成'
+              '（${davSw.elapsedMilliseconds}ms）: ${song.title}',
+        );
       }
     } else if (song.streamUrl != null && song.streamUrl!.isNotEmpty) {
       resolvedPath = await _downloadToCache(

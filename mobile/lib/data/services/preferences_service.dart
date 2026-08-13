@@ -28,18 +28,21 @@ class PreferencesService {
 
   // ── 来源显示开关（曲库过滤：关闭则曲库不展示该来源音乐）──
   static const _kShowNas = 'show_source_nas';
+  static const _kShowWebdav = 'show_source_webdav';
   static const _kShowAppleMusic = 'show_source_apple_music';
   static const _kShowSubsonic = 'show_source_subsonic';
   static const _kShowImported = 'show_source_imported';
   static const _kShowLocal = 'show_source_local';
 
   bool get showNas => _prefs.getBool(_kShowNas) ?? true;
+  bool get showWebdav => _prefs.getBool(_kShowWebdav) ?? true;
   bool get showAppleMusic => _prefs.getBool(_kShowAppleMusic) ?? true;
   bool get showSubsonic => _prefs.getBool(_kShowSubsonic) ?? true;
   bool get showImported => _prefs.getBool(_kShowImported) ?? true;
   bool get showLocal => _prefs.getBool(_kShowLocal) ?? true;
 
   Future<void> setShowNas(bool v) => _prefs.setBool(_kShowNas, v);
+  Future<void> setShowWebdav(bool v) => _prefs.setBool(_kShowWebdav, v);
   Future<void> setShowAppleMusic(bool v) =>
       _prefs.setBool(_kShowAppleMusic, v);
   Future<void> setShowSubsonic(bool v) => _prefs.setBool(_kShowSubsonic, v);
@@ -49,6 +52,7 @@ class PreferencesService {
   /// 该来源是否在曲库展示
   bool showSource(SongSource source) => switch (source) {
         SongSource.nas => showNas,
+        SongSource.webdav => showWebdav,
         SongSource.appleMusic => showAppleMusic,
         SongSource.subsonic => showSubsonic,
         SongSource.imported => showImported,
@@ -78,6 +82,37 @@ class PreferencesService {
     await _prefs.remove(_kSubsonicBaseUrl);
     await _prefs.remove(_kSubsonicUsername);
     await _prefs.remove(_kSubsonicPassword);
+  }
+
+  // ── WebDAV 音乐服务器配置 ──
+  static const _kWebdavBaseUrl = 'webdav_base_url';
+  static const _kWebdavPath = 'webdav_path';
+  static const _kWebdavUsername = 'webdav_username';
+  static const _kWebdavPassword = 'webdav_password';
+
+  String? get webdavBaseUrl => _prefs.getString(_kWebdavBaseUrl);
+  /// WebDAV 根目录（共享内相对路径，空=服务器根）
+  String? get webdavPath => _prefs.getString(_kWebdavPath);
+  String? get webdavUsername => _prefs.getString(_kWebdavUsername);
+  String get webdavPassword => _prefs.getString(_kWebdavPassword) ?? '';
+
+  Future<void> setWebdavConfig({
+    required String baseUrl,
+    required String path,
+    required String username,
+    required String password,
+  }) async {
+    await _prefs.setString(_kWebdavBaseUrl, baseUrl);
+    await _prefs.setString(_kWebdavPath, path);
+    await _prefs.setString(_kWebdavUsername, username);
+    await _prefs.setString(_kWebdavPassword, password);
+  }
+
+  Future<void> clearWebdavConfig() async {
+    await _prefs.remove(_kWebdavBaseUrl);
+    await _prefs.remove(_kWebdavPath);
+    await _prefs.remove(_kWebdavUsername);
+    await _prefs.remove(_kWebdavPassword);
   }
 
   // ── 音量 ──

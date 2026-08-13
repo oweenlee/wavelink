@@ -184,6 +184,17 @@
   "subsonicConnected": "Connected",
   "subsonicEnterUrl": "Enter server URL and username",
   "subsonicFailed": "Connection failed — check URL / credentials",
+  "webdavTitle": "WebDAV",
+  "webdavUrl": "Server URL",
+  "webdavPath": "Directory path (optional)",
+  "webdavUsername": "Username (optional)",
+  "webdavPassword": "Password (optional)",
+  "webdavCompatible": "Works with Nextcloud / Seafile / Synology WebDAV / Aliyun Drive / rclone",
+  "webdavEnterUrl": "Enter the server URL",
+  "webdavInvalidUrl": "Enter a full URL with http:// or https://",
+  "sourceWebdav": "WebDAV",
+  "sourceWebdavHint": "Connect to WebDAV network storage",
+  "sourceWebdavReady": "Tap to scan server library",
   "settingsMusicSources": "Music Sources",
   "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS"
 }

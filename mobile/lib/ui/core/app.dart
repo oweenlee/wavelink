@@ -11,6 +11,7 @@ import 'theme/app_theme.dart';
 import '../../data/services/preferences_service.dart';
 import '../../data/services/smb_service.dart';
 import '../../data/services/subsonic_service.dart';
+import '../../data/services/webdav_service.dart';
 import '../features/settings/view_models/locale_provider.dart';
 import '../features/library/view_models/library_header_notifier.dart';
 import '../features/library/view_models/library_provider.dart';
@@ -247,6 +248,8 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
   bool _discovering = false;
   bool _subsonicScanning = false;
   String? _subsonicResult;
+  bool _webdavScanning = false;
+  String? _webdavResult;
 
   Future<void> _handleDiscover() async {
     if (_discovering) return;
@@ -306,6 +309,37 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
     setState(() {
       _subsonicScanning = false;
       _subsonicResult = ok
+          ? l10n.sourceFound
+          : error != null
+              ? l10n.subsonicFailed
+              : l10n.sourceNotFound;
+    });
+  }
+
+  /// WebDAV：未配置 → 进配置页；已配置 → 直接扫描（loading/结果反馈）
+  void _handleWebdav() {
+    Navigator.of(context).pop(); // 关抽屉
+    if (!WebdavService.isConfigured) {
+      context.push('/webdav');
+    } else {
+      _scanWebdav();
+    }
+  }
+
+  Future<void> _scanWebdav() async {
+    if (_webdavScanning) return;
+    final player = ref.read(playbackControllerProvider);
+    setState(() {
+      _webdavScanning = true;
+      _webdavResult = null;
+    });
+    final ok = await player.scanWebdav();
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
+    final error = ref.read(libraryProvider).webdavError;
+    setState(() {
+      _webdavScanning = false;
+      _webdavResult = ok
           ? l10n.sourceFound
           : error != null
               ? l10n.subsonicFailed
@@ -423,6 +457,18 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
               loading: _subsonicScanning,
               result: _subsonicResult,
               onTap: _handleSubsonic,
+            ),
+            // WebDAV
+            _SourceRow(
+              icon: LucideIcons.cloud,
+              label: l10n.sourceWebdav,
+              subtitle: WebdavService.isConfigured
+                  ? l10n.sourceWebdavReady
+                  : l10n.sourceWebdavHint,
+              connected: WebdavService.isConfigured,
+              loading: _webdavScanning,
+              result: _webdavResult,
+              onTap: _handleWebdav,
             ),
             const Spacer(),
             // 底部版本号
