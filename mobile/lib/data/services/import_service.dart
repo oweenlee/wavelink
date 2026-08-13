@@ -34,6 +34,7 @@ class ImportService {
     'dsf',
     'dff',
     'opus',
+    'ape',
     // 注意：lrc 是歌词文件不是音频，绝不能收进歌单（历史事故：
     // SMB 扫描把 .lrc 当歌曲收录，切歌时把歌词文件喂给解码器报错）。
   ];

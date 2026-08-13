@@ -19,6 +19,7 @@ class FilePickerService {
       'dsf',
       'dff',
       'opus',
+      'ape',
       'lrc',
     ],
     bool multiple = true,
