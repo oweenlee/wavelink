@@ -96,9 +96,18 @@ pub(crate) fn setup_output_for_entry(
             crate::exclusive::acquire_exclusive_mode(state.config.output_device.as_deref());
             state.exclusive_mode_acquired = true;
         }
+        // Headless 构建（移动端 ringbuf 输出，无真实设备）：打开速率必须用引擎
+        // 配置速率（= 平台硬件速率，如 iOS 由 set_hw_sample_rate 提供），不能跟
+        // 源文件率走——source node 按硬件速率拉取 ringbuf，产出速率与拉取速率
+        // 失配时 44.1k 数据被按 48k 播放 → 音调升高（偏尖锐）。真实后端
+        // （cpal/oboe/audiounit）则以源速率配置设备，利于 bit-perfect/减少 SRC。
+        #[cfg(not(any(feature = "cpal-backend", feature = "oboe-backend", feature = "audiounit-backend", feature = "wasapi-backend")))]
+        let open_sample_rate = state.config.sample_rate;
+        #[cfg(any(feature = "cpal-backend", feature = "oboe-backend", feature = "audiounit-backend", feature = "wasapi-backend"))]
+        let open_sample_rate = sample_rate;
         match crate::output::open(
             channels,
-            sample_rate,
+            open_sample_rate,
             state.config.buffer_ms,
             state.config.output_device.as_deref(),
             source_bit_depth,
@@ -106,8 +115,8 @@ pub(crate) fn setup_output_for_entry(
         ) {
             Ok((output, prod, inner, actual_rate)) => {
                 state.output_inner = Some(inner);
-                if state.config.bit_perfect && actual_rate != sample_rate {
-                    warn!("bit-perfect: 请求采样率 {}Hz, 实际得到 {}Hz", sample_rate, actual_rate);
+                if state.config.bit_perfect && actual_rate != open_sample_rate {
+                    warn!("bit-perfect: 请求采样率 {}Hz, 实际得到 {}Hz", open_sample_rate, actual_rate);
                 }
                 state.output = Some(output);
                 state.output_sample_rate = actual_rate;
