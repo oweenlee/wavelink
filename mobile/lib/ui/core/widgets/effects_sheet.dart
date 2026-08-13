@@ -70,20 +70,26 @@ class EffectsSheet extends ConsumerWidget {
 
 class _SectionHeader extends StatelessWidget {
   final String label;
-  const _SectionHeader({required this.label});
+  final Widget? trailing;
+  const _SectionHeader({required this.label, this.trailing});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-      child: Text(
-        label,
-        style: WlText.mono(
-          fontSize: 10,
-          color: AppTheme.textTertiary,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 1.0,
-        ),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: WlText.mono(
+              fontSize: 10,
+              color: AppTheme.textTertiary,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1.0,
+            ),
+          ),
+          if (trailing != null) ...[const Spacer(), trailing!],
+        ],
       ),
     );
   }
@@ -95,14 +101,25 @@ class _SectionHeader extends StatelessWidget {
 /// 状态与预设表均由 [DspNotifier] 持有（与 audio-core 引擎对齐），
 /// 调整实时下发引擎出声。直接 watch [dspProvider] 而非播放器状态，
 /// 避免播放进度 250ms tick 带动滑块重建。
-class _EqSection extends ConsumerWidget {
+class _EqSection extends ConsumerStatefulWidget {
+  const _EqSection();
+
+  @override
+  ConsumerState<_EqSection> createState() => _EqSectionState();
+}
+
+class _EqSectionState extends ConsumerState<_EqSection> {
+  /// 手动 EQ 调节锁：默认锁定（每次打开面板），锁定期间滑块禁用防误触；
+  /// 锁只作用于滑块，预设 chips（flat/rock/pop…）不受影响。
+  bool _locked = true;
+
   String _bandLabel(double hz) {
     if (hz >= 1000) return '${(hz / 1000).round()}k';
     return '${hz.round()}';
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
     final dspState = ref.watch(dspProvider);
     final dsp = ref.read(dspProvider.notifier);
@@ -113,8 +130,14 @@ class _EqSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // header（与 EFFECTS 标题统一样式与左对齐）
-        const _SectionHeader(label: 'EQUALIZER'),
+        // header（与 EFFECTS 标题统一样式与左对齐；右侧为 EQ 调节锁）
+        _SectionHeader(
+          label: 'EQUALIZER',
+          trailing: _LockButton(
+            locked: _locked,
+            onTap: () => setState(() => _locked = !_locked),
+          ),
+        ),
         // 预设 chips（水平可滚动）
         SizedBox(
           height: 32,
@@ -155,85 +178,119 @@ class _EqSection extends ConsumerWidget {
         ),
         const SizedBox(height: 8),
 
-        // 10 条竖滑块 + 曲线
-        SizedBox(
-          height: 180,
-          child: Padding(
-            padding: const EdgeInsets.only(
-              left: 12,
-              right: 12,
-              top: 4,
-              bottom: 4,
-            ),
-            child: Stack(
-              children: [
-                // 曲线连线
-                Positioned.fill(
-                  child: CustomPaint(painter: _EqCurvePainter(values, accent)),
-                ),
-                // 滑块
-                Row(
-                  children: List.generate(values.length, (i) {
-                    return Expanded(
-                      child: Column(
-                        children: [
-                          // dB 值
-                          Text(
-                            '${values[i] >= 0 ? '+' : ''}${values[i].toStringAsFixed(1)}',
-                            style: WlText.mono(
-                              fontSize: 9,
-                              height: 1.1,
-                              color: AppTheme.textSecondary,
+        // 10 条竖滑块 + 曲线（锁定整体变暗 + 滑块禁用，视觉与解锁态区分明显）
+        AnimatedOpacity(
+          opacity: _locked ? 0.4 : 1.0,
+          duration: const Duration(milliseconds: 200),
+          child: SizedBox(
+            height: 180,
+            child: Padding(
+              padding: const EdgeInsets.only(
+                left: 12,
+                right: 12,
+                top: 4,
+                bottom: 4,
+              ),
+              child: Stack(
+                children: [
+                  // 曲线连线
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _EqCurvePainter(values, accent),
+                    ),
+                  ),
+                  // 滑块
+                  Row(
+                    children: List.generate(values.length, (i) {
+                      return Expanded(
+                        child: Column(
+                          children: [
+                            // dB 值
+                            Text(
+                              '${values[i] >= 0 ? '+' : ''}${values[i].toStringAsFixed(1)}',
+                              style: WlText.mono(
+                                fontSize: 9,
+                                height: 1.1,
+                                color: AppTheme.textSecondary,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 3),
-                          // 竖滑块
-                          Expanded(
-                            child: RotatedBox(
-                              quarterTurns: 3, // 竖直方向
-                              child: SliderTheme(
-                                data: SliderThemeData(
-                                  trackHeight: 3,
-                                  thumbShape: const RoundSliderThumbShape(
-                                    enabledThumbRadius: 6,
+                            const SizedBox(height: 3),
+                            // 竖滑块
+                            Expanded(
+                              child: RotatedBox(
+                                quarterTurns: 3, // 竖直方向
+                                child: SliderTheme(
+                                  data: SliderThemeData(
+                                    trackHeight: 3,
+                                    thumbShape: const RoundSliderThumbShape(
+                                      enabledThumbRadius: 6,
+                                    ),
+                                    activeTrackColor: accent,
+                                    inactiveTrackColor: AppTheme.s4.withValues(
+                                      alpha: 0.5,
+                                    ),
+                                    overlayColor: accent.withValues(alpha: 0.1),
                                   ),
-                                  activeTrackColor: accent,
-                                  inactiveTrackColor: AppTheme.s4.withValues(
-                                    alpha: 0.5,
+                                  child: Slider(
+                                    value: values[i].clamp(-12.0, 12.0),
+                                    min: -12,
+                                    max: 12,
+                                    divisions: 48,
+                                    // 锁定时禁用（onChanged 置 null 自动变灰），
+                                    // 只挡手动拖动，预设 chips 仍可点击应用
+                                    onChanged: _locked
+                                        ? null
+                                        : (v) => dsp.setEqBand(i, v),
                                   ),
-                                  overlayColor: accent.withValues(alpha: 0.1),
-                                ),
-                                child: Slider(
-                                  value: values[i].clamp(-12.0, 12.0),
-                                  min: -12,
-                                  max: 12,
-                                  divisions: 48,
-                                  onChanged: (v) => dsp.setEqBand(i, v),
                                 ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 3),
-                          // 频率标签
-                          Text(
-                            _bandLabel(freqs[i]),
-                            style: WlText.mono(
-                              fontSize: 9,
-                              height: 1.1,
-                              color: AppTheme.textTertiary,
+                            const SizedBox(height: 3),
+                            // 频率标签
+                            Text(
+                              _bandLabel(freqs[i]),
+                              style: WlText.mono(
+                                fontSize: 9,
+                                height: 1.1,
+                                color: AppTheme.textTertiary,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                ),
-              ],
+                          ],
+                        ),
+                      );
+                    }),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
         const Divider(height: 1, color: AppTheme.divider),
       ],
+    );
+  }
+}
+
+/// EQ 调节锁按钮：默认锁定防误触滑块，解锁后可手动拖动。
+class _LockButton extends StatelessWidget {
+  final bool locked;
+  final VoidCallback onTap;
+  const _LockButton({required this.locked, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AccentScope.of(context);
+    return InkWell(
+      onTap: onTap,
+      customBorder: const CircleBorder(),
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(
+          locked ? LucideIcons.lock : LucideIcons.lockOpen,
+          size: 15,
+          color: locked ? AppTheme.textTertiary : accent,
+        ),
+      ),
     );
   }
 }
