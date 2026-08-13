@@ -35,7 +35,11 @@ class PlaybackController {
   Future<void> _initEngine() async {
     await _player.init();
     await _dsp.applyDsp();
-    await _dsp.applyEqToEngine();
+    // AutoEQ 档案与手动 EQ 共用同一组 PEQ：档案生效时跳过手动曲线恢复，
+    // 否则逐段 setPeqBand 会覆盖档案频段（重启后档案静默失效）。
+    if (_ref.read(dspProvider).autoEqModel == null) {
+      await _dsp.applyEqToEngine();
+    }
   }
 
   /// 曲库就绪编排：以缓存曲库初始化队列并尝试恢复断点。

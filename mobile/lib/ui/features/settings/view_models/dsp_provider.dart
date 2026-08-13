@@ -92,9 +92,7 @@ class DspNotifier extends Notifier<DspState> {
       noiseShaping: !state.dspSettings.noiseShaping,
     );
     state = state.copyWith(dspSettings: s);
-    ref
-        .read(preferencesRepositoryProvider)
-        .setDspNoiseShaping(s.noiseShaping);
+    ref.read(preferencesRepositoryProvider).setDspNoiseShaping(s.noiseShaping);
     applyDsp();
   }
 
@@ -112,11 +110,26 @@ class DspNotifier extends Notifier<DspState> {
     }
   }
 
-  /// 应用/清除耳机校正档案（null = 关闭）：持久化 + 下发引擎
+  /// 应用/清除耳机校正档案（null = 关闭）：持久化 + 下发引擎。
+  /// 与手动 EQ 互斥：应用档案时引擎整组替换 PEQ；关闭档案时恢复已持久化
+  /// 的手动 EQ 曲线（全零时为 no-op）。
   void setAutoEq(String? model) {
     state = state.copyWith(autoEqModel: model);
     ref.read(preferencesRepositoryProvider).setAutoEqModel(model);
     applyDsp();
+    if (model == null) applyEqToEngine();
+  }
+
+  /// 手动 EQ 操作（拖滑块/应用预设）前调用：档案生效则先清除——互斥，
+  /// 最近操作赢。await 引擎命令保证「档案清除恢复平坦」先于手动频段
+  /// 写入生效（命令通道按序执行）。
+  Future<void> _clearAutoEqIfActive() async {
+    if (state.autoEqModel == null) return;
+    state = state.copyWith(autoEqModel: null);
+    ref.read(preferencesRepositoryProvider).setAutoEqModel(null);
+    final engineRepo = ref.read(audioEngineRepositoryProvider);
+    if (!engineRepo.rustAvailable) return;
+    await engineRepo.setAutoEq(null);
   }
 
   /// 把当前 DSP 设置同步到引擎。
@@ -194,7 +207,16 @@ class DspNotifier extends Notifier<DspState> {
 
   /// EQ 频段中心频率（Hz），与 audio-core `preset_bands` 一致。
   static const List<double> eqFrequencies = [
-    31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000,
+    31,
+    62,
+    125,
+    250,
+    500,
+    1000,
+    2000,
+    4000,
+    8000,
+    16000,
   ];
 
   /// EQ 默认 Q 值（与 audio-core 一致）。
@@ -203,16 +225,16 @@ class DspNotifier extends Notifier<DspState> {
   /// 预设增益表（dB）——与 audio-core `dsp::preset_bands` 逐值对齐，
   /// 引擎是单一事实来源：UI 显示的曲线即听到的曲线。
   static const Map<String, List<double>> eqPresets = {
-    'Flat':       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    'Rock':       [-1.2, -1.2, -2.4, -6.5, -7.4, -5.8, -2.6, -0.7, 0.0, 0.0],
-    'Pop':        [-5.0, -5.0, -2.4, -1.4, -1.2, -2.2, -4.8, -5.3, -5.3, -5.0],
-    'Dance':      [-0.5, -0.5, -1.4, -3.4, -4.3, -4.3, -6.7, -7.2, -7.2, -4.3],
-    'Classical':  [-4.1, -4.1, -4.1, -4.1, -4.1, -4.1, -4.1, -7.2, -7.2, -8.2],
-    'Soft':       [-2.4, -2.4, -3.6, -4.8, -5.3, -4.8, -2.6, -1.0, -0.5, 0.5],
-    'Full Bass':  [-0.5, -0.5, -0.5, -0.5, -1.9, -3.6, -6.0, -7.7, -8.4, -8.6],
-    'Full Treble':[-8.2, -8.2, -8.2, -8.2, -6.0, -3.1, 0.0, 1.9, 1.9, 2.4],
-    'Techno':     [-1.2, -1.2, -1.9, -4.1, -6.5, -6.2, -4.1, -1.2, -0.5, -0.7],
-    'Vocals':     [-3.0, -3.0, -2.0, -0.5, 1.0, 2.5, 3.0, 1.5, 0.0, 0.0],
+    'Flat': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    'Rock': [-1.2, -1.2, -2.4, -6.5, -7.4, -5.8, -2.6, -0.7, 0.0, 0.0],
+    'Pop': [-5.0, -5.0, -2.4, -1.4, -1.2, -2.2, -4.8, -5.3, -5.3, -5.0],
+    'Dance': [-0.5, -0.5, -1.4, -3.4, -4.3, -4.3, -6.7, -7.2, -7.2, -4.3],
+    'Classical': [-4.1, -4.1, -4.1, -4.1, -4.1, -4.1, -4.1, -7.2, -7.2, -8.2],
+    'Soft': [-2.4, -2.4, -3.6, -4.8, -5.3, -4.8, -2.6, -1.0, -0.5, 0.5],
+    'Full Bass': [-0.5, -0.5, -0.5, -0.5, -1.9, -3.6, -6.0, -7.7, -8.4, -8.6],
+    'Full Treble': [-8.2, -8.2, -8.2, -8.2, -6.0, -3.1, 0.0, 1.9, 1.9, 2.4],
+    'Techno': [-1.2, -1.2, -1.9, -4.1, -6.5, -6.2, -4.1, -1.2, -0.5, -0.7],
+    'Vocals': [-3.0, -3.0, -2.0, -0.5, 1.0, 2.5, 3.0, 1.5, 0.0, 0.0],
   };
 
   /// UI 预设名 → Rust 预设名（engine_apply_preset 接受的键）。
@@ -233,6 +255,7 @@ class DspNotifier extends Notifier<DspState> {
   Future<void> applyEqPreset(String name) async {
     final gains = eqPresets[name];
     if (gains == null) return;
+    await _clearAutoEqIfActive();
     state = state.copyWith(eqPreset: name, eqValues: List.from(gains));
     ref
         .read(preferencesRepositoryProvider)
@@ -240,7 +263,9 @@ class DspNotifier extends Notifier<DspState> {
     final engineRepo = ref.read(audioEngineRepositoryProvider);
     if (!engineRepo.rustAvailable) return;
     try {
-      await engineRepo.applyPreset(_rustPresetNames[name] ?? name.toLowerCase());
+      await engineRepo.applyPreset(
+        _rustPresetNames[name] ?? name.toLowerCase(),
+      );
     } catch (e) {
       Log.e('EQ', 'applyPreset 失败: $e');
     }
@@ -249,6 +274,7 @@ class DspNotifier extends Notifier<DspState> {
   /// 手动调整单个频段增益：更新本地曲线、持久化并下发引擎，取消预设高亮。
   Future<void> setEqBand(int index, double gainDb) async {
     if (index < 0 || index >= state.eqValues.length) return;
+    await _clearAutoEqIfActive();
     final values = List<double>.from(state.eqValues);
     values[index] = gainDb;
     // 手动调整后不再是纯预设（eqPreset 置空）
