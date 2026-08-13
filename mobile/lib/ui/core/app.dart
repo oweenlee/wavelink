@@ -300,9 +300,16 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
     final ok = await player.scanSubsonic();
     if (!mounted) return;
     final l10n = AppLocalizations.of(context);
+    // 扫描失败但非空库：优先显示具体错误（网络/凭据等），
+    // 区别于「服务器确实无歌曲」的空库场景
+    final error = ref.read(libraryProvider).subsonicError;
     setState(() {
       _subsonicScanning = false;
-      _subsonicResult = ok ? l10n.sourceFound : l10n.sourceNotFound;
+      _subsonicResult = ok
+          ? l10n.sourceFound
+          : error != null
+              ? l10n.subsonicFailed
+              : l10n.sourceNotFound;
     });
   }
 

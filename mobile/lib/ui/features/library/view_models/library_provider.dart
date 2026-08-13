@@ -30,6 +30,8 @@ class LibraryState {
   final int nasImportedCount;
   /// NAS 后台导入失败信息（空表示无错误）
   final String? nasImportError;
+  /// 音乐服务器（Subsonic）扫描失败信息（空表示无错误）
+  final String? subsonicError;
 
   const LibraryState({
     this.importedSongs = const [],
@@ -38,6 +40,7 @@ class LibraryState {
     this.nasImporting = false,
     this.nasImportedCount = 0,
     this.nasImportError,
+    this.subsonicError,
   });
 
   /// 曲库可见歌曲：按来源开关过滤（关闭的来源不在曲库展示）。
@@ -59,6 +62,7 @@ class LibraryState {
     bool? nasImporting,
     int? nasImportedCount,
     Object? nasImportError = _unset,
+    Object? subsonicError = _unset,
   }) {
     return LibraryState(
       importedSongs: importedSongs ?? this.importedSongs,
@@ -68,6 +72,9 @@ class LibraryState {
       nasImportedCount: nasImportedCount ?? this.nasImportedCount,
       nasImportError:
           identical(nasImportError, _unset) ? this.nasImportError : nasImportError as String?,
+      subsonicError: identical(subsonicError, _unset)
+          ? this.subsonicError
+          : subsonicError as String?,
     );
   }
 }
@@ -254,21 +261,24 @@ class LibraryNotifier extends Notifier<LibraryState> {
     try {
       final songRepo = ref.read(songRepositoryProvider);
       final songs = await songRepo.scanSubsonic();
-      if (songs.isEmpty) return false;
-      final newPaths = songs
-          .where((s) => s.path != null)
-          .map((s) => s.path!)
-          .toSet();
-      final merged = [
-        ...state.importedSongs.where(
-          (s) => s.path == null || !newPaths.contains(s.path),
-        ),
-        ...songs,
-      ];
-      state = state.copyWith(importedSongs: merged);
+      // 用 id 去重合并（与 NAS _mergeById 一致）：Subsonic 的 path 是
+      // server-local 路径，与本地/NAS 路径不互通，按 path 差集去重会
+      // 顺序重置甚至重复累积；id（sub_<serverId>）服务端稳定。
+      final merged = _mergeById(songs);
+      state = state.copyWith(
+        importedSongs: merged,
+        subsonicError: null,
+      );
       songRepo.setCachedSongs(merged);
+      // 服务器已删歌曲清理：仅扫描成功完成后执行（失败/空库走下方
+      // 分支不触达，避免掉线时误删曲库条目与收藏）。
+      if (songs.isNotEmpty) _pruneSubsonicRemoved(songs);
       onSongsLoaded?.call();
-      return true;
+      return songs.isNotEmpty;
+    } catch (e) {
+      Log.e('Library', 'Subsonic scan failed: $e');
+      state = state.copyWith(subsonicError: '$e');
+      return false;
     } finally {
       _isScanning = false;
     }
@@ -476,6 +486,27 @@ Future<bool> scanSmb(String sharePath) async {
     _persistFavorites();
     Log.i('Library', 'NAS 同步：移除 ${gone.length} 首 NAS 已删除的歌曲');
     unawaited(Future.wait(gone.map(_deleteSandboxFiles)));
+  }
+
+  /// 音乐服务器（Subsonic）同步清理：把服务器上已不存在的歌曲移出曲库
+  /// （含收藏），仅处理 id 前缀为 sub_ 的歌；本地/导入/NAS 歌不受影响。
+  /// 仅扫描成功完成后执行，失败路径不触达，避免掉线时误删。
+  void _pruneSubsonicRemoved(List<Song> scanned) {
+    final liveIds = {for (final s in scanned) s.id};
+    final gone = state.importedSongs
+        .where((s) => s.id.startsWith('sub_') && !liveIds.contains(s.id))
+        .toList();
+    if (gone.isEmpty) return;
+    final goneIds = {for (final s in gone) s.id};
+    state = state.copyWith(
+      importedSongs: state.importedSongs
+          .where((s) => !goneIds.contains(s.id))
+          .toList(),
+      favoriteIds: {...state.favoriteIds}..removeAll(goneIds),
+    );
+    ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
+    _persistFavorites();
+    Log.i('Library', 'Subsonic 同步：移除 ${gone.length} 首服务器已删除的歌曲');
   }
 
   // ── 播放列表 ──

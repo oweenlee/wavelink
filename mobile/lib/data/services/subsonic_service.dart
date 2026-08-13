@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../domain/models/song.dart';
@@ -41,12 +42,14 @@ class SubsonicService {
   }) async {
     try {
       final url = baseUrl.replaceAll(RegExp(r'/+$'), '');
-      final uri = Uri.parse('$url/rest/ping').replace(queryParameters: {
-        'u': username,
-        'p': password,
-        'v': '1.16.0',
-        'c': 'wavelink',
-      });
+      final uri = Uri.parse('$url/rest/ping').replace(
+        queryParameters: {
+          'u': username,
+          'p': password,
+          'v': '1.16.0',
+          'c': 'wavelink',
+        },
+      );
       final resp = await http
           .get(uri, headers: {'Accept': 'application/json'})
           .timeout(const Duration(seconds: 10));
@@ -92,7 +95,34 @@ class SubsonicService {
     final params = Map<String, String>.from(_authParams());
     if (extraParams != null) params.addAll(extraParams);
     final uri = Uri.parse(_url(path)).replace(queryParameters: params);
-    return await http.get(uri, headers: {'Accept': 'application/json'});
+    // 网络异常（SocketException/超时）向上抛，由 scanLibrary 调用方处理；
+    // 避免请求挂起时 UI 一直转圈无反馈。
+    return await http
+        .get(uri, headers: {'Accept': 'application/json'})
+        .timeout(const Duration(seconds: 20));
+  }
+
+  /// 解析并校验响应：HTTP 非 200，或协议层 status=failed（部分实现凭据
+  /// 错误时返回 200 + status=failed 而非 4xx/5xx）都抛出，与「服务器真空库」
+  /// 区分开；body 解析失败同样向上抛（由调用方 catch 回显）。
+  static Map<String, dynamic> _parse(http.Response resp, String what) {
+    if (resp.statusCode != 200) {
+      throw HttpException(
+        '$what 返回 ${resp.statusCode}',
+        uri: resp.request?.url,
+      );
+    }
+    final json = jsonDecode(resp.body);
+    final sub = json is Map ? json['subsonic-response'] : null;
+    if (sub is Map && sub['status'] == 'failed') {
+      final err = sub['error'];
+      final msg = err is Map ? err['message'] : null;
+      throw HttpException(
+        '$what 服务端错误${msg != null ? '：$msg' : ''}',
+        uri: resp.request?.url,
+      );
+    }
+    return json as Map<String, dynamic>;
   }
 
   static Future<List<Song>> scanLibrary() async {
@@ -100,52 +130,44 @@ class SubsonicService {
 
     final songs = <Song>[];
 
-    try {
-      // getAlbumList2（标准端点，type=alphabeticalByName）：分页拉全量专辑，
-      // 每张专辑再 getAlbum 拿歌曲。注意 getArtists 的 artist 在 index[] 分组里、
-      // getAlbums 非标准端点，均不可用。
-      var offset = 0;
-      const pageSize = 500;
-      while (true) {
-        final albumListResp = await _get('/getAlbumList2', {
-          'type': 'alphabeticalByName',
-          'size': '$pageSize',
-          'offset': '$offset',
-        });
-        if (albumListResp.statusCode != 200) break;
+    // getAlbumList2（标准端点，type=alphabeticalByName）：分页拉全量专辑，
+    // 每张专辑再 getAlbum 拿歌曲。注意 getArtists 的 artist 在 index[] 分组里、
+    // getAlbums 非标准端点，均不可用。
+    // 失败抛异常（交由调用方处理/回显），不静默返回空——空列表会被上层
+    // 误判为"服务器真空库"，实际可能是网络/凭据失败。
+    var offset = 0;
+    const pageSize = 500;
+    while (true) {
+      final albumListResp = await _get('/getAlbumList2', {
+        'type': 'alphabeticalByName',
+        'size': '$pageSize',
+        'offset': '$offset',
+      });
+      final albumListJson = _parse(albumListResp, 'getAlbumList2');
+      final albums =
+          albumListJson['subsonic-response']?['albumList2']?['album'] as List?;
+      if (albums == null || albums.isEmpty) break;
 
-        final albumListJson = jsonDecode(albumListResp.body);
-        final albums =
-            albumListJson['subsonic-response']?['albumList2']?['album']
-                as List?;
-        if (albums == null || albums.isEmpty) break;
+      for (final album in albums) {
+        final albumId = album['id'] as String?;
+        if (albumId == null) continue;
+        final albumName = album['name'] as String?;
+        final albumArtist = album['artist'] as String?;
 
-        for (final album in albums) {
-          final albumId = album['id'] as String?;
-          if (albumId == null) continue;
-          final albumName = album['name'] as String?;
-          final albumArtist = album['artist'] as String?;
+        final songResponse = await _get('/getAlbum', {'id': albumId});
+        final songJson = _parse(songResponse, 'getAlbum($albumId)');
+        final tracks =
+            songJson['subsonic-response']?['album']?['song'] as List?;
+        if (tracks == null) continue;
 
-          final songResponse = await _get('/getAlbum', {'id': albumId});
-          if (songResponse.statusCode != 200) continue;
-
-          final songJson = jsonDecode(songResponse.body);
-          final tracks =
-              songJson['subsonic-response']?['album']?['song'] as List?;
-          if (tracks == null) continue;
-
-          for (final track in tracks) {
-            final song = _toSong(track, albumArtist, albumName);
-            if (song != null) songs.add(song);
-          }
+        for (final track in tracks) {
+          final song = _toSong(track, albumArtist, albumName);
+          if (song != null) songs.add(song);
         }
-
-        if (albums.length < pageSize) break;
-        offset += pageSize;
       }
-    } catch (e) {
-      Log.e('Subsonic', 'scanLibrary failed: $e');
-      return [];
+
+      if (albums.length < pageSize) break;
+      offset += pageSize;
     }
 
     return songs;
@@ -195,7 +217,9 @@ class SubsonicService {
     final coverArt = track['coverArt'] as String?;
     final songId = track['id'] as String?;
 
-    if (path == null && songId == null) return null;
+    // id 是去重/收藏/streamUrl 的键，必须存在；path 是 server-local 路径
+    // （仅作展示），可空。协议要求 song 必返回 id，故直接以 songId 为准。
+    if (songId == null) return null;
 
     String? coverUrl;
     String? streamUrl;
@@ -204,19 +228,17 @@ class SubsonicService {
         coverUrl =
             '$_baseUrl/rest/getCoverArt?id=$coverArt&u=$_username&p=$_password&v=1.16.0&c=wavelink';
       }
-      if (songId != null) {
-        streamUrl =
-            '$_baseUrl/rest/stream?id=$songId&u=$_username&p=$_password&v=1.16.0&c=wavelink';
-      }
+      streamUrl =
+          '$_baseUrl/rest/stream?id=$songId&u=$_username&p=$_password&v=1.16.0&c=wavelink';
     }
 
     return Song(
-      id: 'sub_${songId ?? path.hashCode}',
-      title: title.isNotEmpty ? title : _titleFromPath(path ?? songId ?? ''),
+      id: 'sub_$songId',
+      title: title.isNotEmpty ? title : _titleFromPath(path ?? songId),
       artist: artist,
       album: albumName,
       duration: Duration(milliseconds: durationMs),
-      dominantColor: _colorFromPath(path ?? songId ?? ''),
+      dominantColor: _colorFromPath(path ?? songId),
       path: path,
       streamUrl: streamUrl,
       coverUrl: coverUrl,

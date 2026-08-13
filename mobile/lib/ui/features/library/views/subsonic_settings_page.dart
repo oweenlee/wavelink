@@ -82,11 +82,17 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
     );
     SubsonicService.configure(baseUrl: url, username: user, password: pass);
     if (!mounted) return;
-    setState(() => _saving = false);
-    // 自动触发一次扫描（fire-and-forget，复用现有 scanSubsonic 合并/持久化）
-    ref.read(libraryProvider.notifier).scanSubsonic();
-    // 保存成功：返回上一页（抽屉/设置页）
-    context.pop();
+    // 保存后立即扫描验证（复用 scanSubsonic 的合并/持久化，并把真实错误
+    // 经 subsonicError 带出）。空库不是错误：扫描正常完成说明连接与凭据
+    // 正确，照常保存返回；仅实际错误（subsonicError 非空）才留页回显。
+    await ref.read(libraryProvider.notifier).scanSubsonic();
+    if (!mounted) return;
+    final hasError = ref.read(libraryProvider).subsonicError != null;
+    setState(() {
+      _saving = false;
+      _status = hasError ? 'fail' : 'ok';
+    });
+    if (!hasError) context.pop();
   }
 
   @override
@@ -99,7 +105,10 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
         title: Text(l10n.subsonicTitle),
         backgroundColor: AppTheme.surfaceDark,
         leading: IconButton(
-          icon: const Icon(LucideIcons.arrowLeft, color: AppTheme.textSecondary),
+          icon: const Icon(
+            LucideIcons.arrowLeft,
+            color: AppTheme.textSecondary,
+          ),
           onPressed: () => context.pop(),
         ),
       ),
