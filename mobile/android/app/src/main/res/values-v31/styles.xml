@@ -2,15 +2,15 @@
 <resources>
     <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is off -->
     <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <!-- 系统 SplashScreen 退出动画期间窗口背景会透出：Theme.Light 默认浅灰，
+             必须显式设为启动屏同色，避免 Flutter 首帧前的整屏灰闪 -->
+        <item name="android:windowBackground">#0A0A0A</item>
         <item name="android:forceDarkAllowed">false</item>
         <item name="android:windowFullscreen">false</item>
         <item name="android:windowDrawsSystemBarBackgrounds">false</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <item name="android:windowSplashScreenBackground">#0A0A0A</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/android12splash</item>
-        <!-- 系统 SplashScreen 退出动画期间窗口背景会透出：Theme.Light 默认浅灰，
-             必须显式设为启动屏同色，避免 Flutter 首帧前的整屏灰闪 -->
-        <item name="android:windowBackground">#0A0A0A</item>
     </style>
     <!-- Theme applied to the Android Window as soon as the process has started.
          This theme determines the color of the Android Window while your
