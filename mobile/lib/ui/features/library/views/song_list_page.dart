@@ -148,7 +148,9 @@ class SongListPage extends ConsumerWidget {
                   trackNumber: i + 1,
                   onTap: () {
                     Log.d('Audio', '[pt] 用户点击 ${song.title}');
-                    player.playSong(song);
+                    // 以当前播放列表为队列，从点击曲开始；否则 playSong 会
+                    // 追加到旧队列末尾，下一曲绕回旧队首（可能是收藏列表）。
+                    player.playAlbum(songs, startIndex: i);
                   },
                 );
               }, childCount: songs.length),

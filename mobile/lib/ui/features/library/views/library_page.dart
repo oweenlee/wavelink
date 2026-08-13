@@ -491,7 +491,10 @@ class _SongsTab extends ConsumerWidget {
             trackNumber: trackNumbers[song.id] ?? index + 1,
             onTap: () {
               Log.d('Audio', '[pt] 用户点击 ${song.title}');
-              player.playSong(song);
+              // 以当前（过滤后）列表重建队列并从点击曲开始，
+              // 否则 playSong 会追加到旧队列末尾，下一曲会绕回旧队首
+              // （例如上一次残留的收藏列表）。
+              player.playAlbum(displayed, startIndex: index);
             },
             onMore: () => _showContextMenu(context, song, player),
             trailing: player.isSongFavorite(song.id)
@@ -665,7 +668,8 @@ class _ArtistsTab extends ConsumerWidget {
                 GestureDetector(
                   onTap: () {
                     if (songs.isNotEmpty) {
-                      player.playSong(songs.first);
+                      player.setLoopMode(LoopMode.shuffle);
+                      player.playAlbum(songs, startIndex: 0);
                     }
                   },
                   child: Container(
