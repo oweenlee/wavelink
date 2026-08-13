@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import '../../../../data/services/subsonic_service.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/sheet_shell.dart';
@@ -79,7 +78,7 @@ class SettingsPage extends ConsumerWidget {
               icon: LucideIcons.headphones,
               label: l10n.autoEq,
               trailing: player.autoEqModel ?? l10n.autoEqOff,
-              onTap: () => _showAutoEqSheet(context, ref),
+              onTap: () => context.push('/autoeq'),
             ),
             _SwitchItem(
               icon: LucideIcons.sparkles,
@@ -95,20 +94,6 @@ class SettingsPage extends ConsumerWidget {
               subtitle: _bitPerfectStatus(player),
             ),
             _SettingItem(icon: LucideIcons.volume2, label: l10n.outputDevice),
-          ],
-        ),
-        const SizedBox(height: 24),
-        _Section(
-          title: l10n.settingsMusicSources,
-          children: [
-            _SettingItem(
-              icon: LucideIcons.server,
-              label: l10n.sourceMusicServer,
-              trailing: SubsonicService.isConfigured
-                  ? l10n.subsonicConnected
-                  : null,
-              onTap: () => context.push('/subsonic'),
-            ),
           ],
         ),
         const SizedBox(height: 24),
@@ -135,43 +120,6 @@ class SettingsPage extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 24),
-        _Section(
-          title: l10n.settingsLibrary,
-          children: [
-            _ActionItem(
-              icon: LucideIcons.library,
-              label: l10n.discoverSongs,
-              onTap: () async {
-                final player = ref.read(playbackControllerProvider);
-                final ok = await player.discoverSongs();
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(ok ? l10n.scanDone : l10n.scanNoPermission),
-                      backgroundColor: ok
-                          ? AccentScope.of(context)
-                          : AppTheme.danger,
-                    ),
-                  );
-                }
-              },
-            ),
-            _ActionItem(
-              icon: LucideIcons.folder,
-              label: l10n.scanDir,
-              onTap: () async {
-                final player = ref.read(playbackControllerProvider);
-                await player.importFromPicker();
-              },
-            ),
-            _SettingItem(
-              icon: LucideIcons.upload,
-              label: l10n.importExportPlaylist,
-              trailing: 'Coming soon',
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
         _Section(title: l10n.language, children: [_LanguageItem()]),
         const SizedBox(height: 24),
         _Section(
@@ -192,97 +140,6 @@ class SettingsPage extends ConsumerWidget {
       ],
     );
   }
-}
-
-/// AutoEQ 耳机校正选择 sheet：“关闭” + oratory1990 实测档案列表
-Future<void> _showAutoEqSheet(BuildContext context, WidgetRef ref) {
-  final l10n = AppLocalizations.of(context);
-  final player = ref.read(playbackControllerProvider);
-  final accent = AccentScope.of(context);
-  final current = player.autoEqModel;
-  final catalogFuture = player.getAutoEqCatalog();
-
-  return showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: Colors.transparent,
-    builder: (_) => SheetShell(
-      title: l10n.autoEq,
-      builder: (scroll) => FutureBuilder<List<String>>(
-        future: catalogFuture,
-        builder: (context, snap) {
-          final models = snap.data ?? const <String>[];
-          return ListView(
-            controller: scroll,
-            padding: const EdgeInsets.only(top: 8, bottom: 32),
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text(
-                  l10n.autoEqHint,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textTertiary,
-                  ),
-                ),
-              ),
-              ListTile(
-                leading: Icon(
-                  current == null
-                      ? LucideIcons.checkCircle2
-                      : LucideIcons.circle,
-                  color: current == null ? accent : AppTheme.textTertiary,
-                  size: 20,
-                ),
-                title: Text(
-                  l10n.autoEqOff,
-                  style: TextStyle(
-                    fontSize: 15,
-                    color: current == null ? accent : AppTheme.textPrimary,
-                    fontWeight: current == null
-                        ? FontWeight.w600
-                        : FontWeight.w400,
-                  ),
-                ),
-                dense: true,
-                onTap: () {
-                  ref.read(playbackControllerProvider).setAutoEq(null);
-                  Navigator.of(context).pop();
-                },
-              ),
-              if (!snap.hasData)
-                const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(child: CircularProgressIndicator()),
-                ),
-              ...models.map((model) {
-                final selected = current == model;
-                return ListTile(
-                  leading: Icon(
-                    selected ? LucideIcons.checkCircle2 : LucideIcons.circle,
-                    color: selected ? accent : AppTheme.textTertiary,
-                    size: 20,
-                  ),
-                  title: Text(
-                    model,
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: selected ? accent : AppTheme.textPrimary,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                    ),
-                  ),
-                  dense: true,
-                  onTap: () {
-                    ref.read(playbackControllerProvider).setAutoEq(model);
-                    Navigator.of(context).pop();
-                  },
-                );
-              }),
-            ],
-          );
-        },
-      ),
-    ),
-  );
 }
 
 class _LanguageItem extends ConsumerWidget {
@@ -436,11 +293,19 @@ class _SettingItem extends StatelessWidget {
         style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
       ),
       trailing: trailing != null
-          ? Text(
-              trailing!,
-              style: const TextStyle(
-                fontSize: 14,
-                color: AppTheme.textTertiary,
+          ? ConstrainedBox(
+              // 长文案（如 AutoEQ 型号名）限宽单行截断，避免换行挤压标题
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.sizeOf(context).width * 0.45,
+              ),
+              child: Text(
+                trailing!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppTheme.textTertiary,
+                ),
               ),
             )
           : onTap != null
@@ -573,30 +438,6 @@ class _SliderItem extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ActionItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _ActionItem({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = AccentScope.of(context);
-    return ListTile(
-      leading: Icon(icon, color: accent, size: 22),
-      title: Text(label, style: TextStyle(fontSize: 15, color: accent)),
-      onTap: onTap,
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
     );
   }
 }

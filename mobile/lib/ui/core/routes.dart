@@ -8,6 +8,7 @@ import '../features/library/views/album_detail_page.dart';
 import '../features/library/views/artist_detail_page.dart';
 import '../features/library/views/song_list_page.dart';
 import '../features/settings/views/diagnostic_page.dart';
+import '../features/settings/views/autoeq_settings_page.dart';
 import '../features/library/views/nas_settings_page.dart';
 import '../features/library/views/subsonic_settings_page.dart';
 import 'app.dart';
@@ -97,13 +98,14 @@ final goRouter = GoRouter(
       path: '/diagnostic',
       builder: (context, state) => const DiagnosticPage(),
     ),
-    GoRoute(
-      path: '/nas',
-      builder: (context, state) => const NasSettingsPage(),
-    ),
+    GoRoute(path: '/nas', builder: (context, state) => const NasSettingsPage()),
     GoRoute(
       path: '/subsonic',
       builder: (context, state) => const SubsonicSettingsPage(),
+    ),
+    GoRoute(
+      path: '/autoeq',
+      builder: (context, state) => const AutoEqSettingsPage(),
     ),
   ],
 );
