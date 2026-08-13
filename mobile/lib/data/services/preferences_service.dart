@@ -227,7 +227,6 @@ class PreferencesService {
   static const _kNasShare = 'nas_share';
   static const _kNasUsername = 'nas_username';
   static const _kNasPassword = 'nas_password';
-  static const _kNasEnabled = 'nas_enabled';
 
   /// SMB 离线缓存：开启后扫描 NAS 时把整库下载到本机，关 SMB 也能播。
   /// 默认关闭——只建索引，播放时才按需下载单曲。
@@ -241,7 +240,6 @@ class PreferencesService {
   String? get nasShare => _prefs.getString(_kNasShare);
   String? get nasUsername => _prefs.getString(_kNasUsername);
   String get nasPassword => _prefs.getString(_kNasPassword) ?? '';
-  bool get nasEnabled => _prefs.getBool(_kNasEnabled) ?? false;
 
   Future<void> setNasConfig({
     String? type,
@@ -249,14 +247,12 @@ class PreferencesService {
     String? share,
     String? username,
     String? password,
-    bool? enabled,
   }) async {
     if (type != null) await _prefs.setString(_kNasType, type);
     if (host != null) await _prefs.setString(_kNasHost, host);
     if (share != null) await _prefs.setString(_kNasShare, share);
     if (username != null) await _prefs.setString(_kNasUsername, username);
     if (password != null) await _prefs.setString(_kNasPassword, password);
-    if (enabled != null) await _prefs.setBool(_kNasEnabled, enabled);
   }
 
   Future<void> clearNasConfig() async {
@@ -265,7 +261,6 @@ class PreferencesService {
     await _prefs.remove(_kNasShare);
     await _prefs.remove(_kNasUsername);
     await _prefs.remove(_kNasPassword);
-    await _prefs.remove(_kNasEnabled);
   }
 
   // ── 语言偏好 ──

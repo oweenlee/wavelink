@@ -25,7 +25,6 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
   final _shareCtrl = TextEditingController();
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
-  bool _enabled = false;
   bool _offlineCache = false;
   String? _nasType;
   bool _connecting = false;
@@ -41,11 +40,18 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     const testUser = 'qin';
     const testPass = '';
     const testShare = '/music';
-    _hostCtrl.text = prefs.nasHost?.isNotEmpty == true ? prefs.nasHost! : testHost;
-    _shareCtrl.text = prefs.nasShare?.isNotEmpty == true ? prefs.nasShare! : testShare;
-    _userCtrl.text = prefs.nasUsername?.isNotEmpty == true ? prefs.nasUsername! : testUser;
-    _passCtrl.text = prefs.nasPassword.isNotEmpty ? prefs.nasPassword : testPass;
-    _enabled = prefs.nasEnabled;
+    _hostCtrl.text = prefs.nasHost?.isNotEmpty == true
+        ? prefs.nasHost!
+        : testHost;
+    _shareCtrl.text = prefs.nasShare?.isNotEmpty == true
+        ? prefs.nasShare!
+        : testShare;
+    _userCtrl.text = prefs.nasUsername?.isNotEmpty == true
+        ? prefs.nasUsername!
+        : testUser;
+    _passCtrl.text = prefs.nasPassword.isNotEmpty
+        ? prefs.nasPassword
+        : testPass;
     _nasType = prefs.nasType;
     _offlineCache = prefs.smbOfflineCache;
   }
@@ -128,11 +134,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          text,
-          maxLines: 6,
-          overflow: TextOverflow.ellipsis,
-        ),
+        content: Text(text, maxLines: 6, overflow: TextOverflow.ellipsis),
         backgroundColor: AppTheme.danger,
         duration: const Duration(seconds: 5),
         action: err == null
@@ -190,7 +192,6 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
       share: _shareCtrl.text.trim(),
       username: _userCtrl.text.trim(),
       password: _passCtrl.text,
-      enabled: _enabled,
     );
     await PreferencesService.instance.setSmbOfflineCache(_offlineCache);
 
@@ -198,7 +199,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     // 立即返回曲库，导入进度在曲库页顶部展示，可随时取消。
     final host = _hostCtrl.text.trim();
     final share = _shareCtrl.text.trim();
-    if (_enabled && host.isNotEmpty && share.isNotEmpty) {
+    if (host.isNotEmpty && share.isNotEmpty) {
       ref.read(libraryProvider.notifier).startNasImport(share);
     }
 
@@ -215,7 +216,10 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
         title: Text(l10n.nasTitle),
         backgroundColor: AppTheme.surfaceDark,
         leading: IconButton(
-          icon: const Icon(LucideIcons.arrowLeft, color: AppTheme.textSecondary),
+          icon: const Icon(
+            LucideIcons.arrowLeft,
+            color: AppTheme.textSecondary,
+          ),
           onPressed: () => context.pop(),
         ),
       ),
@@ -234,156 +238,129 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
                 type: MaterialType.transparency,
                 child: Column(
                   children: [
-                    ListTile(
-                      dense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                      ),
-                      leading: const Icon(
-                        LucideIcons.server,
-                        color: AppTheme.textSecondary,
-                        size: 22,
-                      ),
-                      title: Text(
-                        l10n.nasEnable,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                      trailing: WlToggle(
-                        value: _enabled,
-                        onChanged: () => setState(() => _enabled = !_enabled),
-                      ),
+                    _NasField(
+                      icon: LucideIcons.cloud,
+                      label: l10n.nasHost,
+                      hint: '192.168.110.27 or nas.local',
+                      controller: _hostCtrl,
                     ),
-                    if (_enabled) ...[
-                      const Divider(height: 1, indent: 52),
-                      _NasField(
-                        icon: LucideIcons.cloud,
-                        label: l10n.nasHost,
-                        hint: '192.168.110.27 or nas.local',
-                        controller: _hostCtrl,
-                      ),
-                      const Divider(height: 1, indent: 52),
-                      _NasField(
-                        icon: LucideIcons.folder,
-                        label: l10n.nasShare,
-                        hint: '/Music or /public/music',
-                        controller: _shareCtrl,
-                      ),
-                      const Divider(height: 1, indent: 52),
-                      _NasField(
-                        icon: LucideIcons.user,
-                        label: l10n.nasUsername,
-                        controller: _userCtrl,
-                      ),
-                      const Divider(height: 1, indent: 52),
-                      _NasField(
-                        icon: LucideIcons.lock,
-                        label: l10n.nasPassword,
-                        controller: _passCtrl,
-                        obscure: true,
-                      ),
-                    ],
+                    const Divider(height: 1, indent: 16),
+                    _NasField(
+                      icon: LucideIcons.folder,
+                      label: l10n.nasShare,
+                      hint: '/Music or /public/music',
+                      controller: _shareCtrl,
+                    ),
+                    const Divider(height: 1, indent: 16),
+                    _NasField(
+                      icon: LucideIcons.user,
+                      label: l10n.nasUsername,
+                      controller: _userCtrl,
+                    ),
+                    const Divider(height: 1, indent: 16),
+                    _NasField(
+                      icon: LucideIcons.lock,
+                      label: l10n.nasPassword,
+                      controller: _passCtrl,
+                      obscure: true,
+                    ),
                   ],
                 ),
               ),
             ),
-            if (_enabled) ...[
-              const SizedBox(height: 16),
-              // ── 离线缓存开关 ──
-              Container(
-                decoration: BoxDecoration(
-                  color: AppTheme.surfaceDark.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: ListTile(
-                    dense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                    leading: const Icon(
-                      LucideIcons.download,
-                      color: AppTheme.textSecondary,
-                      size: 22,
+            const SizedBox(height: 16),
+            // ── 离线缓存开关 ──
+            Container(
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceDark.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Material(
+                type: MaterialType.transparency,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                  leading: const Icon(
+                    LucideIcons.download,
+                    color: AppTheme.textSecondary,
+                    size: 22,
+                  ),
+                  title: Text(
+                    l10n.smbOfflineCache,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      color: AppTheme.textPrimary,
                     ),
-                    title: Text(
-                      l10n.smbOfflineCache,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        color: AppTheme.textPrimary,
-                      ),
+                  ),
+                  subtitle: Text(
+                    l10n.smbOfflineCacheHint,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textTertiary,
                     ),
-                    subtitle: Text(
-                      l10n.smbOfflineCacheHint,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppTheme.textTertiary,
-                      ),
-                    ),
-                    trailing: WlToggle(
-                      value: _offlineCache,
-                      onChanged: () => _toggleOfflineCache(),
-                    ),
+                  ),
+                  trailing: WlToggle(
+                    value: _offlineCache,
+                    onChanged: () => _toggleOfflineCache(),
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _connecting ? null : _testConnection,
-                      icon: _connecting
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(LucideIcons.cloudCog, size: 18),
-                      label: Text(l10n.nasTestConnection),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.surfaceDark,
-                        foregroundColor: AppTheme.textPrimary,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _connecting ? null : _testConnection,
+                    icon: _connecting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(LucideIcons.cloudCog, size: 18),
+                    label: Text(l10n.nasTestConnection),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.surfaceDark,
+                      foregroundColor: AppTheme.textPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _connecting ? null : _saveAndConnect,
-                      icon: const Icon(LucideIcons.save, size: 18),
-                      label: Text(l10n.nasSave),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: accent,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _connecting ? null : _saveAndConnect,
+                    icon: const Icon(LucideIcons.save, size: 18),
+                    label: Text(l10n.nasSave),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                  ),
-                ],
-              ),
-              if (_connectionStatus.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  _connectionStatus == 'connected'
-                      ? l10n.nasConnected
-                      : _connectionStatus == 'host_empty'
-                      ? l10n.nasEnterHost
-                      : l10n.nasConnectionFailed,
-                  style: TextStyle(
-                    color: _connectionStatus == 'connected'
-                        ? AppTheme.success
-                        : AppTheme.danger,
-                    fontSize: 13,
                   ),
                 ),
               ],
+            ),
+            if (_connectionStatus.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                _connectionStatus == 'connected'
+                    ? l10n.nasConnected
+                    : _connectionStatus == 'host_empty'
+                    ? l10n.nasEnterHost
+                    : l10n.nasConnectionFailed,
+                style: TextStyle(
+                  color: _connectionStatus == 'connected'
+                      ? AppTheme.success
+                      : AppTheme.danger,
+                  fontSize: 13,
+                ),
+              ),
             ],
           ],
         ),
@@ -421,10 +398,7 @@ class _NasField extends StatelessWidget {
       subtitle: TextField(
         controller: controller,
         obscureText: obscure,
-        style: const TextStyle(
-          fontSize: 14,
-          color: AppTheme.textPrimary,
-        ),
+        style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary),
         decoration: InputDecoration(
           hintText: hint,
           isDense: true,

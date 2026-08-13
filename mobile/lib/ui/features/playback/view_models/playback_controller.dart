@@ -52,8 +52,8 @@ class PlaybackController {
     final prefs = _prefsRepo;
     final host = prefs.nasHost;
     final share = prefs.nasShare;
-    if (prefs.nasEnabled &&
-        host != null &&
+    // NAS 无「启用」开关：配置了 host/share 即视为启用，启动自动导入
+    if (host != null &&
         host.isNotEmpty &&
         share != null &&
         share.isNotEmpty) {

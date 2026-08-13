@@ -31,7 +31,9 @@ class _ImportSheetState extends ConsumerState<_ImportSheet> {
   @override
   Widget build(BuildContext context) {
     final prefs = PreferencesService.instance;
-    final nasConnected = prefs.nasEnabled;
+    // NAS 无需「启用」开关（配置了即视为启用）：
+    // 已配置 host 即显示连接状态点
+    final nasConnected = prefs.nasHost?.isNotEmpty == true;
 
     return Container(
       constraints: BoxConstraints(
