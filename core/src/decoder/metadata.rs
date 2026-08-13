@@ -7,6 +7,7 @@ use std::path::Path;
 
 use lofty::prelude::*;
 use lofty::read_from_path;
+use lofty::tag::ItemKey;
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
@@ -33,10 +34,21 @@ pub struct Metadata {
     pub duration_secs: f64,
     /// 是否含有内嵌封面
     pub has_cover: bool,
+    /// 内嵌歌词（LRC 文本：ID3 USLT / Vorbis LYRICS / MP4 ©lyr）
+    pub lyrics: Option<String>,
     /// 采样率（Hz）
     pub sample_rate: Option<u32>,
     /// 声道数
     pub channels: Option<u32>,
+}
+
+/// 提取内嵌歌词文本（LRC 格式）：ID3v2 USLT / FLAC·OGG LYRICS / MP4 ©lyr。
+/// 歌词可能存于 Lyrics（纯歌词）或 UnsyncLyrics（LRC 文本）两种键。
+fn extract_lyrics(tag: &lofty::tag::Tag) -> Option<String> {
+    tag.get_string(ItemKey::Lyrics)
+        .or_else(|| tag.get_string(ItemKey::UnsyncLyrics))
+        .map(|s| s.to_string())
+        .filter(|s| !s.trim().is_empty())
 }
 
 /// 读取音频文件元数据（标题/艺术家/专辑/流派/年份/音轨号/光盘号/封面/时长）
@@ -49,7 +61,7 @@ pub fn read_metadata(path: &Path) -> Result<Metadata, String> {
             title: None, artist: None, album: None,
             genre: None, year: None,
             track_number: None, disc_number: None,
-            duration_secs, has_cover: false,
+            duration_secs, has_cover: false, lyrics: None,
             sample_rate: None, channels: None,
         };
 
@@ -62,6 +74,7 @@ pub fn read_metadata(path: &Path) -> Result<Metadata, String> {
             meta.track_number = tag.track();
             meta.disc_number = tag.disk();
             meta.has_cover = !tag.pictures().is_empty();
+            meta.lyrics = extract_lyrics(tag);
         }
 
         meta.sample_rate = tagged_file.properties().sample_rate();
@@ -77,7 +90,7 @@ pub fn read_metadata(path: &Path) -> Result<Metadata, String> {
         title: None, artist: None, album: None,
         genre: None, year: None,
         track_number: None, disc_number: None,
-        duration_secs, has_cover: false,
+        duration_secs, has_cover: false, lyrics: None,
         sample_rate: None, channels: None,
     })
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -658,6 +659,24 @@ class SmbService {
   static Future<bool> _retryReady(int gen) async {
     if (_sessionGen != gen) return _connected && _mountedShare != null;
     return ensureReady(force: true);
+  }
+
+  /// 从 NAS 远端读取与音频同目录同名的歌词文件（.lrc/.LRC），
+  /// 失败（文件不存在/会话断）返回 null。歌词是小文本，直接读全文。
+  static Future<String?> fetchRemoteLyrics(String smbPath) async {
+    if (!_connected) return null;
+    final base = smbPath.replaceFirst(RegExp(r'\.[^.]+$'), '');
+    for (final ext in const ['.lrc', '.LRC']) {
+      try {
+        final bytes = await smb.smbReadFile(path: '$base$ext');
+        if (bytes.isEmpty) continue;
+        return utf8.decode(bytes, allowMalformed: true);
+      } catch (_) {
+        // 文件不存在或读取失败，尝试下一个扩展名
+        continue;
+      }
+    }
+    return null;
   }
 
   static Future<void> _fetchRemoteCoverOnce(Song song, String smbPath) async {

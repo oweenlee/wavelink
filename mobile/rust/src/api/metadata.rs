@@ -73,6 +73,8 @@ pub struct MetadataResult {
     pub duration_secs: f64,
     pub has_cover: bool,
     pub cover_bytes: Vec<u8>,
+    /// 内嵌歌词（LRC 文本：ID3 USLT / Vorbis LYRICS / MP4 ©lyr）
+    pub lyrics: Option<String>,
 }
 
 /// 无封面诊断：输出 MP3 ID3v2 标签结构摘要，辅助定位"有封面却解析不出"
@@ -164,5 +166,6 @@ pub fn read_metadata(path: String) -> Result<MetadataResult, String> {
         duration_secs: meta.duration_secs,
         has_cover,
         cover_bytes,
+        lyrics: meta.lyrics,
     })
 }

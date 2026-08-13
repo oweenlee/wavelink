@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `extract_cover_lofty`
+// These functions are ignored because they are not marked as `pub`: `extract_cover_lofty`, `mp3_tag_summary`
 
 /// 从音频文件读取 ReplayGain 标签
 Future<ReplayGainResult> readReplaygain({required String path}) =>
@@ -30,6 +30,9 @@ class MetadataResult {
   final bool hasCover;
   final Uint8List coverBytes;
 
+  /// 内嵌歌词（LRC 文本：ID3 USLT / Vorbis LYRICS / MP4 ©lyr）
+  final String? lyrics;
+
   const MetadataResult({
     this.title,
     this.artist,
@@ -37,6 +40,7 @@ class MetadataResult {
     required this.durationSecs,
     required this.hasCover,
     required this.coverBytes,
+    this.lyrics,
   });
 
   @override
@@ -46,7 +50,8 @@ class MetadataResult {
       album.hashCode ^
       durationSecs.hashCode ^
       hasCover.hashCode ^
-      coverBytes.hashCode;
+      coverBytes.hashCode ^
+      lyrics.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -58,7 +63,8 @@ class MetadataResult {
           album == other.album &&
           durationSecs == other.durationSecs &&
           hasCover == other.hasCover &&
-          coverBytes == other.coverBytes;
+          coverBytes == other.coverBytes &&
+          lyrics == other.lyrics;
 }
 
 /// ReplayGain 响度归一化增益值

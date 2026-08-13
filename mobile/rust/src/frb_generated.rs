@@ -3270,6 +3270,7 @@ impl SseDecode for crate::api::metadata::MetadataResult {
         let mut var_durationSecs = <f64>::sse_decode(deserializer);
         let mut var_hasCover = <bool>::sse_decode(deserializer);
         let mut var_coverBytes = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_lyrics = <Option<String>>::sse_decode(deserializer);
         return crate::api::metadata::MetadataResult {
             title: var_title,
             artist: var_artist,
@@ -3277,6 +3278,7 @@ impl SseDecode for crate::api::metadata::MetadataResult {
             duration_secs: var_durationSecs,
             has_cover: var_hasCover,
             cover_bytes: var_coverBytes,
+            lyrics: var_lyrics,
         };
     }
 }
@@ -3855,6 +3857,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::metadata::MetadataResult {
             self.duration_secs.into_into_dart().into_dart(),
             self.has_cover.into_into_dart().into_dart(),
             self.cover_bytes.into_into_dart().into_dart(),
+            self.lyrics.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -4219,6 +4222,7 @@ impl SseEncode for crate::api::metadata::MetadataResult {
         <f64>::sse_encode(self.duration_secs, serializer);
         <bool>::sse_encode(self.has_cover, serializer);
         <Vec<u8>>::sse_encode(self.cover_bytes, serializer);
+        <Option<String>>::sse_encode(self.lyrics, serializer);
     }
 }
 

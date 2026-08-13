@@ -12,7 +12,7 @@ import '../../../../data/services/smb_service.dart';
 import '../../../../data/services/import_service.dart';
 import '../../../../data/services/lrc_parser.dart';
 import '../../../../data/repositories/audio_engine_repository.dart';
-import '../../../../data/services/rust_service.dart' show AnalyzeResult;
+import '../../../../data/services/rust_service.dart' show AnalyzeResult, readMetadata;
 import '../../../core/providers/repositories.dart';
 import '../backends/playback_backend.dart';
 import '../../settings/view_models/dsp_provider.dart';
@@ -360,7 +360,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
         _updateLockScreenMetadata();
         _nativeAudio.updatePosition(0);
         _analyzeCurrent();
-        _loadLyrics('');
+        _loadLyrics(song, '');
         _engineLoaded = true;
       }
       return;
@@ -451,7 +451,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
       // 断点续播：锁屏进度锚点直接落在恢复位置
       _nativeAudio.updatePosition(initialSeekMs > 0 ? initialSeekMs : 0);
       _analyzeCurrent();
-      _loadLyrics(resolvedPath);
+      _loadLyrics(song, resolvedPath);
       _engineLoaded = true;
       if (initialSeekMs > 0) {
         _seekToPosition(initialSeekMs);
@@ -837,7 +837,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
               _updateLockScreenMetadata();
               _nativeAudio.updatePosition(0);
               _analyzeCurrent();
-              _loadLyrics(cached);
+              _loadLyrics(song, cached);
               _engineLoaded = true;
             } else {
               Log.e('Audio', '流式回退下载失败: ${song.title}');
@@ -936,15 +936,23 @@ class PlayerNotifier extends Notifier<PlayerState> {
     }
   }
 
-  /// 加载与音频文件同目录同名的 `.lrc` 歌词（大小写各试一次）。
-  /// 无歌词时置 null；完成后 notify 以刷新歌词预览/全屏。
-  Future<void> _loadLyrics(String? audioPath) async {
+  /// 加载歌词，来源优先级：
+  /// 1) 本地歌词文件（导入时匹配的 lyricsPath / 音频旁同名 .lrc）
+  /// 2) NAS 远端同名 .lrc（结果缓存到沙盒，一次读取后离线可用）
+  /// 3) 内嵌元数据歌词（lofty 提取的 USLT / LYRICS / ©lyr）
+  Future<void> _loadLyrics(Song song, String? audioPath) async {
     List<LyricLine>? lyrics;
+    // 1) 本地歌词文件
     if (audioPath != null && audioPath.isNotEmpty) {
       try {
-        final base = audioPath.replaceFirst(RegExp(r'\.[^.]+$'), '');
-        for (final ext in const ['.lrc', '.LRC']) {
-          final file = File('$base$ext');
+        final noExt = audioPath.replaceFirst(RegExp(r'\.[^.]+$'), '');
+        final candidates = <String>[
+          if (song.lyricsPath != null) song.lyricsPath!,
+          '$noExt.lrc',
+          '$noExt.LRC',
+        ];
+        for (final p in candidates) {
+          final file = File(p);
           if (await file.exists()) {
             final parsed = parseLrc(await file.readAsString());
             if (parsed.isNotEmpty) {
@@ -957,8 +965,65 @@ class PlayerNotifier extends Notifier<PlayerState> {
         Log.e('Audio', '歌词加载失败: $e');
       }
     }
+    // 2) NAS 远端同名 .lrc（本地歌词缺失时）
+    if (lyrics == null && song.smbPath != null && song.smbPath!.isNotEmpty) {
+      lyrics = await _loadRemoteLyrics(song.smbPath!);
+    }
+    // 3) 内嵌元数据歌词
+    if (lyrics == null && audioPath != null && audioPath.isNotEmpty) {
+      lyrics = await _loadEmbeddedLyrics(audioPath);
+    }
     if (!ref.mounted) return;
     state = state.copyWith(lyrics: lyrics);
+  }
+
+  /// NAS 远端歌词：读取与音频同目录同名的 .lrc/.LRC，解析后缓存到
+  /// 沙盒 `.lrc_cache/`（下次播放走缓存，不再发起 SMB 读取）。
+  Future<List<LyricLine>?> _loadRemoteLyrics(String smbPath) async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final cacheFile = File('${appDir.path}/.lrc_cache/${smbPath.hashCode}.lrc');
+      if (await cacheFile.exists()) {
+        final parsed = parseLrc(await cacheFile.readAsString());
+        if (parsed.isNotEmpty) return parsed;
+      }
+      final text = await SmbService.fetchRemoteLyrics(smbPath);
+      if (text == null || text.trim().isEmpty) return null;
+      final parsed = parseLrc(text);
+      if (parsed.isNotEmpty) {
+        final dir = cacheFile.parent;
+        if (!await dir.exists()) await dir.create(recursive: true);
+        await cacheFile.writeAsString(text);
+      }
+      return parsed;
+    } catch (e) {
+      Log.e('Audio', 'NAS 歌词读取失败: $e');
+      return null;
+    }
+  }
+
+  /// 内嵌元数据歌词：LRC 格式直接解析；无时间戳的纯文本歌词
+  /// （USLT 等）按行顺序分配 1 秒间隔，随播放进度逐行高亮。
+  Future<List<LyricLine>?> _loadEmbeddedLyrics(String audioPath) async {
+    try {
+      final meta = await readMetadata(audioPath);
+      final text = meta.lyrics;
+      if (text == null || text.trim().isEmpty) return null;
+      final parsed = parseLrc(text);
+      if (parsed.isNotEmpty) return parsed;
+      final lines = text
+          .split(RegExp(r'\r?\n'))
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty)
+          .toList();
+      if (lines.isEmpty) return null;
+      return [
+        for (var i = 0; i < lines.length; i++) LyricLine(i * 1000.0, lines[i]),
+      ];
+    } catch (e) {
+      Log.e('Audio', '嵌入歌词读取失败: $e');
+      return null;
+    }
   }
 
   void _handleRemoteCommand(RemoteCommand cmd) {

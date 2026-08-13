@@ -422,7 +422,14 @@ Future<bool> scanSmb(String sharePath) async {
   Future<void> _deleteSandboxFiles(Song song) async {
     final appDir = await getApplicationDocumentsDirectory();
     final sandboxPrefix = '${appDir.path}/';
-    for (final p in [song.path, song.coverUrl, song.lyricsPath]) {
+    for (final p in [
+      song.path,
+      song.coverUrl,
+      song.lyricsPath,
+      // NAS 远端歌词的本地缓存（.lrc_cache/）
+      if (song.smbPath != null && song.smbPath!.isNotEmpty)
+        '${appDir.path}/.lrc_cache/${song.smbPath.hashCode}.lrc',
+    ]) {
       if (p == null || !p.startsWith(sandboxPrefix)) continue;
       final f = File(p);
       if (await f.exists()) {
