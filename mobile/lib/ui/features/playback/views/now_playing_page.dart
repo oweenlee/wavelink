@@ -717,7 +717,8 @@ class _TechTag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = AccentScope.of(context);
+    // 与前进/后退同色（textSecondary）：标签不再跟随封面主色
+    const c = AppTheme.textSecondary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -826,9 +827,9 @@ class _ModeBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = AccentScope.of(context);
-    final active = loopMode != LoopMode.list;
-    final color = active ? accent : AppTheme.textSecondary;
+    // 与前进/后退完全同风格：同色（textSecondary）、无填充；
+    // 循环/单曲/随机的状态由图标本身表达
+    const color = AppTheme.textSecondary;
 
     IconData icon;
     switch (loopMode) {
@@ -842,10 +843,9 @@ class _ModeBtn extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
-      child: Container(
+      child: SizedBox(
         width: 36,
         height: 36,
-        decoration: const BoxDecoration(shape: BoxShape.circle),
         child: Center(child: Icon(icon, color: color, size: 20)),
       ),
     );
@@ -895,37 +895,33 @@ class _PlayBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = AccentScope.of(context);
     return GestureDetector(
       onTap: () {
         // 点击播放/暂停：轻震动反馈
         HapticFeedback.lightImpact();
         onTap();
       },
-      child: Container(
+      // 与前进/后退同风格：同色（textSecondary）、无填充，
+      // 主次仅靠尺寸（60px）区分
+      child: SizedBox(
         width: 60,
         height: 60,
-        decoration: BoxDecoration(
-          color: accent,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(color: accent.withValues(alpha: 0.35), blurRadius: 14),
-          ],
-        ),
         // 播放/暂停图标 scale+fade 过渡
-        child: AnimatedSwitcher(
-          duration: AppAnim.fast,
-          switchInCurve: AppAnim.curve,
-          switchOutCurve: AppAnim.curveIn,
-          transitionBuilder: (child, anim) => ScaleTransition(
-            scale: anim,
-            child: FadeTransition(opacity: anim, child: child),
-          ),
-          child: Icon(
-            key: ValueKey('np_play_$isPlaying'),
-            isPlaying ? Icons.pause : Icons.play_arrow,
-            color: Colors.white,
-            size: 30,
+        child: Center(
+          child: AnimatedSwitcher(
+            duration: AppAnim.fast,
+            switchInCurve: AppAnim.curve,
+            switchOutCurve: AppAnim.curveIn,
+            transitionBuilder: (child, anim) => ScaleTransition(
+              scale: anim,
+              child: FadeTransition(opacity: anim, child: child),
+            ),
+            child: Icon(
+              key: ValueKey('np_play_$isPlaying'),
+              isPlaying ? Icons.pause : Icons.play_arrow,
+              color: AppTheme.textSecondary,
+              size: 30,
+            ),
           ),
         ),
       ),
@@ -980,7 +976,7 @@ class _LyricsPreview extends StatelessWidget {
                   fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
                   color: isCurrent
                       ? AppTheme.textPrimary
-                      : AppTheme.textTertiary,
+                      : AppTheme.textSecondary,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

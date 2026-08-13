@@ -269,11 +269,11 @@ class _LyricsList extends StatelessWidget {
         } else if (isPast) {
           fontSize = 15;
           weight = FontWeight.w400;
-          color = Colors.white.withValues(alpha: 0.3);
+          color = Colors.white.withValues(alpha: 0.45);
         } else {
           fontSize = 18;
           weight = FontWeight.w400;
-          color = Colors.white.withValues(alpha: 0.5);
+          color = Colors.white.withValues(alpha: 0.65);
         }
 
         return AnimatedDefaultTextStyle(
@@ -313,7 +313,6 @@ class _BottomProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = AccentScope.of(context);
     final progress = durationMs > 0 ? (positionMs / durationMs).clamp(0.0, 1.0) : 0.0;
 
     return Container(
@@ -357,7 +356,7 @@ class _BottomProgress extends StatelessWidget {
               value: progress,
               minHeight: 2,
               backgroundColor: Colors.white.withValues(alpha: 0.12),
-              valueColor: AlwaysStoppedAnimation<Color>(accent),
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
             ),
           ),
         ],

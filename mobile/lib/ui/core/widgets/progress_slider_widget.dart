@@ -25,7 +25,9 @@ class ProgressSliderWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = AccentScope.of(context);
+    // 时间标签/进度条/滑块统一灰系（textSecondary），与控制按钮同色；
+    // 避免封面主色（如纯红）在进度区大面积刺眼
+    const trackColor = AppTheme.textSecondary;
     // 时间标签左右夹滑块：经典播放器布局，比“滑块+下方标签”省一行垂直空间
     return Row(
       children: [
@@ -33,17 +35,17 @@ class ProgressSliderWidget extends StatelessWidget {
           current,
           style: WlText.mono(
             fontSize: 10,
-            color: AppTheme.textTertiary,
+            color: trackColor,
           ),
         ),
         Expanded(
           child: SliderTheme(
             data: SliderThemeData(
               trackHeight: 4,
-              thumbShape: _ThumbShape(accent),
-              activeTrackColor: accent,
+              thumbShape: _ThumbShape(Colors.white),
+              activeTrackColor: Colors.white,
               inactiveTrackColor: AppTheme.textTertiary.withValues(alpha: 0.3),
-              overlayColor: accent.withValues(alpha: 0.1),
+              overlayColor: Colors.white.withValues(alpha: 0.1),
             ),
             child: Slider(
               value: progress.clamp(0.0, 1.0),
@@ -64,7 +66,7 @@ class ProgressSliderWidget extends StatelessWidget {
           total,
           style: WlText.mono(
             fontSize: 10,
-            color: AppTheme.textTertiary,
+            color: trackColor,
           ),
         ),
       ],
