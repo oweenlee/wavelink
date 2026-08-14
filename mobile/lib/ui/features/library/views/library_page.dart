@@ -4,13 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/services/log.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:go_router/go_router.dart';
-import 'package:path_provider/path_provider.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../../domain/models/song.dart';
 import '../../../../data/services/preferences_service.dart';
 import '../../../core/widgets/wl_toggle.dart';
-import '../../../../data/services/rust_service.dart' as rs;
-import '../../../../data/services/file_picker_service.dart';
 import '../../playback/view_models/playback_controller.dart';
 import '../../playback/view_models/audio_player_provider.dart';
 import '../../playback/view_models/queue_provider.dart';
@@ -523,11 +520,7 @@ class _SongsTab extends ConsumerWidget {
             },
             onMore: () => _showContextMenu(context, song, player),
             trailing: player.isSongFavorite(song.id)
-                ? const Icon(
-                    Icons.favorite,
-                    size: 16,
-                    color: AppTheme.danger,
-                  )
+                ? const Icon(Icons.favorite, size: 16, color: AppTheme.danger)
                 : null,
           ),
           index,
@@ -895,40 +888,6 @@ class _PlaylistsTab extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  // 导入/导出
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => _openPlaylistIo(context, player),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.s2,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppTheme.s4, width: 1),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              LucideIcons.download,
-                              color: AppTheme.textSecondary,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'M3U · PLS',
-                              style: WlText.mono(
-                                fontSize: 12,
-                                color: AppTheme.textSecondary,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -974,9 +933,7 @@ class _PlaylistsTab extends ConsumerWidget {
                         height: 48,
                         placeholder: Center(
                           child: Icon(
-                            pl.builtIn
-                                ? Icons.favorite
-                                : LucideIcons.listMusic,
+                            pl.builtIn ? Icons.favorite : LucideIcons.listMusic,
                             color: Colors.white.withValues(alpha: 0.6),
                             size: 22,
                           ),
@@ -1026,191 +983,138 @@ class _PlaylistsTab extends ConsumerWidget {
   void _showCreatePlaylist(BuildContext context, PlaybackController player) {
     final l10n = AppLocalizations.of(context);
     final ctrl = TextEditingController();
-    showDialog(
+    // 苹果式底部半模态：拖拽把手 + 居中标题 + 右上角完成 +
+    // 分组卡片内联输入（替代居中 AlertDialog）；键盘弹出时内容上移避让
+    showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surfaceDark,
-        title: Text(
-          l10n.newPlaylist,
-          style: const TextStyle(color: AppTheme.textPrimary),
-        ),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          style: const TextStyle(color: AppTheme.textPrimary),
-          decoration: InputDecoration(
-            hintText: l10n.playlistNameHint,
-            hintStyle: TextStyle(color: AppTheme.textTertiary),
-            enabledBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: AppTheme.textTertiary),
-            ),
-            focusedBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: AppTheme.brand),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        // 键盘避让：输入框聚焦弹出键盘时 sheet 整体上移
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: Container(
+          decoration: const BoxDecoration(
+            color: AppTheme.surfaceDark,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 拖拽把手（与 SheetShell 一致）
+                Padding(
+                  padding: const EdgeInsets.only(top: 10, bottom: 6),
+                  child: Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppTheme.textTertiary.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                ),
+                // 标题行：居中标题 + 右上角完成（iOS 导航风格）
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 8, 6),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Text(
+                        l10n.newPlaylist,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      Positioned(
+                        right: 0,
+                        child: TextButton(
+                          onPressed: () async {
+                            final name = ctrl.text.trim();
+                            if (name.isEmpty) return;
+                            await player.createEmptyPlaylist(name);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                          },
+                          child: Text(
+                            l10n.save,
+                            style: TextStyle(
+                              color: AccentScope.of(context),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // 分组卡片内联输入行（inset-group 风格）
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceHigh,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 14),
+                        Icon(
+                          LucideIcons.music2,
+                          size: 18,
+                          color: AppTheme.textSecondary,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: ctrl,
+                            autofocus: true,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              color: AppTheme.textPrimary,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: l10n.playlistNameHint,
+                              hintStyle: TextStyle(
+                                color: AppTheme.textTertiary,
+                              ),
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(
+                                vertical: 14,
+                              ),
+                            ),
+                            onSubmitted: (_) async {
+                              final name = ctrl.text.trim();
+                              if (name.isEmpty) return;
+                              await player.createEmptyPlaylist(name);
+                              if (ctx.mounted) Navigator.pop(ctx);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // 次级说明（保存对象 = 当前队列）
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                  child: Text(
+                    l10n.createPlaylistHint,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textTertiary.withValues(alpha: 0.85),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              l10n.cancel,
-              style: const TextStyle(color: AppTheme.textSecondary),
-            ),
-          ),
-          TextButton(
-            onPressed: () async {
-              final name = ctrl.text.trim();
-              if (name.isNotEmpty) {
-                await player.saveCurrentQueueAsPlaylist(name);
-              }
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: Text(
-              l10n.save,
-              style: const TextStyle(color: AppTheme.brand),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _openPlaylistIo(BuildContext context, PlaybackController player) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.s2,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(
-                LucideIcons.upload,
-                color: AppTheme.textSecondary,
-              ),
-              title: const Text(
-                '导入播放列表（M3U / PLS）',
-                style: TextStyle(color: AppTheme.textPrimary, fontSize: 15),
-              ),
-              onTap: () {
-                Navigator.pop(ctx);
-                _importPlaylist(context, player);
-              },
-            ),
-            ListTile(
-              leading: const Icon(
-                LucideIcons.download,
-                color: AppTheme.textSecondary,
-              ),
-              title: const Text(
-                '导出当前队列为 M3U',
-                style: TextStyle(color: AppTheme.textPrimary, fontSize: 15),
-              ),
-              onTap: () {
-                Navigator.pop(ctx);
-                _exportPlaylist(context, player);
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 导入：选文件 → Rust 解析 M3U/PLS → 转为 Song 队列并播放。
-  Future<void> _importPlaylist(
-    BuildContext context,
-    PlaybackController player,
-  ) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final paths = await FilePickerService.pickFiles(
-      extensions: const ['m3u', 'm3u8', 'pls'],
-      multiple: false,
-    );
-    if (paths.isEmpty) {
-      _toast(messenger, '未选择播放列表文件');
-      return;
-    }
-    if (!rs.rustAvailable) {
-      _toast(messenger, 'Rust 引擎不可用，无法解析');
-      return;
-    }
-    try {
-      final entries = await rs.parsePlaylistFile(paths.first);
-      if (entries.isEmpty) {
-        _toast(messenger, '播放列表为空');
-        return;
-      }
-      final songs = entries.map((e) {
-        final isStream =
-            e.path.startsWith('http://') || e.path.startsWith('https://');
-        final name = (e.title == null || e.title!.isEmpty)
-            ? e.path.split(RegExp(r'[/\\]')).last
-            : e.title!;
-        return Song(
-          id: e.path,
-          title: name,
-          artist: '',
-          album: '',
-          duration: Duration(seconds: e.durationSecs.round()),
-          dominantColor: AppTheme.brand,
-          path: isStream ? null : e.path,
-          streamUrl: isStream ? e.path : null,
-        );
-      }).toList();
-      player.playAlbum(songs);
-      _toast(messenger, '已导入并播放 ${songs.length} 首');
-    } catch (e) {
-      _toast(messenger, '解析失败: $e');
-    }
-  }
-
-  /// 导出：把当前队列写成 M3U 到 Documents/Playlists/。
-  /// 注：未接入系统分享/另存面板，文件落在应用 Documents 目录（iOS 经 Files 应用可取回）。
-  Future<void> _exportPlaylist(
-    BuildContext context,
-    PlaybackController player,
-  ) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final queue = player.queue;
-    if (queue.isEmpty) {
-      _toast(messenger, '当前队列为空，无可导出');
-      return;
-    }
-    try {
-      final buffer = StringBuffer('#EXTM3U\n');
-      for (final s in queue) {
-        final artist = s.artist.isEmpty ? '' : '${s.artist} - ';
-        buffer.writeln(
-          '#EXTINF:${s.durationEstimated ? 0 : s.duration.inSeconds},$artist${s.title}',
-        );
-        buffer.writeln(s.path ?? s.streamUrl ?? '');
-      }
-      final docs = await getApplicationDocumentsDirectory();
-      final outDir = Directory('${docs.path}/Playlists');
-      if (!await outDir.exists()) await outDir.create(recursive: true);
-      final stamp = DateTime.now()
-          .toIso8601String()
-          .replaceAll(RegExp(r'[:.]'), '-')
-          .substring(0, 19);
-      final file = File('${outDir.path}/queue_$stamp.m3u');
-      await file.writeAsString(buffer.toString());
-      _toast(messenger, '已导出 ${queue.length} 首：${file.path}');
-    } catch (e) {
-      _toast(messenger, '导出失败: $e');
-    }
-  }
-
-  void _toast(ScaffoldMessengerState messenger, String msg) {
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: AppTheme.s3,
-        behavior: SnackBarBehavior.floating,
       ),
     );
   }
@@ -1242,98 +1146,103 @@ void _showContextMenu(
   showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
-    builder: (ctx) => Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceDark,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                WlCover(
-                  coverUrl: song.coverUrl,
-                  fallbackColor: song.dominantColor,
-                  borderRadius: 8,
-                  width: 48,
-                  height: 48,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        song.title,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textPrimary,
-                        ),
+    builder: (ctx) => SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: AppTheme.surfaceDark,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    WlCover(
+                      coverUrl: song.coverUrl,
+                      fallbackColor: song.dominantColor,
+                      borderRadius: 8,
+                      width: 48,
+                      height: 48,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            song.title,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            song.artistAlbumLine,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        song.artistAlbumLine,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const Divider(height: 1),
+              _MenuItem(
+                icon: LucideIcons.skipForward,
+                label: l10n.playNext,
+                onTap: () {
+                  player.playNext(song);
+                  Navigator.pop(ctx);
+                },
+              ),
+              _MenuItem(
+                icon: LucideIcons.listMusic,
+                label: l10n.addToQueue,
+                onTap: () {
+                  player.addToQueue(song);
+                  Navigator.pop(ctx);
+                },
+              ),
+              _MenuItem(
+                icon: LucideIcons.listPlus,
+                label: l10n.addToPlaylist,
+                onTap: () => _showAddToPlaylist(ctx, song, player),
+              ),
+              _MenuItem(
+                icon: player.isSongFavorite(song.id)
+                    ? Icons.favorite
+                    : Icons.favorite_border,
+                label: player.isSongFavorite(song.id)
+                    ? l10n.unfavorite
+                    : l10n.favorite,
+                onTap: () {
+                  player.setFavorite(song.id, !player.isSongFavorite(song.id));
+                  Navigator.pop(ctx);
+                },
+              ),
+              const Divider(height: 1),
+              _MenuItem(
+                icon: LucideIcons.trash2,
+                label: l10n.deleteFromLibrary,
+                isDestructive: true,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _confirmDelete(context, song, player);
+                },
+              ),
+            ],
           ),
-          const Divider(height: 1),
-          _MenuItem(
-            icon: LucideIcons.skipForward,
-            label: l10n.playNext,
-            onTap: () {
-              player.playNext(song);
-              Navigator.pop(ctx);
-            },
-          ),
-          _MenuItem(
-            icon: LucideIcons.listMusic,
-            label: l10n.addToQueue,
-            onTap: () {
-              player.addToQueue(song);
-              Navigator.pop(ctx);
-            },
-          ),
-          _MenuItem(
-            icon: LucideIcons.listPlus,
-            label: l10n.addToPlaylist,
-            onTap: () => _showAddToPlaylist(ctx, song, player),
-          ),
-          _MenuItem(
-            icon: player.isSongFavorite(song.id)
-                ? Icons.favorite
-                : Icons.favorite_border,
-            label: player.isSongFavorite(song.id)
-                ? l10n.unfavorite
-                : l10n.favorite,
-            onTap: () {
-              player.setFavorite(song.id, !player.isSongFavorite(song.id));
-              Navigator.pop(ctx);
-            },
-          ),
-          const Divider(height: 1),
-          _MenuItem(
-            icon: LucideIcons.trash2,
-            label: l10n.deleteFromLibrary,
-            isDestructive: true,
-            onTap: () {
-              Navigator.pop(ctx);
-              _confirmDelete(context, song, player);
-            },
-          ),
-        ],
+        ),
       ),
     ),
   );

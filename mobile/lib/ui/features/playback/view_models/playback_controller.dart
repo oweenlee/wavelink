@@ -371,8 +371,8 @@ class PlaybackController {
   void toggleFavorite() => _library.toggleFavoriteFor(currentSong);
   void setFavorite(String songId, bool favorite) =>
       _library.setFavorite(songId, favorite);
-  Future<void> saveCurrentQueueAsPlaylist(String name) =>
-      _library.saveCurrentQueueAsPlaylist(name);
+  Future<void> createEmptyPlaylist(String name) =>
+      _library.createEmptyPlaylist(name);
   Future<void> savePlaylist(String name, List<String> songIds) =>
       _library.savePlaylist(name, songIds);
   List<Song> playlistSongs(String name) => _library.playlistSongs(name);

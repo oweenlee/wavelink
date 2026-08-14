@@ -107,7 +107,6 @@
   "settingsAppearance": "外观",
   "theme": "主题",
   "themeDark": "深色",
-  "dynamicColor": "动态取色",
   "coverBlur": "封面模糊强度",
   "showSpectrum": "频谱可视化",
   "settingsLibrary": "曲库",
@@ -224,5 +223,6 @@
   "sourceWebdavHint": "配置 WebDAV 网络存储",
   "sourceWebdavReady": "点击扫描服务器曲库",
   "settingsMusicSources": "音乐源",
-  "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS"
+  "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS",
+  "createPlaylistHint": "新建的是空播放列表，在歌曲菜单可「添加到播放列表」"
 }

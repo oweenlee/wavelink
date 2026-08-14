@@ -107,7 +107,6 @@
   "settingsAppearance": "Appearance",
   "theme": "Theme",
   "themeDark": "Dark",
-  "dynamicColor": "Dynamic Color",
   "coverBlur": "Cover Blur Intensity",
   "showSpectrum": "Spectrum Visualizer",
   "settingsLibrary": "Library",
@@ -224,5 +223,6 @@
   "sourceWebdavHint": "Connect to WebDAV network storage",
   "sourceWebdavReady": "Tap to scan server library",
   "settingsMusicSources": "Music Sources",
-  "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS"
+  "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS",
+  "createPlaylistHint": "Creates an empty playlist. Add songs via the song menu → \"Add to playlist\""
 }

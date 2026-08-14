@@ -207,12 +207,18 @@ void main() {
   });
 
   group('PlaybackController 播放列表', () {
-    test('saveCurrentQueueAsPlaylist 后可读出', () async {
+    test('createEmptyPlaylist 创建空列表且不继承当前队列', () async {
       final p = buildProvider();
-      await p.saveCurrentQueueAsPlaylist('测试列表');
+      // 队列有 3 首（buildProvider 默认 s1-s3）：新建不应把队列"存"进去
+      await p.createEmptyPlaylist('测试列表');
       final songs = p.playlistSongs('测试列表');
-      check(songs.length).equals(3);
-      check(songs.first.id).equals('s1');
+      check(songs.length).equals(0);
+
+      // 保存后通过歌曲追加（模拟菜单 → 添加到播放列表）
+      await p.savePlaylist('测试列表', ['s2']);
+      final updated = p.playlistSongs('测试列表');
+      check(updated.length).equals(1);
+      check(updated.first.id).equals('s2');
     });
   });
 

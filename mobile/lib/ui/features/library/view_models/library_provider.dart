@@ -612,9 +612,11 @@ class LibraryNotifier extends Notifier<LibraryState> {
   Map<String, List<String>> get playlists =>
       ref.read(preferencesRepositoryProvider).playlists;
 
-  Future<void> saveCurrentQueueAsPlaylist(String name) async {
-    final ids = ref.read(queueProvider).queue.map((s) => s.id).toList();
-    await ref.read(preferencesRepositoryProvider).savePlaylist(name, ids);
+  /// 新建空播放列表（苹果语义：新建 = 空列表，歌曲稍后经
+  /// 「歌曲菜单 → 添加到播放列表」加入；不继承当前队列，
+  /// 避免队列=全曲库时意外把整个 NAS 库存进去）。
+  Future<void> createEmptyPlaylist(String name) async {
+    await ref.read(preferencesRepositoryProvider).savePlaylist(name, const []);
     state = state.copyWith(); // 触发 UI 刷新播放列表区域
   }
 
