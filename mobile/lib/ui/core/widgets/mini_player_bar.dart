@@ -24,6 +24,7 @@ class MiniPlayerBar extends ConsumerWidget {
     if (song == null) return const SizedBox.shrink();
 
     final accent = AppTheme.accentFallback;
+    final barProgress = playerState.progress.clamp(0.0, 1.0);
     return AccentScope(
       accent: accent,
       // 首次出现：上滑淡入（Animate 状态随 rebuild 保留，只播一次）
@@ -43,7 +44,7 @@ class MiniPlayerBar extends ConsumerWidget {
                     color: AppTheme.textTertiary.withValues(alpha: 0.2),
                   ),
                   FractionallySizedBox(
-                    widthFactor: playerState.progress.clamp(0.0, 1.0),
+                    widthFactor: barProgress,
                     heightFactor: 1,
                     child: Container(
                       decoration: BoxDecoration(

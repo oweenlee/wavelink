@@ -13,6 +13,7 @@ import 'api/engine.dart';
 import 'api/metadata.dart';
 import 'api/playlist.dart';
 import 'api/smb.dart';
+import 'api/webdav.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;

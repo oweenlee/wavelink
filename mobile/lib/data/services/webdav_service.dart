@@ -42,10 +42,42 @@ class WebdavService {
   static String? get baseUrl => PreferencesService.instance.webdavBaseUrl;
   static String? get rootPath => PreferencesService.instance.webdavPath;
 
+  /// WebDAV 认证凭据（流式播放 Rust 侧需要）
+  static String get username => PreferencesService.instance.webdavUsername ?? '';
+  static String get password => PreferencesService.instance.webdavPassword;
+
   /// 是否有配置（baseUrl 非空即视为已配置）
   static bool get isConfigured {
     final base = baseUrl;
     return base != null && base.isNotEmpty;
+  }
+
+  /// 拼接远端完整 URL（baseUrl + davPath），规则同 webdav_client 的 join：
+  /// 斜杠规范化；davPath 若已是完整 URL 则原样返回。
+  static String? fullUrlFor(String davPath) {
+    final base = baseUrl;
+    if (base == null || base.isEmpty) return null;
+    if (davPath.startsWith('http://') || davPath.startsWith('https://')) {
+      return davPath;
+    }
+    final l = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+    final r = davPath.startsWith('/') ? davPath.substring(1) : davPath;
+    return '$l/$r';
+  }
+
+  /// 返回 davPath 对应的本地缓存目标路径，并确保缓存目录存在。
+  /// 命名规则与 cachedLocalPath 一致（下次播放直接命中）。
+  static Future<String?> cacheTargetFor(String davPath) async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final cacheDir = Directory('${appDir.path}/.webdav_cache');
+      if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
+      final name = davPath.split('/').last;
+      return '${cacheDir.path}/${davPath.hashCode}_$name';
+    } catch (e) {
+      Log.e('WebDAV', 'cacheTargetFor failed: $e');
+      return null;
+    }
   }
 
   /// 懒创建/复用 client。配置变更（指纹变化）时重建。
@@ -236,13 +268,17 @@ class WebdavService {
 
   /// 下载单曲到本地缓存，返回可播放路径；失败返回 null。
   /// 并发调用按 davPath 去重，共享同一次下载。
-  static Future<String?> downloadToLocal(String davPath) async {
+  /// [onProgress] 可选回调，参数为已下载字节数与总字节数（总长未知时为 -1）。
+  static Future<String?> downloadToLocal(
+    String davPath, {
+    void Function(int count, int total)? onProgress,
+  }) async {
     final existing = _downloading[davPath];
     if (existing != null) {
       Log.d('WebDAV', '下载已在进行中，共享任务: $davPath');
       return existing;
     }
-    final future = _downloadToLocalImpl(davPath);
+    final future = _downloadToLocalImpl(davPath, onProgress);
     _downloading[davPath] = future;
     try {
       return await future;
@@ -251,7 +287,10 @@ class WebdavService {
     }
   }
 
-  static Future<String?> _downloadToLocalImpl(String davPath) async {
+  static Future<String?> _downloadToLocalImpl(
+    String davPath,
+    void Function(int count, int total)? onProgress,
+  ) async {
     final sw = Stopwatch()..start();
     try {
       final appDir = await getApplicationDocumentsDirectory();
@@ -270,7 +309,7 @@ class WebdavService {
       final tmpFile = File('${localFile.path}.part');
       try {
         await client
-            .read2File(davPath, tmpFile.path)
+            .read2File(davPath, tmpFile.path, onProgress: onProgress)
             .timeout(const Duration(minutes: 5));
       } catch (e) {
         Log.e('WebDAV', 'read2File failed ($davPath): $e');

@@ -9,6 +9,7 @@ import '../../src/rust/api/playlist.dart' as playlist;
 import '../../src/rust/api/engine.dart' as engine;
 import '../../src/rust/api/dsp.dart' as dsp;
 import '../../src/rust/api/smb.dart' as smb;
+import '../../src/rust/api/webdav.dart' as webdav;
 import 'log.dart';
 
 export '../../src/rust/api/decode.dart'
@@ -155,6 +156,24 @@ Future<void> enginePlaySmbStream({
 }) =>
     smb.enginePlaySmbStream(
       smbPath: smbPath,
+      formatHint: formatHint,
+      cacheFinalPath: cacheFinalPath,
+    );
+
+/// WebDAV 边下边播：Rust 侧用 reqwest 流式 GET 拉远端字节喂入 core
+/// （首帧即出声），并行把内容写入 [cacheFinalPath]（完成后 rename 成
+/// 正式缓存）。认证支持 Basic/Digest。
+Future<void> enginePlayWebdavStream({
+  required String url,
+  required String username,
+  required String password,
+  String? formatHint,
+  String? cacheFinalPath,
+}) =>
+    webdav.enginePlayWebdavStream(
+      url: url,
+      username: username,
+      password: password,
       formatHint: formatHint,
       cacheFinalPath: cacheFinalPath,
     );

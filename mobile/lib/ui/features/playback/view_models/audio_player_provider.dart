@@ -349,10 +349,32 @@ class PlayerNotifier extends Notifier<PlayerState> {
         }
       }
     } else if (song.davPath != null && song.davPath!.isNotEmpty) {
-      // WebDAV：全量下载再播（缓存命中 → 秒起；未命中 → 按需下载）
+      // WebDAV：优先"边下边播"。已缓存 → 本地 play（秒起）；未缓存 →
+      // enginePlayWebdavStream 流式播放（Rust reqwest 拉远端喂 core，首帧
+      // 即出声，后台并行写缓存）；流式不可用 → 回退全量下载。
       final davSw = Stopwatch()..start();
       resolvedPath = await WebdavService.cachedLocalPath(song.davPath!);
-      resolvedPath ??= await WebdavService.downloadToLocal(song.davPath!);
+      if (resolvedPath == null) {
+        try {
+          final ext = song.davPath!.split('.').last.toLowerCase();
+          final cacheTarget = await WebdavService.cacheTargetFor(song.davPath!);
+          final url = WebdavService.fullUrlFor(song.davPath!);
+          if (url == null) throw Exception('WebDAV base URL 未配置');
+          await _engineRepo.playWebdavStream(
+            url,
+            WebdavService.username,
+            WebdavService.password,
+            ext.isEmpty ? null : ext,
+            cacheTarget,
+          );
+          _playingFromStream = true;
+        } catch (e) {
+          // 流式启动失败（引擎未初始化/认证失败/解码无法探测）→ 回退全量下载
+          Log.w('Audio', 'WebDAV 边下边播不可用 ($e)，回退全量下载');
+          _ghostStreamUntilMs = DateTime.now().millisecondsSinceEpoch + 12000;
+          resolvedPath = await WebdavService.downloadToLocal(song.davPath!);
+        }
+      }
       if (resolvedPath == null) {
         Log.w('Audio', 'WebDAV 路径解析失败（下载未成功）: ${song.davPath}');
       } else {
@@ -671,8 +693,15 @@ class PlayerNotifier extends Notifier<PlayerState> {
         final target = _pendingStreamSeekMs!;
         _pendingStreamSeekMs = null;
         final smbPath = song.smbPath;
-        if (smbPath == null || smbPath.isEmpty) return;
-        final path = await SmbService.downloadToLocal(smbPath);
+        final davPath = song.davPath;
+        if ((smbPath == null || smbPath.isEmpty) &&
+            (davPath == null || davPath.isEmpty)) {
+          return;
+        }
+        // 按源分支下载本地副本：SMB 走 SmbService，WebDAV 走 WebdavService
+        final path = smbPath != null && smbPath.isNotEmpty
+            ? await SmbService.downloadToLocal(smbPath)
+            : await WebdavService.downloadToLocal(davPath!);
         if (!ref.mounted || song.id != state.currentSong?.id) return;
         if (path == null) {
           // 下载失败：保持流式继续播，仅提示（不打断播放）
@@ -874,7 +903,13 @@ class PlayerNotifier extends Notifier<PlayerState> {
           state = state.copyWith(isPlaying: false);
           final song = state.currentSong;
           if (song != null) {
-            final cached = await SmbService.downloadToLocal(song.smbPath!);
+            // 按源分支下载本地副本：SMB 走 SmbService，WebDAV 走 WebdavService
+            String? cached;
+            if (song.smbPath != null && song.smbPath!.isNotEmpty) {
+              cached = await SmbService.downloadToLocal(song.smbPath!);
+            } else if (song.davPath != null && song.davPath!.isNotEmpty) {
+              cached = await WebdavService.downloadToLocal(song.davPath!);
+            }
             _streamErrorHandling = false;
             if (cached != null) {
               // 下载成功 → 以本地文件路径重播当前曲（复用完整装载流程）
@@ -954,7 +989,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     _prefetchNextIfNeeded(song);
   }
 
-  /// 下一曲预取：SMB 歌切歌需先整文件下载才能播（慢的直观来源），
+  /// 下一曲预取：SMB / WebDAV 切歌需先整文件下载才能播（慢的直观来源），
   /// 播放进度过 60% 时后台提前下载下一曲，切歌直接命中缓存。
   /// downloadToLocal 内部按路径去重 + 缓存命中即返，重复调用无害。
   void _prefetchNextIfNeeded(Song? current) {
@@ -965,11 +1000,17 @@ class PlayerNotifier extends Notifier<PlayerState> {
     if (q.queue.length < 2 || q.loopMode == LoopMode.single) return;
     final next = q.queue[ref.read(queueProvider.notifier).findNextIndex()];
     final smbPath = next.smbPath;
-    if (smbPath == null || smbPath.isEmpty) return;
+    final davPath = next.davPath;
+    if (smbPath == null || smbPath.isEmpty) {
+      if (davPath == null || davPath.isEmpty) return;
+    }
     _prefetchedNext = true;
     Log.d('Audio', '预取下一曲: ${next.title}');
     unawaited(
-      SmbService.downloadToLocal(smbPath).catchError((Object _) => null),
+      smbPath != null && smbPath.isNotEmpty
+          ? SmbService.downloadToLocal(smbPath).catchError((Object _) => null)
+          : WebdavService.downloadToLocal(davPath!)
+              .catchError((Object _) => null),
     );
   }
 

@@ -8,3 +8,4 @@ pub mod cue;
 pub mod playlist;
 pub mod device;
 pub mod smb;
+pub mod webdav;

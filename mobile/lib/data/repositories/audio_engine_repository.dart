@@ -33,6 +33,24 @@ class AudioEngineRepository {
         formatHint: formatHint,
         cacheFinalPath: cacheFinalPath,
       );
+
+  /// WebDAV 边下边播：Rust 侧用 reqwest 流式 GET 拉远端字节喂入 core
+  /// （首帧即出声），并行把内容写入 [cacheFinalPath]（完成后 rename 成
+  /// 正式缓存）。认证支持 Basic/Digest。返回即代表流已启动。
+  Future<void> playWebdavStream(
+    String url,
+    String username,
+    String password,
+    String? formatHint,
+    String? cacheFinalPath,
+  ) =>
+      rs.enginePlayWebdavStream(
+        url: url,
+        username: username,
+        password: password,
+        formatHint: formatHint,
+        cacheFinalPath: cacheFinalPath,
+      );
   Future<void> pause() => rs.enginePause();
   Future<void> resume() => rs.engineResume();
   Future<void> stop() => rs.engineStop();

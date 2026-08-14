@@ -22,6 +22,13 @@ lofty = "0.24"
 parking_lot = "0.12"
 # SMB 直挂：纯 Rust SMB2/3 客户端（替换 smb_connect，支持 guest 匿名访问）
 smb2 = "0.17"
+# WebDAV 边下边播：HTTP 客户端（Digest/Basic 认证 + 流式读取）
+# default-features=false + rustls-tls：跨 iOS/macOS/Android 编译，不依赖系统 OpenSSL
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+# Digest 认证计算（MD5 HA1/HA2/response）+ hex 输出 + Basic base64
+md-5 = "0.10"
+hex = "0.4"
+base64 = "0.22"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "fs"] }
 
 # Android: 启用 Oboe 后端（Rust 引擎直驱 AAudio，替代 Kotlin 泵线程 + AudioTrack + Headless）
