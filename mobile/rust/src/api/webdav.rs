@@ -124,6 +124,25 @@ fn build_basic_auth(username: &str, password: &str) -> String {
     )
 }
 
+/// 发送 GET 并等待响应头，整体包 IO_READ_TIMEOUT：防服务端 TCP 建连后
+/// 不响应（TTFB 卡死）导致喂流 task 永久挂起泄漏连接。auth 为认证头值。
+async fn send_get(
+    client: &reqwest::Client,
+    url: &str,
+    auth: Option<&str>,
+) -> Result<reqwest::Response, String> {
+    let mut req = client
+        .get(url)
+        .header(reqwest::header::ACCEPT_ENCODING, "identity");
+    if let Some(a) = auth {
+        req = req.header(reqwest::header::AUTHORIZATION, a);
+    }
+    tokio::time::timeout(IO_READ_TIMEOUT, req.send())
+        .await
+        .map_err(|_| format!("HTTP 连接/响应超时: {url}"))?
+        .map_err(err_str)
+}
+
 /// 发起 GET 并处理认证协商：首次无认证 → 401 时读 www-authenticate →
 /// 按 Digest/Basic 构建认证头重发；digest 且 stale=true 时用新 nonce 再协商一次。
 async fn webdav_get(
@@ -132,12 +151,7 @@ async fn webdav_get(
     username: &str,
     password: &str,
 ) -> Result<reqwest::Response, String> {
-    let resp = client
-        .get(url)
-        .header(reqwest::header::ACCEPT_ENCODING, "identity")
-        .send()
-        .await
-        .map_err(err_str)?;
+    let resp = send_get(client, url, None).await?;
 
     if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
         if username.is_empty() {
@@ -161,13 +175,7 @@ async fn webdav_get(
             return Err(format!("未知认证方式: {www}"));
         };
 
-        let resp2 = client
-            .get(url)
-            .header(reqwest::header::ACCEPT_ENCODING, "identity")
-            .header(reqwest::header::AUTHORIZATION, auth_header)
-            .send()
-            .await
-            .map_err(err_str)?;
+        let resp2 = send_get(client, url, Some(&auth_header)).await?;
         if resp2.status() == reqwest::StatusCode::UNAUTHORIZED {
             // stale=true：nonce 过期，用新 nonce 重新协商一次
             let www2 = resp2
@@ -176,17 +184,15 @@ async fn webdav_get(
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or("")
                 .to_string();
-            if www2.to_lowercase().contains("stale=true") && www2.to_lowercase().contains("digest") {
-                let params2 = parse_www_authenticate(&www2);
+            let params2 = parse_www_authenticate(&www2);
+            let is_stale = params2
+                .get("stale")
+                .map(|v| v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+            if is_stale && www2.to_lowercase().contains("digest") {
                 let uri = reqwest::Url::parse(url).map_err(err_str)?.path().to_string();
                 let auth2 = build_digest_auth(username, password, &params2, "GET", &uri)?;
-                let resp3 = client
-                    .get(url)
-                    .header(reqwest::header::ACCEPT_ENCODING, "identity")
-                    .header(reqwest::header::AUTHORIZATION, auth2)
-                    .send()
-                    .await
-                    .map_err(err_str)?;
+                let resp3 = send_get(client, url, Some(&auth2)).await?;
                 return Ok(resp3);
             }
             return Err(format!("HTTP 401 认证失败: {url}"));
@@ -209,8 +215,11 @@ async fn feed_webdav_to_core(
         std::sync::Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<(), String>>>>>,
     >,
 ) -> Result<(), String> {
-    // .part 路径：正式缓存路径 + ".part"；读完 rename 成正式缓存
-    let part_path = cache_final_path.map(|p| format!("{p}.part"));
+    // .part.stream 路径：与 Dart 侧 downloadToLocal 的 ".part" 隔离，
+    // 避免 seek 时两个写者（Rust 喂流 / Dart 全量下载）交错误写同一临时
+    // 文件导致缓存损坏。双方各自独立写完 rename 成正式缓存（后完成者胜，
+    // 均为完整内容）；失败清理也只删自己的后缀。
+    let part_path = cache_final_path.map(|p| format!("{p}.part.stream"));
     let part_path = part_path.as_deref();
 
     let result: Result<(), String> = async {
