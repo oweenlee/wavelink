@@ -193,7 +193,39 @@ fn scan_directory_inner(db: &LibraryDb, dir: &Path) -> Result<ScannerResult, Str
                 .and_then(|e| e.to_str())
                 .map(|e| e.to_lowercase());
             if let Some(ref ext) = ext {
-                if AUDIO_EXTENSIONS.contains(&ext.as_str()) {
+                if ext == "strm" {
+                    // STRM 指针文件：解析内容指向的真实媒体（仅本地路径），
+                    // 按真实音频收录——元数据/封面/时长齐全，播放无感。
+                    // 目标不存在或为 http(s) URL 时跳过（桌面端暂不支持）。
+                    match resolve_strm_target(path) {
+                        Some(rs) => match scan_file(&rs.target) {
+                            Ok(Some(mut track)) => {
+                                // Kodi strm 库的 #EXTINF 行携带展示标题/时长：
+                                // 真实文件无标签时以它为兑底展示名（与 Kodi 一致）
+                                if let Some(t) = rs.extinf_title {
+                                    track.title = Some(t);
+                                }
+                                if track.duration.is_none() {
+                                    track.duration = rs.extinf_duration;
+                                }
+                                if let Err(e) = db.upsert_track(&track) {
+                                    warn!("写入数据库失败 {}: {e}", rs.target.display());
+                                    errors += 1;
+                                } else {
+                                    scanned += 1;
+                                }
+                            }
+                            Ok(None) => {} // 跳过（目标非音频）
+                            Err(e) => {
+                                warn!("读取标签失败 {}: {e}", rs.target.display());
+                                errors += 1;
+                            }
+                        },
+                        None => {
+                            warn!("STRM 目标不可用（不存在或 URL），跳过: {}", path.display());
+                        }
+                    }
+                } else if AUDIO_EXTENSIONS.contains(&ext.as_str()) {
                     match scan_file(path) {
                         Ok(Some(track)) => {
                             if let Err(e) = db.upsert_track(&track) {
@@ -227,6 +259,103 @@ pub struct ScannerResult {
     pub scanned: u64,
     pub errors: u64,
     pub removed: u64,
+}
+
+/// 解析 .strm 指针内容 → 目标媒体路径。
+/// strm 是纯文本，内容为一行指向真实媒体的路径：绝对路径直接用，
+/// 相对路径相对 strm 文件所在目录解析（兼容 ./ 与 ../）。
+/// 目标必须是本地音频文件（扩展名在 [AUDIO_EXTENSIONS] 内）且存在；
+/// http(s) URL 目标桌面端暂不支持，返回 None 跳过。
+/// STRM 解析结果：目标媒体路径 + Kodi 风格 `#EXTINF` 信息行携带的
+/// 展示标题/时长（真实文件无标签时的兜底展示名）。
+struct ResolvedStrm {
+    target: PathBuf,
+    extinf_title: Option<String>,
+    extinf_duration: Option<f64>,
+}
+
+/// 解析 .strm 指针内容 → 目标媒体路径。
+/// strm 是纯文本，内容为一行指向真实媒体的路径：绝对路径直接用，
+/// 相对路径相对 strm 文件所在目录解析（兼容 ./ 与 ../）。
+/// 目标必须是本地音频文件（扩展名在 [AUDIO_EXTENSIONS] 内）且存在；
+/// http(s) URL 目标桌面端暂不支持，返回 None 跳过。
+/// 顺带解析 `#EXTINF:秒数,标题` 信息行（Kodi strm 库惯例）。
+fn resolve_strm_target(strm_path: &Path) -> Option<ResolvedStrm> {
+    let content = fs::read_to_string(strm_path).ok()?;
+    // 去 BOM/空白/注释行，取第一行有效内容（strm 规范为单行，容忍多行）；
+    // `#EXTINF` 信息行携带展示标题/时长（其余 # 开头为注释）
+    let mut extinf_title: Option<String> = None;
+    let mut extinf_duration: Option<f64> = None;
+    let mut line: Option<&str> = None;
+    for raw in content.lines() {
+        let l = raw.trim().trim_start_matches('\u{feff}');
+        if l.is_empty() {
+            continue;
+        }
+        if let Some(rest) = l.strip_prefix('#') {
+            if let Some(body) = rest.strip_prefix("EXTINF:") {
+                if let Some(comma) = body.find(',') {
+                    if let Ok(secs) = body[..comma].trim().parse::<u64>() {
+                        if secs > 0 {
+                            extinf_duration = Some(secs as f64);
+                        }
+                    }
+                    let title = body[comma + 1..].trim();
+                    if !title.is_empty() {
+                        extinf_title = Some(title.to_string());
+                    }
+                }
+            }
+            continue;
+        }
+        line = Some(l);
+        break;
+    }
+    let line = line?;
+    if line.starts_with("http://") || line.starts_with("https://") {
+        warn!("STRM 指向 http(s) URL，桌面端暂不支持: {line}");
+        return None;
+    }
+    let raw = Path::new(line);
+    let target = if raw.is_absolute() {
+        raw.to_path_buf()
+    } else {
+        strm_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(raw)
+    };
+    let normalized = normalize_path(&target);
+    // 目标必须是存在的音频文件（防套娃 strm / 脏内容被收录）
+    let ext = normalized
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase());
+    match ext {
+        Some(e) if AUDIO_EXTENSIONS.contains(&e.as_str()) && normalized.is_file() => {
+            Some(ResolvedStrm {
+                target: normalized,
+                extinf_title,
+                extinf_duration,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// 规范化路径：解析 "." 与 ".." 组件，去除冗余分隔符。
+fn normalize_path(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for comp in p.components() {
+        match comp {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 fn scan_file(path: &Path) -> Result<Option<Track>, String> {
@@ -398,6 +527,60 @@ mod tests {
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
         let _ = std::fs::remove_file(tmp);
+    }
+
+    #[test]
+    fn test_resolve_strm_target() {
+        let dir = std::env::temp_dir().join("strm_test");
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        // 真实音频目标（相对同目录 / ../ 上溯 / 绝对路径三种写法）
+        std::fs::write(dir.join("real.flac"), b"fLaC").unwrap();
+        // 1. 同目录相对路径
+        std::fs::write(dir.join("a.strm"), "real.flac\n").unwrap();
+        let r = resolve_strm_target(&dir.join("a.strm"));
+        assert_eq!(r.as_ref().map(|s| s.target.clone()), Some(dir.join("real.flac")));
+        assert!(r.unwrap().extinf_title.is_none());
+        // 2. ../ 上溯 + BOM
+        std::fs::write(dir.join("sub/b.strm"), "\u{feff}../real.flac").unwrap();
+        let r = resolve_strm_target(&dir.join("sub/b.strm"));
+        assert_eq!(r.as_ref().map(|s| s.target.clone()), Some(dir.join("real.flac")));
+        // 3. 绝对路径 + 前导空白行/注释
+        std::fs::write(
+            dir.join("c.strm"),
+            format!("# comment\n\n  {}  \n", dir.join("real.flac").display()),
+        )
+        .unwrap();
+        let r = resolve_strm_target(&dir.join("c.strm"));
+        assert_eq!(r.as_ref().map(|s| s.target.clone()), Some(dir.join("real.flac")));
+        // 3b. #EXTINF 信息行：标题 + 时长（Kodi 风格 strm 库）
+        std::fs::write(
+            dir.join("h.strm"),
+            "#EXTINF:245,周杰伦 - 晴天\nreal.flac\n",
+        )
+        .unwrap();
+        let r = resolve_strm_target(&dir.join("h.strm"));
+        let rs = r.expect("h.strm 应解析成功");
+        assert_eq!(rs.target, dir.join("real.flac"));
+        assert_eq!(rs.extinf_title.as_deref(), Some("周杰伦 - 晴天"));
+        assert_eq!(rs.extinf_duration, Some(245.0));
+        // 3c. #EXTINF 无标题/时长非法：忽略信息行不阻断目标解析
+        std::fs::write(dir.join("i.strm"), "#EXTINF:0,\nreal.flac\n").unwrap();
+        let r = resolve_strm_target(&dir.join("i.strm"));
+        assert_eq!(r.as_ref().map(|s| s.target.clone()), Some(dir.join("real.flac")));
+        assert!(r.unwrap().extinf_title.is_none());
+        // 4. http(s) URL 目标 → 不支持，None
+        std::fs::write(dir.join("d.strm"), "http://nas/music/x.flac\n").unwrap();
+        assert!(resolve_strm_target(&dir.join("d.strm")).is_none());
+        // 5. 目标不存在 → None
+        std::fs::write(dir.join("e.strm"), "missing.flac\n").unwrap();
+        assert!(resolve_strm_target(&dir.join("e.strm")).is_none());
+        // 6. 套娃 strm（目标也是 strm）→ None（非音频目标不收）
+        std::fs::write(dir.join("f.strm"), "a.strm\n").unwrap();
+        assert!(resolve_strm_target(&dir.join("f.strm")).is_none());
+        // 7. 空内容 / 只有注释 → None
+        std::fs::write(dir.join("g.strm"), "# only comment\n").unwrap();
+        assert!(resolve_strm_target(&dir.join("g.strm")).is_none());
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
 
