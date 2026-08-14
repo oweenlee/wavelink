@@ -315,6 +315,12 @@ class LibraryNotifier extends Notifier<LibraryState> {
       songRepo.setCachedSongs(merged);
       // 服务器已删歌曲清理：仅扫描成功完成后执行（失败/空库不触达）
       if (songs.isNotEmpty) _pruneWebdavRemoved(songs);
+      // 兜底：扫描完成后对仍未拿到封面的 WebDAV 歌再提取一次
+      //（与 NAS 导入对齐；onBatch 仅增量合并不触发提取，缺此会永不提封面）
+      final pendingCovers = CoverService.pendingNasCovers(state.importedSongs);
+      if (pendingCovers.isNotEmpty) {
+        unawaited(_covers.extractNasCovers(pendingCovers));
+      }
       Log.i(
         'Library',
         'WebDAV 入库完成：扫描 ${songs.length} 首，'
