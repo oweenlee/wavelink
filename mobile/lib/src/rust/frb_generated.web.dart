@@ -15,6 +15,7 @@ import 'api/dsp.dart';
 import 'api/engine.dart';
 import 'api/metadata.dart';
 import 'api/playlist.dart';
+import 'api/room.dart';
 import 'api/smb.dart';
 import 'api/webdav.dart';
 import 'dart:async';
@@ -70,6 +71,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  CorrectionConfig dco_decode_box_autoadd_correction_config(dynamic raw);
+
+  @protected
   DecodeChunk dco_decode_box_autoadd_decode_chunk(dynamic raw);
 
   @protected
@@ -80,6 +84,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   OutputDecisionDto dco_decode_box_autoadd_output_decision_dto(dynamic raw);
+
+  @protected
+  CorrectionConfig dco_decode_correction_config(dynamic raw);
 
   @protected
   CueFileResult dco_decode_cue_file_result(dynamic raw);
@@ -106,6 +113,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_f_64(dynamic raw);
 
   @protected
+  FreqPoint dco_decode_freq_point(dynamic raw);
+
+  @protected
   int dco_decode_i_32(dynamic raw);
 
   @protected
@@ -122,6 +132,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<DeviceInfoDto> dco_decode_list_device_info_dto(dynamic raw);
+
+  @protected
+  List<FreqPoint> dco_decode_list_freq_point(dynamic raw);
 
   @protected
   List<PlaylistEntryResult> dco_decode_list_playlist_entry_result(dynamic raw);
@@ -169,6 +182,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReplayGainResult dco_decode_replay_gain_result(dynamic raw);
+
+  @protected
+  RoomCorrectionResult dco_decode_room_correction_result(dynamic raw);
 
   @protected
   SmbDirEntry dco_decode_smb_dir_entry(dynamic raw);
@@ -230,6 +246,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  CorrectionConfig sse_decode_box_autoadd_correction_config(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   DecodeChunk sse_decode_box_autoadd_decode_chunk(SseDeserializer deserializer);
 
   @protected
@@ -242,6 +263,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   OutputDecisionDto sse_decode_box_autoadd_output_decision_dto(
     SseDeserializer deserializer,
   );
+
+  @protected
+  CorrectionConfig sse_decode_correction_config(SseDeserializer deserializer);
 
   @protected
   CueFileResult sse_decode_cue_file_result(SseDeserializer deserializer);
@@ -268,6 +292,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_f_64(SseDeserializer deserializer);
 
   @protected
+  FreqPoint sse_decode_freq_point(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
@@ -290,6 +317,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<DeviceInfoDto> sse_decode_list_device_info_dto(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<FreqPoint> sse_decode_list_freq_point(SseDeserializer deserializer);
 
   @protected
   List<PlaylistEntryResult> sse_decode_list_playlist_entry_result(
@@ -347,6 +377,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReplayGainResult sse_decode_replay_gain_result(SseDeserializer deserializer);
+
+  @protected
+  RoomCorrectionResult sse_decode_room_correction_result(
+    SseDeserializer deserializer,
+  );
 
   @protected
   SmbDirEntry sse_decode_smb_dir_entry(SseDeserializer deserializer);
@@ -415,6 +450,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_correction_config(
+    CorrectionConfig self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_decode_chunk(
     DecodeChunk self,
     SseSerializer serializer,
@@ -429,6 +470,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_output_decision_dto(
     OutputDecisionDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_correction_config(
+    CorrectionConfig self,
     SseSerializer serializer,
   );
 
@@ -463,6 +510,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_freq_point(FreqPoint self, SseSerializer serializer);
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
@@ -486,6 +536,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_device_info_dto(
     List<DeviceInfoDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_freq_point(
+    List<FreqPoint> self,
     SseSerializer serializer,
   );
 
@@ -567,6 +623,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_replay_gain_result(
     ReplayGainResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_room_correction_result(
+    RoomCorrectionResult self,
     SseSerializer serializer,
   );
 

@@ -10,6 +10,7 @@ import '../../src/rust/api/engine.dart' as engine;
 import '../../src/rust/api/dsp.dart' as dsp;
 import '../../src/rust/api/smb.dart' as smb;
 import '../../src/rust/api/webdav.dart' as webdav;
+import '../../src/rust/api/room.dart' as room;
 import 'log.dart';
 
 export '../../src/rust/api/decode.dart'
@@ -20,6 +21,8 @@ export '../../src/rust/api/cue.dart'
     show CueSheetResult, CueFileResult, CueTrackResult;
 export '../../src/rust/api/playlist.dart' show PlaylistEntryResult;
 export '../../src/rust/api/engine.dart' show LevelsDto;
+export '../../src/rust/api/room.dart'
+    show CorrectionConfig, FreqPoint, RoomCorrectionResult;
 
 /// Rust 后端是否已加载
 bool rustAvailable = false;
@@ -135,14 +138,14 @@ Future<void> initEngine() => engine.engineInit();
 /// 以指定输出采样率初始化引擎（Android 对齐设备原生速率用，
 /// 其余参数与 engine_init 默认值一致：2ch/280ms 缓冲）
 Future<void> initEngineAt(int sampleRate) => engine.engineInitEx(
-      sr: sampleRate,
-      channels: 2,
-      bufferMs: 280,
-      crossfadeMs: 0,
-      bitPerfect: false,
-      autoSampleRate: false,
-      exclusiveMode: false,
-    );
+  sr: sampleRate,
+  channels: 2,
+  bufferMs: 280,
+  crossfadeMs: 0,
+  bitPerfect: false,
+  autoSampleRate: false,
+  exclusiveMode: false,
+);
 Future<void> deinitEngine() => engine.engineDeinit();
 
 Future<void> enginePlay(String path) => engine.enginePlay(path: path);
@@ -153,12 +156,11 @@ Future<void> enginePlaySmbStream({
   required String smbPath,
   String? formatHint,
   String? cacheFinalPath,
-}) =>
-    smb.enginePlaySmbStream(
-      smbPath: smbPath,
-      formatHint: formatHint,
-      cacheFinalPath: cacheFinalPath,
-    );
+}) => smb.enginePlaySmbStream(
+  smbPath: smbPath,
+  formatHint: formatHint,
+  cacheFinalPath: cacheFinalPath,
+);
 
 /// WebDAV 边下边播：Rust 侧用 reqwest 流式 GET 拉远端字节喂入 core
 /// （首帧即出声），并行把内容写入 [cacheFinalPath]（完成后 rename 成
@@ -169,14 +171,13 @@ Future<void> enginePlayWebdavStream({
   required String password,
   String? formatHint,
   String? cacheFinalPath,
-}) =>
-    webdav.enginePlayWebdavStream(
-      url: url,
-      username: username,
-      password: password,
-      formatHint: formatHint,
-      cacheFinalPath: cacheFinalPath,
-    );
+}) => webdav.enginePlayWebdavStream(
+  url: url,
+  username: username,
+  password: password,
+  formatHint: formatHint,
+  cacheFinalPath: cacheFinalPath,
+);
 
 /// 读取 WebDAV 远端文件前缀字节（封面/歌词提取用），Range 请求，
 /// 只拉取前 [maxLen] 字节（服务器忽略 Range 时也主动截断）。
@@ -188,14 +189,13 @@ Future<Uint8List> readWebdavRange({
   required String password,
   required int maxLen,
   required bool suffix,
-}) =>
-    webdav.engineReadWebdavRange(
-      url: url,
-      username: username,
-      password: password,
-      maxLen: BigInt.from(maxLen),
-      suffix: suffix,
-    );
+}) => webdav.engineReadWebdavRange(
+  url: url,
+  username: username,
+  password: password,
+  maxLen: BigInt.from(maxLen),
+  suffix: suffix,
+);
 
 Future<void> enginePlayQueue(List<String> paths) =>
     engine.enginePlayQueue(paths: paths);
@@ -293,3 +293,35 @@ Future<int> getHwSampleRate() async {
     return 0;
   }
 }
+
+// ── 房间校正（REW → 校正 FIR → IR WAV）──
+
+/// 默认校正配置（与 core 对齐）
+Future<room.CorrectionConfig> defaultCorrectionConfig() =>
+    room.defaultCorrectionConfig();
+
+/// 解析 REW 频响导出文本（不生成 IR，预览/校验用）
+Future<List<room.FreqPoint>> parseRewText(String text) =>
+    room.parseRewText(text: text);
+
+/// 生成房间校正 IR：REW 测量文本 → 校正 FIR 系数 + 测量曲线预览
+Future<room.RoomCorrectionResult> generateRoomCorrection({
+  required String rewTxt,
+  required room.CorrectionConfig config,
+  required int sampleRate,
+}) => room.generateRoomCorrection(
+  rewTxt: rewTxt,
+  config: config,
+  sampleRate: sampleRate,
+);
+
+/// 保存 IR 为 32-bit float WAV（供 engineLoadIr 加载）
+Future<void> saveRoomIrWav(List<double> ir, int sampleRate, String path) =>
+    room.saveIrWav(ir: ir, sampleRate: sampleRate, path: path);
+
+/// 加载房间校正 IR（WAV 路径）到 DSP 卷积级；重复加载会替换旧 IR
+Future<void> engineLoadIr({required String path}) =>
+    engine.engineLoadIr(path: path);
+
+/// 清除卷积 IR（恢复直通）
+Future<void> engineClearIr() => engine.engineClearIr();

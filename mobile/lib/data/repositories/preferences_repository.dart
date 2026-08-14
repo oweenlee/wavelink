@@ -49,10 +49,16 @@ class PreferencesRepository {
   Future<void> setAutoEqModel(String? model) =>
       PreferencesService.instance.setAutoEqModel(model);
 
+  String? get roomIrPath => PreferencesService.instance.roomIrPath;
+  Future<void> setRoomIrPath(String? path) =>
+      PreferencesService.instance.setRoomIrPath(path);
+
   String get eqPreset => PreferencesService.instance.eqPreset;
   List<double> get eqGains => PreferencesService.instance.eqGains;
-  Future<void> setEqState({required String preset, required List<double> gains}) =>
-      PreferencesService.instance.setEqState(preset: preset, gains: gains);
+  Future<void> setEqState({
+    required String preset,
+    required List<double> gains,
+  }) => PreferencesService.instance.setEqState(preset: preset, gains: gains);
 
   // ── 收藏 ──
 

@@ -80,6 +80,14 @@ class SettingsPage extends ConsumerWidget {
               trailing: player.autoEqModel ?? l10n.autoEqOff,
               onTap: () => context.push('/autoeq'),
             ),
+            _SettingItem(
+              icon: LucideIcons.building2,
+              label: l10n.roomCorrection,
+              trailing: player.roomIrPath != null
+                  ? l10n.roomCorrectionActive
+                  : l10n.roomCorrectionOff,
+              onTap: () => context.push('/room-correction'),
+            ),
             _SwitchItem(
               icon: LucideIcons.sparkles,
               label: l10n.replayGain,

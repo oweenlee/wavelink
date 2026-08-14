@@ -6,7 +6,8 @@ import '../../../../domain/models/song.dart';
 import '../../../../domain/models/lyric_line.dart';
 import '../../../../domain/models/playback_types.dart';
 import '../../../../data/repositories/preferences_repository.dart';
-import '../../../../data/services/rust_service.dart' show AnalyzeResult;
+import '../../../../data/services/rust_service.dart'
+    show AnalyzeResult, CorrectionConfig, FreqPoint, RoomCorrectionResult;
 import '../../../core/providers/repositories.dart';
 import 'audio_player_provider.dart';
 import 'queue_provider.dart';
@@ -334,6 +335,17 @@ class PlaybackController {
   String? get autoEqModel => _ref.read(dspProvider).autoEqModel;
   void setAutoEq(String? model) => _dsp.setAutoEq(model);
   Future<List<String>> getAutoEqCatalog() => _dsp.getAutoEqCatalog();
+
+  // ── 房间校正 ──
+  String? get roomIrPath => _ref.read(dspProvider).roomIrPath;
+  Future<List<FreqPoint>> parseRewText(String text) => _dsp.parseRewText(text);
+  Future<CorrectionConfig> defaultCorrectionConfig() =>
+      _dsp.defaultCorrectionConfig();
+  Future<RoomCorrectionResult> generateAndApplyRoomCorrection({
+    required String rewTxt,
+    required CorrectionConfig config,
+  }) => _dsp.generateAndApplyRoomCorrection(rewTxt: rewTxt, config: config);
+  Future<void> clearRoomCorrection() => _dsp.clearRoomCorrection();
 
   // ── EQ ──
   List<double> get eqValues => _ref.read(dspProvider).eqValues;

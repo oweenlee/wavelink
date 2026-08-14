@@ -27,12 +27,15 @@ class AudioEngineRepository {
   /// SMB 边下边播：Rust 侧启动 core 流式播放（首帧即出声）并后台喂流，
   /// 并行把内容写入 [cacheFinalPath]（完成后 rename 成正式缓存）。
   /// 返回即代表流已启动（引擎正在解码远端字节流）。
-  Future<void> playSmbStream(String smbPath, String? formatHint, String? cacheFinalPath) =>
-      rs.enginePlaySmbStream(
-        smbPath: smbPath,
-        formatHint: formatHint,
-        cacheFinalPath: cacheFinalPath,
-      );
+  Future<void> playSmbStream(
+    String smbPath,
+    String? formatHint,
+    String? cacheFinalPath,
+  ) => rs.enginePlaySmbStream(
+    smbPath: smbPath,
+    formatHint: formatHint,
+    cacheFinalPath: cacheFinalPath,
+  );
 
   /// WebDAV 边下边播：Rust 侧用 reqwest 流式 GET 拉远端字节喂入 core
   /// （首帧即出声），并行把内容写入 [cacheFinalPath]（完成后 rename 成
@@ -43,14 +46,13 @@ class AudioEngineRepository {
     String password,
     String? formatHint,
     String? cacheFinalPath,
-  ) =>
-      rs.enginePlayWebdavStream(
-        url: url,
-        username: username,
-        password: password,
-        formatHint: formatHint,
-        cacheFinalPath: cacheFinalPath,
-      );
+  ) => rs.enginePlayWebdavStream(
+    url: url,
+    username: username,
+    password: password,
+    formatHint: formatHint,
+    cacheFinalPath: cacheFinalPath,
+  );
 
   /// 读取 WebDAV 远端文件头/尾字节（封面/歌词提取用）。[suffix] 为 true 时
   /// 读文件尾（Range: bytes=-N），否则读文件头（Range: bytes=0-(N-1)）。
@@ -60,14 +62,13 @@ class AudioEngineRepository {
     String password,
     int maxLen,
     bool suffix,
-  ) =>
-      rs.readWebdavRange(
-        url: url,
-        username: username,
-        password: password,
-        maxLen: maxLen,
-        suffix: suffix,
-      );
+  ) => rs.readWebdavRange(
+    url: url,
+    username: username,
+    password: password,
+    maxLen: maxLen,
+    suffix: suffix,
+  );
   Future<void> pause() => rs.enginePause();
   Future<void> resume() => rs.engineResume();
   Future<void> stop() => rs.engineStop();
@@ -102,8 +103,7 @@ class AudioEngineRepository {
       rs.engineSetStereoWidener(enabled: enabled, width: width);
   Future<void> setLimiter(bool enabled) =>
       rs.engineSetLimiter(enabled: enabled);
-  Future<void> setDither(bool enabled) =>
-      rs.engineSetDither(enabled: enabled);
+  Future<void> setDither(bool enabled) => rs.engineSetDither(enabled: enabled);
   Future<void> setNoiseShaping(bool enabled) =>
       rs.engineSetNoiseShaping(enabled: enabled);
 
@@ -112,6 +112,31 @@ class AudioEngineRepository {
 
   /// AutoEQ 档案目录（型号名列表，设置页选择用）
   Future<List<String>> autoEqCatalog() => rs.autoEqCatalog();
+
+  // ── 房间校正（REW → 校正 FIR）──
+
+  Future<rs.CorrectionConfig> defaultCorrectionConfig() =>
+      rs.defaultCorrectionConfig();
+
+  Future<List<rs.FreqPoint>> parseRewText(String text) => rs.parseRewText(text);
+
+  Future<rs.RoomCorrectionResult> generateRoomCorrection({
+    required String rewTxt,
+    required rs.CorrectionConfig config,
+    required int sampleRate,
+  }) => rs.generateRoomCorrection(
+    rewTxt: rewTxt,
+    config: config,
+    sampleRate: sampleRate,
+  );
+
+  Future<void> saveRoomIrWav(List<double> ir, int sampleRate, String path) =>
+      rs.saveRoomIrWav(ir, sampleRate, path);
+
+  Future<void> loadRoomIr(String path) => rs.engineLoadIr(path: path);
+
+  /// 清除卷积 IR（恢复直通）
+  Future<void> clearRoomIr() => rs.engineClearIr();
 
   // ── ReplayGain（切歌时按曲目标签逐首下发）──
 
@@ -124,8 +149,10 @@ class AudioEngineRepository {
 
   // ── 会话中断（引擎级暂停/恢复）──
 
-  Future<void> sessionInterruptionBegan() => rs.engineSessionInterruptionBegan();
-  Future<void> sessionInterruptionEnded() => rs.engineSessionInterruptionEnded();
+  Future<void> sessionInterruptionBegan() =>
+      rs.engineSessionInterruptionBegan();
+  Future<void> sessionInterruptionEnded() =>
+      rs.engineSessionInterruptionEnded();
 
   // ── 状态 ──
 

@@ -9,6 +9,7 @@ import '../features/library/views/artist_detail_page.dart';
 import '../features/library/views/song_list_page.dart';
 import '../features/settings/views/diagnostic_page.dart';
 import '../features/settings/views/autoeq_settings_page.dart';
+import '../features/settings/views/room_correction_page.dart';
 import '../features/library/views/nas_settings_page.dart';
 import '../features/library/views/subsonic_settings_page.dart';
 import '../features/library/views/webdav_settings_page.dart';
@@ -111,6 +112,10 @@ final goRouter = GoRouter(
     GoRoute(
       path: '/autoeq',
       builder: (context, state) => const AutoEqSettingsPage(),
+    ),
+    GoRoute(
+      path: '/room-correction',
+      builder: (context, state) => const RoomCorrectionPage(),
     ),
   ],
 );

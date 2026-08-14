@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../../../domain/models/playback_types.dart';
 import '../../../core/providers/repositories.dart';
 import '../../../../data/services/log.dart';
+import '../../../../data/services/rust_service.dart' as rs;
 
 class DspState {
   final DspSettings dspSettings;
@@ -11,11 +15,15 @@ class DspState {
   /// AutoEQ 耳机校正型号（null = 关闭）
   final String? autoEqModel;
 
+  /// 房间校正 IR 沙盒路径（null = 未启用）
+  final String? roomIrPath;
+
   DspState({
     DspSettings? dspSettings,
     List<double>? eqValues,
     this.eqPreset = 'Flat',
     this.autoEqModel,
+    this.roomIrPath,
   }) : dspSettings = dspSettings ?? DspSettings(),
        eqValues = eqValues ?? List.filled(10, 0.0);
 
@@ -24,6 +32,7 @@ class DspState {
     List<double>? eqValues,
     String? eqPreset,
     Object? autoEqModel = _sentinel,
+    Object? roomIrPath = _sentinel,
   }) {
     return DspState(
       dspSettings: dspSettings ?? this.dspSettings,
@@ -32,6 +41,9 @@ class DspState {
       autoEqModel: identical(autoEqModel, _sentinel)
           ? this.autoEqModel
           : autoEqModel as String?,
+      roomIrPath: identical(roomIrPath, _sentinel)
+          ? this.roomIrPath
+          : roomIrPath as String?,
     );
   }
 
@@ -132,6 +144,70 @@ class DspNotifier extends Notifier<DspState> {
     await engineRepo.setAutoEq(null);
   }
 
+  // ── 房间校正（REW 测量曲线 → 校正 FIR）──
+
+  /// 生成 IR 的目标采样率：引擎默认输出采样率。
+  /// 卷积器加载时若与管线采样率不一致会自动离线重采样，故固定 44100
+  /// 生成是安全的（重采样保幅，校正频点位置漂移 < 1.5dB，见 core 测试）。
+  static const int _roomIrSampleRate = 44100;
+
+  /// REW 沙盒 IR 文件名（存 Documents 目录，复用现有沙盒约定）
+  static const String _roomIrFileName = 'room_correction_ir.wav';
+
+  /// 解析 REW 频响导出文本（导入后校验/预览用），失败抛错带原因。
+  Future<List<rs.FreqPoint>> parseRewText(String text) async {
+    final engineRepo = ref.read(audioEngineRepositoryProvider);
+    if (!engineRepo.rustAvailable) return const [];
+    return engineRepo.parseRewText(text);
+  }
+
+  /// Rust 侧默认校正配置（页面初始化用）
+  Future<rs.CorrectionConfig> defaultCorrectionConfig() async {
+    final engineRepo = ref.read(audioEngineRepositoryProvider);
+    return engineRepo.defaultCorrectionConfig();
+  }
+
+  /// 生成房间校正并应用到引擎：
+  /// REW 文本 → 校正 FIR（rust）→ 存沙盒 WAV → 加载到 DSP 卷积级 →
+  /// 持久化路径（重启后由 applyDsp 恢复）。返回结果供 UI 展示报告。
+  Future<rs.RoomCorrectionResult> generateAndApplyRoomCorrection({
+    required String rewTxt,
+    required rs.CorrectionConfig config,
+  }) async {
+    final engineRepo = ref.read(audioEngineRepositoryProvider);
+    final result = await engineRepo.generateRoomCorrection(
+      rewTxt: rewTxt,
+      config: config,
+      sampleRate: _roomIrSampleRate,
+    );
+    final dir = await getApplicationDocumentsDirectory();
+    final irPath = '${dir.path}/$_roomIrFileName';
+    await engineRepo.saveRoomIrWav(result.ir, result.sampleRate, irPath);
+    await engineRepo.loadRoomIr(irPath);
+    state = state.copyWith(roomIrPath: irPath);
+    await ref.read(preferencesRepositoryProvider).setRoomIrPath(irPath);
+    return result;
+  }
+
+  /// 清除房间校正：引擎卷积级恢复直通，删除沙盒 WAV，清除持久化。
+  Future<void> clearRoomCorrection() async {
+    final engineRepo = ref.read(audioEngineRepositoryProvider);
+    if (engineRepo.rustAvailable) {
+      await engineRepo.clearRoomIr();
+    }
+    final path = state.roomIrPath;
+    state = state.copyWith(roomIrPath: null);
+    await ref.read(preferencesRepositoryProvider).setRoomIrPath(null);
+    if (path != null) {
+      try {
+        final f = File(path);
+        if (f.existsSync()) await f.delete();
+      } catch (e) {
+        Log.e('RoomCorrection', '删除 IR 文件失败: $e');
+      }
+    }
+  }
+
   /// 把当前 DSP 设置同步到引擎。
   /// enabled 为总开关：关闭时全部子开关置 false，打开时恢复各子开关状态。
   /// AutoEQ 独立于总开关（耳机校正不属于“音效渲染”范畴）。
@@ -142,6 +218,7 @@ class DspNotifier extends Notifier<DspState> {
     final on = dsp.enabled;
     // async gap 后 provider 可能已 disposed，先取快照避免访问 ref/state
     final autoEq = state.autoEqModel;
+    final roomIr = state.roomIrPath;
     try {
       await engineRepo.setCrossfeed(on && dsp.crossfeed);
       await engineRepo.setStereoWidener(on && dsp.widener, 0.5);
@@ -150,6 +227,10 @@ class DspNotifier extends Notifier<DspState> {
       // 噪声整形仅在 dither 生效时有意义，随 dither 门控
       await engineRepo.setNoiseShaping(on && dsp.noiseShaping);
       await engineRepo.setAutoEq(autoEq);
+      // 房间校正独立于总开关（与 AutoEQ 同属“校正”而非“音效渲染”）
+      if (roomIr != null) {
+        await engineRepo.loadRoomIr(roomIr);
+      }
     } catch (e) {
       Log.e('DSP', '应用设置失败: $e');
     }
@@ -173,6 +254,7 @@ class DspNotifier extends Notifier<DspState> {
         noiseShaping: prefs.dspNoiseShaping,
       ),
       autoEqModel: prefs.autoEqModel,
+      roomIrPath: prefs.roomIrPath,
       eqPreset: hasSavedEq ? eqPreset : null,
       eqValues: hasSavedEq && eqGains.length == 10 ? eqGains : null,
     );

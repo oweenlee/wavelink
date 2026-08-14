@@ -43,21 +43,20 @@ class PreferencesService {
 
   Future<void> setShowNas(bool v) => _prefs.setBool(_kShowNas, v);
   Future<void> setShowWebdav(bool v) => _prefs.setBool(_kShowWebdav, v);
-  Future<void> setShowAppleMusic(bool v) =>
-      _prefs.setBool(_kShowAppleMusic, v);
+  Future<void> setShowAppleMusic(bool v) => _prefs.setBool(_kShowAppleMusic, v);
   Future<void> setShowSubsonic(bool v) => _prefs.setBool(_kShowSubsonic, v);
   Future<void> setShowImported(bool v) => _prefs.setBool(_kShowImported, v);
   Future<void> setShowLocal(bool v) => _prefs.setBool(_kShowLocal, v);
 
   /// 该来源是否在曲库展示
   bool showSource(SongSource source) => switch (source) {
-        SongSource.nas => showNas,
-        SongSource.webdav => showWebdav,
-        SongSource.appleMusic => showAppleMusic,
-        SongSource.subsonic => showSubsonic,
-        SongSource.imported => showImported,
-        SongSource.local => showLocal,
-      };
+    SongSource.nas => showNas,
+    SongSource.webdav => showWebdav,
+    SongSource.appleMusic => showAppleMusic,
+    SongSource.subsonic => showSubsonic,
+    SongSource.imported => showImported,
+    SongSource.local => showLocal,
+  };
 
   // ── Subsonic 音乐服务器配置 ──
   static const _kSubsonicBaseUrl = 'subsonic_base_url';
@@ -91,6 +90,7 @@ class PreferencesService {
   static const _kWebdavPassword = 'webdav_password';
 
   String? get webdavBaseUrl => _prefs.getString(_kWebdavBaseUrl);
+
   /// WebDAV 根目录（共享内相对路径，空=服务器根）
   String? get webdavPath => _prefs.getString(_kWebdavPath);
   String? get webdavUsername => _prefs.getString(_kWebdavUsername);
@@ -150,8 +150,7 @@ class PreferencesService {
   Future<void> setDspWidener(bool v) => _prefs.setBool(_kWidener, v);
   Future<void> setDspLimiter(bool v) => _prefs.setBool(_kLimiter, v);
   Future<void> setDspDither(bool v) => _prefs.setBool(_kDither, v);
-  Future<void> setDspNoiseShaping(bool v) =>
-      _prefs.setBool(_kNoiseShaping, v);
+  Future<void> setDspNoiseShaping(bool v) => _prefs.setBool(_kNoiseShaping, v);
 
   // ── AutoEQ 耳机校正（型号名；null = 关闭）──
   static const _kAutoEqModel = 'auto_eq_model';
@@ -160,13 +159,25 @@ class PreferencesService {
       ? _prefs.remove(_kAutoEqModel)
       : _prefs.setString(_kAutoEqModel, model);
 
+  // ── 房间校正（生成的 IR WAV 沙盒路径；null = 未启用）──
+  static const _kRoomIrPath = 'room_ir_path';
+  String? get roomIrPath => _prefs.getString(_kRoomIrPath);
+  Future<void> setRoomIrPath(String? path) => path == null
+      ? _prefs.remove(_kRoomIrPath)
+      : _prefs.setString(_kRoomIrPath, path);
+
   // ── 参量 EQ（预设名 + 各频段增益；预设名为空表示手动曲线）──
   static const _kEqPreset = 'eq_preset';
   static const _kEqGains = 'eq_gains';
   String get eqPreset => _prefs.getString(_kEqPreset) ?? '';
   List<double> get eqGains =>
-      (_prefs.getStringList(_kEqGains) ?? const <String>[]).map(double.parse).toList();
-  Future<void> setEqState({required String preset, required List<double> gains}) async {
+      (_prefs.getStringList(_kEqGains) ?? const <String>[])
+          .map(double.parse)
+          .toList();
+  Future<void> setEqState({
+    required String preset,
+    required List<double> gains,
+  }) async {
     await _prefs.setString(_kEqPreset, preset);
     await _prefs.setStringList(
       _kEqGains,
