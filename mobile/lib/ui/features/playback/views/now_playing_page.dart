@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:popover/popover.dart';
 import '../../../../domain/models/lyric_line.dart';
 import '../../../../domain/models/song.dart';
 import '../view_models/playback_controller.dart';
@@ -489,58 +490,20 @@ class _TopBar extends StatelessWidget {
           _EngineLed(isPlaying: isPlaying),
           const Spacer(),
           if (hasMenu)
-            PopupMenuButton<String>(
-              icon: const Icon(
-                LucideIcons.moreHorizontal,
-                color: AppTheme.textPrimary,
+            Builder(
+              builder: (btnContext) => IconButton(
+                icon: const Icon(
+                  LucideIcons.moreHorizontal,
+                  color: AppTheme.textPrimary,
+                ),
+                onPressed: () => _openMoreMenu(
+                  btnContext,
+                  queueCount: queueCount,
+                  onQueue: onQueue,
+                  onEffects: onEffects,
+                ),
+                splashRadius: 20,
               ),
-              color: AppTheme.s1,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              onSelected: (value) {
-                if (value == 'queue') onQueue?.call();
-                if (value == 'effects') onEffects?.call();
-              },
-              itemBuilder: (context) => [
-                if (onQueue != null)
-                  PopupMenuItem(
-                    value: 'queue',
-                    child: Row(
-                      children: [
-                        Text(
-                          AppLocalizations.of(context).queue,
-                          style: TextStyle(color: AppTheme.textPrimary, fontSize: 14),
-                        ),
-                        const Spacer(),
-                        if (queueCount > 0)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: AppTheme.textTertiary,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              '$queueCount',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                if (onEffects != null)
-                  PopupMenuItem(
-                    value: 'effects',
-                    child: Text(
-                      AppLocalizations.of(context).sound,
-                      style: TextStyle(color: AppTheme.textPrimary, fontSize: 14),
-                    ),
-                  ),
-              ],
             )
           else
             IconButton(
@@ -1052,6 +1015,111 @@ class _Backdrop extends ConsumerWidget {
           end: Alignment.bottomCenter,
           colors: [AppTheme.s2, AppTheme.s1, AppTheme.background],
           stops: [0.0, 0.3, 1.0],
+        ),
+      ),
+    );
+  }
+}
+
+/// 微信风格弹出菜单：带指向触发按钮的小尖头气泡，每项含图标。
+/// 使用 popover 包（自动箭头 + 边界自适应 + 点击外部关闭）。
+Future<void> _openMoreMenu(
+  BuildContext context, {
+  int queueCount = 0,
+  VoidCallback? onQueue,
+  VoidCallback? onEffects,
+}) {
+  final l10n = AppLocalizations.of(context);
+  return showPopover(
+    context: context,
+    direction: PopoverDirection.bottom,
+    width: 145,
+    arrowWidth: 24,
+    arrowHeight: 12,
+    backgroundColor: AppTheme.s2,
+    barrierColor: Colors.transparent,
+    bodyBuilder: (_) => Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (onQueue != null)
+          _ArrowMenuItem(
+            icon: LucideIcons.listMusic,
+            label: l10n.queue,
+            trailing: queueCount > 0
+                ? Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.textTertiary,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '$queueCount',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  )
+                : null,
+            onTap: () {
+              Navigator.of(context).pop();
+              onQueue();
+            },
+          ),
+        if (onEffects != null)
+          _ArrowMenuItem(
+            icon: LucideIcons.slidersHorizontal,
+            label: l10n.sound,
+            onTap: () {
+              Navigator.of(context).pop();
+              onEffects();
+            },
+          ),
+      ],
+    ),
+  );
+}
+
+/// 菜单单项：图标 + 文字 + 可选尾部徽标
+class _ArrowMenuItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Widget? trailing;
+  final VoidCallback onTap;
+  const _ArrowMenuItem({
+    required this.icon,
+    required this.label,
+    this.trailing,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: AppTheme.textPrimary),
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: const TextStyle(
+                color: AppTheme.textPrimary,
+                fontSize: 14,
+              ),
+            ),
+            if (trailing != null) ...[
+              const Spacer(),
+              trailing!,
+            ],
+          ],
         ),
       ),
     );
