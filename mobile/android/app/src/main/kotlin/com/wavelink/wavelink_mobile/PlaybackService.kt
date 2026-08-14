@@ -14,6 +14,7 @@ import android.media.session.PlaybackState
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import android.widget.RemoteViews
 
 /**
  * 前台播放服务：解决锁屏控制缺失 + 后台播放不可用两个高优问题。
@@ -67,6 +68,9 @@ class PlaybackService : Service() {
     private var mediaSession: MediaSession? = null
     private var notificationManager: NotificationManager? = null
     private var lastCoverPath: String? = null
+
+    /// 当前歌词行（通知展开视图展示；null 表示无歌词）
+    @Volatile private var currentLyric: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -253,20 +257,18 @@ class PlaybackService : Service() {
             .addAction(playPauseAction())
             .addAction(nextAction())
 
+        // 展开大视图自定义：歌名/歌手/歌词行 + 控制按钮。
+        // 小视图保持系统 MediaStyle（封面+按钮），仅展开时显示歌词。
+        builder.setCustomBigContentView(buildLyricsRemoteViews())
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             builder.setChannelId(CHANNEL_ID)
         }
         return builder.build()
     }
 
-    private fun action(icon: Int, title: String, actionName: String): Notification.Action {
-        val intent = Intent(this, PlaybackService::class.java).setAction(actionName)
-        val pi = PendingIntent.getService(
-            this, actionName.hashCode(), intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        return Notification.Action.Builder(icon, title, pi).build()
-    }
+    private fun action(icon: Int, title: String, actionName: String): Notification.Action =
+        Notification.Action.Builder(icon, title, actionPendingIntent(actionName)).build()
 
     private fun prevAction() = action(android.R.drawable.ic_media_previous, "上一首", ACTION_PREV)
 
@@ -329,4 +331,37 @@ class PlaybackService : Service() {
 
     /** 当前锁屏/通知按钮态（供 syncPlaying 对账判重） */
     fun isPlayingState(): Boolean = isPlaying
+
+    // ── 歌词行展示（通知展开视图）──
+
+    /** Dart 歌词行变化时推送；文本相同则跳过（通知不重建） */
+    fun updateLyrics(text: String?) {
+        if (currentLyric == text) return
+        currentLyric = text
+        updateNotification(buildNotification())
+    }
+
+    /** 展开大视图：歌名 / 歌手 / 歌词行 + 控制按钮（RemoteViews，无系统 MediaStyle 按钮时自绘） */
+    private fun buildLyricsRemoteViews(): RemoteViews {
+        val rv = RemoteViews(packageName, R.layout.notification_lyrics)
+        rv.setTextViewText(R.id.lyric_title, title)
+        rv.setTextViewText(R.id.lyric_artist, artist)
+        rv.setTextViewText(R.id.lyric_line, currentLyric ?: "♪")
+        rv.setImageViewResource(
+            R.id.lyric_play,
+            if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+        )
+        rv.setOnClickPendingIntent(R.id.lyric_prev, actionPendingIntent(ACTION_PREV))
+        rv.setOnClickPendingIntent(R.id.lyric_play, actionPendingIntent(ACTION_PLAY_PAUSE))
+        rv.setOnClickPendingIntent(R.id.lyric_next, actionPendingIntent(ACTION_NEXT))
+        return rv
+    }
+
+    private fun actionPendingIntent(actionName: String): PendingIntent {
+        val intent = Intent(this, PlaybackService::class.java).setAction(actionName)
+        return PendingIntent.getService(
+            this, actionName.hashCode(), intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
 }

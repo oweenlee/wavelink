@@ -95,6 +95,29 @@ class NativeAudioService {
     _methodChannel.invokeMethod('syncPlaying', {'isPlaying': isPlaying}),
   );
 
+  // ── 歌词行展示（Android 媒体通知展开视图）──
+
+  /// 推送当前歌词行到原生层：更新 Android 媒体通知展开视图的歌词行。
+  /// 仅当前行文本变化时调用（Dart 侧去抖，避免 250ms tick 反复打通道）。
+  Future<void> updateLiveLyrics({
+    required String title,
+    required String artist,
+    required String lyricLine,
+    required bool isPlaying,
+  }) => _safeCall(
+    _methodChannel.invokeMethod('updateLiveLyrics', {
+      'title': title,
+      'artist': artist,
+      'lyricLine': lyricLine,
+      'isPlaying': isPlaying,
+    }),
+  );
+
+  /// 结束歌词展示（Android 清空媒体通知歌词行）。
+  Future<void> endLiveLyrics() => _safeCall(
+    _methodChannel.invokeMethod('endLiveLyrics'),
+  );
+
   /// 查询 Android 设备原生输出采样率（AudioTrack.getNativeOutputSampleRate）。
   /// iOS 无此通道实现（MissingPluginException）→ 返回 0。
   Future<int> getNativeOutputRate() async {

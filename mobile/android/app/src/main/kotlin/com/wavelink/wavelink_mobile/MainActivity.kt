@@ -316,6 +316,17 @@ class MainActivity : FlutterActivity() {
                 PlaybackService.instance?.updatePosition(posMs, audioEngine.isActive)
                 result.success(null)
             }
+            "updateLiveLyrics" -> {
+                @Suppress("UNCHECKED_CAST")
+                val args = arguments as? Map<String, Any>
+                val lyric = (args?.get("lyricLine") as? String)?.takeIf { it.isNotEmpty() }
+                PlaybackService.instance?.updateLyrics(lyric)
+                result.success(null)
+            }
+            "endLiveLyrics" -> {
+                PlaybackService.instance?.updateLyrics(null)
+                result.success(null)
+            }
             "isPlaying" -> result.success(audioEngine.isPlaying)
             "getNativeRate" -> result.success(
                 AudioTrack.getNativeOutputSampleRate(AudioManager.STREAM_MUSIC)

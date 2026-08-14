@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WaveLink</string>
+    <string name="lyric_prev">上一首</string>
+    <string name="lyric_play_pause">播放或暂停</string>
+    <string name="lyric_next">下一首</string>
+</resources>

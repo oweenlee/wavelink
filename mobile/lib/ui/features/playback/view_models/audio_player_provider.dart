@@ -126,6 +126,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
   /// shuffle 模式下下一曲随机，预取一首是尽力而为的优化。
   bool _prefetchedNext = false;
 
+  /// 上一次推送到原生层（Android 媒体通知歌词）的歌词行文本，行级去抖。
+  /// 仅 Android 用（实时滚动）；iOS 灵动岛已回退系统媒体模板，无此功能。
+  String _lastLyricText = '';
+
   /// 当前曲是否走 SMB 边下边播（引擎读流播放，后台并行写缓存）。
   /// 供 [_tick] 在流式 error 事件时回退全量下载并抑制后续 stopped 切歌。
   bool _playingFromStream = false;
@@ -293,6 +297,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     if (song == null) return;
     final token = ++_playToken;
     _prefetchedNext = false;
+    _lastLyricText = '';
     // 播放链路计时诊断：点击/切歌 → engine play 各阶段耗时
     final t0 = DateTime.now();
     void probeStage(String stage, [DateTime? from]) {
@@ -1126,6 +1131,28 @@ class PlayerNotifier extends Notifier<PlayerState> {
     }
 
     _prefetchNextIfNeeded(song);
+
+    // Android 媒体通知歌词：当前行文本变化时实时推送（行级去抖，避免
+    // 250ms tick 反复打平台通道）。Android 无更新频率限制，展开式通知
+    // 空间大，实时滚动体验好。iOS 无此功能（灵动岛已回退系统媒体模板，
+    // 系统自动显示媒体控制，锁屏仅一张媒体卡片）。
+    if (Platform.isAndroid) {
+      final lineIdx = state.currentLyricLine;
+      final lines = state.lyrics;
+      if (lines != null && lineIdx >= 0 && lineIdx < lines.length) {
+        final text = lines[lineIdx].text;
+        if (text != _lastLyricText) {
+          _lastLyricText = text;
+          final cur = state.currentSong;
+          _nativeAudio.updateLiveLyrics(
+            title: cur?.title ?? '',
+            artist: cur?.artist ?? '',
+            lyricLine: text,
+            isPlaying: true,
+          );
+        }
+      }
+    }
   }
 
   /// 下一曲预取：SMB / WebDAV 切歌需先整文件下载才能播（慢的直观来源），

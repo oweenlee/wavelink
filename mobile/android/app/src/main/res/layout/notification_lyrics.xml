@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 媒体通知展开大视图：歌名 / 歌手 / 当前歌词行 + 控制按钮（RemoteViews） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/lyric_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/lyric_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/lyric_artist"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="#B0B0B0"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/lyric_line"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:ellipsize="end"
+        android:gravity="center_horizontal"
+        android:maxLines="2"
+        android:textColor="#E8E8E8"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center_horizontal"
+        android:orientation="horizontal">
+
+        <ImageButton
+            android:id="@+id/lyric_prev"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/lyric_prev"
+            android:src="@android:drawable/ic_media_previous" />
+
+        <ImageButton
+            android:id="@+id/lyric_play"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/lyric_play_pause"
+            android:src="@android:drawable/ic_media_pause" />
+
+        <ImageButton
+            android:id="@+id/lyric_next"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/lyric_next"
+            android:src="@android:drawable/ic_media_next" />
+    </LinearLayout>
+</LinearLayout>
