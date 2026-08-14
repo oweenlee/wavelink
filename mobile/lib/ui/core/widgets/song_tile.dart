@@ -116,11 +116,6 @@ class SongTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // 格式标签 pill
-            if (song.formatInfo != null) ...[
-              _FormatBadge(song: song),
-              const SizedBox(width: 6),
-            ],
             // 自定义 trailing（如收藏图标）
             if (trailing != null) ...[trailing!, const SizedBox(width: 8)],
             // 仅当传入 onMore 时才显示「更多」按钮（三个小点）；
@@ -140,39 +135,6 @@ class SongTile extends StatelessWidget {
               ),
             ],
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 格式标签 pill：无损格式（FLAC/WAV/DSD 等）用 accent 高亮，有损格式用灰色
-class _FormatBadge extends StatelessWidget {
-  final Song song;
-  const _FormatBadge({required this.song});
-  @override
-  Widget build(BuildContext context) {
-    final fmt = song.formatInfo!;
-    final isLossless = song.isLossless;
-    final accent = AccentScope.of(context);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-      decoration: BoxDecoration(
-        color: isLossless
-            ? accent.withValues(alpha: 0.12)
-            : AppTheme.highlight,
-        borderRadius: BorderRadius.circular(4),
-        border: isLossless
-            ? Border.all(color: accent.withValues(alpha: 0.3), width: 0.5)
-            : null,
-      ),
-      child: Text(
-        fmt,
-        style: WlText.mono(
-          fontSize: 9,
-          color: isLossless ? accent : AppTheme.textTertiary,
-          fontWeight: FontWeight.w500,
         ),
       ),
     );

@@ -524,7 +524,7 @@ class _SongsTab extends ConsumerWidget {
             onMore: () => _showContextMenu(context, song, player),
             trailing: player.isSongFavorite(song.id)
                 ? const Icon(
-                    LucideIcons.heart,
+                    Icons.favorite,
                     size: 16,
                     color: AppTheme.danger,
                   )
@@ -975,7 +975,7 @@ class _PlaylistsTab extends ConsumerWidget {
                         placeholder: Center(
                           child: Icon(
                             pl.builtIn
-                                ? LucideIcons.heart
+                                ? Icons.favorite
                                 : LucideIcons.listMusic,
                             color: Colors.white.withValues(alpha: 0.6),
                             size: 22,
@@ -1313,8 +1313,8 @@ void _showContextMenu(
           ),
           _MenuItem(
             icon: player.isSongFavorite(song.id)
-                ? LucideIcons.heart
-                : LucideIcons.heart,
+                ? Icons.favorite
+                : Icons.favorite_border,
             label: player.isSongFavorite(song.id)
                 ? l10n.unfavorite
                 : l10n.favorite,

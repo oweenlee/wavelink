@@ -69,7 +69,7 @@ class SongListPage extends ConsumerWidget {
                     placeholder: Center(
                       child: Icon(
                         isFavoriteList
-                            ? LucideIcons.heart
+                            ? Icons.favorite
                             : LucideIcons.listMusic,
                         color: Colors.white.withValues(alpha: 0.85),
                         size: 48,
