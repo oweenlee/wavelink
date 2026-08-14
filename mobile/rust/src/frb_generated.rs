@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0-beta.5";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1721131304;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 940106117;
 
 // Section: executor
 
@@ -1235,6 +1235,53 @@ fn wire__crate__api__engine__engine_read_samples_frames_impl(
                     )?;
                     Ok(output_ok)
                 })())
+            }
+        },
+    )
+}
+fn wire__crate__api__webdav__engine_read_webdav_range_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "engine_read_webdav_range",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_url = <String>::sse_decode(&mut deserializer);
+            let api_username = <String>::sse_decode(&mut deserializer);
+            let api_password = <String>::sse_decode(&mut deserializer);
+            let api_max_len = <u64>::sse_decode(&mut deserializer);
+            let api_suffix = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::webdav::engine_read_webdav_range(
+                            api_url,
+                            api_username,
+                            api_password,
+                            api_max_len,
+                            api_suffix,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )
@@ -3572,125 +3619,131 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        35 => wire__crate__api__engine__engine_remove_from_queue_impl(
+        35 => wire__crate__api__webdav__engine_read_webdav_range_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        36 => wire__crate__api__engine__engine_resume_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__engine__engine_seek_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__engine__engine_session_interruption_began_impl(
+        36 => wire__crate__api__engine__engine_remove_from_queue_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        39 => wire__crate__api__engine__engine_session_interruption_ended_impl(
+        37 => wire__crate__api__engine__engine_resume_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__engine__engine_seek_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__engine__engine_session_interruption_began_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        40 => wire__crate__api__engine__engine_set_auto_eq_impl(port, ptr, rust_vec_len, data_len),
-        41 => {
+        40 => wire__crate__api__engine__engine_session_interruption_ended_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        41 => wire__crate__api__engine__engine_set_auto_eq_impl(port, ptr, rust_vec_len, data_len),
+        42 => {
             wire__crate__api__engine__engine_set_crossfeed_impl(port, ptr, rust_vec_len, data_len)
         }
-        42 => wire__crate__api__engine__engine_set_dither_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__engine__engine_set_limiter_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__engine__engine_set_noise_shaping_impl(
+        43 => wire__crate__api__engine__engine_set_dither_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__engine__engine_set_limiter_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__engine__engine_set_noise_shaping_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        45 => wire__crate__api__engine__engine_set_output_sample_rate_impl(
+        46 => wire__crate__api__engine__engine_set_output_sample_rate_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        46 => wire__crate__api__engine__engine_set_peq_band_impl(port, ptr, rust_vec_len, data_len),
-        47 => {
+        47 => wire__crate__api__engine__engine_set_peq_band_impl(port, ptr, rust_vec_len, data_len),
+        48 => {
             wire__crate__api__engine__engine_set_play_mode_impl(port, ptr, rust_vec_len, data_len)
         }
-        48 => wire__crate__api__engine__engine_set_replaygain_gain_impl(
+        49 => wire__crate__api__engine__engine_set_replaygain_gain_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        49 => wire__crate__api__engine__engine_set_replaygain_peak_impl(
+        50 => wire__crate__api__engine__engine_set_replaygain_peak_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        50 => wire__crate__api__engine__engine_set_speed_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__engine__engine_set_stereo_widener_impl(
+        51 => wire__crate__api__engine__engine_set_speed_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__engine__engine_set_stereo_widener_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        52 => wire__crate__api__engine__engine_set_volume_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__engine__engine_stop_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__engine__engine_take_event_impl(port, ptr, rust_vec_len, data_len),
-        55 => {
+        53 => wire__crate__api__engine__engine_set_volume_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__engine__engine_stop_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__engine__engine_take_event_impl(port, ptr, rust_vec_len, data_len),
+        56 => {
             wire__crate__api__engine__engine_underrun_count_impl(port, ptr, rust_vec_len, data_len)
         }
-        56 => wire__crate__api__device__enumerate_devices_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__metadata__get_cover_bytes_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__audio_output__get_hw_sample_rate_impl(
+        57 => wire__crate__api__device__enumerate_devices_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__metadata__get_cover_bytes_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__audio_output__get_hw_sample_rate_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        59 => wire__crate__api__audio_output__get_spectrum_impl(port, ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__audio_output__get_underrun_count_impl(
+        60 => wire__crate__api__audio_output__get_spectrum_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__audio_output__get_underrun_count_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        61 => wire__crate__api__decode__is_dsd_file_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__engine__levels_dto_default_impl(port, ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__cue__parse_cue_file_impl(port, ptr, rust_vec_len, data_len),
-        64 => {
+        62 => wire__crate__api__decode__is_dsd_file_impl(port, ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__engine__levels_dto_default_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__cue__parse_cue_file_impl(port, ptr, rust_vec_len, data_len),
+        65 => {
             wire__crate__api__playlist__parse_playlist_file_impl(port, ptr, rust_vec_len, data_len)
         }
-        65 => wire__crate__api__decode__probe_duration_secs_impl(port, ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__decode__probe_sample_rate_impl(port, ptr, rust_vec_len, data_len),
-        67 => wire__crate__api__metadata__read_metadata_impl(port, ptr, rust_vec_len, data_len),
-        68 => wire__crate__api__metadata__read_replaygain_impl(port, ptr, rust_vec_len, data_len),
-        69 => wire__crate__api__audio_output__set_hw_sample_rate_impl(
+        66 => wire__crate__api__decode__probe_duration_secs_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__decode__probe_sample_rate_impl(port, ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__metadata__read_metadata_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__metadata__read_replaygain_impl(port, ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__audio_output__set_hw_sample_rate_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        70 => wire__crate__api__smb__smb_connect_impl(port, ptr, rust_vec_len, data_len),
-        71 => wire__crate__api__smb__smb_connect_share_impl(port, ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__smb__smb_disconnect_impl(port, ptr, rust_vec_len, data_len),
-        73 => wire__crate__api__smb__smb_file_size_impl(port, ptr, rust_vec_len, data_len),
-        74 => wire__crate__api__smb__smb_keepalive_impl(port, ptr, rust_vec_len, data_len),
-        75 => wire__crate__api__smb__smb_list_directory_impl(port, ptr, rust_vec_len, data_len),
-        76 => wire__crate__api__smb__smb_list_shares_impl(port, ptr, rust_vec_len, data_len),
-        77 => wire__crate__api__smb__smb_read_file_impl(port, ptr, rust_vec_len, data_len),
-        78 => wire__crate__api__smb__smb_read_file_stream_impl(port, ptr, rust_vec_len, data_len),
-        79 => wire__crate__api__smb__smb_read_head_impl(port, ptr, rust_vec_len, data_len),
-        80 => wire__crate__api__smb__smb_read_tail_impl(port, ptr, rust_vec_len, data_len),
-        81 => {
+        71 => wire__crate__api__smb__smb_connect_impl(port, ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__smb__smb_connect_share_impl(port, ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__smb__smb_disconnect_impl(port, ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__smb__smb_file_size_impl(port, ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__smb__smb_keepalive_impl(port, ptr, rust_vec_len, data_len),
+        76 => wire__crate__api__smb__smb_list_directory_impl(port, ptr, rust_vec_len, data_len),
+        77 => wire__crate__api__smb__smb_list_shares_impl(port, ptr, rust_vec_len, data_len),
+        78 => wire__crate__api__smb__smb_read_file_impl(port, ptr, rust_vec_len, data_len),
+        79 => wire__crate__api__smb__smb_read_file_stream_impl(port, ptr, rust_vec_len, data_len),
+        80 => wire__crate__api__smb__smb_read_head_impl(port, ptr, rust_vec_len, data_len),
+        81 => wire__crate__api__smb__smb_read_tail_impl(port, ptr, rust_vec_len, data_len),
+        82 => {
             wire__crate__api__decode__stream_decoder_create_impl(port, ptr, rust_vec_len, data_len)
         }
-        82 => wire__crate__api__decode__stream_decoder_next_chunk_impl(
+        83 => wire__crate__api__decode__stream_decoder_next_chunk_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        83 => wire__crate__api__decode__stream_decoder_stop_impl(port, ptr, rust_vec_len, data_len),
+        84 => wire__crate__api__decode__stream_decoder_stop_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../../data/services/log.dart';
 import '../../../../data/services/smb_service.dart';
+import '../../../../data/services/webdav_service.dart';
 import '../../../../domain/models/song.dart';
 import '../../../core/providers/repositories.dart';
 
@@ -61,7 +62,7 @@ class CoverService {
         // 封面+元数据都已就绪的从队列剔除；连续 3 轮无进展
         //（真无封面且文件无标签）也剔除，避免无限重试
         _nasQueue.removeWhere((s) =>
-            (s.coverUrl != null && !SmbService.needsMetadata(s)) ||
+            (s.coverUrl != null && !_needsMetadataFor(s)) ||
             (_nasFailCount[s.id] ?? 0) >= 3);
         // 每轮结束即刷新：已解析的封面及时上屏（历史问题：只在全部
         // 完成/放弃后刷一次，数百首歌要等几分钟 UI 才更新）
@@ -93,18 +94,22 @@ class CoverService {
   Future<bool> _extractNasPass(List<Song> songs) async {
     var progressed = false;
     const roundSize = 8;
+    // 批内是否存在 SMB 歌：SMB 有连接数限制/熔断/会话探活需要让路与
+    // 前置检查；WebDAV 走 reqwest 无此限制，直接提取即可。
+    final hasSmb =
+        songs.any((s) => s.smbPath != null && s.smbPath!.isNotEmpty);
     for (var i = 0; i < songs.length; i += roundSize) {
       // 播放/下载进行中：让路（不打断播放），由外层循环稍后继续
-      if (SmbService.playbackActive) {
+      if (hasSmb && SmbService.playbackActive) {
         Log.d('Cover', '播放/下载活跃，暂停封面提取（已完成 $i/${songs.length}）');
         return progressed || i > 0;
       }
       // 熔断冷却中：本轮跳过（未尝试不算失败，避免冷却轮误计单曲失败）
-      if (SmbService.coverCooldownActive) {
+      if (hasSmb && SmbService.coverCooldownActive) {
         Log.d('Cover', '封面提取冷却中，本轮跳过（已完成 $i/${songs.length}）');
         return progressed || i > 0;
       }
-      if (!await SmbService.ensureHealthy()) {
+      if (hasSmb && !await SmbService.ensureHealthy()) {
         Log.w('Cover', '会话不可用，中止本轮封面提取（已完成 $i/${songs.length}）');
         return progressed || i > 0;
       }
@@ -114,11 +119,16 @@ class CoverService {
       for (var j = 0; j < batch.length; j += 2) {
         final subEnd = (j + 2 > batch.length) ? batch.length : j + 2;
         final sub = batch.sublist(j, subEnd);
-        // fetchRemoteCover 返回是否有进展（拿到封面或回填了元数据），
-        // 只盯 coverUrl 会把"无封面但元数据已回填"的歌误判为失败
-        final results = await Future.wait(
-          sub.map((s) => SmbService.fetchRemoteCover(s)),
-        );
+        // 按源分流：SMB 走 SmbService（含熔断计数），WebDAV 走
+        // WebdavService（Range 读头）。返回是否有进展（拿到封面或
+        // 回填了元数据），只盯 coverUrl 会把"无封面但元数据已回填"
+        // 的歌误判为失败。
+        final results = await Future.wait(sub.map((s) {
+          if (s.smbPath != null && s.smbPath!.isNotEmpty) {
+            return SmbService.fetchRemoteCover(s);
+          }
+          return WebdavService.fetchRemoteCover(s);
+        }));
         for (var k = 0; k < sub.length; k++) {
           final s = sub[k];
           if (results[k]) {
@@ -128,7 +138,10 @@ class CoverService {
             final c = (_nasFailCount[s.id] ?? 0) + 1;
             _nasFailCount[s.id] = c;
             if (c >= 3) {
-              Log.d('Cover', '3 轮无进展，放弃提取: ${s.title} (${s.smbPath})');
+              Log.d(
+                'Cover',
+                '3 轮无进展，放弃提取: ${s.title} (${s.smbPath ?? s.davPath})',
+              );
             }
           }
         }
@@ -185,14 +198,21 @@ class CoverService {
     if (changed) onCoversUpdated?.call();
   }
 
-  /// 筛选待处理的 NAS 索引歌（无本地文件，需远端读头）：
+  /// 筛选待处理的远端索引歌（无本地文件，需远端读头）：
   /// 缺封面，或元数据仍是扫描期占位值（album/artist/时长需回填）。
+  /// 支持 SMB（smbPath）与 WebDAV（davPath）两个源。
   static List<Song> pendingNasCovers(List<Song> songs) => songs
       .where((s) =>
-          s.smbPath != null &&
+          (s.smbPath != null && s.smbPath!.isNotEmpty ||
+              s.davPath != null && s.davPath!.isNotEmpty) &&
           s.path == null &&
-          (s.coverUrl == null || SmbService.needsMetadata(s)))
+          (s.coverUrl == null || _needsMetadataFor(s)))
       .toList();
+
+  /// 按源判断元数据是否仍为扫描期占位值（SMB/WebDAV 各自占位常量不同）。
+  static bool _needsMetadataFor(Song s) => s.smbPath != null
+      ? SmbService.needsMetadata(s)
+      : WebdavService.needsMetadata(s);
 
   /// 筛选缺封面且有本地文件的歌（从文件提取）
   static List<Song> pendingLocalCovers(List<Song> songs) =>

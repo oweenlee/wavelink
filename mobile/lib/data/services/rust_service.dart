@@ -178,6 +178,25 @@ Future<void> enginePlayWebdavStream({
       cacheFinalPath: cacheFinalPath,
     );
 
+/// 读取 WebDAV 远端文件前缀字节（封面/歌词提取用），Range 请求，
+/// 只拉取前 [maxLen] 字节（服务器忽略 Range 时也主动截断）。
+/// 读取 WebDAV 远端文件头/尾字节（封面/歌词提取用）。[suffix] 为 true 时
+/// 读文件尾（Range: bytes=-N），否则读文件头（Range: bytes=0-(N-1)）。
+Future<Uint8List> readWebdavRange({
+  required String url,
+  required String username,
+  required String password,
+  required int maxLen,
+  required bool suffix,
+}) =>
+    webdav.engineReadWebdavRange(
+      url: url,
+      username: username,
+      password: password,
+      maxLen: BigInt.from(maxLen),
+      suffix: suffix,
+    );
+
 Future<void> enginePlayQueue(List<String> paths) =>
     engine.enginePlayQueue(paths: paths);
 Future<void> engineSetPeqBand({

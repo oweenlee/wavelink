@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:webdav_client/webdav_client.dart' as wd;
@@ -7,6 +8,8 @@ import '../../ui/core/theme/app_theme.dart';
 import 'import_service.dart';
 import 'log.dart';
 import 'preferences_service.dart';
+import 'rust_service.dart' as rs;
+import '../../src/rust/api/metadata.dart' show MetadataResult;
 
 /// WebDAV 音乐服务器服务
 ///
@@ -245,6 +248,139 @@ class WebdavService {
       davPath: path,
       durationEstimated: true,
     );
+  }
+
+  /// 元数据是否仍为扫描期占位值：扫描只按文件名建索引，album/artist/
+  /// 时长统一占位；封面提取读头解析时一并回填真实值（与 SMB 对齐）。
+  static bool needsMetadata(Song song) =>
+      song.album == albumPlaceholder ||
+      song.artist == artistPlaceholder ||
+      song.durationEstimated;
+
+  /// 读取远端文件头/尾字节（Range 请求，只拉 [maxLen] 前部或后部，服务器
+  /// 忽略 Range 时 Rust 侧也主动截断，不下载整曲）。[suffix] 为 true 时
+  /// 读文件尾（Range: bytes=-N，非 faststart 的 M4A moov 在尾部）。
+  static Future<List<int>> readRemoteBytes(
+    String url,
+    int maxLen, {
+    bool suffix = false,
+  }) async {
+    try {
+      final bytes = await rs.readWebdavRange(
+        url: url,
+        username: username,
+        password: password,
+        maxLen: maxLen,
+        suffix: suffix,
+      );
+      return bytes;
+    } catch (e) {
+      Log.w('WebDAV', 'readRemoteBytes failed ($url): $e');
+      return const [];
+    }
+  }
+
+  /// 远端封面提取：Range 读头 1MB → 写带真实扩展名的临时文件 → lofty
+  /// 解析内嵌封面 → 写 .covers 缓存。头读不到元数据（非 faststart 的
+  /// M4A/ALAC，moov 在文件尾）时再读尾 1MB 拼接成近似完整文件二次解析。
+  /// 返回是否有进展（拿到封面或回填了元数据），供 cover_service 判断。
+  static Future<bool> fetchRemoteCover(Song song) async {
+    final davPath = song.davPath;
+    if (davPath == null || davPath.isEmpty) return false;
+    if (song.coverUrl != null && !needsMetadata(song)) return false;
+    final url = fullUrlFor(davPath);
+    if (url == null) return false;
+    final hadCover = song.coverUrl != null;
+    final neededMeta = needsMetadata(song);
+    try {
+      final head = await readRemoteBytes(url, 1024 * 1024);
+      if (head.isEmpty) return false;
+      await _extractCoverFromBytes(song, davPath, head);
+      // 头部拿不到完整元数据（moov 在尾部）：读尾 1MB 拼接头+尾再解析。
+      // lofty 解析 MP4 需要文件头的 ftyp + 尾部的 moov，纯尾部字节无法探测。
+      if (needsMetadata(song)) {
+        final tail = await readRemoteBytes(url, 1024 * 1024, suffix: true);
+        if (tail.isNotEmpty) {
+          await _extractCoverFromBytes(song, davPath, [...head, ...tail]);
+        }
+      }
+    } catch (e) {
+      Log.w('WebDAV', '封面提取失败 ($davPath): $e');
+      return false;
+    }
+    return (song.coverUrl != null && !hadCover) ||
+        (neededMeta && !needsMetadata(song));
+  }
+
+  /// 从远端读到的字节解析内嵌封面：写带真实扩展名的临时文件（lofty 按
+  /// 扩展名探测格式），成功后写 .covers 缓存。返回是否解析到封面。
+  static Future<bool> _extractCoverFromBytes(
+    Song song,
+    String davPath,
+    List<int> bytes,
+  ) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final headDir = Directory('${appDir.path}/.dav_head');
+    if (!await headDir.exists()) await headDir.create(recursive: true);
+    final ext = davPath.split('.').last.toLowerCase();
+    final headFile = File('${headDir.path}/${davPath.hashCode}.$ext');
+    await headFile.writeAsBytes(bytes);
+    try {
+      final meta = await rs.readMetadata(headFile.path);
+      // 元数据回填：解析出的 album/artist/时长顺手覆盖占位值（幂等）
+      _backfillMetadata(song, meta);
+      if (meta.hasCover && meta.coverBytes.isNotEmpty && song.coverUrl == null) {
+        final coversDir = Directory('${appDir.path}/.covers');
+        if (!await coversDir.exists()) await coversDir.create(recursive: true);
+        final coverFile =
+            File('${coversDir.path}/dav_${davPath.hashCode}.jpg');
+        await coverFile.writeAsBytes(meta.coverBytes);
+        song.coverUrl = coverFile.path;
+        song.hasCover = true;
+        return true;
+      }
+    } catch (e) {
+      Log.v('WebDAV', '封面字节解析失败 ($davPath): $e');
+    } finally {
+      if (await headFile.exists()) await headFile.delete();
+    }
+    return false;
+  }
+
+  /// 元数据占位回填：仅覆盖仍为占位值的字段（album/artist/估算时长），
+  /// 已有真实值不动（与 SMB _backfillMetadata 一致）。
+  static void _backfillMetadata(Song song, MetadataResult meta) {
+    final album = meta.album;
+    if (song.album == albumPlaceholder && album != null && album.isNotEmpty) {
+      song.album = album;
+    }
+    final artist = meta.artist;
+    if (song.artist == artistPlaceholder && artist != null && artist.isNotEmpty) {
+      song.artist = artist;
+    }
+    if (song.durationEstimated && meta.durationSecs > 0) {
+      song.duration =
+          Duration(milliseconds: (meta.durationSecs * 1000).round());
+      song.durationEstimated = false;
+    }
+  }
+
+  /// 远端歌词：读取与音频同目录同名的 .lrc/.LRC（小文本，Range 读前部
+  /// 即全文）。失败（文件不存在/读取失败）返回 null。
+  static Future<String?> fetchRemoteLyrics(String davPath) async {
+    final base = davPath.replaceFirst(RegExp(r'\.[^.]+$'), '');
+    for (final ext in const ['.lrc', '.LRC']) {
+      try {
+        final url = fullUrlFor('$base$ext');
+        if (url == null) return null;
+        final bytes = await readRemoteBytes(url, 512 * 1024);
+        if (bytes.isEmpty) continue;
+        return utf8.decode(bytes, allowMalformed: true);
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
   }
 
   /// 检查单曲本地缓存是否已就绪（存在且非空才命中）。

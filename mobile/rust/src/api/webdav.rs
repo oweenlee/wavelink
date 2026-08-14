@@ -14,6 +14,22 @@ use audio_core::stream::StreamHandle;
 /// 避免死连接挂满。与 smb.rs 的 IO_READ_TIMEOUT 保持一致。
 const IO_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// 封面/歌词提取单次读取的上限（防服务器忽略 Range 返回全文时拉满整曲）。
+const RANGE_READ_CAP: u64 = 4 * 1024 * 1024;
+
+/// 全局复用的 HTTP client：reqwest::Client 线程安全，跨请求复用连接池
+/// （keep-alive），避免封面批处理每首歌重复 TLS/TCP 握手。
+fn http_client() -> Result<&'static reqwest::Client, String> {
+    static CLIENT: once_cell::sync::OnceCell<reqwest::Client> = once_cell::sync::OnceCell::new();
+    CLIENT
+        .get_or_try_init(|| {
+            reqwest::Client::builder()
+                .connect_timeout(IO_READ_TIMEOUT)
+                .build()
+                .map_err(err_str)
+        })
+}
+
 fn err_str<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
@@ -42,7 +58,7 @@ fn random_hex(len: usize) -> String {
     out[..len].to_string()
 }
 
-/// 解析 WWW-Authenticate 头参数，返回 key -> value（value 已去引号）。
+/// 解析 WWW-Authenticate 头参数，返回 key -> value（key 统一小写，value 已去引号）。
 /// 示例：`Digest realm="x", nonce="y", qop="auth", opaque="z", algorithm=MD5`
 fn parse_www_authenticate(header: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
@@ -53,7 +69,7 @@ fn parse_www_authenticate(header: &str) -> HashMap<String, String> {
     for part in body.split(',') {
         let part = part.trim();
         if let Some(eq) = part.find('=') {
-            let key = part[..eq].trim().to_string();
+            let key = part[..eq].trim().to_lowercase();
             let mut val = part[eq + 1..].trim().to_string();
             if val.len() >= 2 && val.starts_with('"') && val.ends_with('"') {
                 val = val[1..val.len() - 1].to_string();
@@ -62,6 +78,39 @@ fn parse_www_authenticate(header: &str) -> HashMap<String, String> {
         }
     }
     map
+}
+
+/// 从 WWW-Authenticate 头中截取第一个 `Digest` challenge 段。
+/// 服务器可能同时声明多个认证方案（如 `Digest ..., Basic ...`），
+/// 若整头直接解析，后方案的 realm/nonce 等参数会覆盖 Digest 的。
+/// 按「引号外逗号 + 无 `=` 的 token + 空白」判定 challenge 边界。
+fn digest_challenge_section(header: &str) -> &str {
+    let lower = header.to_lowercase();
+    let start = lower.find("digest").unwrap_or(0);
+    let rest = &header[start + "digest".len()..];
+    let mut in_quotes = false;
+    let mut chars = rest.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '"' => in_quotes = !in_quotes,
+            ',' if !in_quotes => {
+                let mut token = String::new();
+                while let Some(&(_, cc)) = chars.peek() {
+                    if cc.is_whitespace() {
+                        // token 后跟空白且不含 `=` → 疑似新 challenge（如 Basic）
+                        if !token.is_empty() && !token.contains('=') {
+                            return &rest[..i];
+                        }
+                        break;
+                    }
+                    token.push(cc);
+                    chars.next();
+                }
+            }
+            _ => {}
+        }
+    }
+    rest
 }
 
 /// 生成 Digest 响应头（RFC 2617）。[uri] 为请求路径（URL 的 path 部分）。
@@ -125,15 +174,20 @@ fn build_basic_auth(username: &str, password: &str) -> String {
 }
 
 /// 发送 GET 并等待响应头，整体包 IO_READ_TIMEOUT：防服务端 TCP 建连后
-/// 不响应（TTFB 卡死）导致喂流 task 永久挂起泄漏连接。auth 为认证头值。
+/// 不响应（TTFB 卡死）导致喂流 task 永久挂起泄漏连接。auth 为认证头值，
+/// extra 为附加请求头（如 Range，认证协商重发时一并携带）。
 async fn send_get(
     client: &reqwest::Client,
     url: &str,
     auth: Option<&str>,
+    extra: &[(&str, String)],
 ) -> Result<reqwest::Response, String> {
     let mut req = client
         .get(url)
         .header(reqwest::header::ACCEPT_ENCODING, "identity");
+    for (k, v) in extra {
+        req = req.header(*k, v);
+    }
     if let Some(a) = auth {
         req = req.header(reqwest::header::AUTHORIZATION, a);
     }
@@ -145,13 +199,15 @@ async fn send_get(
 
 /// 发起 GET 并处理认证协商：首次无认证 → 401 时读 www-authenticate →
 /// 按 Digest/Basic 构建认证头重发；digest 且 stale=true 时用新 nonce 再协商一次。
+/// [extra] 附加请求头在首次/重发/重协商时均携带。
 async fn webdav_get(
     client: &reqwest::Client,
     url: &str,
     username: &str,
     password: &str,
+    extra: &[(&str, String)],
 ) -> Result<reqwest::Response, String> {
-    let resp = send_get(client, url, None).await?;
+    let resp = send_get(client, url, None, extra).await?;
 
     if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
         if username.is_empty() {
@@ -166,7 +222,8 @@ async fn webdav_get(
         let www_lower = www.to_lowercase();
 
         let auth_header = if www_lower.contains("digest") {
-            let params = parse_www_authenticate(&www);
+            let section = digest_challenge_section(&www);
+            let params = parse_www_authenticate(section);
             let uri = reqwest::Url::parse(url).map_err(err_str)?.path().to_string();
             build_digest_auth(username, password, &params, "GET", &uri)?
         } else if www_lower.contains("basic") {
@@ -175,7 +232,7 @@ async fn webdav_get(
             return Err(format!("未知认证方式: {www}"));
         };
 
-        let resp2 = send_get(client, url, Some(&auth_header)).await?;
+        let resp2 = send_get(client, url, Some(&auth_header), extra).await?;
         if resp2.status() == reqwest::StatusCode::UNAUTHORIZED {
             // stale=true：nonce 过期，用新 nonce 重新协商一次
             let www2 = resp2
@@ -184,7 +241,8 @@ async fn webdav_get(
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or("")
                 .to_string();
-            let params2 = parse_www_authenticate(&www2);
+            let section2 = digest_challenge_section(&www2);
+            let params2 = parse_www_authenticate(section2);
             let is_stale = params2
                 .get("stale")
                 .map(|v| v.eq_ignore_ascii_case("true"))
@@ -192,7 +250,7 @@ async fn webdav_get(
             if is_stale && www2.to_lowercase().contains("digest") {
                 let uri = reqwest::Url::parse(url).map_err(err_str)?.path().to_string();
                 let auth2 = build_digest_auth(username, password, &params2, "GET", &uri)?;
-                let resp3 = send_get(client, url, Some(&auth2)).await?;
+                let resp3 = send_get(client, url, Some(&auth2), extra).await?;
                 return Ok(resp3);
             }
             return Err(format!("HTTP 401 认证失败: {url}"));
@@ -215,20 +273,18 @@ async fn feed_webdav_to_core(
         std::sync::Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<(), String>>>>>,
     >,
 ) -> Result<(), String> {
-    // .part.stream 路径：与 Dart 侧 downloadToLocal 的 ".part" 隔离，
+    // .part.stream.<unique> 路径：与 Dart 侧 downloadToLocal 的 ".part" 隔离，
     // 避免 seek 时两个写者（Rust 喂流 / Dart 全量下载）交错误写同一临时
-    // 文件导致缓存损坏。双方各自独立写完 rename 成正式缓存（后完成者胜，
-    // 均为完整内容）；失败清理也只删自己的后缀。
-    let part_path = cache_final_path.map(|p| format!("{p}.part.stream"));
+    // 文件导致缓存损坏。unique 随机后缀进一步避免同曲重播时旧喂流 task
+    // 的失败清理误删新 task 正在写的临时文件（各 task 只清理自己的）。
+    // 双方各自独立写完 rename 成正式缓存（后完成者胜，均为完整内容）。
+    let part_path = cache_final_path.map(|p| format!("{p}.part.stream.{}", random_hex(8)));
     let part_path = part_path.as_deref();
 
     let result: Result<(), String> = async {
-        let client = reqwest::Client::builder()
-            .connect_timeout(IO_READ_TIMEOUT)
-            .build()
-            .map_err(err_str)?;
+        let client = http_client()?;
 
-        let mut resp = webdav_get(&client, url, username, password).await?;
+        let mut resp = webdav_get(&client, url, username, password, &[]).await?;
         if !resp.status().is_success() {
             return Err(format!("HTTP {}: {url}", resp.status()));
         }
@@ -354,4 +410,55 @@ pub async fn engine_play_webdav_stream(
         Ok(Err(_)) => Err("喂流 task 未返回结果".to_string()),
         Err(_) => Err("等待首块喂流超时".to_string()),
     }
+}
+
+/// 读取远端文件前缀/后缀字节（封面/歌词提取用）。
+/// [suffix]=false → GET + `Range: bytes=0-(max_len-1)` 读文件头；
+/// [suffix]=true → `Range: bytes=-max_len` 读文件尾（非 faststart 的
+/// M4A/ALAC moov 在尾部，头部提取不到元数据时兜底）。
+/// 服务器忽略 Range → 200 返回全文但只收取前 max_len 字节即断开。
+/// 认证协商与流式播放共用。max_len 上限 RANGE_READ_CAP（防拉满整曲）。
+/// 返回读取到的字节（可能少于 max_len，取决于文件大小/服务器 Range 支持）。
+pub async fn engine_read_webdav_range(
+    url: String,
+    username: String,
+    password: String,
+    max_len: u64,
+    suffix: bool,
+) -> Result<Vec<u8>, String> {
+    let max_len = max_len.min(RANGE_READ_CAP);
+    if max_len == 0 {
+        return Err("max_len 必须大于 0".to_string());
+    }
+    let client = http_client()?;
+    let range = if suffix {
+        format!("bytes=-{max_len}")
+    } else {
+        format!("bytes=0-{}", max_len - 1)
+    };
+    let extra = vec![(reqwest::header::RANGE.as_str(), range)];
+    let mut resp = webdav_get(client, &url, &username, &password, &extra).await?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}: {url}", resp.status()));
+    }
+    let mut buf: Vec<u8> = Vec::with_capacity((max_len.min(128 * 1024)) as usize);
+    while (buf.len() as u64) < max_len {
+        let chunk = match tokio::time::timeout(IO_READ_TIMEOUT, resp.chunk()).await {
+            Ok(Ok(Some(c))) => c,
+            Ok(Ok(None)) => break, // 文件不足 max_len，读完即止
+            Ok(Err(e)) => return Err(format!("read error: {e}")),
+            Err(_) => return Err(format!("read timeout: {url}")),
+        };
+        let need = max_len - buf.len() as u64;
+        let take = (chunk.len() as u64).min(need) as usize;
+        buf.extend_from_slice(&chunk[..take]);
+        if take < chunk.len() {
+            // 服务器忽略 Range 返回全文：已收够 max_len，主动断开
+            break;
+        }
+    }
+    if buf.is_empty() {
+        return Err(format!("no data received: {url}"));
+    }
+    Ok(buf)
 }

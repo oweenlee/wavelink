@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_basic_auth`, `build_digest_auth`, `err_str`, `feed_webdav_to_core`, `md5_hex`, `parse_www_authenticate`, `random_hex`, `webdav_get`
+// These functions are ignored because they are not marked as `pub`: `build_basic_auth`, `build_digest_auth`, `digest_challenge_section`, `err_str`, `feed_webdav_to_core`, `http_client`, `md5_hex`, `parse_www_authenticate`, `random_hex`, `send_get`, `webdav_get`
 
 /// 启动 WebDAV 边下边播：后台 task 从远端分块拉字节喂入 core 解码
 /// （首帧即出声），并行写 `.part` 缓存读完 rename（下次播放秒起）。
@@ -24,4 +24,25 @@ Future<void> enginePlayWebdavStream({
   password: password,
   formatHint: formatHint,
   cacheFinalPath: cacheFinalPath,
+);
+
+/// 读取远端文件前缀/后缀字节（封面/歌词提取用）。
+/// [suffix]=false → GET + `Range: bytes=0-(max_len-1)` 读文件头；
+/// [suffix]=true → `Range: bytes=-max_len` 读文件尾（非 faststart 的
+/// M4A/ALAC moov 在尾部，头部提取不到元数据时兜底）。
+/// 服务器忽略 Range → 200 返回全文但只收取前 max_len 字节即断开。
+/// 认证协商与流式播放共用。max_len 上限 RANGE_READ_CAP（防拉满整曲）。
+/// 返回读取到的字节（可能少于 max_len，取决于文件大小/服务器 Range 支持）。
+Future<Uint8List> engineReadWebdavRange({
+  required String url,
+  required String username,
+  required String password,
+  required BigInt maxLen,
+  required bool suffix,
+}) => RustLib.instance.api.crateApiWebdavEngineReadWebdavRange(
+  url: url,
+  username: username,
+  password: password,
+  maxLen: maxLen,
+  suffix: suffix,
 );

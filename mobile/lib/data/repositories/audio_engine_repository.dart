@@ -51,6 +51,23 @@ class AudioEngineRepository {
         formatHint: formatHint,
         cacheFinalPath: cacheFinalPath,
       );
+
+  /// 读取 WebDAV 远端文件头/尾字节（封面/歌词提取用）。[suffix] 为 true 时
+  /// 读文件尾（Range: bytes=-N），否则读文件头（Range: bytes=0-(N-1)）。
+  Future<Uint8List> readWebdavRange(
+    String url,
+    String username,
+    String password,
+    int maxLen,
+    bool suffix,
+  ) =>
+      rs.readWebdavRange(
+        url: url,
+        username: username,
+        password: password,
+        maxLen: maxLen,
+        suffix: suffix,
+      );
   Future<void> pause() => rs.enginePause();
   Future<void> resume() => rs.engineResume();
   Future<void> stop() => rs.engineStop();

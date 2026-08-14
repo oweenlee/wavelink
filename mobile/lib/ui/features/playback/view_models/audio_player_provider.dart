@@ -1058,9 +1058,13 @@ class PlayerNotifier extends Notifier<PlayerState> {
         Log.e('Audio', '歌词加载失败: $e');
       }
     }
-    // 2) NAS 远端同名 .lrc（本地歌词缺失时）
-    if (lyrics == null && song.smbPath != null && song.smbPath!.isNotEmpty) {
-      lyrics = await _loadRemoteLyrics(song.smbPath!);
+    // 2) 远端同名 .lrc（本地歌词缺失时）：SMB / WebDAV 各自按源读取
+    if (lyrics == null) {
+      if (song.smbPath != null && song.smbPath!.isNotEmpty) {
+        lyrics = await _loadRemoteLyrics(song.smbPath!);
+      } else if (song.davPath != null && song.davPath!.isNotEmpty) {
+        lyrics = await _loadWebdavLyrics(song.davPath!);
+      }
     }
     // 3) 内嵌元数据歌词
     if (lyrics == null && audioPath != null && audioPath.isNotEmpty) {
@@ -1093,6 +1097,33 @@ class PlayerNotifier extends Notifier<PlayerState> {
       return parsed;
     } catch (e) {
       Log.e('Audio', 'NAS 歌词读取失败: $e');
+      return null;
+    }
+  }
+
+  /// WebDAV 远端歌词：读取与音频同目录同名的 .lrc/.LRC（Range 读前部），
+  /// 解析后缓存到沙盒 `.lrc_cache/`（下次播放走缓存，不再发起 HTTP）。
+  Future<List<LyricLine>?> _loadWebdavLyrics(String davPath) async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final cacheFile = File(
+        '${appDir.path}/.lrc_cache/${davPath.hashCode}.lrc',
+      );
+      if (await cacheFile.exists()) {
+        final parsed = parseLrc(await cacheFile.readAsString());
+        if (parsed.isNotEmpty) return parsed;
+      }
+      final text = await WebdavService.fetchRemoteLyrics(davPath);
+      if (text == null || text.trim().isEmpty) return null;
+      final parsed = parseLrc(text);
+      if (parsed.isNotEmpty) {
+        final dir = cacheFile.parent;
+        if (!await dir.exists()) await dir.create(recursive: true);
+        await cacheFile.writeAsString(text);
+      }
+      return parsed;
+    } catch (e) {
+      Log.e('Audio', 'WebDAV 歌词读取失败: $e');
       return null;
     }
   }
