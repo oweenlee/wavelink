@@ -15,6 +15,7 @@ import '../../../../data/services/lrc_parser.dart';
 import '../../../../data/repositories/audio_engine_repository.dart';
 import '../../../../data/services/rust_service.dart'
     show AnalyzeResult, readMetadata;
+import '../../../../data/services/strm_resolver.dart';
 import '../../../core/providers/repositories.dart';
 import '../backends/playback_backend.dart';
 import '../../settings/view_models/dsp_provider.dart';
@@ -140,6 +141,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
   /// 流式 seek 下载/切换是否进行中（防重入）。
   bool _streamSeekPending = false;
+
+  /// 当前 STRM 歌解析出的目标（kind: smb/dav/http + 路径/URL）。
+  /// 每次播放时重新解析；seek 回退（[_scheduleStreamSeek]）依赖它。
+  ({String kind, String path, String? extInfTitle, int? extInfSecs})? _strmTarget;
 
   /// 引擎是否已装载当前曲目。false 时即使 position>0 也不能 resume（引擎空），
   /// 需走完整装载流程再 seek——断点续播恢复场景依赖此判定。
@@ -318,71 +323,60 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // 流式播放（首帧即出声，后台并行写缓存）；流式不可用 → 回退全量下载。
     String? resolvedPath;
     _playingFromStream = false;
+    _strmTarget = null;
     if (song.smbPath != null && song.smbPath!.isNotEmpty) {
-      // 1. 缓存命中：纯本地返回，不碰 SMB 会话
-      resolvedPath = await SmbService.cachedLocalPath(song.smbPath!);
-      if (resolvedPath == null) {
-        // 2. 未缓存：先查命中（全量下载逻辑内的），若未命中走边下边播
-        try {
-          final ext = song.smbPath!.split('.').last.toLowerCase();
-          final cacheTarget = await SmbService.cacheTargetFor(song.smbPath!);
-          // 播放互斥标记：封面提取（后台任务）在此期间让路，
-          // 避免竞争 NAS 连接数导致喂流超时（历史事故根因）
-          SmbService.enterPlayback();
-          try {
-            await _engineRepo.playSmbStream(
-              song.smbPath!,
-              ext.isEmpty ? null : ext,
-              cacheTarget,
-            );
-            _playingFromStream = true;
-          } finally {
-            SmbService.exitPlayback();
-          }
-        } catch (e) {
-          // 3. 流式启动失败（引擎未初始化/解码无法探测）→ 回退全量下载
-          Log.w('Audio', 'SMB 边下边播不可用 ($e)，回退全量下载');
-          // 幽灵流窗口：core 侧残留 stream 任务 ~3s 后会产生 error/stopped，
-          // 置窗口标记供 _tick 吞掉（防误切歌），已产生的事件由播放前 drain 清空
-          _ghostStreamUntilMs = DateTime.now().millisecondsSinceEpoch + 12000;
-          resolvedPath = await SmbService.downloadToLocal(song.smbPath!);
-        }
-      }
+      resolvedPath = await _resolveSmbPlayable(song.smbPath!);
     } else if (song.davPath != null && song.davPath!.isNotEmpty) {
-      // WebDAV：优先"边下边播"。已缓存 → 本地 play（秒起）；未缓存 →
-      // enginePlayWebdavStream 流式播放（Rust reqwest 拉远端喂 core，首帧
-      // 即出声，后台并行写缓存）；流式不可用 → 回退全量下载。
-      final davSw = Stopwatch()..start();
-      resolvedPath = await WebdavService.cachedLocalPath(song.davPath!);
-      if (resolvedPath == null) {
-        try {
-          final ext = song.davPath!.split('.').last.toLowerCase();
-          final cacheTarget = await WebdavService.cacheTargetFor(song.davPath!);
-          final url = WebdavService.fullUrlFor(song.davPath!);
-          if (url == null) throw Exception('WebDAV base URL 未配置');
-          await _engineRepo.playWebdavStream(
-            url,
-            WebdavService.username,
-            WebdavService.password,
-            ext.isEmpty ? null : ext,
-            cacheTarget,
-          );
-          _playingFromStream = true;
-        } catch (e) {
-          // 流式启动失败（引擎未初始化/认证失败/解码无法探测）→ 回退全量下载
-          Log.w('Audio', 'WebDAV 边下边播不可用 ($e)，回退全量下载');
-          _ghostStreamUntilMs = DateTime.now().millisecondsSinceEpoch + 12000;
-          resolvedPath = await WebdavService.downloadToLocal(song.davPath!);
-        }
-      }
-      if (resolvedPath == null) {
-        Log.w('Audio', 'WebDAV 路径解析失败（下载未成功）: ${song.davPath}');
+      resolvedPath = await _resolveWebdavPlayable(song.davPath!, song.title);
+    } else if (song.isStrm) {
+      // STRM 指针：优先用扫描时 Resolver 落地的结果（targetUri/targetKind，
+      // 元数据层已共用）；扫描时解析失败（内容异常）则兑底重读解析。
+      final fallback = await _resolveStrmTarget(song);
+      _strmTarget = song.targetUri != null && song.targetKind != null
+          ? (
+              kind: song.targetKind!,
+              path: song.targetUri!,
+              extInfTitle: null,
+              extInfSecs: null,
+            )
+          : fallback;
+      final target = _strmTarget;
+      if (target == null) {
+        Log.w('Audio', 'STRM 解析失败: ${song.title} (${song.strmPath})');
       } else {
-        Log.d(
-          'Audio',
-          'WebDAV 路径解析完成'
-              '（${davSw.elapsedMilliseconds}ms）: ${song.title}',
-        );
+        // #EXTINF 回填（仅兑底解析路径：扫描落地时已回填过）
+        if (fallback != null &&
+            applyExtInfToSong(
+              song,
+              StrmTarget(
+                kind: fallback.kind,
+                path: fallback.path,
+                extInfTitle: fallback.extInfTitle,
+                extInfSecs: fallback.extInfSecs,
+              ),
+            )) {
+          state = state.copyWith(); // 刷新标题/时长
+        }
+        switch (target.kind) {
+          case 'smb':
+            resolvedPath = await _resolveSmbPlayable(target.path);
+          case 'dav':
+            resolvedPath = await _resolveWebdavPlayable(target.path, song.title);
+          case 'http':
+            // 文件型 URL：优先流式（Rust 带 WebDAV 配置凭据直喂 core，
+            // 支持 Digest/Basic），失败回退全量下载。
+            if (!await _startStrmStream(target.path)) {
+              resolvedPath = await _downloadToCache(
+                target.path,
+                song.id,
+                song.title,
+              );
+            }
+          case 'stream':
+            // 无扩展名 URL（网络电台流）：流式直喂 core，不下载不缓存
+            // （无限流下载必超时）；失败无下载可回退，视为解析失败。
+            await _startStrmStream(target.path);
+        }
       }
     } else if (song.streamUrl != null && song.streamUrl!.isNotEmpty) {
       resolvedPath = await _downloadToCache(
@@ -522,6 +516,128 @@ class PlayerNotifier extends Notifier<PlayerState> {
       if (initialSeekMs > 0) {
         _seekToPosition(initialSeekMs);
       }
+    }
+  }
+
+  /// SMB 远端歌解析为可播放路径：缓存命中 → 本地（秒起）；未缓存 →
+  /// 边下边播（首帧即出声，后台并行写缓存）；流式不可用 → 回退全量下载。
+  /// 返回 null 表示解析失败。供 SMB 歌与 STRM 解析出的 SMB 目标共用。
+  Future<String?> _resolveSmbPlayable(String smbPath) async {
+    // 1. 缓存命中：纯本地返回，不碰 SMB 会话
+    String? resolvedPath = await SmbService.cachedLocalPath(smbPath);
+    if (resolvedPath == null) {
+      // 2. 未缓存：先查命中（全量下载逻辑内的），若未命中走边下边播
+      try {
+        final ext = smbPath.split('.').last.toLowerCase();
+        final cacheTarget = await SmbService.cacheTargetFor(smbPath);
+        // 播放互斥标记：封面提取（后台任务）在此期间让路，
+        // 避免竞争 NAS 连接数导致喂流超时（历史事故根因）
+        SmbService.enterPlayback();
+        try {
+          await _engineRepo.playSmbStream(
+            smbPath,
+            ext.isEmpty ? null : ext,
+            cacheTarget,
+          );
+          _playingFromStream = true;
+        } finally {
+          SmbService.exitPlayback();
+        }
+      } catch (e) {
+        // 3. 流式启动失败（引擎未初始化/解码无法探测）→ 回退全量下载
+        Log.w('Audio', 'SMB 边下边播不可用 ($e)，回退全量下载');
+        // 幽灵流窗口：core 侧残留 stream 任务 ~3s 后会产生 error/stopped，
+        // 置窗口标记供 _tick 吞掉（防误切歌），已产生的事件由播放前 drain 清空
+        _ghostStreamUntilMs = DateTime.now().millisecondsSinceEpoch + 12000;
+        resolvedPath = await SmbService.downloadToLocal(smbPath);
+      }
+    }
+    return resolvedPath;
+  }
+
+  /// WebDAV 远端歌解析为可播放路径：缓存命中 → 本地；未缓存 → 流式播放
+  /// （Rust reqwest 拉远端喂 core）；流式不可用 → 回退全量下载。
+  /// 返回 null 表示解析失败。供 WebDAV 歌与 STRM 解析出的 WebDAV 目标共用。
+  Future<String?> _resolveWebdavPlayable(String davPath, String title) async {
+    final davSw = Stopwatch()..start();
+    String? resolvedPath = await WebdavService.cachedLocalPath(davPath);
+    if (resolvedPath == null) {
+      try {
+        final ext = davPath.split('.').last.toLowerCase();
+        final cacheTarget = await WebdavService.cacheTargetFor(davPath);
+        final url = WebdavService.fullUrlFor(davPath);
+        if (url == null) throw Exception('WebDAV base URL 未配置');
+        await _engineRepo.playWebdavStream(
+          url,
+          WebdavService.username,
+          WebdavService.password,
+          ext.isEmpty ? null : ext,
+          cacheTarget,
+        );
+        _playingFromStream = true;
+      } catch (e) {
+        // 流式启动失败（引擎未初始化/认证失败/解码无法探测）→ 回退全量下载
+        Log.w('Audio', 'WebDAV 边下边播不可用 ($e)，回退全量下载');
+        _ghostStreamUntilMs = DateTime.now().millisecondsSinceEpoch + 12000;
+        resolvedPath = await WebdavService.downloadToLocal(davPath);
+      }
+    }
+    if (resolvedPath == null) {
+      Log.w('Audio', 'WebDAV 路径解析失败（下载未成功）: $davPath');
+    } else {
+      Log.d(
+        'Audio',
+        'WebDAV 路径解析完成'
+            '（${davSw.elapsedMilliseconds}ms）: $title',
+      );
+    }
+    return resolvedPath;
+  }
+
+  /// 读取并解析 STRM 指针内容 → 目标媒体（kind: smb/dav/http + 路径/URL）。
+  /// 内容为完整 http(s) URL 时走 http（下载通路）；否则按相对路径解析：
+  /// 以 "/" 开头视为相对库根，否则相对 strm 文件所在目录，并规范化
+  /// （解析 ./ ../）。目标扩展名非音频视为解析失败（防 lrc 式事故）。
+  /// STRM 兑底解析：读文件内容 → Resolver 纯函数解析。
+  /// 扫描时已落地（Song.targetUri/targetKind）的走落地结果，
+  /// 此方法仅用于扫描时解析失败/内容异常的场合。
+  Future<({String kind, String path, String? extInfTitle, int? extInfSecs})?>
+      _resolveStrmTarget(Song song) async {
+    final strmPath = song.strmPath;
+    if (strmPath == null || strmPath.isEmpty) return null;
+    final text = song.strmFromWebdav
+        ? await WebdavService.readRemoteText(strmPath)
+        : await SmbService.readRemoteText(strmPath);
+    if (text == null) return null;
+    final target =
+        parseStrmContent(text, fromWebdav: song.strmFromWebdav, strmPath: strmPath);
+    if (target == null) return null;
+    return (
+      kind: target.kind,
+      path: target.path,
+      extInfTitle: target.extInfTitle,
+      extInfSecs: target.extInfSecs,
+    );
+  }
+
+  /// STRM http/stream 目标流式启动：Rust reqwest 带 WebDAV 配置凭据
+  /// 直喂 core（支持 Basic/Digest）。成功返回 true 并置 [_playingFromStream]；
+  /// 失败设置幽灵窗口（core 残留 stream 任务事件需吞掉）并返回 false。
+  Future<bool> _startStrmStream(String url) async {
+    try {
+      await _engineRepo.playWebdavStream(
+        url,
+        WebdavService.username,
+        WebdavService.password,
+        null,
+        null,
+      );
+      _playingFromStream = true;
+      return true;
+    } catch (e) {
+      Log.w('Audio', 'STRM 流式启动失败 ($e)，回退/放弃');
+      _ghostStreamUntilMs = DateTime.now().millisecondsSinceEpoch + 12000;
+      return false;
     }
   }
 
@@ -694,14 +810,28 @@ class PlayerNotifier extends Notifier<PlayerState> {
         _pendingStreamSeekMs = null;
         final smbPath = song.smbPath;
         final davPath = song.davPath;
-        if ((smbPath == null || smbPath.isEmpty) &&
-            (davPath == null || davPath.isEmpty)) {
+        // 按源分支下载本地副本：SMB 走 SmbService，WebDAV 走 WebdavService；
+        // STRM 歌用本次播放解析出的目标（smbPath/davPath 为空）。
+        final String? path;
+        if (smbPath != null && smbPath.isNotEmpty) {
+          path = await SmbService.downloadToLocal(smbPath);
+        } else if (davPath != null && davPath.isNotEmpty) {
+          path = await WebdavService.downloadToLocal(davPath);
+        } else if (song.isStrm && _strmTarget != null) {
+          final t = _strmTarget!;
+          if (t.kind == 'stream') {
+            // 电台流不可 seek（无限流无文件可下），保持流式继续播
+            Log.d('Audio', 'STRM 电台流不支持跳转，保持播放: ${song.title}');
+            return;
+          }
+          path = switch (t.kind) {
+            'smb' => await SmbService.downloadToLocal(t.path),
+            'dav' => await WebdavService.downloadToLocal(t.path),
+            _ => await _downloadToCache(t.path, song.id, song.title),
+          };
+        } else {
           return;
         }
-        // 按源分支下载本地副本：SMB 走 SmbService，WebDAV 走 WebdavService
-        final path = smbPath != null && smbPath.isNotEmpty
-            ? await SmbService.downloadToLocal(smbPath)
-            : await WebdavService.downloadToLocal(davPath!);
         if (!ref.mounted || song.id != state.currentSong?.id) return;
         if (path == null) {
           // 下载失败：保持流式继续播，仅提示（不打断播放）
@@ -951,7 +1081,13 @@ class PlayerNotifier extends Notifier<PlayerState> {
         // 切歌竞态：await 期间 _playCurrent 已重置 position，引擎里
         // 还是旧曲位置（Play 命令未处理/解码未启动），丢弃过期查询
         if (tickToken != _playToken) return;
-        state = state.copyWith(position: enginePosMs);
+        // duration 为 0（STRM 电台流）时冻结进度：无限流无曲终，
+        // 进度条/曲终判断均以 0 处理（避免 position/duration=∞ 满格）
+        final cur = state.currentSong;
+        state = state.copyWith(
+          position:
+              cur != null && cur.duration > Duration.zero ? enginePosMs : 0,
+        );
       } catch (e) {
         Log.e('Audio', '位置查询失败，保留上次位置: ${state.position.toInt()}ms');
       }
@@ -959,7 +1095,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
     final song = state.currentSong;
     // 曲终判断仅在引擎位置真实读取成功时进行，避免后台异常时误停。
+    // duration 为 0（STRM 电台流无时长信息）时跳过——无限流没有曲终，
+    // 切歌只能靠引擎 stopped 事件（手动切/断流）。
     if (song != null &&
+        song.duration > Duration.zero &&
         enginePosMs != null &&
         enginePosMs >= song.duration.inMilliseconds) {
       Log.d(
@@ -1001,16 +1140,32 @@ class PlayerNotifier extends Notifier<PlayerState> {
     final next = q.queue[ref.read(queueProvider.notifier).findNextIndex()];
     final smbPath = next.smbPath;
     final davPath = next.davPath;
-    if (smbPath == null || smbPath.isEmpty) {
-      if (davPath == null || davPath.isEmpty) return;
+    // STRM 歌：用 Resolver 落地的目标（仅 smb/dav 可预取下载；
+    // http 走下载通路可预取；stream 电台流不可缓存跳过）
+    final strmKind = next.isStrm ? next.targetKind : null;
+    final strmUri = next.isStrm ? next.targetUri : null;
+    if ((smbPath == null || smbPath.isEmpty) &&
+        (davPath == null || davPath.isEmpty) &&
+        (strmUri == null ||
+            (strmKind != 'smb' && strmKind != 'dav' && strmKind != 'http'))) {
+      return;
     }
     _prefetchedNext = true;
     Log.d('Audio', '预取下一曲: ${next.title}');
     unawaited(
       smbPath != null && smbPath.isNotEmpty
           ? SmbService.downloadToLocal(smbPath).catchError((Object _) => null)
-          : WebdavService.downloadToLocal(davPath!)
-              .catchError((Object _) => null),
+          : davPath != null && davPath.isNotEmpty
+              ? WebdavService.downloadToLocal(davPath)
+                  .catchError((Object _) => null)
+              : strmKind == 'smb'
+                  ? SmbService.downloadToLocal(strmUri!)
+                      .catchError((Object _) => null)
+                  : strmKind == 'dav'
+                      ? WebdavService.downloadToLocal(strmUri!)
+                          .catchError((Object _) => null)
+                      : _downloadToCache(strmUri!, next.id, next.title)
+                          .catchError((Object _) => null),
     );
   }
 
@@ -1058,12 +1213,20 @@ class PlayerNotifier extends Notifier<PlayerState> {
         Log.e('Audio', '歌词加载失败: $e');
       }
     }
-    // 2) 远端同名 .lrc（本地歌词缺失时）：SMB / WebDAV 各自按源读取
+    // 2) 远端同名 .lrc（本地歌词缺失时）：SMB / WebDAV 各自按源读取；
+    //    STRM 歌用 Resolver 落地的目标地址（targetUri/targetKind）
     if (lyrics == null) {
       if (song.smbPath != null && song.smbPath!.isNotEmpty) {
         lyrics = await _loadRemoteLyrics(song.smbPath!);
       } else if (song.davPath != null && song.davPath!.isNotEmpty) {
         lyrics = await _loadWebdavLyrics(song.davPath!);
+      } else if (song.isStrm && song.targetUri != null) {
+        final t = song.targetUri!;
+        lyrics = song.targetKind == 'smb'
+            ? await _loadRemoteLyrics(t)
+            : song.targetKind == 'dav'
+                ? await _loadWebdavLyrics(t)
+                : null;
       }
     }
     // 3) 内嵌元数据歌词
@@ -1231,28 +1394,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     }
   }
 
-  String _extFromUrl(String url) {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return '.audio';
-    final path = uri.path.toLowerCase();
-    for (final ext in [
-      '.flac',
-      '.wav',
-      '.mp3',
-      '.aac',
-      '.ogg',
-      '.m4a',
-      '.opus',
-      '.dsf',
-      '.dff',
-      '.aiff',
-      '.ape',
-      '.wv',
-    ]) {
-      if (path.endsWith(ext)) return ext;
-    }
-    return '.audio';
-  }
+  String _extFromUrl(String url) => strmExtFromUrl(url);
 
   Future<String?> _resolvePlayablePath(String? path) async {
     if (path == null) return null;

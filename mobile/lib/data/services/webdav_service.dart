@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:webdav_client/webdav_client.dart' as wd;
@@ -9,6 +10,7 @@ import 'log.dart';
 import 'lrc_codec.dart';
 import 'preferences_service.dart';
 import 'rust_service.dart' as rs;
+import 'strm_resolver.dart';
 import '../../src/rust/api/metadata.dart' show MetadataResult;
 
 /// WebDAV 音乐服务器服务
@@ -219,7 +221,7 @@ class WebdavService {
         // 递归子目录（单层 readDir + 递归，不依赖服务器 DEPTH infinity）
         await _scanDir(client, entryPath, songs, buffer, flush, countDir);
       } else {
-        final song = _toSong(entry);
+        final song = await _toSong(entry);
         if (song != null) {
           songs.add(song);
           buffer.add(song);
@@ -231,12 +233,46 @@ class WebdavService {
 
   /// 单个远程文件 → Song 索引（只建索引，不下载、不读元数据）。
   /// 服务端 size 缺失时按 0 处理（时长估算为 0，不阻断扫描）。
-  static Song? _toSong(wd.File entry) {
+  /// STRM 文件在此阶段 Resolver 落地：读内容解析目标（失败不阻断索引）。
+  static Future<Song?> _toSong(wd.File entry) async {
     final name = entry.name ?? '';
     final path = entry.path ?? '';
     if (name.isEmpty || path.isEmpty) return null;
     final ext = name.split('.').last.toLowerCase();
-    if (!ImportService.extensions.contains(ext)) return null;
+    if (!ImportService.extensions.contains(ext)) {
+      // STRM 指针文件：按歌建索引（标题取 strm 文件名），播放时读
+      // 内容解析真实目标再走对应源（strm 是文本，无音频标签可读）。
+      if (ext != 'strm') return null;
+      final parsed = ImportService.parseArtistTitle(
+        name.replaceAll(RegExp(r'\.[^.]+$'), ''),
+      );
+      StrmTarget? target;
+      try {
+        final text = await readRemoteText(path);
+        if (text != null) {
+          target =
+              parseStrmContent(text, fromWebdav: true, strmPath: path);
+        }
+      } catch (e) {
+        Log.w('WebDAV', 'STRM 解析失败 ($path): $e');
+      }
+      final song = Song(
+        id: 'dav_${path.hashCode}',
+        title: parsed.title,
+        artist: artistPlaceholder,
+        album: albumPlaceholder,
+        duration: Duration.zero,
+        dominantColor: AppTheme.s2,
+        strmPath: path,
+        strmFromWebdav: true,
+        targetUri: target?.path,
+        targetKind: target?.kind,
+        durationEstimated: true,
+      );
+      // #EXTINF 标题/时长回填（Kodi 风格 strm 库的展示名）
+      if (target != null) applyExtInfToSong(song, target);
+      return song;
+    }
     final parsed = ImportService.parseArtistTitle(name);
     return Song(
       id: 'dav_${path.hashCode}',
@@ -285,7 +321,8 @@ class WebdavService {
   /// M4A/ALAC，moov 在文件尾）时再读尾 1MB 拼接成近似完整文件二次解析。
   /// 返回是否有进展（拿到封面或回填了元数据），供 cover_service 判断。
   static Future<bool> fetchRemoteCover(Song song) async {
-    final davPath = song.davPath;
+    // STRM 歌的 davPath 为空，用 Resolver 落地的目标地址
+    final davPath = song.davPath ?? (song.isStrm ? song.targetUri : null);
     if (davPath == null || davPath.isEmpty) return false;
     if (song.coverUrl != null && !needsMetadata(song)) return false;
     final url = fullUrlFor(davPath);
@@ -381,6 +418,22 @@ class WebdavService {
       }
     }
     return null;
+  }
+
+  /// 读取远端文本文件内容（STRM 指针解析用），失败/为空返回 null。
+  static Future<String?> readRemoteText(String davPath) async {
+    try {
+      final client = await _ensureClient();
+      if (client == null) return null;
+      final bytes = await client
+          .read(davPath)
+          .timeout(const Duration(seconds: 30));
+      if (bytes.isEmpty) return null;
+      return utf8.decode(bytes, allowMalformed: true);
+    } catch (e) {
+      Log.w('WebDAV', 'readRemoteText failed ($davPath): $e');
+      return null;
+    }
   }
 
   /// 检查单曲本地缓存是否已就绪（存在且非空才命中）。

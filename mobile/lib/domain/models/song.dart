@@ -27,6 +27,18 @@ class Song {
   /// WebDAV 服务器内相对路径。设置了此字段表示文件在远端 WebDAV，
   /// 播放时先按需下载到本地缓存。
   final String? davPath;
+  /// STRM 指针文件在远端源内的相对路径（SMB 共享内 / WebDAV 服务器内）。
+  /// 设置了此字段表示该歌是 .strm 指针：播放时先读文件内容解析出真实
+  /// 媒体地址（相对路径 / 完整 http(s) URL），再按目标类型走对应源通路。
+  final String? strmPath;
+  /// strm 文件所在源是否为 WebDAV（false = SMB）。仅 [isStrm] 时有意义：
+  /// 决定读取内容走哪个通道与来源图标。
+  final bool strmFromWebdav;
+  /// STRM 解析结果（扫描时 Resolver 落地）：目标地址（源内相对路径已
+  /// 规范化，或完整 URL）。null = 未解析（播放时兑底再解析）。
+  final String? targetUri;
+  /// STRM 目标类型：smb / dav / http / stream（与播放分发一致）。
+  final String? targetKind;
   String? lyricsPath;
   /// 时长是否为估算值（NAS 等无法读取元数据时按文件大小估算）。
   /// 估算值不参与曲库列表显示；播放时引擎探测到真实时长后回填并置 false。
@@ -48,6 +60,10 @@ class Song {
     this.streamUrl,
     this.smbPath,
     this.davPath,
+    this.strmPath,
+    this.strmFromWebdav = false,
+    this.targetUri,
+    this.targetKind,
     this.lyricsPath,
     this.hasCover = false,
     this.durationEstimated = false,
@@ -69,6 +85,10 @@ class Song {
         'streamUrl': streamUrl,
         'smbPath': smbPath,
         'davPath': davPath,
+        'strmPath': strmPath,
+        'strmFromWebdav': strmFromWebdav,
+        'targetUri': targetUri,
+        'targetKind': targetKind,
         'lyricsPath': lyricsPath,
         'hasCover': hasCover,
         'durationEstimated': durationEstimated,
@@ -90,6 +110,10 @@ class Song {
         streamUrl: json['streamUrl'] as String?,
         smbPath: json['smbPath'] as String?,
         davPath: json['davPath'] as String?,
+        strmPath: json['strmPath'] as String?,
+        strmFromWebdav: json['strmFromWebdav'] as bool? ?? false,
+        targetUri: json['targetUri'] as String?,
+        targetKind: json['targetKind'] as String?,
         lyricsPath: json['lyricsPath'] as String?,
         hasCover: json['hasCover'] as bool? ?? false,
         durationEstimated: json['durationEstimated'] as bool? ?? false,
@@ -102,8 +126,12 @@ class Song {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
-  /// 来源判断优先级：NAS > WebDAV > 流式(Subsonic) > Apple Music 同步 > 文件导入 > 本地媒体库
+  /// 是否为 STRM 指针歌（播放前需解析内容定位真实媒体）
+  bool get isStrm => strmPath != null && strmPath!.isNotEmpty;
+
+  /// 来源判断优先级：STRM > NAS > WebDAV > 流式(Subsonic) > Apple Music 同步 > 文件导入 > 本地媒体库
   SongSource get source {
+    if (isStrm) return strmFromWebdav ? SongSource.webdav : SongSource.nas;
     if (smbPath != null && smbPath!.isNotEmpty) return SongSource.nas;
     if (davPath != null && davPath!.isNotEmpty) return SongSource.webdav;
     if (streamUrl != null && streamUrl!.isNotEmpty) return SongSource.subsonic;
@@ -144,9 +172,12 @@ class Song {
 
   /// 格式标签，如 "FLAC"、"DSD"、"MP3 320"、"WAV"
   /// 从文件路径扩展名推断，用于 SongTile 的格式 pill。
-  /// 本地文件看 [path]；NAS/WebDAV 未下载（仅索引）看 [smbPath]/[davPath]；流式源看 [streamUrl]（取 URL path 去 query）。
+  /// 本地文件看 [path]；NAS/WebDAV 未下载（仅索引）看 [smbPath]/[davPath]；
+  /// 流式源看 [streamUrl]（取 URL path 去 query）；STRM 歌看解析出的
+  /// 真实目标 [targetUri]（显示真实格式而非 "STRM"）。
   String? get formatInfo {
-    final src = path ?? smbPath ?? davPath ?? streamUrl;
+    final src = path ?? smbPath ?? davPath ?? streamUrl ??
+        (isStrm ? targetUri : null);
     if (src == null) return null;
     final ext = src.split('?').first.split('.').last.toUpperCase();
     switch (ext) {
@@ -181,7 +212,8 @@ class Song {
 
   /// 是否为无损格式（用于格式 pill 高亮）
   bool get isLossless {
-    final src = path ?? smbPath ?? davPath ?? streamUrl;
+    final src = path ?? smbPath ?? davPath ?? streamUrl ??
+        (isStrm ? targetUri : null);
     if (src == null) return false;
     final ext = src.split('?').first.split('.').last.toUpperCase();
     return ['FLAC', 'WAV', 'DSF', 'DFF', 'AIFF', 'AIF', 'APE', 'WV'].contains(ext);

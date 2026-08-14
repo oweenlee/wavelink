@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -7,10 +8,11 @@ import '../../src/rust/api/metadata.dart' show MetadataResult;
 import '../../src/rust/api/smb.dart' as smb;
 import '../../ui/core/theme/app_theme.dart';
 import 'import_service.dart';
+import 'lrc_codec.dart';
+import 'log.dart';
 import 'preferences_service.dart';
 import 'rust_service.dart' as rs;
-import 'log.dart';
-import 'lrc_codec.dart';
+import 'strm_resolver.dart';
 
 /// SMB 直挂服务
 ///
@@ -413,7 +415,7 @@ class SmbService {
         final childPath = relPath.isEmpty ? entry.name : '$relPath/${entry.name}';
         if (entry.isDir) {
           dirs.add(childPath);
-        } else if (_isAudio(entry.name)) {
+        } else if (_isAudio(entry.name) || _isStrm(entry.name)) {
           files.add((childPath, entry.name, entry.size.toInt()));
         }
       }
@@ -460,6 +462,11 @@ class SmbService {
     return ImportService.extensions.contains(ext);
   }
 
+  /// 是否为 STRM 指针文件（文本内容指向真实媒体位置，播放时解析）。
+  static bool _isStrm(String name) {
+    return name.split('.').last.toLowerCase() == 'strm';
+  }
+
   /// 将 SMB 文件转为可播放的 Song 对象。
   /// 离线缓存关闭（默认）：只建索引，不下载文件，播放时按需下载；
   /// 离线缓存开启：下载文件到本地 `.smb_cache` 并读取真实元数据，关 SMB 也能播。
@@ -471,6 +478,38 @@ class SmbService {
     final fallbackTitle = name.replaceAll(RegExp(r'\.[^.]+$'), '');
     // 文件名启发式解析艺术家（`艺术家 - 歌名` 格式），拆不到时保持占位由 UI 隐藏
     final parsed = ImportService.parseArtistTitle(fallbackTitle);
+
+    // STRM 指针文件：按歌建索引（标题取 strm 文件名），不下载不读元数据
+    // （strm 是文本无音频标签）。Resolver 落地：读内容解析目标（失败不阻断
+    // 索引，播放时兑底再解析）；#EXTINF 标题/时长顺带回填。
+    if (_isStrm(name)) {
+      StrmTarget? target;
+      try {
+        final text = await readRemoteText(smbPath);
+        if (text != null) {
+          target =
+              parseStrmContent(text, fromWebdav: false, strmPath: smbPath);
+        }
+      } catch (e) {
+        Log.w('SMB', 'STRM 解析失败 ($smbPath): $e');
+      }
+      final song = Song(
+        id: 'smb_${smbPath.hashCode}',
+        title: parsed.title,
+        artist: parsed.artist ?? artistPlaceholder,
+        album: albumPlaceholder,
+        duration: Duration.zero,
+        dominantColor: AppTheme.s2,
+        strmPath: smbPath,
+        strmFromWebdav: false,
+        targetUri: target?.path,
+        targetKind: target?.kind,
+        durationEstimated: true,
+      );
+      // #EXTINF 标题/时长回填（Kodi 风格 strm 库的展示名）
+      if (target != null) applyExtInfToSong(song, target);
+      return song;
+    }
 
     // 关闭离线缓存 → 仅索引，不占本地空间。播放时经 downloadToLocal 拉取。
     if (!PreferencesService.instance.smbOfflineCache) {
@@ -573,7 +612,8 @@ class SmbService {
   /// 会话可能已断开（服务器空闲超时、iOS 后台回收等）：
   /// 首次尝试前先自愈就绪，失败后按会话代数判定是否需要重连再试。
   static Future<bool> fetchRemoteCover(Song song) async {
-    final smbPath = song.smbPath;
+    // STRM 歌的 smbPath 为空，用 Resolver 落地的目标地址
+    final smbPath = song.smbPath ?? (song.isStrm ? song.targetUri : null);
     if (smbPath == null || smbPath.isEmpty) return false;
     // 封面与元数据都已就绪的不重复处理
     if (song.coverUrl != null && !needsMetadata(song)) return false;
@@ -677,6 +717,18 @@ class SmbService {
       }
     }
     return null;
+  }
+
+  /// 读取远端文本文件内容（STRM 指针解析用），失败/为空返回 null。
+  static Future<String?> readRemoteText(String smbPath) async {
+    try {
+      final bytes = await smb.smbReadFile(path: smbPath);
+      if (bytes.isEmpty) return null;
+      return utf8.decode(bytes, allowMalformed: true);
+    } catch (e) {
+      Log.w('SMB', 'readRemoteText failed ($smbPath): $e');
+      return null;
+    }
   }
 
   static Future<void> _fetchRemoteCoverOnce(Song song, String smbPath) async {

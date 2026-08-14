@@ -127,7 +127,13 @@ class CoverService {
           if (s.smbPath != null && s.smbPath!.isNotEmpty) {
             return SmbService.fetchRemoteCover(s);
           }
-          return WebdavService.fetchRemoteCover(s);
+          if (s.davPath != null && s.davPath!.isNotEmpty) {
+            return WebdavService.fetchRemoteCover(s);
+          }
+          // STRM 歌：按 Resolver 落地的目标走对应源提取
+          return s.targetKind == 'smb'
+              ? SmbService.fetchRemoteCover(s)
+              : WebdavService.fetchRemoteCover(s);
         }));
         for (var k = 0; k < sub.length; k++) {
           final s = sub[k];
@@ -203,16 +209,22 @@ class CoverService {
   /// 支持 SMB（smbPath）与 WebDAV（davPath）两个源。
   static List<Song> pendingNasCovers(List<Song> songs) => songs
       .where((s) =>
-          (s.smbPath != null && s.smbPath!.isNotEmpty ||
-              s.davPath != null && s.davPath!.isNotEmpty) &&
+          ((s.smbPath != null && s.smbPath!.isNotEmpty) ||
+              (s.davPath != null && s.davPath!.isNotEmpty) ||
+              // STRM 歌：Resolver 已落地 smb/dav 目标 → 参与封面提取
+              (s.isStrm &&
+                  (s.targetKind == 'smb' || s.targetKind == 'dav'))) &&
           s.path == null &&
           (s.coverUrl == null || _needsMetadataFor(s)))
       .toList();
 
   /// 按源判断元数据是否仍为扫描期占位值（SMB/WebDAV 各自占位常量不同）。
-  static bool _needsMetadataFor(Song s) => s.smbPath != null
-      ? SmbService.needsMetadata(s)
-      : WebdavService.needsMetadata(s);
+  static bool _needsMetadataFor(Song s) {
+    if (s.smbPath != null || (s.isStrm && s.targetKind == 'smb')) {
+      return SmbService.needsMetadata(s);
+    }
+    return WebdavService.needsMetadata(s);
+  }
 
   /// 筛选缺封面且有本地文件的歌（从文件提取）
   static List<Song> pendingLocalCovers(List<Song> songs) =>
