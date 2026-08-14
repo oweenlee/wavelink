@@ -236,8 +236,9 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
   }
 }
 
-/// 与 NAS/Subsonic 设置页同款列表项风格的表单字段
-class _Field extends StatelessWidget {
+/// 与 NAS/Subsonic 设置页同款列表项风格的表单字段。
+/// [obscure] 为 true（密码框）时内置小眼睛，可切换明文显示。
+class _Field extends StatefulWidget {
   final IconData icon;
   final String label;
   final String? hint;
@@ -253,27 +254,44 @@ class _Field extends StatelessWidget {
   });
 
   @override
+  State<_Field> createState() => _FieldState();
+}
+
+class _FieldState extends State<_Field> {
+  bool _show = false;
+
+  @override
   Widget build(BuildContext context) {
     return ListTile(
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-      leading: Icon(icon, color: AppTheme.textSecondary, size: 22),
+      leading: Icon(widget.icon, color: AppTheme.textSecondary, size: 22),
       title: Text(
-        label,
+        widget.label,
         style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
       ),
       subtitle: TextField(
-        controller: controller,
-        obscureText: obscure,
+        controller: widget.controller,
+        obscureText: widget.obscure && !_show,
         style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary),
         decoration: InputDecoration(
-          hintText: hint,
+          hintText: widget.hint,
           hintStyle: const TextStyle(
             fontSize: 14,
             color: AppTheme.textTertiary,
           ),
           isDense: true,
           border: InputBorder.none,
+          suffixIcon: widget.obscure
+              ? IconButton(
+                  icon: Icon(
+                    _show ? LucideIcons.eyeOff : LucideIcons.eye,
+                    size: 18,
+                    color: AppTheme.textSecondary,
+                  ),
+                  onPressed: () => setState(() => _show = !_show),
+                )
+              : null,
         ),
       ),
     );
