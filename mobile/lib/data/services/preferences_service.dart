@@ -222,11 +222,6 @@ class PreferencesService {
     await _prefs.remove(_kResumePositionMs);
   }
 
-  // ── 动态取色 ──
-  static const _kDynamicColor = 'dynamic_color';
-  bool get dynamicColor => _prefs.getBool(_kDynamicColor) ?? true;
-  Future<void> setDynamicColor(bool v) => _prefs.setBool(_kDynamicColor, v);
-
   // ── 封面模糊强度 ──
   static const _kCoverBlur = 'cover_blur';
   double get coverBlur => _prefs.getDouble(_kCoverBlur) ?? 0.7;

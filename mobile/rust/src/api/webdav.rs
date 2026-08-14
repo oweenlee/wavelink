@@ -416,7 +416,9 @@ pub async fn engine_play_webdav_stream(
 /// [suffix]=false → GET + `Range: bytes=0-(max_len-1)` 读文件头；
 /// [suffix]=true → `Range: bytes=-max_len` 读文件尾（非 faststart 的
 /// M4A/ALAC moov 在尾部，头部提取不到元数据时兜底）。
-/// 服务器忽略 Range → 200 返回全文但只收取前 max_len 字节即断开。
+/// 服务器忽略 Range → 200 返回全文：头模式只收取前 max_len 字节即断开
+/// （头内容正确，可接受）；尾模式直接 Err（200 拿到的是文件头而非尾，
+/// 拼出的"头+尾"是错的，不如明说尾部不可用）。
 /// 认证协商与流式播放共用。max_len 上限 RANGE_READ_CAP（防拉满整曲）。
 /// 返回读取到的字节（可能少于 max_len，取决于文件大小/服务器 Range 支持）。
 pub async fn engine_read_webdav_range(
@@ -440,6 +442,16 @@ pub async fn engine_read_webdav_range(
     let mut resp = webdav_get(client, &url, &username, &password, &extra).await?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}: {url}", resp.status()));
+    }
+    // suffix 模式（读文件尾，非 faststart M4A 的 moov 兜底）必须拿到
+    // 206 Partial Content：服务器若忽略 Range 返回 200 全文，收的是文件
+    // 头而非尾，Dart 侧 [...head, ...tail] 会拼成"头+头"导致兜底静默
+    // 失效。明确报错让 Dart 侧知道尾部读取不可用（走整文件兜底/放弃）。
+    if suffix && resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+        return Err(format!(
+            "HTTP {}: 服务器不支持 Range，无法读取文件尾 (suffix=true): {url}",
+            resp.status()
+        ));
     }
     let mut buf: Vec<u8> = Vec::with_capacity((max_len.min(128 * 1024)) as usize);
     while (buf.len() as u64) < max_len {

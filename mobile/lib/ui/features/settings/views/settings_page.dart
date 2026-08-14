@@ -25,9 +25,6 @@ class SettingsPage extends ConsumerWidget {
     // 用 select 隔离，telemetry 高频更新不会带动本页重建
     final bitPerfect = ref.watch(playerProvider.select((s) => s.bitPerfect));
     final replayGain = ref.watch(playerProvider.select((s) => s.replayGain));
-    final dynamicColor = ref.watch(
-      playerProvider.select((s) => s.dynamicColor),
-    );
     final coverBlur = ref.watch(playerProvider.select((s) => s.coverBlur));
 
     return ListView(
@@ -111,12 +108,6 @@ class SettingsPage extends ConsumerWidget {
               icon: LucideIcons.palette,
               label: l10n.theme,
               trailing: l10n.themeDark,
-            ),
-            _SwitchItem(
-              icon: LucideIcons.pipette,
-              label: l10n.dynamicColor,
-              value: dynamicColor,
-              onChanged: (_) => player.setDynamicColor(!dynamicColor),
             ),
             _SliderItem(
               icon: LucideIcons.droplets,

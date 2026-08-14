@@ -45,13 +45,11 @@ void main() {
       check(prefs.dspDither).isTrue();
     });
 
-    test('ReplayGain / 动态取色 / 封面模糊读写', () async {
+    test('ReplayGain / 封面模糊读写', () async {
       final prefs = PreferencesService.instance;
       await prefs.setReplayGain(false);
-      await prefs.setDynamicColor(false);
       await prefs.setCoverBlur(0.3);
       check(prefs.replayGain).isFalse();
-      check(prefs.dynamicColor).isFalse();
       check(prefs.coverBlur).equals(0.3);
     });
 

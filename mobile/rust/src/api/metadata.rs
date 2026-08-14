@@ -77,9 +77,21 @@ pub struct MetadataResult {
     pub lyrics: Option<String>,
 }
 
-/// 无封面诊断：输出 MP3 ID3v2 标签结构摘要，辅助定位"有封面却解析不出"
-/// 的根因（标签被截断 / 标签不在文件头 / 真无标签 / 非 MP3）。
+/// 无封面诊断：输出标签结构摘要，辅助定位"有封面却解析不出"
+/// 的根因（标签被截断 / 标签不在文件头 / 真无标签）。
+/// 仅对 MP3（ID3v2）有意义；FLAC/WAV/OGG 等格式无 ID3v2 属正常，
+/// 不再输出误导性的 "no ID3v2"。
 fn mp3_tag_summary(path: &Path) -> String {
+    // 非 MP3：ID3v2 摘要无意义，FLAC 的 METADATA_BLOCK_PICTURE /
+    // WAV 的 RIFF LIST 用别的标签系统，缺失不代表无封面
+    if !matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some(ext) if ext.eq_ignore_ascii_case("mp3")
+    ) {
+        return format!(
+            "非 MP3 格式（无 ID3v2 属正常），lofty 未解析到封面"
+        );
+    }
     use std::io::Read;
     let mut f = match std::fs::File::open(path) {
         Ok(f) => f,
@@ -124,8 +136,9 @@ pub fn read_metadata(path: String) -> Result<MetadataResult, String> {
     let meta = match audio_core::decoder::read_metadata(Path::new(&path)) {
         Ok(m) => m,
         Err(e) => {
-            // 封面提取流程：symphonia 探测失败也输出结构诊断（截断文件常见）
-            if path.contains(".smb_head") {
+            // 封面提取流程：symphonia 探测失败也输出结构诊断（截断文件常见）。
+            // 仅 debug 构建输出，release 静默避免批量提取刷屏。
+            if cfg!(debug_assertions) && path.contains(".smb_head") {
                 eprintln!(
                     "[meta] 封面提取解析失败 {path}: {e}; {}",
                     mp3_tag_summary(Path::new(&path))
@@ -150,8 +163,10 @@ pub fn read_metadata(path: String) -> Result<MetadataResult, String> {
     }
 
     // 诊断：封面提取流程（.smb_head 临时文件）读到数据但无封面时，
-    // 输出标签结构摘要，定位"有封面却解析不出"的根因（用户反馈场景）
-    if !has_cover && path.contains(".smb_head") {
+    // 输出标签结构摘要，定位"有封面却解析不出"的根因（用户反馈场景）。
+    // 仅 debug 构建输出，release 静默避免批量提取逐首刷屏；
+    // 非 MP3 摘要已由 mp3_tag_summary 收敛（无 ID3v2 属正常）。
+    if cfg!(debug_assertions) && !has_cover && path.contains(".smb_head") {
         eprintln!(
             "[meta] 封面提取无封面诊断 {}: {}",
             path,

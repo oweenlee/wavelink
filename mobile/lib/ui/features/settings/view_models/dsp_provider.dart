@@ -227,9 +227,18 @@ class DspNotifier extends Notifier<DspState> {
       // 噪声整形仅在 dither 生效时有意义，随 dither 门控
       await engineRepo.setNoiseShaping(on && dsp.noiseShaping);
       await engineRepo.setAutoEq(autoEq);
-      // 房间校正独立于总开关（与 AutoEQ 同属“校正”而非“音效渲染”）
+      // 房间校正独立于总开关（与 AutoEQ 同属"校正"而非"音效渲染"）。
+      // 单独 try：IR 文件被外部删除（清缓存/重装）时加载失败，
+      // 不能吞进主 catch 让路径残留——每次启动反复尝试失败；
+      // 应清理 state 与偏好，避免脏路径。
       if (roomIr != null) {
-        await engineRepo.loadRoomIr(roomIr);
+        try {
+          await engineRepo.loadRoomIr(roomIr);
+        } catch (e) {
+          Log.w('DSP', '房间校正 IR 加载失败，已清理路径 ($e)');
+          state = state.copyWith(roomIrPath: null);
+          await ref.read(preferencesRepositoryProvider).setRoomIrPath(null);
+        }
       }
     } catch (e) {
       Log.e('DSP', '应用设置失败: $e');

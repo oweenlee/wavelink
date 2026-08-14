@@ -37,9 +37,6 @@ class PlayerState {
   /// ReplayGain 开关（由 PlaybackController 从偏好同步，供设置页响应式显示）
   final bool replayGain;
 
-  /// 动态取色开关（同上）
-  final bool dynamicColor;
-
   /// 封面模糊程度（同上，设置页滑块用）
   final double coverBlur;
 
@@ -52,7 +49,6 @@ class PlayerState {
     this.telemetry = EngineTelemetry.idle,
     this.bitPerfect = false,
     this.replayGain = true,
-    this.dynamicColor = true,
     this.coverBlur = 0.7,
   });
 
@@ -89,7 +85,6 @@ class PlayerState {
     EngineTelemetry? telemetry,
     bool? bitPerfect,
     bool? replayGain,
-    bool? dynamicColor,
     double? coverBlur,
   }) {
     return PlayerState(
@@ -105,7 +100,6 @@ class PlayerState {
       telemetry: telemetry ?? this.telemetry,
       bitPerfect: bitPerfect ?? this.bitPerfect,
       replayGain: replayGain ?? this.replayGain,
-      dynamicColor: dynamicColor ?? this.dynamicColor,
       coverBlur: coverBlur ?? this.coverBlur,
     );
   }
@@ -202,7 +196,6 @@ class PlayerNotifier extends Notifier<PlayerState> {
   /// 以下三个仅用于设置页响应式展示（值以偏好为唯一事实源，
   /// 由 PlaybackController 同步写入）：
   void setReplayGain(bool v) => state = state.copyWith(replayGain: v);
-  void setDynamicColor(bool v) => state = state.copyWith(dynamicColor: v);
   void setCoverBlur(double v) => state = state.copyWith(coverBlur: v);
 
   /// 有效 bit-perfect：请求偏好 && 实际链路 && 无 DSP 改动信号。
@@ -380,7 +373,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
           case 'stream':
             // 无扩展名 URL（网络电台流）：流式直喂 core，不下载不缓存
             // （无限流下载必超时）；失败无下载可回退，视为解析失败。
-            await _startStrmStream(target.path);
+            if (!await _startStrmStream(target.path)) {
+              Log.w('Audio', 'STRM 网络电台流启动失败，视为解析失败');
+            }
         }
       }
     } else if (song.streamUrl != null && song.streamUrl!.isNotEmpty) {
@@ -628,12 +623,19 @@ class PlayerNotifier extends Notifier<PlayerState> {
   /// STRM http/stream 目标流式启动：Rust reqwest 带 WebDAV 配置凭据
   /// 直喂 core（支持 Basic/Digest）。成功返回 true 并置 [_playingFromStream]；
   /// 失败设置幽灵窗口（core 残留 stream 任务事件需吞掉）并返回 false。
+  /// ⚠️ 安全：STRM 文件内容可指向任意 http URL（网络电台/第三方源）。
+  /// 凭据只对 WebDAV 服务器（host 与 baseUrl 一致）发送，否则 Rust 侧
+  /// 收到 401 challenge 会把凭据发给攻击者服务器（凭据泄漏）。
   Future<bool> _startStrmStream(String url) async {
     try {
+      final webdavBase = WebdavService.baseUrl;
+      final sameHost = webdavBase != null &&
+          Uri.tryParse(url)?.host.toLowerCase() ==
+              Uri.tryParse(webdavBase)?.host.toLowerCase();
       await _engineRepo.playWebdavStream(
         url,
-        WebdavService.username,
-        WebdavService.password,
+        sameHost ? WebdavService.username : '',
+        sameHost ? WebdavService.password : '',
         null,
         null,
       );
@@ -1143,13 +1145,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
         final text = lines[lineIdx].text;
         if (text != _lastLyricText) {
           _lastLyricText = text;
-          final cur = state.currentSong;
-          _nativeAudio.updateLiveLyrics(
-            title: cur?.title ?? '',
-            artist: cur?.artist ?? '',
-            lyricLine: text,
-            isPlaying: true,
-          );
+          _nativeAudio.updateLiveLyrics(lyricLine: text);
         }
       }
     }

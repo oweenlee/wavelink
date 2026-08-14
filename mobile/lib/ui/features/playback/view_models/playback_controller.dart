@@ -137,7 +137,6 @@ class PlaybackController {
     _player.setBitPerfect(_prefsRepo.bitPerfect);
     // 设置页响应式字段同样从偏好同步（重启后显示与偏好一致）
     _player.setReplayGain(_prefsRepo.replayGain);
-    _player.setDynamicColor(_prefsRepo.dynamicColor);
     _player.setCoverBlur(_prefsRepo.coverBlur);
     if (_prefsRepo.shuffle) _queue.toggleShuffle();
     _queue.setLoopMode(
@@ -194,7 +193,6 @@ class PlaybackController {
   // ── 外观偏好 ──
 
   bool get replayGain => _prefsRepo.replayGain;
-  bool get dynamicColor => _prefsRepo.dynamicColor;
   double get coverBlur => _prefsRepo.coverBlur;
   bool get bitPerfect => _prefsRepo.bitPerfect;
 
@@ -204,11 +202,6 @@ class PlaybackController {
     _player.setReplayGain(v);
     // 对当前曲目立即生效（切歌时也会按偏好逐首应用）
     _player.applyReplayGainNow();
-  }
-
-  void setDynamicColor(bool v) {
-    _prefsRepo.setDynamicColor(v);
-    _player.setDynamicColor(v);
   }
 
   void setCoverBlur(double v) {
@@ -371,10 +364,11 @@ class PlaybackController {
   void toggleFavorite() => _library.toggleFavoriteFor(currentSong);
   void setFavorite(String songId, bool favorite) =>
       _library.setFavorite(songId, favorite);
-  Future<void> createEmptyPlaylist(String name) =>
+  Future<bool> createEmptyPlaylist(String name) =>
       _library.createEmptyPlaylist(name);
   Future<void> savePlaylist(String name, List<String> songIds) =>
       _library.savePlaylist(name, songIds);
+  Future<void> deletePlaylist(String name) => _library.deletePlaylist(name);
   List<Song> playlistSongs(String name) => _library.playlistSongs(name);
 }
 

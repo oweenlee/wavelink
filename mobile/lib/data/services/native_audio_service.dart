@@ -99,17 +99,12 @@ class NativeAudioService {
 
   /// 推送当前歌词行到原生层：更新 Android 媒体通知展开视图的歌词行。
   /// 仅当前行文本变化时调用（Dart 侧去抖，避免 250ms tick 反复打通道）。
+  /// 标题/歌手由原生 PlaybackService 自有字段提供，无需重复传参。
   Future<void> updateLiveLyrics({
-    required String title,
-    required String artist,
     required String lyricLine,
-    required bool isPlaying,
   }) => _safeCall(
     _methodChannel.invokeMethod('updateLiveLyrics', {
-      'title': title,
-      'artist': artist,
       'lyricLine': lyricLine,
-      'isPlaying': isPlaying,
     }),
   );
 

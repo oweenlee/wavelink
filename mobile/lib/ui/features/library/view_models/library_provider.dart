@@ -615,13 +615,26 @@ class LibraryNotifier extends Notifier<LibraryState> {
   /// 新建空播放列表（苹果语义：新建 = 空列表，歌曲稍后经
   /// 「歌曲菜单 → 添加到播放列表」加入；不继承当前队列，
   /// 避免队列=全曲库时意外把整个 NAS 库存进去）。
-  Future<void> createEmptyPlaylist(String name) async {
-    await ref.read(preferencesRepositoryProvider).savePlaylist(name, const []);
+  /// 同名已存在时返回 false 且不清空旧列表（防数据丢失）。
+  Future<bool> createEmptyPlaylist(String name) async {
+    final prefs = ref.read(preferencesRepositoryProvider);
+    if (prefs.playlists.containsKey(name)) return false;
+    await prefs.savePlaylist(name, const []);
     state = state.copyWith(); // 触发 UI 刷新播放列表区域
+    return true;
   }
 
   Future<void> savePlaylist(String name, List<String> songIds) async {
     await ref.read(preferencesRepositoryProvider).savePlaylist(name, songIds);
+    state = state.copyWith(); // 触发 UI 刷新播放列表区域
+  }
+
+  /// 删除播放列表（按名字）
+  Future<void> deletePlaylist(String name) async {
+    final prefs = ref.read(preferencesRepositoryProvider);
+    final data = Map<String, List<String>>.from(prefs.playlists)
+      ..remove(name);
+    await prefs.setPlaylists(data);
     state = state.copyWith(); // 触发 UI 刷新播放列表区域
   }
 

@@ -53,10 +53,12 @@ class QueueNotifier extends Notifier<QueueState> {
   }
 
   void playNext(Song song) {
-    final queue = List<Song>.from(state.queue)..insert(
-      state.currentIndex + 1,
-      song,
-    );
+    final queue = List<Song>.from(state.queue);
+    // 队列为空时插到队首（index 需 clamp 到 0..queue.length，否则越界）
+    final index = state.queue.isEmpty
+        ? 0
+        : state.currentIndex.clamp(0, state.queue.length - 1) + 1;
+    queue.insert(index, song);
     state = state.copyWith(queue: queue);
   }
 

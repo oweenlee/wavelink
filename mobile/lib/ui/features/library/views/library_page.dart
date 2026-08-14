@@ -476,11 +476,6 @@ class _SongsTab extends ConsumerWidget {
     final headerState = ref.watch(libraryHeaderProvider);
     final allSongs = libraryState.allSongs;
 
-    // 曲目 id → 全库序号（itemBuilder 内 O(1)，避免 indexOf 每行 O(N)）
-    final trackNumbers = <String, int>{
-      for (var i = 0; i < allSongs.length; i++) allSongs[i].id: i + 1,
-    };
-
     final query = headerState.searchQuery;
     final displayed = query.isEmpty
         ? allSongs
@@ -510,7 +505,6 @@ class _SongsTab extends ConsumerWidget {
             song: song,
             isCurrent: isCurrent,
             isPlaying: isPlaying && isCurrent,
-            trackNumber: trackNumbers[song.id] ?? index + 1,
             onTap: () {
               Log.d('Audio', '[pt] 用户点击 ${song.title}');
               // 以当前（过滤后）列表重建队列并从点击曲开始，
@@ -963,6 +957,24 @@ class _PlaylistsTab extends ConsumerWidget {
                           ],
                         ),
                       ),
+                      // 非内置播放列表提供删除入口
+                      if (!pl.builtIn) ...[
+                        IconButton(
+                          icon: const Icon(
+                            LucideIcons.moreVertical,
+                            color: AppTheme.textTertiary,
+                            size: 18,
+                          ),
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _confirmDeletePlaylist(
+                            context,
+                            pl.name,
+                            player,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
                       const Icon(
                         LucideIcons.chevronRight,
                         color: AppTheme.textTertiary,
@@ -1037,7 +1049,17 @@ class _PlaylistsTab extends ConsumerWidget {
                           onPressed: () async {
                             final name = ctrl.text.trim();
                             if (name.isEmpty) return;
-                            await player.createEmptyPlaylist(name);
+                            final ok = await player.createEmptyPlaylist(name);
+                            if (!ok) {
+                              if (ctx.mounted) {
+                                ScaffoldMessenger.of(ctx)
+                                  ..hideCurrentSnackBar()
+                                  ..showSnackBar(
+                                    SnackBar(content: Text(l10n.playlistNameExists)),
+                                  );
+                              }
+                              return;
+                            }
                             if (ctx.mounted) Navigator.pop(ctx);
                           },
                           child: Text(
@@ -1090,7 +1112,17 @@ class _PlaylistsTab extends ConsumerWidget {
                             onSubmitted: (_) async {
                               final name = ctrl.text.trim();
                               if (name.isEmpty) return;
-                              await player.createEmptyPlaylist(name);
+                              final ok = await player.createEmptyPlaylist(name);
+                              if (!ok) {
+                                if (ctx.mounted) {
+                                  ScaffoldMessenger.of(ctx)
+                                    ..hideCurrentSnackBar()
+                                    ..showSnackBar(
+                                      SnackBar(content: Text(l10n.playlistNameExists)),
+                                    );
+                                }
+                                return;
+                              }
                               if (ctx.mounted) Navigator.pop(ctx);
                             },
                           ),
@@ -1099,7 +1131,7 @@ class _PlaylistsTab extends ConsumerWidget {
                     ),
                   ),
                 ),
-                // 次级说明（保存对象 = 当前队列）
+                // 次级说明（新建的是空列表）
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
                   child: Text(
@@ -1116,7 +1148,7 @@ class _PlaylistsTab extends ConsumerWidget {
           ),
         ),
       ),
-    );
+    ).then((_) => ctrl.dispose());
   }
 }
 
@@ -1133,6 +1165,39 @@ class _PlaylistEntry {
     required this.songs,
     this.builtIn = false,
   });
+}
+
+/// 删除播放列表确认对话框：确认后移除该播放列表（歌曲本身不受影响）。
+Future<void> _confirmDeletePlaylist(
+  BuildContext context,
+  String name,
+  PlaybackController player,
+) async {
+  final l10n = AppLocalizations.of(context);
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppTheme.surfaceDark,
+      title: Text(l10n.deleteConfirmTitle),
+      content: Text(l10n.deletePlaylistBody(name)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text(l10n.cancel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text(
+            l10n.delete,
+            style: const TextStyle(color: AppTheme.danger),
+          ),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) {
+    await player.deletePlaylist(name);
+  }
 }
 
 // ── Context Menu ──

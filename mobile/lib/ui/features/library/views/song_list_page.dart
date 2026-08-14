@@ -145,7 +145,6 @@ class SongListPage extends ConsumerWidget {
                   song: song,
                   isCurrent: isCurrent,
                   isPlaying: isPlaying && isCurrent,
-                  trackNumber: i + 1,
                   onTap: () {
                     Log.d('Audio', '[pt] 用户点击 ${song.title}');
                     // 以当前播放列表为队列，从点击曲开始；否则 playSong 会

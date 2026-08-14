@@ -72,6 +72,8 @@ class PreferencesRepository {
       PreferencesService.instance.playlists;
   Future<void> savePlaylist(String name, List<String> songIds) =>
       PreferencesService.instance.savePlaylist(name, songIds);
+  Future<void> setPlaylists(Map<String, List<String>> data) =>
+      PreferencesService.instance.setPlaylists(data);
 
   // ── 外观偏好 ──
 
@@ -82,10 +84,6 @@ class PreferencesRepository {
   bool get bitPerfect => PreferencesService.instance.bitPerfect;
   Future<void> setBitPerfect(bool v) =>
       PreferencesService.instance.setBitPerfect(v);
-
-  bool get dynamicColor => PreferencesService.instance.dynamicColor;
-  Future<void> setDynamicColor(bool v) =>
-      PreferencesService.instance.setDynamicColor(v);
 
   double get coverBlur => PreferencesService.instance.coverBlur;
   Future<void> setCoverBlur(double v) =>

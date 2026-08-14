@@ -16,7 +16,6 @@ class SongTile extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onMore;
   final Widget? trailing;
-  final int? trackNumber;
 
   const SongTile({
     super.key,
@@ -26,7 +25,6 @@ class SongTile extends StatelessWidget {
     this.onTap,
     this.onMore,
     this.trailing,
-    this.trackNumber,
   });
 
   @override
@@ -52,21 +50,6 @@ class SongTile extends StatelessWidget {
             : null,
         child: Row(
           children: [
-            // Track number
-            if (trackNumber != null) ...[
-              SizedBox(
-                width: 26,
-                child: Text(
-                  trackNumber.toString().padLeft(2, '0'),
-                  textAlign: TextAlign.center,
-                  style: WlText.mono(
-                    fontSize: 12,
-                    color: AppTheme.textTertiary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
-            ],
             // Album art
             SongCoverArt(song: song, isCurrent: isCurrent, isPlaying: isPlaying),
             const SizedBox(width: 8),
