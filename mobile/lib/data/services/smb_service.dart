@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -11,6 +10,7 @@ import 'import_service.dart';
 import 'preferences_service.dart';
 import 'rust_service.dart' as rs;
 import 'log.dart';
+import 'lrc_codec.dart';
 
 /// SMB 直挂服务
 ///
@@ -670,7 +670,7 @@ class SmbService {
       try {
         final bytes = await smb.smbReadFile(path: '$base$ext');
         if (bytes.isEmpty) continue;
-        return utf8.decode(bytes, allowMalformed: true);
+        return decodeLrcBytes(bytes);
       } catch (_) {
         // 文件不存在或读取失败，尝试下一个扩展名
         continue;

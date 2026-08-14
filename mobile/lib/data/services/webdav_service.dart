@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:webdav_client/webdav_client.dart' as wd;
@@ -7,6 +6,7 @@ import '../../domain/models/song.dart';
 import '../../ui/core/theme/app_theme.dart';
 import 'import_service.dart';
 import 'log.dart';
+import 'lrc_codec.dart';
 import 'preferences_service.dart';
 import 'rust_service.dart' as rs;
 import '../../src/rust/api/metadata.dart' show MetadataResult;
@@ -375,7 +375,7 @@ class WebdavService {
         if (url == null) return null;
         final bytes = await readRemoteBytes(url, 512 * 1024);
         if (bytes.isEmpty) continue;
-        return utf8.decode(bytes, allowMalformed: true);
+        return decodeLrcBytes(bytes);
       } catch (_) {
         continue;
       }
