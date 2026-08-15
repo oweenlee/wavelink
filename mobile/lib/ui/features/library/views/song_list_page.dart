@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../data/services/log.dart';
 import '../../../../l10n/app_localizations.dart';
@@ -147,9 +148,14 @@ class SongListPage extends ConsumerWidget {
                   isPlaying: isPlaying && isCurrent,
                   onTap: () {
                     Log.d('Audio', '[pt] 用户点击 ${song.title}');
-                    // 以当前播放列表为队列，从点击曲开始；否则 playSong 会
-                    // 追加到旧队列末尾，下一曲绕回旧队首（可能是收藏列表）。
-                    player.playAlbum(songs, startIndex: i);
+                    // 流媒体风格点歌：当前曲不重播（播放中→播放页，
+                    // 暂停→恢复），避免误触打断进度
+                    if (!player.tapSong(songs, i, song)) return;
+                    if (isPlaying) {
+                      context.push('/now-playing');
+                    } else {
+                      player.togglePlay();
+                    }
                   },
                 );
               }, childCount: songs.length),

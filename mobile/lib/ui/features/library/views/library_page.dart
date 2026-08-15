@@ -460,10 +460,13 @@ class _SongsTab extends ConsumerWidget {
             isPlaying: isPlaying && isCurrent,
             onTap: () {
               Log.d('Audio', '[pt] 用户点击 ${song.title}');
-              // 以当前（过滤后）列表重建队列并从点击曲开始，
-              // 否则 playSong 会追加到旧队列末尾，下一曲会绕回旧队首
-              // （例如上一次残留的收藏列表）。
-              player.playAlbum(displayed, startIndex: index);
+              // 流媒体风格点歌：当前曲不重播（播放中→播放页，暂停→恢复）
+              if (!player.tapSong(displayed, index, song)) return;
+              if (isPlaying) {
+                context.push('/now-playing');
+              } else {
+                player.togglePlay();
+              }
             },
             onMore: () => _showContextMenu(context, song, player),
             trailing: player.isSongFavorite(song.id)
@@ -1221,6 +1224,15 @@ void _showContextMenu(
                 onTap: () {
                   player.playNext(song);
                   Navigator.pop(ctx);
+                  // 加队列/下一曲等操作菜单无视觉变化，必须 toast
+                  // 反馈，否则用户以为点击未生效
+                  Fluttertoast.showToast(
+                    msg: l10n.playNextHint,
+                    gravity: ToastGravity.BOTTOM,
+                    fontSize: 13,
+                    backgroundColor: AppTheme.ok,
+                    textColor: AppTheme.textPrimary,
+                  );
                 },
               ),
               _MenuItem(
@@ -1229,6 +1241,13 @@ void _showContextMenu(
                 onTap: () {
                   player.addToQueue(song);
                   Navigator.pop(ctx);
+                  Fluttertoast.showToast(
+                    msg: l10n.addToQueueHint,
+                    gravity: ToastGravity.BOTTOM,
+                    fontSize: 13,
+                    backgroundColor: AppTheme.ok,
+                    textColor: AppTheme.textPrimary,
+                  );
                 },
               ),
               _MenuItem(

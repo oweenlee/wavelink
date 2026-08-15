@@ -2,10 +2,10 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:popover/popover.dart';
 import '../../../../domain/models/lyric_line.dart';
 import '../../../../domain/models/song.dart';
 import '../view_models/playback_controller.dart';
@@ -171,6 +171,8 @@ class _NowPlayingPageState extends ConsumerState<NowPlayingPage>
                         onQueue: () => _openQueue(context),
                         onEffects: () => _openEffects(context),
                         queueCount: player.queue.length,
+                        song: song,
+                        player: player,
                       ),
                       Expanded(
                         child: Center(
@@ -473,6 +475,8 @@ class _TopBar extends StatelessWidget {
   final VoidCallback? onQueue;
   final VoidCallback? onEffects;
   final int queueCount;
+  final Song? song;
+  final PlaybackController? player;
   const _TopBar({
     required this.onClose,
     required this.formatInfo,
@@ -480,6 +484,8 @@ class _TopBar extends StatelessWidget {
     this.onQueue,
     this.onEffects,
     this.queueCount = 0,
+    this.song,
+    this.player,
   });
 
   @override
@@ -517,6 +523,8 @@ class _TopBar extends StatelessWidget {
                   queueCount: queueCount,
                   onQueue: onQueue,
                   onEffects: onEffects,
+                  song: song,
+                  player: player,
                 ),
                 splashRadius: 20,
               ),
@@ -1040,65 +1048,199 @@ class _Backdrop extends ConsumerWidget {
   }
 }
 
-/// 微信风格弹出菜单：带指向触发按钮的小尖头气泡，每项含图标。
-/// 使用 popover 包（自动箭头 + 边界自适应 + 点击外部关闭）。
+/// 播放页 ⋮ 菜单：底部操作表。含播放层（队列/音效）与当前歌曲操作
+/// （播放下一首/加入队列/添加到播放列表/收藏），对齐主流 App（Spotify/
+/// Apple Music）在播放页提供队列与歌单管理入口的做法。
 Future<void> _openMoreMenu(
   BuildContext context, {
   int queueCount = 0,
   VoidCallback? onQueue,
   VoidCallback? onEffects,
+  Song? song,
+  PlaybackController? player,
 }) {
   final l10n = AppLocalizations.of(context);
-  return showPopover(
+  final hasSong = song != null && player != null;
+  return showModalBottomSheet(
     context: context,
-    direction: PopoverDirection.bottom,
-    width: 145,
-    arrowWidth: 24,
-    arrowHeight: 12,
-    backgroundColor: AppTheme.s2,
-    barrierColor: Colors.transparent,
-    bodyBuilder: (_) => Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (onQueue != null)
-          _ArrowMenuItem(
-            icon: LucideIcons.listMusic,
-            label: l10n.queue,
-            trailing: queueCount > 0
-                ? Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppTheme.textTertiary,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '$queueCount',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                  )
-                : null,
-            onTap: () {
-              Navigator.of(context).pop();
-              onQueue();
-            },
+    backgroundColor: Colors.transparent,
+    builder: (ctx) => SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: const BoxDecoration(
+          color: AppTheme.surfaceDark,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // —— 播放层 ——
+            if (onQueue != null)
+              _ArrowMenuItem(
+                icon: LucideIcons.listMusic,
+                label: l10n.queue,
+                trailing: queueCount > 0
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.textTertiary,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '$queueCount',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      )
+                    : null,
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  onQueue();
+                },
+              ),
+            if (onEffects != null)
+              _ArrowMenuItem(
+                icon: LucideIcons.slidersHorizontal,
+                label: l10n.sound,
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  onEffects();
+                },
+              ),
+            // —— 当前歌曲操作（主流 App：播放页提供队列/歌单管理）——
+            if (hasSong) const Divider(height: 1),
+            if (hasSong)
+              _ArrowMenuItem(
+                icon: LucideIcons.skipForward,
+                label: l10n.playNext,
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  player.playNext(song);
+                  _toast(ctx, l10n.playNextHint);
+                },
+              ),
+            if (hasSong)
+              _ArrowMenuItem(
+                icon: LucideIcons.listPlus,
+                label: l10n.addToQueue,
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  player.addToQueue(song);
+                  _toast(ctx, l10n.addToQueueHint);
+                },
+              ),
+            if (hasSong)
+              _ArrowMenuItem(
+                icon: LucideIcons.folderPlus,
+                label: l10n.addToPlaylist,
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _showAddToPlaylistSheet(ctx, song, player);
+                },
+              ),
+            if (hasSong)
+              _ArrowMenuItem(
+                icon: player.isSongFavorite(song.id)
+                    ? Icons.favorite
+                    : Icons.favorite_border,
+                label: player.isSongFavorite(song.id)
+                    ? l10n.unfavorite
+                    : l10n.favorite,
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  player.setFavorite(song.id, !player.isSongFavorite(song.id));
+                },
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// 轻量 toast（列表/播放页菜单的即时反馈）。
+void _toast(BuildContext context, String msg) {
+  Fluttertoast.showToast(
+    msg: msg,
+    gravity: ToastGravity.BOTTOM,
+    fontSize: 13,
+    backgroundColor: AppTheme.ok,
+    textColor: AppTheme.textPrimary,
+  );
+}
+
+/// 播放页「添加到播放列表」：与曲库菜单同款选择表。
+Future<void> _showAddToPlaylistSheet(
+  BuildContext context,
+  Song song,
+  PlaybackController player,
+) async {
+  final l10n = AppLocalizations.of(context);
+  final saved = player.playlists;
+  await showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) => Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: const BoxDecoration(
+        color: AppTheme.surfaceDark,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              l10n.addToPlaylist,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+              ),
+            ),
           ),
-        if (onEffects != null)
-          _ArrowMenuItem(
-            icon: LucideIcons.slidersHorizontal,
-            label: l10n.sound,
-            onTap: () {
-              Navigator.of(context).pop();
-              onEffects();
-            },
+          const Divider(height: 1),
+          if (saved.isEmpty)
+            ListTile(
+              leading: const Icon(
+                LucideIcons.info,
+                color: AppTheme.textTertiary,
+              ),
+              title: Text(
+                l10n.noPlaylists,
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ...saved.entries.map(
+            (e) => ListTile(
+              leading: const Icon(
+                LucideIcons.listMusic,
+                color: AppTheme.brand,
+              ),
+              title: Text(
+                e.key,
+                style: const TextStyle(color: AppTheme.textPrimary),
+              ),
+              onTap: () async {
+                final ids = [...e.value, song.id];
+                await player.savePlaylist(e.key, ids);
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+            ),
           ),
-      ],
+        ],
+      ),
     ),
   );
 }

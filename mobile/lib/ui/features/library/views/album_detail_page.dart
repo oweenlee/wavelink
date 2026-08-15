@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../../domain/models/song.dart';
@@ -87,8 +88,17 @@ class AlbumDetailPage extends ConsumerWidget {
                 isCurrent: isCurrent,
                 isPlaying: isPlaying && isCurrent,
                 onTap: () {
-                  player.playAlbum(album.songs, startIndex: i);
-                  Navigator.pop(context);
+                  // 流媒体风格点歌：当前曲不重播（播放中→播放页，
+                  // 暂停→恢复）；非当前曲播放后关闭本条详细视图
+                  if (!player.tapSong(album.songs, i, s)) {
+                    Navigator.pop(context);
+                    return;
+                  }
+                  if (isPlaying) {
+                    context.push('/now-playing');
+                  } else {
+                    player.togglePlay();
+                  }
                 },
               );
             }, childCount: album.songs.length),

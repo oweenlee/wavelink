@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../domain/models/song.dart';
@@ -137,8 +138,17 @@ class ArtistDetailPage extends ConsumerWidget {
                   isCurrent: isCurrent,
                   isPlaying: isPlaying && isCurrent,
                   onTap: () {
-                    player.playAlbum(ss, startIndex: i);
-                    Navigator.pop(context);
+                    // 流媒体风格点歌：当前曲不重播（播放中→播放页，
+                    // 暂停→恢复）；非当前曲播放后关闭本条详细视图
+                    if (!player.tapSong(ss, i, s)) {
+                      Navigator.pop(context);
+                      return;
+                    }
+                    if (isPlaying) {
+                      context.push('/now-playing');
+                    } else {
+                      player.togglePlay();
+                    }
                   },
                 );
               }, childCount: albumMap[album]!.length),

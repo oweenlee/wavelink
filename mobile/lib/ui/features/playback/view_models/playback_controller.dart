@@ -294,6 +294,16 @@ class PlaybackController {
     _player.playSong(_ref.read(queueProvider).currentSong!);
   }
 
+  /// 流媒体风格点歌：正在播放同曲 → 不重播（进度保留），返回 true 由
+  /// 调用方决定跳播放页/恢复播放；否则以 [songs] 为新队列从 [index]
+  /// 开始播放，返回 false。避免误触列表打断当前歌曲进度（Spotify/
+  /// Apple Music 同款行为，区别于老式本地播放器"点即重播"）。
+  bool tapSong(List<Song> songs, int index, Song song) {
+    if (_ref.read(queueProvider).currentSong?.id == song.id) return true;
+    playAlbum(songs, startIndex: index);
+    return false;
+  }
+
   void addToQueue(Song song) => _queue.addToQueue(song);
   void playNext(Song song) => _queue.playNext(song);
   void removeFromQueue(int index) {
