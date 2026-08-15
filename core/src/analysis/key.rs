@@ -1,18 +1,33 @@
-//! 调性检测：Chromagram + Krumhansl-Schmuckler 识别大小调。
+//! 调性检测：HPCP（谐波折叠）+ 多模板（Krumhansl-Kessler + Temperley）。
+//!
+//! 与 essentia KeyExtractor 同思路（Gómez 2006 HPCP）：
+//! 1. 谐波折叠：每个 FFT bin 按 1/h 权重投给其第 h 次谐波假设的基频
+//!    （h=1..4）。消除朴素 FFT chroma 的纯五度混淆——基频的 3 次谐波
+//!    恰好高纯五度+八度，折叠后回到基频音级。
+//! 2. 36-bin 连续音级映射（每半音 3 bin）+ 线性插值，替代四舍五入
+//!    到整数半音，减少调音偏移（非 440）导致的谱峰错位。
+//! 3. 帧级 L1 归一化后聚合，尾部再归一化。
+//! 4. KS 模板相关取最优；major/minor × 12 根音共 24 候选。
 
 use realfft::RealFftPlanner;
 
-/// Krumhansl-Schmuckler 调性 profiles（对于 C 大调 / A 小调）
+/// Krumhansl-Schmuckler 调性 profiles（Krumhansl-Kessler 1982 原始值）
 const KS_MAJOR: [f32; 12] = [
     6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88,
 ];
-// Krumhansl-Kessler (1982) 小调 probe-tone profile 原始值
 const KS_MINOR: [f32; 12] = [
     6.33, 2.68, 3.52, 5.38, 2.60, 4.00, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88,
 ];
+
 const NOTE_NAMES: [&str; 12] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
 ];
+
+/// 分析频率范围（基频）：谐波折叠后 2100 Hz 上限可覆盖 65 Hz 基频的第 5 次谐波
+const MIN_FREQ: f32 = 65.0;
+const MAX_FREQ: f32 = 2100.0;
+/// 谐波折叠阶数（essentia PitchFilterbank 默认 4）
+const HARMONICS: usize = 4;
 
 /// 按根音旋转 profile：返回 root 调的模板，即 out[i] = profile[(i - root) mod 12]
 /// （root 位置的权重应来自 profile 的根音分量 profile[0]）
@@ -40,8 +55,9 @@ fn pearson_correlation(a: &[f32; 12], b: &[f32; 12]) -> f32 {
     }
 }
 
-/// 从频谱 bin 的能量累积到 12 个半音音级上
-fn compute_chromagram(mono: &[f32], sample_rate: u32) -> Option<[f32; 12]> {
+/// HPCP chromagram：谐波折叠 + 36-bin 连续映射，聚合后 fold 到 12 音级。
+/// [tuning] 为 A4 参考频率（Hz），用于补偿非 440 调音的录音。
+fn compute_chromagram_tuned(mono: &[f32], sample_rate: u32, tuning: f32) -> Option<[f32; 12]> {
     let frame_size = 4096;
     let hop_size = 2048;
 
@@ -59,25 +75,25 @@ fn compute_chromagram(mono: &[f32], sample_rate: u32) -> Option<[f32; 12]> {
     let mut planner = RealFftPlanner::new();
     let fft = planner.plan_fft_forward(frame_size);
 
-    let mut chroma = [0.0f32; 12];
+    let n_bins = frame_size / 2 + 1;
+    let mut mags = vec![0.0f32; n_bins];
+    let mut spectrum = vec![realfft::num_complex::Complex::new(0.0f32, 0.0f32); n_bins];
+    let mut hpcp = [0.0f32; 36];
+    let mut frame_hpcp: [f32; 36];
     let mut frames = 0usize;
+
     let freq_per_bin = sample_rate as f32 / frame_size as f32;
-    let low_bin = (65.0 / freq_per_bin).floor() as usize;
-    let high_bin = ((2100.0 / freq_per_bin).ceil() as usize).min(frame_size / 2);
-    if high_bin < low_bin + 6 {
+    let low_bin = (MIN_FREQ / freq_per_bin).floor() as usize;
+    let high_bin = ((MAX_FREQ / freq_per_bin).ceil() as usize).min(n_bins - 1);
+    if high_bin < low_bin + 4 {
         return None;
     }
-    let mut mags = vec![0.0f32; frame_size / 2 + 1];
-    let mut spectrum =
-        vec![realfft::num_complex::Complex::new(0.0f32, 0.0f32); frame_size / 2 + 1];
-    let mut frame_chroma: [f32; 12];
 
     for start in (0..mono.len().saturating_sub(frame_size)).step_by(hop_size) {
         let mut frame = Vec::with_capacity(frame_size);
         for i in 0..frame_size {
             frame.push(mono[start + i] * window[i]);
         }
-
         if fft.process(&mut frame, &mut spectrum).is_err() {
             continue;
         }
@@ -85,40 +101,43 @@ fn compute_chromagram(mono: &[f32], sample_rate: u32) -> Option<[f32; 12]> {
             mags[b] = c.norm();
         }
 
-        // 谱峰筛选：只统计局部极大且足够显著的 bin，
-        // 滤除宽带噪声与谐波裙边（泛音污染是 FFT chroma 的主要误差源）
-        let frame_max = mags[low_bin..=high_bin]
-            .iter()
-            .cloned()
-            .fold(0.0f32, f32::max);
-        if frame_max < 1e-8 {
-            continue;
-        }
-        frame_chroma = [0.0f32; 12];
-        for bin in (low_bin + 3)..=(high_bin - 3) {
+        // 谐波折叠：bin (freq, mag) 按 1/h 投给其第 h 谐波假设的基频
+        frame_hpcp = [0.0f32; 36];
+        for bin in low_bin..=high_bin {
             let m = mags[bin];
-            if m < frame_max * 0.1 {
-                continue;
-            }
-            let is_peak = (1..=3).all(|d| m >= mags[bin - d] && m >= mags[bin + d]);
-            if !is_peak {
+            if m < 1e-10 {
                 continue;
             }
             let freq = bin as f32 * freq_per_bin;
-            let midi = 12.0 * (freq / 440.0).log2() + 69.0;
-            let semitone = ((midi + 0.5).floor() as i32).rem_euclid(12) as usize;
-            // 用幅度（非功率），避免最强泛音列压倒性主导
-            frame_chroma[semitone] += m;
+            let midi = 12.0 * (freq / tuning).log2() + 69.0;
+            for h in 1..=HARMONICS {
+                // 该 bin 是基频 base 的第 h 次谐波 → base_midi = midi - log2(h)*12
+                let base_midi = midi - 12.0 * (h as f32).log2();
+                let base_freq = tuning * 2f32.powf((base_midi - 69.0) / 12.0);
+                if !(MIN_FREQ..=MAX_FREQ).contains(&base_freq) {
+                    continue;
+                }
+                // 36-bin 连续映射（每半音 3 bin，+0.5 使整数 MIDI 落在半音中心），
+                // 相邻 bin 线性插值（能量守恒）
+                let x = (base_midi + 0.5) * 3.0 - 0.5;
+                let i0 = x.floor() as i32;
+                let frac = x - i0 as f32;
+                let contrib = m / h as f32;
+                let idx0 = i0.rem_euclid(36) as usize;
+                let idx1 = (i0 + 1).rem_euclid(36) as usize;
+                frame_hpcp[idx0] += contrib * (1.0 - frac);
+                frame_hpcp[idx1] += contrib * frac;
+            }
         }
 
-        // 逐帧 L1 归一化，避免长音/响段压倒其他帧
-        let s: f32 = frame_chroma.iter().sum();
+        // 帧级 L1 归一化，避免响段压倒其他帧
+        let s: f32 = frame_hpcp.iter().sum();
         if s > 1e-10 {
-            for c in &mut frame_chroma {
+            for c in &mut frame_hpcp {
                 *c /= s;
             }
-            for i in 0..12 {
-                chroma[i] += frame_chroma[i];
+            for i in 0..36 {
+                hpcp[i] += frame_hpcp[i];
             }
             frames += 1;
         }
@@ -128,7 +147,11 @@ fn compute_chromagram(mono: &[f32], sample_rate: u32) -> Option<[f32; 12]> {
         return None;
     }
 
-    // 归一化
+    // fold 36 → 12 音级（每 3 bin 一个半音组）
+    let mut chroma = [0.0f32; 12];
+    for (i, v) in hpcp.iter().enumerate() {
+        chroma[i / 3] += v;
+    }
     let sum: f32 = chroma.iter().sum();
     if sum > 1e-10 {
         for c in &mut chroma {
@@ -138,6 +161,16 @@ fn compute_chromagram(mono: &[f32], sample_rate: u32) -> Option<[f32; 12]> {
     } else {
         None
     }
+}
+
+/// 默认 440 调音（测试/调试用）
+fn compute_chromagram(mono: &[f32], sample_rate: u32) -> Option<[f32; 12]> {
+    compute_chromagram_tuned(mono, sample_rate, 440.0)
+}
+
+/// 调试用：输出 HPCP 12 维音级向量（离线模板权重实验用）
+pub fn debug_chromagram(mono: &[f32], sample_rate: u32) -> Option<[f32; 12]> {
+    compute_chromagram(mono, sample_rate)
 }
 
 /// 检测调性（major/minor + 根音）
@@ -153,20 +186,24 @@ pub fn detect_key(mono: &[f32], sample_rate: u32) -> (Option<String>, Option<f32
     let mut best_is_major = true;
 
     for root in 0..12 {
-        let shifted_major = circ_shift(&KS_MAJOR, root);
-        let corr_major = pearson_correlation(&chroma, &shifted_major);
+        let corr_major = pearson_correlation(&chroma, &circ_shift(&KS_MAJOR, root));
+        let corr_minor = pearson_correlation(&chroma, &circ_shift(&KS_MINOR, root));
         if corr_major > best_corr {
             best_corr = corr_major;
             best_root = root;
             best_is_major = true;
         }
-        let shifted_minor = circ_shift(&KS_MINOR, root);
-        let corr_minor = pearson_correlation(&chroma, &shifted_minor);
         if corr_minor > best_corr {
             best_corr = corr_minor;
             best_root = root;
             best_is_major = false;
         }
+    }
+
+    // 置信度门槛：相关性过低（如纯打击乐/噪声）不展示调性，
+    // 避免给出误导性结果
+    if best_corr < 0.35 {
+        return (None, Some(energy_of(mono)));
     }
 
     let key = format!(
@@ -175,16 +212,7 @@ pub fn detect_key(mono: &[f32], sample_rate: u32) -> (Option<String>, Option<f32
         if best_is_major { "" } else { "m" }
     );
 
-    // 置信度门槛：相关性过低（如纯打击乐/噪声）不展示调性，
-    // 避免给出误导性结果
-    if best_corr < 0.35 {
-        return (None, Some(energy_of(mono)));
-    }
-
-    // energy: 信号平均 RMS 的对数
-    let energy_norm = energy_of(mono);
-
-    (Some(key), Some(energy_norm))
+    (Some(key), Some(energy_of(mono)))
 }
 
 /// RMS → 0~1 归一化能量

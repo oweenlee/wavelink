@@ -47,6 +47,7 @@ pub fn mix_to_mono(samples: &[f32], channels: u32) -> Vec<f32> {
 /// 从数秒压到亚秒级（3 分钟歌约 1/2，5 分钟歌约 1/3.3）。
 pub const ANALYSIS_MAX_SECS: f64 = 90.0;
 
+/// 分析音频文件：解码前 [ANALYSIS_MAX_SECS] 秒 → BPM + 调性 + 能量
 pub fn analyze_file(path: &Path) -> Result<AnalysisResult, String> {
     let samples = decoder::decode_to_memory_prefix(
         path,
