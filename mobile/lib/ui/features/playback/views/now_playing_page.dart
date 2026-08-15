@@ -688,11 +688,59 @@ class _Tags extends StatelessWidget {
     return Wrap(
       spacing: 8,
       children: [
-          if (bpm != null)
-            _TechTag(icon: LucideIcons.gauge, label: '${bpm.round()} BPM'),
+          // key 带 song.id：切歌后倍速选择随新歌重置，不残留上一首的状态
+          if (bpm != null) _BpmTag(key: ValueKey('bpm_${song.id}'), bpm: bpm),
           if (key != null)
             _TechTag(icon: LucideIcons.music, label: key),
         ],
+    );
+  }
+}
+
+/// BPM 标签：点击循环切换 ×1 → ÷2 → ×2（结果限 60-200 内）。
+/// 检测值存在固有 ×2/÷2 歧义（慢歌八分音符网格≈140，感知拍可能是 70），
+/// 算法无法自动消解；与 DJ 软件（rekordbox/Serato）同款交互：一键切到感知拍。
+class _BpmTag extends StatefulWidget {
+  final double bpm;
+  const _BpmTag({super.key, required this.bpm});
+
+  @override
+  State<_BpmTag> createState() => _BpmTagState();
+}
+
+class _BpmTagState extends State<_BpmTag> {
+  static const _scales = [1.0, 0.5, 2.0];
+  int _scaleIdx = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final scale = _scales[_scaleIdx];
+    final scaled = widget.bpm * scale;
+    final suffix = scale == 1.0
+        ? ''
+        : scale < 1.0
+        ? ' /2'
+        : ' ×2';
+    return Tooltip(
+      message: '点击切换半速/倍速（检测值可能有 ×2/÷2 歧义）',
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            for (var i = 1; i <= _scales.length; i++) {
+              final idx = (_scaleIdx + i) % _scales.length;
+              final v = widget.bpm * _scales[idx];
+              if (v >= 60 && v <= 200) {
+                _scaleIdx = idx;
+                break;
+              }
+            }
+          });
+        },
+        child: _TechTag(
+          icon: LucideIcons.gauge,
+          label: '${scaled.round()} BPM$suffix',
+        ),
+      ),
     );
   }
 }

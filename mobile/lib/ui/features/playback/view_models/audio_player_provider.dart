@@ -128,6 +128,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
   /// 供 [_tick] 在流式 error 事件时回退全量下载并抑制后续 stopped 切歌。
   bool _playingFromStream = false;
 
+  /// 流式播放时后台写缓存的本地目标路径（分析用：前 90 秒字节落盘后
+  /// 即可分析 BPM/调性，不必等全曲写完，也不用等用户 seek 触发回退）。
+  String? _streamCachePath;
+
   /// 流式 error 已处理：随后的 stopped 事件须被吞掉，避免回退下载刚完成就
   /// 又触发 onTrackEnd 切歌。回退播放成功/失败后复位。
   bool _streamErrorHandling = false;
@@ -374,6 +378,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // 流式播放（首帧即出声，后台并行写缓存）；流式不可用 → 回退全量下载。
     String? resolvedPath;
     _playingFromStream = false;
+    _streamCachePath = null;
     _strmTarget = null;
     if (song.smbPath != null && song.smbPath!.isNotEmpty) {
       resolvedPath = await _resolveSmbPlayable(song.smbPath!);
@@ -475,7 +480,13 @@ class PlayerNotifier extends Notifier<PlayerState> {
         await _nativeAudio.play(sampleRate: _nativeOutRate);
         _updateLockScreenMetadata();
         _nativeAudio.updatePosition(0);
-        _analyzeCurrent();
+        // 流式播放：索引里的 song.path 为 null，分析需等缓存文件头部字节
+        // 落盘。局域网 SMB 5 秒足够写前 90 秒音频；失败 20 秒后重试一次
+        // （不阻塞播放，失败则本曲无标签，与旧行为一致）。
+        final streamCache = _streamCachePath;
+        if (streamCache != null) {
+          _scheduleStreamAnalysis(streamCache, token);
+        }
         _loadLyrics(song, '');
         _engineLoaded = true;
       }
@@ -590,6 +601,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
             cacheTarget,
           );
           _playingFromStream = true;
+          _streamCachePath = cacheTarget;
         } finally {
           SmbService.exitPlayback();
         }
@@ -625,6 +637,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
           cacheTarget,
         );
         _playingFromStream = true;
+        _streamCachePath = cacheTarget;
       } catch (e) {
         // 流式启动失败（引擎未初始化/认证失败/解码无法探测）→ 回退全量下载
         Log.w('Audio', 'WebDAV 边下边播不可用 ($e)，回退全量下载');
@@ -1114,7 +1127,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
               await _nativeAudio.play(sampleRate: _nativeOutRate);
               _updateLockScreenMetadata();
               _nativeAudio.updatePosition(0);
-              _analyzeCurrent();
+              _analyzeCurrent(cached);
               _loadLyrics(song, cached);
               _engineLoaded = true;
             } else {
@@ -1266,18 +1279,40 @@ class PlayerNotifier extends Notifier<PlayerState> {
     );
   }
 
-  Future<void> _analyzeCurrent() async {
+  /// 流式播放的分析调度：等缓存文件前部落盘后分析 BPM/调性。
+  /// [token] 过期（切歌）即放弃；首次失败（文件头部未写完）20 秒后重试一次。
+  void _scheduleStreamAnalysis(String cachePath, int token) {
+    Future<void> attempt(Duration delay) async {
+      await Future.delayed(delay);
+      if (!ref.mounted || token != _playToken) return;
+      if (!await _analyzeCurrent(cachePath)) {
+        await Future.delayed(const Duration(seconds: 20));
+        if (!ref.mounted || token != _playToken) return;
+        await _analyzeCurrent(cachePath);
+      }
+    }
+
+    unawaited(attempt(const Duration(seconds: 5)));
+  }
+
+  /// 分析当前曲 BPM/调性。成功（或已有缓存）返回 true，失败返回 false。
+  /// [path] 缺省用 song.path（本地歌/缓存命中已回填）；流式播放时传
+  /// 后台缓存目标路径（索引 song.path 为 null，不传则分析无从进行）。
+  Future<bool> _analyzeCurrent([String? path]) async {
     final song = state.currentSong;
-    if (song == null || !_engineRepo.rustAvailable) return;
+    if (song == null || !_engineRepo.rustAvailable) return false;
+    final target = path ?? song.path;
     // 无本地文件路径（SMB 索引/流式源下载失败等）无法分析，跳过而非强解包崩溃
-    if (song.path == null || song.path!.isEmpty) return;
-    if (_engineRepo.hasAnalysis(song.id)) return;
+    if (target == null || target.isEmpty) return false;
+    if (_engineRepo.hasAnalysis(song.id)) return true;
     try {
-      await _engineRepo.analyzeFile(song.id, song.path!);
-      if (!ref.mounted) return;
+      await _engineRepo.analyzeFile(song.id, target);
+      if (!ref.mounted) return true;
       state = state.copyWith(); // 分析完成，触发 UI 刷新
+      return true;
     } catch (e) {
       Log.e('Audio', '分析音频失败: $e');
+      return false;
     }
   }
 
