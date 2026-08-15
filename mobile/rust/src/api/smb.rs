@@ -729,8 +729,12 @@ async fn feed_stream_to_core(
     };
     ensure_pooled_tree(&mut sess).await;
 
-    // .part 路径：正式缓存路径 + ".part"；读完 rename 成正式缓存
-    let part_path = cache_final_path.map(|p| format!("{p}.part"));
+    // .part.stream.<unique> 路径：与 Dart 侧 downloadToLocal 的 ".part" 隔离，
+    // 避免播放边下边播（Rust 喂流）与收藏离线下载（Dart 全量分片）并发时
+    // 两个写者交错误写同一临时文件导致缓存损坏。unique 随机后缀避免同曲
+    // 重播时旧喂流 task 的失败清理误删新 task 正在写的临时文件。
+    // 双方各自独立写完 rename 成正式缓存（后完成者胜，均为完整内容）。
+    let part_path = cache_final_path.map(|p| format!("{p}.part.stream.{}", random_hex(8)));
     let part_path = part_path.as_deref();
 
     let result: Result<(), String> = async {
@@ -831,4 +835,22 @@ async fn feed_stream_to_core(
     }
     drop(_permit);
     result
+}
+
+/// 简易伪随机 hex 串（缓存临时文件唯一后缀用）：时间播种的 LCG，
+/// 无需引入 rand 依赖
+fn random_hex(len: usize) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let mut seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let mut out = String::new();
+    while out.len() < len {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        out.push_str(&format!("{:x}", seed));
+    }
+    out[..len].to_string()
 }
