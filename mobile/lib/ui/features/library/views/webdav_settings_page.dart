@@ -128,8 +128,9 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
             // ── 连接配置卡片 ──
             Container(
               decoration: BoxDecoration(
-                color: AppTheme.surfaceDark.withValues(alpha: 0.5),
+                color: AppTheme.surfaceDark,
                 borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppTheme.highlight, width: 0.5),
               ),
               child: Material(
                 type: MaterialType.transparency,
@@ -140,6 +141,7 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
                       label: l10n.webdavUrl,
                       hint: 'http://192.168.1.100:5005',
                       controller: _urlCtrl,
+                      keyboardType: TextInputType.url,
                     ),
                     const Divider(height: 1, indent: 52),
                     _Field(
@@ -160,6 +162,7 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
                       label: l10n.webdavPassword,
                       controller: _passCtrl,
                       obscure: true,
+                      textInputAction: TextInputAction.done,
                     ),
                   ],
                 ),
@@ -238,12 +241,15 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
 
 /// 与 NAS/Subsonic 设置页同款列表项风格的表单字段。
 /// [obscure] 为 true（密码框）时内置小眼睛，可切换明文显示。
+/// 整行可点聚焦；[textInputAction] 控制回车行为（默认 next 依次跳转）。
 class _Field extends StatefulWidget {
   final IconData icon;
   final String label;
   final String? hint;
   final TextEditingController controller;
   final bool obscure;
+  final TextInputType? keyboardType;
+  final TextInputAction textInputAction;
 
   const _Field({
     required this.icon,
@@ -251,6 +257,8 @@ class _Field extends StatefulWidget {
     this.hint,
     required this.controller,
     this.obscure = false,
+    this.keyboardType,
+    this.textInputAction = TextInputAction.next,
   });
 
   @override
@@ -259,21 +267,35 @@ class _Field extends StatefulWidget {
 
 class _FieldState extends State<_Field> {
   bool _show = false;
+  final _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-      leading: Icon(widget.icon, color: AppTheme.textSecondary, size: 22),
+      leading: Icon(widget.icon, color: AppTheme.textTertiary, size: 20),
       title: Text(
         widget.label,
-        style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
+        style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
       ),
+      // 整行可点：聚焦到该输入框，避免精确点中才能聚焦
+      onTap: () => FocusScope.of(context).requestFocus(_focusNode),
       subtitle: TextField(
         controller: widget.controller,
+        focusNode: _focusNode,
         obscureText: widget.obscure && !_show,
-        style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary),
+        autocorrect: false,
+        enableSuggestions: false,
+        keyboardType: widget.keyboardType,
+        textInputAction: widget.textInputAction,
+        style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
         decoration: InputDecoration(
           hintText: widget.hint,
           hintStyle: const TextStyle(

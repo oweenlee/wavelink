@@ -17,6 +17,7 @@ import '../features/library/view_models/library_header_notifier.dart';
 import '../features/library/view_models/library_provider.dart';
 import '../features/playback/view_models/playback_controller.dart';
 import 'widgets/mini_player_bar.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'routes.dart';
 
 class WaveLinkApp extends ConsumerWidget {
@@ -268,12 +269,12 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
     if (!mounted) return;
     final l10n = AppLocalizations.of(context);
     if (count > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.importN(count)),
-          backgroundColor: AppTheme.s3,
-          behavior: SnackBarBehavior.floating,
-        ),
+      Fluttertoast.showToast(
+        msg: l10n.importN(count),
+        gravity: ToastGravity.BOTTOM,
+        fontSize: 13,
+        backgroundColor: AppTheme.ok,
+        textColor: AppTheme.textPrimary,
       );
     }
   }

@@ -120,8 +120,9 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
             // ── 连接配置卡片 ──
             Container(
               decoration: BoxDecoration(
-                color: AppTheme.surfaceDark.withValues(alpha: 0.5),
+                color: AppTheme.surfaceDark,
                 borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppTheme.highlight, width: 0.5),
               ),
               child: Material(
                 type: MaterialType.transparency,
@@ -132,6 +133,7 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
                       label: l10n.subsonicUrl,
                       hint: 'http://192.168.1.100:4533',
                       controller: _urlCtrl,
+                      keyboardType: TextInputType.url,
                     ),
                     const Divider(height: 1, indent: 52),
                     _Field(
@@ -145,6 +147,7 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
                       label: l10n.subsonicPassword,
                       controller: _passCtrl,
                       obscure: true,
+                      textInputAction: TextInputAction.done,
                     ),
                   ],
                 ),
@@ -219,13 +222,16 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
   }
 }
 
-/// 与 NAS 设置页同款列表项风格的表单字段
-class _Field extends StatelessWidget {
+/// 与 NAS 设置页同款列表项风格的表单字段。
+/// 整行可点聚焦；[textInputAction] 控制回车行为（默认 next 依次跳转）。
+class _Field extends StatefulWidget {
   final IconData icon;
   final String label;
   final String? hint;
   final TextEditingController controller;
   final bool obscure;
+  final TextInputType? keyboardType;
+  final TextInputAction textInputAction;
 
   const _Field({
     required this.icon,
@@ -233,22 +239,52 @@ class _Field extends StatelessWidget {
     this.hint,
     required this.controller,
     this.obscure = false,
+    this.keyboardType,
+    this.textInputAction = TextInputAction.next,
   });
 
   @override
+  State<_Field> createState() => _FieldState();
+}
+
+class _FieldState extends State<_Field> {
+  final _focusNode = FocusNode();
+  bool _show = false;
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final icon = widget.icon;
+    final label = widget.label;
+    final hint = widget.hint;
+    final controller = widget.controller;
+    final obscure = widget.obscure;
+    final keyboardType = widget.keyboardType;
+    final textInputAction = widget.textInputAction;
     return ListTile(
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-      leading: Icon(icon, color: AppTheme.textSecondary, size: 22),
+      leading: Icon(icon, color: AppTheme.textTertiary, size: 20),
       title: Text(
         label,
-        style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
+        style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
       ),
+      // 整行可点：聚焦到该输入框，避免精确点中才能聚焦
+      onTap: () => FocusScope.of(context).requestFocus(_focusNode),
       subtitle: TextField(
         controller: controller,
-        obscureText: obscure,
-        style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary),
+        focusNode: _focusNode,
+        obscureText: obscure && !_show,
+        autocorrect: false,
+        enableSuggestions: false,
+        keyboardType: keyboardType,
+        textInputAction: textInputAction,
+        style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(
@@ -257,6 +293,16 @@ class _Field extends StatelessWidget {
           ),
           isDense: true,
           border: InputBorder.none,
+          suffixIcon: obscure
+              ? IconButton(
+                  icon: Icon(
+                    _show ? LucideIcons.eyeOff : LucideIcons.eye,
+                    size: 18,
+                    color: AppTheme.textSecondary,
+                  ),
+                  onPressed: () => setState(() => _show = !_show),
+                )
+              : null,
         ),
       ),
     );

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../data/services/preferences_service.dart';
 import '../../../../data/services/smb_service.dart';
 import '../../../../l10n/app_localizations.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/wl_toggle.dart';
 import '../view_models/library_provider.dart';
@@ -34,24 +34,10 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
   void initState() {
     super.initState();
     final prefs = PreferencesService.instance;
-    // 默认预填（仅当用户没保存过配置时）：本机 Mac 调试共享 music → /Users/qin/Public/music。
-    // 用 qin 账户 + Mac 登录密码认证（密码不预填，需手输）。
-    const testHost = '192.168.110.27';
-    const testUser = 'qin';
-    const testPass = '';
-    const testShare = '/music';
-    _hostCtrl.text = prefs.nasHost?.isNotEmpty == true
-        ? prefs.nasHost!
-        : testHost;
-    _shareCtrl.text = prefs.nasShare?.isNotEmpty == true
-        ? prefs.nasShare!
-        : testShare;
-    _userCtrl.text = prefs.nasUsername?.isNotEmpty == true
-        ? prefs.nasUsername!
-        : testUser;
-    _passCtrl.text = prefs.nasPassword.isNotEmpty
-        ? prefs.nasPassword
-        : testPass;
+    _hostCtrl.text = prefs.nasHost ?? '';
+    _shareCtrl.text = prefs.nasShare ?? '';
+    _userCtrl.text = prefs.nasUsername ?? '';
+    _passCtrl.text = prefs.nasPassword;
     _nasType = prefs.nasType;
     _offlineCache = prefs.smbOfflineCache;
   }
@@ -100,18 +86,13 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
       final shares = await SmbService.listShares();
       if (mounted) {
         final l10n = AppLocalizations.of(context);
-        // 先清掉可能堆积的旧 SnackBar，再显示新结果
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              l10n.nasShares(shares.join(', ')),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            backgroundColor: AccentScope.of(context),
-            duration: const Duration(seconds: 4),
-          ),
+        Fluttertoast.showToast(
+          msg: l10n.nasShares(shares.join(', ')),
+          gravity: ToastGravity.BOTTOM,
+          timeInSecForIosWeb: 4,
+          fontSize: 13,
+          backgroundColor: AppTheme.ok,
+          textColor: AppTheme.textPrimary,
         );
       }
       // 测试成功后不断开会话：保留给后续 SMB 播放直接用
@@ -123,28 +104,20 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     if (mounted) setState(() {});
   }
 
-  /// 失败时展示具体错误，并带复制按钮方便反馈。
-  /// 固定时长 + 先清队列，避免多次失败后 SnackBar 排队堆积"一直不消失"。
+  /// 失败时展示具体错误信息。
   void _showErrorSnackBar() {
     final l10n = AppLocalizations.of(context);
     final err = SmbService.lastError;
     final text = err == null
         ? l10n.nasConnectionFailedTitle
         : '$err\n\n${l10n.nasCheckHint}';
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(text, maxLines: 6, overflow: TextOverflow.ellipsis),
-        backgroundColor: AppTheme.danger,
-        duration: const Duration(seconds: 5),
-        action: err == null
-            ? null
-            : SnackBarAction(
-                label: l10n.nasCopy,
-                textColor: Colors.white,
-                onPressed: () => Clipboard.setData(ClipboardData(text: err)),
-              ),
-      ),
+    Fluttertoast.showToast(
+      msg: text,
+      gravity: ToastGravity.BOTTOM,
+      timeInSecForIosWeb: 2,
+      fontSize: 13,
+      backgroundColor: AppTheme.danger,
+      textColor: AppTheme.textPrimary,
     );
   }
 
@@ -231,8 +204,9 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
             // ── 连接配置（与设置页同款圆角卡片容器） ──
             Container(
               decoration: BoxDecoration(
-                color: AppTheme.surfaceDark.withValues(alpha: 0.5),
+                color: AppTheme.surfaceDark,
                 borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppTheme.highlight, width: 0.5),
               ),
               child: Material(
                 type: MaterialType.transparency,
@@ -243,6 +217,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
                       label: l10n.nasHost,
                       hint: '192.168.110.27 or nas.local',
                       controller: _hostCtrl,
+                      keyboardType: TextInputType.url,
                     ),
                     const Divider(height: 1, indent: 16),
                     _NasField(
@@ -263,6 +238,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
                       label: l10n.nasPassword,
                       controller: _passCtrl,
                       obscure: true,
+                      textInputAction: TextInputAction.done,
                     ),
                   ],
                 ),
@@ -272,8 +248,9 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
             // ── 离线缓存开关 ──
             Container(
               decoration: BoxDecoration(
-                color: AppTheme.surfaceDark.withValues(alpha: 0.5),
+                color: AppTheme.surfaceDark,
                 borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppTheme.highlight, width: 0.5),
               ),
               child: Material(
                 type: MaterialType.transparency,
@@ -373,12 +350,15 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
 
 /// 设置页同款列表项风格的表单字段：左侧图标 + 标签 + 内联输入框。
 /// [obscure] 为 true（密码框）时内置小眼睛，可切换明文显示。
+/// 整行可点聚焦；[textInputAction] 控制回车行为（默认 next 依次跳转）。
 class _NasField extends StatefulWidget {
   final IconData icon;
   final String label;
   final String? hint;
   final TextEditingController controller;
   final bool obscure;
+  final TextInputType? keyboardType;
+  final TextInputAction textInputAction;
 
   const _NasField({
     required this.icon,
@@ -386,6 +366,8 @@ class _NasField extends StatefulWidget {
     required this.controller,
     this.hint,
     this.obscure = false,
+    this.keyboardType,
+    this.textInputAction = TextInputAction.next,
   });
 
   @override
@@ -394,21 +376,35 @@ class _NasField extends StatefulWidget {
 
 class _NasFieldState extends State<_NasField> {
   bool _show = false;
+  final _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Icon(widget.icon, color: AppTheme.textSecondary, size: 22),
+      leading: Icon(widget.icon, color: AppTheme.textTertiary, size: 20),
       title: Text(
         widget.label,
-        style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
+        style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
       ),
+      // 整行可点：聚焦到该输入框，避免精确点中才能聚焦
+      onTap: () => FocusScope.of(context).requestFocus(_focusNode),
       subtitle: TextField(
         controller: widget.controller,
+        focusNode: _focusNode,
         obscureText: widget.obscure && !_show,
-        style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary),
+        autocorrect: false,
+        enableSuggestions: false,
+        keyboardType: widget.keyboardType,
+        textInputAction: widget.textInputAction,
+        style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
         decoration: InputDecoration(
           hintText: widget.hint,
           isDense: true,

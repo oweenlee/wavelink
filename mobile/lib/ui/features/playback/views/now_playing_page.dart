@@ -30,6 +30,7 @@ class NowPlayingPage extends ConsumerStatefulWidget {
 class _NowPlayingPageState extends ConsumerState<NowPlayingPage>
     with SingleTickerProviderStateMixin {
   bool _lyricsOverlay = false;
+  bool _lyricsBlur = false;
   late AnimationController _lyricsAc;
   late Animation<Offset> _lyricsSlide;
 
@@ -53,13 +54,23 @@ class _NowPlayingPageState extends ConsumerState<NowPlayingPage>
   }
 
   void _openLyrics() {
-    setState(() => _lyricsOverlay = true);
+    // 模糊淡入与上滑动画同步启动：弹出过程中由清晰渐变到模糊
+    setState(() {
+      _lyricsOverlay = true;
+      _lyricsBlur = true;
+    });
     _lyricsAc.forward();
   }
 
   void _closeLyrics() {
+    // 下滑过程保持模糊背景，退出后再复位，避免中途变回清晰图
     _lyricsAc.reverse().then((_) {
-      if (mounted) setState(() => _lyricsOverlay = false);
+      if (mounted) {
+        setState(() {
+          _lyricsBlur = false;
+          _lyricsOverlay = false;
+        });
+      }
     });
   }
 
@@ -234,6 +245,7 @@ class _NowPlayingPageState extends ConsumerState<NowPlayingPage>
                     coverUrl: song.coverUrl,
                     positionMs: playerState.position.round(),
                     durationMs: song.duration.inMilliseconds,
+                    blurred: _lyricsBlur,
                   ),
                 ),
             ],

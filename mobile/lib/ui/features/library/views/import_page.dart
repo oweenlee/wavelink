@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../data/services/preferences_service.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../playback/view_models/playback_controller.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import '../../../core/theme/app_theme.dart';
 
 /// Shows the import music bottom sheet (aligned with HTML prototype).
@@ -112,7 +113,7 @@ class _ImportSheetState extends ConsumerState<_ImportSheet> {
                   scanResult: _scanResult,
                   nasConnected: nasConnected,
                   onDiscover: () => _handleDiscover(context),
-                  onPickFiles: () => _handlePickFiles(context),
+                  onPickFiles: _handlePickFiles,
                   // 进入 NAS 配置页；保存成功返回 true 时关闭导入 sheet，回到曲库
                   onNas: () async {
                     final saved = await context.push<bool>('/nas');
@@ -144,18 +145,18 @@ class _ImportSheetState extends ConsumerState<_ImportSheet> {
     });
   }
 
-  Future<void> _handlePickFiles(BuildContext context) async {
+  Future<void> _handlePickFiles() async {
     final player = ref.read(playbackControllerProvider);
     final count = await player.importFromPicker();
     if (!mounted) return;
     final l10n = AppLocalizations.of(context);
     if (count > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.importN(count)),
-          backgroundColor: AppTheme.s3,
-          behavior: SnackBarBehavior.floating,
-        ),
+      Fluttertoast.showToast(
+        msg: l10n.importN(count),
+        gravity: ToastGravity.BOTTOM,
+        fontSize: 13,
+        backgroundColor: AppTheme.ok,
+        textColor: AppTheme.textPrimary,
       );
     }
   }

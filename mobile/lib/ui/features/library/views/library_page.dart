@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../../domain/models/song.dart';
 import '../../../../data/services/preferences_service.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import '../../../core/widgets/wl_toggle.dart';
 import '../../playback/view_models/playback_controller.dart';
 import '../../playback/view_models/audio_player_provider.dart';
@@ -251,13 +252,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     // 避免静默回滚让用户困惑为什么没播。
     ref.listen(playErrorProvider, (prev, next) {
       if (next != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(next),
-            backgroundColor: AppTheme.danger,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 4),
-          ),
+        Fluttertoast.showToast(
+          msg: next,
+          gravity: ToastGravity.BOTTOM,
+          timeInSecForIosWeb: 2,
+          fontSize: 13,
+          backgroundColor: AppTheme.danger,
+          textColor: AppTheme.textPrimary,
         );
         ref.read(playErrorProvider.notifier).clear();
       }
@@ -285,7 +286,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                   color: AppTheme.textPrimary,
                   fontFamily: 'Inter',
                 ),
-                cursorColor: AppTheme.accentFallback,
                 // 外层 Container 固定 40 高度，文字默认 baseline 对齐会偏上；
                 // 用 contentPadding 归零 + 垂直居中，保证 hint 与输入文字居中
                 textAlignVertical: TextAlignVertical.center,
@@ -361,10 +361,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         ),
         const SizedBox(height: 8),
 
-        // ── NAS 导入失败提示 ──
-        if (ref.watch(libraryProvider).nasImportError != null)
-          const _NasImportBanner(),
-
         Expanded(
           child: TabBarView(
             controller: _tabController,
@@ -378,49 +374,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         ),
       ],
     );
-  }
-}
-
-// ── NAS 导入失败提示 ──
-
-class _NasImportBanner extends ConsumerWidget {
-  const _NasImportBanner();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final lib = ref.watch(libraryProvider);
-    final error = lib.nasImportError;
-
-    if (error != null) {
-      return Container(
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppTheme.danger.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            const Icon(
-              LucideIcons.alertTriangle,
-              size: 16,
-              color: AppTheme.danger,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                error,
-                style: const TextStyle(fontSize: 13, color: AppTheme.danger),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return const SizedBox.shrink();
   }
 }
 

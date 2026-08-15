@@ -27,115 +27,121 @@ class SettingsPage extends ConsumerWidget {
     final replayGain = ref.watch(playerProvider.select((s) => s.replayGain));
     final coverBlur = ref.watch(playerProvider.select((s) => s.coverBlur));
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
-      children: [
-        const SizedBox(height: 4),
+    // 行级懒加载：每个设置项（含组标题）是独立 item，
+    // 整组不再作为一个高 item，滚动只挂载可见行，与曲库列表同款手感
+    final items = <Widget>[];
 
-        _Section(
-          title: l10n.settingsAudio,
-          children: [
-            _SwitchItem(
-              icon: LucideIcons.slidersHorizontal,
-              label: l10n.dspPipeline,
-              value: dsp.enabled,
-              onChanged: (_) => player.toggleDspEnabled(),
-            ),
-            _SwitchItem(
-              icon: LucideIcons.activity,
-              label: l10n.dspCrossfeed,
-              value: dsp.crossfeed,
-              onChanged: (_) => player.toggleCrossfeed(),
-            ),
-            _SwitchItem(
-              icon: LucideIcons.arrowRight,
-              label: l10n.stereoWidening,
-              value: dsp.widener,
-              onChanged: (_) => player.toggleWidener(),
-            ),
-            _SwitchItem(
-              icon: LucideIcons.volume2,
-              label: l10n.truePeakLimiter,
-              value: dsp.limiter,
-              onChanged: (_) => player.toggleLimiter(),
-            ),
-            _SwitchItem(
-              icon: LucideIcons.droplets,
-              label: l10n.tpdfDither,
-              value: dsp.dither,
-              onChanged: (_) => player.toggleDither(),
-            ),
-            _SwitchItem(
-              icon: LucideIcons.waves,
-              label: l10n.noiseShaping,
-              value: dsp.noiseShaping,
-              onChanged: (_) => player.toggleNoiseShaping(),
-            ),
-            _SettingItem(
-              icon: LucideIcons.headphones,
-              label: l10n.autoEq,
-              trailing: player.autoEqModel ?? l10n.autoEqOff,
-              onTap: () => context.push('/autoeq'),
-            ),
-            _SettingItem(
-              icon: LucideIcons.building2,
-              label: l10n.roomCorrection,
-              trailing: player.roomIrPath != null
-                  ? l10n.roomCorrectionActive
-                  : l10n.roomCorrectionOff,
-              onTap: () => context.push('/room-correction'),
-            ),
-            _SwitchItem(
-              icon: LucideIcons.sparkles,
-              label: l10n.replayGain,
-              value: replayGain,
-              onChanged: (_) => player.setReplayGain(!replayGain),
-            ),
-            _SwitchItem(
-              icon: LucideIcons.badgeCheck,
-              label: l10n.bitPerfect,
-              value: bitPerfect,
-              onChanged: (_) => player.setBitPerfect(!bitPerfect),
-              subtitle: _bitPerfectStatus(player),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        _Section(
-          title: l10n.settingsAppearance,
-          children: [
-            _SettingItem(
-              icon: LucideIcons.palette,
-              label: l10n.theme,
-              trailing: l10n.themeDark,
-            ),
-            _SliderItem(
-              icon: LucideIcons.droplets,
-              label: l10n.coverBlur,
-              value: coverBlur,
-              onChanged: player.setCoverBlur,
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        _Section(title: l10n.language, children: [_LanguageItem()]),
-        const SizedBox(height: 24),
-        _Section(
-          title: l10n.settingsAbout,
-          children: [
-            _SettingItem(
-              icon: LucideIcons.activity,
-              label: l10n.diagnosticEntry,
-              onTap: () => context.push('/diagnostic'),
-            ),
-            _SettingItem(
-              icon: LucideIcons.info,
-              label: l10n.version,
-              trailing: l10n.versionValue,
-            ),
-          ],
-        ),
-      ],
+    void addSection(String title, List<Widget> rows) {
+      items.add(_SectionHeader(title: title));
+      for (var i = 0; i < rows.length; i++) {
+        items.add(_RowShell(
+          isFirst: i == 0,
+          isLast: i == rows.length - 1,
+          child: rows[i],
+        ));
+      }
+      items.add(const SizedBox(height: 24));
+    }
+
+    addSection(l10n.settingsAudio, [
+      _SwitchItem(
+        icon: LucideIcons.slidersHorizontal,
+        label: l10n.dspPipeline,
+        value: dsp.enabled,
+        onChanged: (_) => player.toggleDspEnabled(),
+      ),
+      _SwitchItem(
+        icon: LucideIcons.activity,
+        label: l10n.dspCrossfeed,
+        value: dsp.crossfeed,
+        onChanged: (_) => player.toggleCrossfeed(),
+      ),
+      _SwitchItem(
+        icon: LucideIcons.arrowRight,
+        label: l10n.stereoWidening,
+        value: dsp.widener,
+        onChanged: (_) => player.toggleWidener(),
+      ),
+      _SwitchItem(
+        icon: LucideIcons.volume2,
+        label: l10n.truePeakLimiter,
+        value: dsp.limiter,
+        onChanged: (_) => player.toggleLimiter(),
+      ),
+      _SwitchItem(
+        icon: LucideIcons.droplets,
+        label: l10n.tpdfDither,
+        value: dsp.dither,
+        onChanged: (_) => player.toggleDither(),
+      ),
+      _SwitchItem(
+        icon: LucideIcons.waves,
+        label: l10n.noiseShaping,
+        value: dsp.noiseShaping,
+        onChanged: (_) => player.toggleNoiseShaping(),
+      ),
+      _SettingItem(
+        icon: LucideIcons.headphones,
+        label: l10n.autoEq,
+        trailing: player.autoEqModel ?? l10n.autoEqOff,
+        onTap: () => context.push('/autoeq'),
+      ),
+      _SettingItem(
+        icon: LucideIcons.building2,
+        label: l10n.roomCorrection,
+        trailing: player.roomIrPath != null
+            ? l10n.roomCorrectionActive
+            : l10n.roomCorrectionOff,
+        onTap: () => context.push('/room-correction'),
+      ),
+      _SwitchItem(
+        icon: LucideIcons.sparkles,
+        label: l10n.replayGain,
+        value: replayGain,
+        onChanged: (_) => player.setReplayGain(!replayGain),
+      ),
+      _SwitchItem(
+        icon: LucideIcons.badgeCheck,
+        label: l10n.bitPerfect,
+        value: bitPerfect,
+        onChanged: (_) => player.setBitPerfect(!bitPerfect),
+        subtitle: _bitPerfectStatus(player),
+      ),
+    ]);
+
+    addSection(l10n.settingsAppearance, [
+      _SettingItem(
+        icon: LucideIcons.palette,
+        label: l10n.theme,
+        trailing: l10n.themeDark,
+      ),
+      _SliderItem(
+        icon: LucideIcons.droplets,
+        label: l10n.coverBlur,
+        value: coverBlur,
+        onChanged: player.setCoverBlur,
+      ),
+    ]);
+
+    addSection(l10n.language, [_LanguageItem()]);
+
+    addSection(l10n.settingsAbout, [
+      _SettingItem(
+        icon: LucideIcons.activity,
+        label: l10n.diagnosticEntry,
+        onTap: () => context.push('/diagnostic'),
+      ),
+      _SettingItem(
+        icon: LucideIcons.info,
+        label: l10n.version,
+        trailing: l10n.versionValue,
+      ),
+    ]);
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+      itemCount: items.length,
+      itemBuilder: (context, index) => items[index],
     );
   }
 }
@@ -227,48 +233,69 @@ class _LanguageItem extends ConsumerWidget {
   }
 }
 
-class _Section extends StatelessWidget {
+/// 分组标题（独立 item，便于懒加载）
+class _SectionHeader extends StatelessWidget {
   final String title;
-  final List<Widget> children;
-
-  const _Section({required this.title, required this.children});
+  const _SectionHeader({required this.title});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(
-            title,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textSecondary,
-            ),
-          ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: AppTheme.textSecondary,
         ),
-        Container(
-          decoration: BoxDecoration(
-            color: AppTheme.surfaceDark.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Material(
-            type: MaterialType.transparency,
-            child: Column(
-              children: children.asMap().entries.map((entry) {
-                return Column(
-                  children: [
-                    if (entry.key > 0) const Divider(height: 1, indent: 52),
-                    entry.value,
-                  ],
-                );
-              }).toList(),
-            ),
-          ),
+      ),
+    );
+  }
+}
+
+/// 分组内单行容器：行级圆角 + 分隔线。
+/// 首行上圆角、末行下圆角、中间无圆角；非首行顶部画分隔线。
+class _RowShell extends StatelessWidget {
+  final bool isFirst;
+  final bool isLast;
+  final Widget child;
+
+  const _RowShell({
+    required this.isFirst,
+    required this.isLast,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.vertical(
+      top: Radius.circular(isFirst ? 14 : 0),
+      bottom: Radius.circular(isLast ? 14 : 0),
+    );
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          top: isFirst
+              ? BorderSide(color: AppTheme.highlight, width: 0.5)
+              : BorderSide.none,
+          bottom: isLast
+              ? BorderSide(color: AppTheme.highlight, width: 0.5)
+              : BorderSide.none,
         ),
-      ],
+      ),
+      child: Material(
+        color: AppTheme.surfaceDark,
+        shape: RoundedRectangleBorder(borderRadius: radius),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!isFirst) Divider(height: 1, indent: 52, color: AppTheme.highlight),
+            child,
+          ],
+        ),
+      ),
     );
   }
 }
@@ -288,38 +315,51 @@ class _SettingItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon, color: AppTheme.textSecondary, size: 22),
-      title: Text(
-        label,
-        style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
-      ),
-      trailing: trailing != null
-          ? ConstrainedBox(
-              // 长文案（如 AutoEQ 型号名）限宽单行截断，避免换行挤压标题
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.sizeOf(context).width * 0.45,
-              ),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, color: AppTheme.textSecondary, size: 22),
+            const SizedBox(width: 16),
+            Expanded(
               child: Text(
-                trailing!,
+                label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: AppTheme.textTertiary,
+                style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
+              ),
+            ),
+            if (trailing != null) ...[
+              const SizedBox(width: 8),
+              ConstrainedBox(
+                // 长文案（如 AutoEQ 型号名）限宽单行截断，避免换行挤压标题
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.sizeOf(context).width * 0.45,
+                ),
+                child: Text(
+                  trailing!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppTheme.textTertiary,
+                  ),
                 ),
               ),
-            )
-          : onTap != null
-          ? const Icon(
-              LucideIcons.chevronRight,
-              color: AppTheme.textTertiary,
-              size: 20,
-            )
-          : null,
-      onTap: onTap,
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            ] else if (onTap != null) ...[
+              const SizedBox(width: 8),
+              const Icon(
+                LucideIcons.chevronRight,
+                color: AppTheme.textTertiary,
+                size: 20,
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -341,30 +381,61 @@ class _SwitchItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      // 整行可点：行内任意位置（含文字/图标）都能切换，且有 ink 涟漪反馈
+    return GestureDetector(
+      // 整行可点：行内任意位置（含文字/图标）都能切换
+      behavior: HitTestBehavior.opaque,
       onTap: () => onChanged(!value),
-      leading: Icon(icon, color: AppTheme.textSecondary, size: 22),
-      title: Text(
-        label,
-        style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
-      ),
-      subtitle: subtitle == null
-          ? null
-          : Text(
-              subtitle!,
-              style: const TextStyle(
-                fontSize: 11,
-                color: AppTheme.textTertiary,
-              ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, color: AppTheme.textSecondary, size: 22),
+            const SizedBox(width: 16),
+            Expanded(
+              child: subtitle == null
+                  ? Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        color: AppTheme.textPrimary,
+                      ),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.textTertiary,
+                          ),
+                        ),
+                      ],
+                    ),
             ),
-      trailing: WlToggle(
-        value: value,
-        // 与音效面板同一组件，开关视觉全局一致
-        onChanged: () => onChanged(!value),
+            const SizedBox(width: 8),
+            WlToggle(
+              value: value,
+              // 与音效面板同一组件，开关视觉全局一致
+              onChanged: () => onChanged(!value),
+            ),
+          ],
+        ),
       ),
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
     );
   }
 }

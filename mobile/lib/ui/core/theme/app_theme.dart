@@ -68,6 +68,9 @@ class AppTheme {
         fontWeight: FontWeight.w600,
       ),
     ),
+    textSelectionTheme: const TextSelectionThemeData(
+      cursorColor: textPrimary,
+    ),
     bottomNavigationBarTheme: const BottomNavigationBarThemeData(
       backgroundColor: s1,
       elevation: 0,

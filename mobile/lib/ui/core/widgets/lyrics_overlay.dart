@@ -12,6 +12,7 @@ class LyricsOverlay extends StatefulWidget {
   final String? coverUrl;
   final int positionMs;
   final int durationMs;
+  final bool blurred;
 
   const LyricsOverlay({
     super.key,
@@ -21,6 +22,7 @@ class LyricsOverlay extends StatefulWidget {
     this.coverUrl,
     this.positionMs = 0,
     this.durationMs = 0,
+    this.blurred = true,
   });
 
   @override
@@ -86,7 +88,7 @@ class _LyricsOverlayState extends State<LyricsOverlay> {
         fit: StackFit.expand,
         children: [
           // Backdrop: cover blur + dark overlay (or fallback gradient)
-          _Backdrop(coverUrl: widget.coverUrl),
+          _Backdrop(coverUrl: widget.coverUrl, blurred: widget.blurred),
 
           // Content
           SafeArea(
@@ -120,7 +122,8 @@ class _LyricsOverlayState extends State<LyricsOverlay> {
 
 class _Backdrop extends StatelessWidget {
   final String? coverUrl;
-  const _Backdrop({required this.coverUrl});
+  final bool blurred;
+  const _Backdrop({required this.coverUrl, this.blurred = true});
 
   @override
   Widget build(BuildContext context) {
@@ -128,17 +131,26 @@ class _Backdrop extends StatelessWidget {
       return Stack(
         fit: StackFit.expand,
         children: [
+          // 封面始终显示：打开动画期间为清晰图，模糊层淡入后才变模糊
           Image.file(
             File(coverUrl!),
             fit: BoxFit.cover,
             gaplessPlayback: true,
             errorBuilder: (_, _, _) => _fallbackGradient(),
           ),
-          ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-              child: Container(
-                color: Colors.black.withValues(alpha: 0.75),
+          // 模糊层：opacity 0 时 Flutter 跳过绘制、零采样；淡入过渡平滑
+          RepaintBoundary(
+            child: AnimatedOpacity(
+              opacity: blurred ? 1 : 0,
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeOutCubic,
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.75),
+                  ),
+                ),
               ),
             ),
           ),
