@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import '../../../../data/services/preferences_service.dart';
 import '../../../../data/services/smb_service.dart';
 import '../../../../data/services/webdav_service.dart';
+import '../../../../data/services/strm_resolver.dart';
 import '../../../../domain/models/song.dart';
 import '../../../core/providers/repositories.dart';
 import '../../playback/view_models/queue_provider.dart';
@@ -18,6 +20,33 @@ const _unset = Object();
 /// 取消 NAS 导入的哨兵异常，由 [_runNasImport] 捕获并静默结束
 class NASImportCancelled implements Exception {
   const NASImportCancelled();
+}
+
+/// 收藏离线下载并发闸门：限制同时在途的远端下载数，
+/// 避免一次收藏大量歌曲时打满 NAS 连接（历史教训：4 并发
+/// 曾触发 NAS 连接数限制导致整批超时）。超出的排队等待。
+class _OfflineDownloadGate {
+  static const _max = 4;
+  static int _active = 0;
+  static final List<Completer<void>> _waiters = [];
+
+  static Future<void> acquire() async {
+    if (_active < _max) {
+      _active++;
+      return;
+    }
+    final c = Completer<void>();
+    _waiters.add(c);
+    await c.future;
+    _active++;
+  }
+
+  static void release() {
+    _active--;
+    if (_waiters.isNotEmpty) {
+      _waiters.removeAt(0).complete();
+    }
+  }
 }
 
 class LibraryState {
@@ -142,13 +171,16 @@ class LibraryNotifier extends Notifier<LibraryState> {
     if (song == null) return;
     final id = song.id;
     final ids = Set<String>.from(state.favoriteIds);
-    if (ids.contains(id)) {
-      ids.remove(id);
-    } else {
+    final nowFavorite = !ids.contains(id);
+    if (nowFavorite) {
       ids.add(id);
+    } else {
+      ids.remove(id);
     }
     state = state.copyWith(favoriteIds: ids);
     _persistFavorites();
+    // 收藏时静默预下载，离线可播（失败静默，不影响收藏状态）
+    if (nowFavorite) _triggerOfflineDownload(song);
   }
 
   void setFavorite(String songId, bool favorite) {
@@ -160,6 +192,67 @@ class LibraryNotifier extends Notifier<LibraryState> {
     }
     state = state.copyWith(favoriteIds: ids);
     _persistFavorites();
+    if (favorite) {
+      final song = allKnownSongs()
+          .where((s) => s.id == songId)
+          .firstOrNull;
+      if (song != null) _triggerOfflineDownload(song);
+    }
+  }
+
+  /// 收藏歌曲离线预下载（静默 fire-and-forget，失败只记日志）。
+  /// 复用播放缓存通路：SMB/WebDAV/STRM 走 downloadToLocal，HTTP 下载到
+  /// `.stream_cache`（与流式播放缓存同一目录），离线/在线都能命中缓存。
+  void _triggerOfflineDownload(Song song) {
+    unawaited(_downloadForOffline(song));
+  }
+
+  Future<void> _downloadForOffline(Song song) async {
+    await _OfflineDownloadGate.acquire();
+    try {
+      if (song.smbPath != null && song.smbPath!.isNotEmpty) {
+        await SmbService.downloadToLocal(song.smbPath!);
+        return;
+      }
+      if (song.davPath != null && song.davPath!.isNotEmpty) {
+        await WebdavService.downloadToLocal(song.davPath!);
+        return;
+      }
+      // STRM 指针歌：按解析落地的目标类型分发
+      if (song.isStrm) {
+        final uri = song.targetUri;
+        if (uri == null || uri.isEmpty) return;
+        switch (song.targetKind) {
+          case 'smb':
+            await SmbService.downloadToLocal(uri);
+          case 'dav':
+            await WebdavService.downloadToLocal(uri);
+          case 'http':
+            await _downloadHttpToStreamCache(uri, song.id);
+        }
+        return;
+      }
+      // Subsonic 流式源：HTTP 下载到播放缓存目录
+      if (song.streamUrl != null && song.streamUrl!.isNotEmpty) {
+        await _downloadHttpToStreamCache(song.streamUrl!, song.id);
+      }
+    } catch (e) {
+      Log.w('Library', '收藏离线下载失败: ${song.title} — $e');
+    } finally {
+      _OfflineDownloadGate.release();
+    }
+  }
+
+  Future<void> _downloadHttpToStreamCache(String url, String songId) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final cacheDir = Directory('${appDir.path}/.stream_cache');
+    if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
+    final cacheFile = File('${cacheDir.path}/$songId${strmExtFromUrl(url)}');
+    if (await cacheFile.exists() && await cacheFile.length() > 0) return;
+    final response =
+        await http.get(Uri.parse(url)).timeout(const Duration(seconds: 30));
+    if (response.statusCode != 200) return;
+    await cacheFile.writeAsBytes(response.bodyBytes);
   }
 
   void _persistFavorites() {
