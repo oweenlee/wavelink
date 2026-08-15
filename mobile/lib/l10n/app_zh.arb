@@ -204,7 +204,7 @@
   "sourceNasConnected": "已连接 — 点击管理",
   "sourceMusicServer": "音乐服务器",
   "sourceMusicServerHint": "配置 Subsonic / Navidrome / Jellyfin",
-  "sourceMusicServerReady": "点击扫描服务器曲库",
+  "sourceMusicServerConnected": "已连接 — 点击管理",
   "sourceFound": "发现歌曲",
   "sourceNotFound": "未发现新歌曲",
   "subsonicTitle": "音乐服务器",
@@ -225,7 +225,7 @@
   "webdavInvalidUrl": "请输入含 http:// 或 https:// 的完整地址",
   "sourceWebdav": "WebDAV",
   "sourceWebdavHint": "配置 WebDAV 网络存储",
-  "sourceWebdavReady": "点击扫描服务器曲库",
+  "sourceWebdavConnected": "已连接 — 点击管理",
   "settingsMusicSources": "音乐源",
   "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS",
   "createPlaylistHint": "新建的是空播放列表，在歌曲菜单可「添加到播放列表」"

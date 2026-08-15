@@ -657,7 +657,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get sourceMusicServerHint => 'Subsonic / Navidrome / Jellyfin を設定';
 
   @override
-  String get sourceMusicServerReady => 'タップしてサーバーのライブラリをスキャン';
+  String get sourceMusicServerConnected => '接続済み — タップして管理';
 
   @override
   String get sourceFound => '見つかった曲';
@@ -722,7 +722,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get sourceWebdavHint => 'WebDAV ネットワークストレージに接続';
 
   @override
-  String get sourceWebdavReady => 'タップしてサーバーのライブラリをスキャン';
+  String get sourceWebdavConnected => '接続済み — タップして管理';
 
   @override
   String get settingsMusicSources => '音楽ソース';

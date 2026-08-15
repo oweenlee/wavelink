@@ -204,7 +204,7 @@
   "sourceNasConnected": "Connected — tap to manage",
   "sourceMusicServer": "Music Server",
   "sourceMusicServerHint": "Configure Subsonic / Navidrome / Jellyfin",
-  "sourceMusicServerReady": "Tap to scan server library",
+  "sourceMusicServerConnected": "Connected — tap to manage",
   "sourceFound": "Found songs",
   "sourceNotFound": "No new songs found",
   "subsonicTitle": "Music Server",
@@ -225,7 +225,7 @@
   "webdavInvalidUrl": "Enter a full URL with http:// or https://",
   "sourceWebdav": "WebDAV",
   "sourceWebdavHint": "Connect to WebDAV network storage",
-  "sourceWebdavReady": "Tap to scan server library",
+  "sourceWebdavConnected": "Connected — tap to manage",
   "settingsMusicSources": "Music Sources",
   "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS",
   "createPlaylistHint": "Creates an empty playlist. Add songs via the song menu → \"Add to playlist\""

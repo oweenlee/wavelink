@@ -284,14 +284,11 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
     context.push('/nas');
   }
 
-  /// Subsonic：未配置 → 进配置页；已配置 → 直接扫描（loading/结果反馈）
+  /// Subsonic：与 NAS 共享一致——点击行进配置页（可测试/修改/重新连接），
+  /// 重新扫描改由右侧同步按钮触发（仅已配置时显示）。
   void _handleSubsonic() {
     Navigator.of(context).pop(); // 关抽屉
-    if (!SubsonicService.isConfigured) {
-      context.push('/subsonic');
-    } else {
-      _scanSubsonic();
-    }
+    context.push('/subsonic');
   }
 
   Future<void> _scanSubsonic() async {
@@ -312,19 +309,16 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
       _subsonicResult = ok
           ? l10n.sourceFound
           : error != null
-              ? l10n.subsonicFailed
-              : l10n.sourceNotFound;
+          ? l10n.subsonicFailed
+          : l10n.sourceNotFound;
     });
   }
 
-  /// WebDAV：未配置 → 进配置页；已配置 → 直接扫描（loading/结果反馈）
+  /// WebDAV：与 NAS 共享一致——点击行进配置页（可测试/修改/重新连接），
+  /// 重新扫描改由右侧同步按钮触发（仅已配置时显示）。
   void _handleWebdav() {
     Navigator.of(context).pop(); // 关抽屉
-    if (!WebdavService.isConfigured) {
-      context.push('/webdav');
-    } else {
-      _scanWebdav();
-    }
+    context.push('/webdav');
   }
 
   Future<void> _scanWebdav() async {
@@ -343,8 +337,8 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
       _webdavResult = ok
           ? l10n.sourceFound
           : error != null
-              ? l10n.subsonicFailed
-              : l10n.sourceNotFound;
+          ? l10n.subsonicFailed
+          : l10n.sourceNotFound;
     });
   }
 
@@ -447,29 +441,36 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
                     )
                   : null,
             ),
-            // 音乐服务器（Subsonic 兼容）
+            // 音乐服务器（Subsonic 兼容）：已配置时行尾提供重新扫描按钮，
+            // 点击行仍进配置页（与 NAS 共享一致的管理方式）
             _SourceRow(
               icon: LucideIcons.server,
               label: l10n.sourceMusicServer,
               subtitle: SubsonicService.isConfigured
-                  ? l10n.sourceMusicServerReady
+                  ? l10n.sourceMusicServerConnected
                   : l10n.sourceMusicServerHint,
               connected: SubsonicService.isConfigured,
               loading: _subsonicScanning,
               result: _subsonicResult,
               onTap: _handleSubsonic,
+              trailing: SubsonicService.isConfigured
+                  ? _ScanButton(onTap: _scanSubsonic)
+                  : null,
             ),
-            // WebDAV
+            // WebDAV：同上，已配置时行尾提供重新扫描按钮
             _SourceRow(
               icon: LucideIcons.cloud,
               label: l10n.sourceWebdav,
               subtitle: WebdavService.isConfigured
-                  ? l10n.sourceWebdavReady
+                  ? l10n.sourceWebdavConnected
                   : l10n.sourceWebdavHint,
               connected: WebdavService.isConfigured,
               loading: _webdavScanning,
               result: _webdavResult,
               onTap: _handleWebdav,
+              trailing: WebdavService.isConfigured
+                  ? _ScanButton(onTap: _scanWebdav)
+                  : null,
             ),
             const Spacer(),
             // 底部版本号
@@ -568,7 +569,9 @@ class _SourceRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // 右侧状态：扫描中 / trailing（NAS 同步按钮等）/ 结果
+            // 右侧状态：扫描中 / 扫描结果 / trailing（同步按钮等）
+            // result 优先于 trailing：扫描完成显示"发现歌曲/失败"文案，
+            // 下次重扫前清空 result 后恢复同步按钮
             if (loading)
               const SizedBox(
                 width: 16,
@@ -578,8 +581,6 @@ class _SourceRow extends StatelessWidget {
                   color: AppTheme.textSecondary,
                 ),
               )
-            else if (trailing != null)
-              trailing!
             else if (result != null)
               Text(
                 result!,
@@ -587,8 +588,36 @@ class _SourceRow extends StatelessWidget {
                   fontSize: 11,
                   color: AppTheme.textTertiary,
                 ),
-              ),
+              )
+            else
+              ?trailing,
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 行尾"重新扫描"按钮（Subsonic/WebDAV 已配置时显示，与 NAS 同步按钮
+/// 同款视觉）：扫描中由 _SourceRow 的 loading 分支接管转圈，此处只渲
+/// 染可点击图标。
+class _ScanButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _ScanButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      // 热区 36×36（含空隙），图标视觉 16×16 不变
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: const Padding(
+        padding: EdgeInsets.all(10),
+        child: Icon(
+          LucideIcons.refreshCw,
+          size: 16,
+          color: AppTheme.textSecondary,
         ),
       ),
     );

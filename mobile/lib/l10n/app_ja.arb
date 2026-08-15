@@ -204,7 +204,7 @@
   "sourceNasConnected": "接続済み — タップして管理",
   "sourceMusicServer": "ミュージックサーバー",
   "sourceMusicServerHint": "Subsonic / Navidrome / Jellyfin を設定",
-  "sourceMusicServerReady": "タップしてサーバーのライブラリをスキャン",
+  "sourceMusicServerConnected": "接続済み — タップして管理",
   "sourceFound": "見つかった曲",
   "sourceNotFound": "新しい曲は見つかりませんでした",
   "subsonicTitle": "ミュージックサーバー",
@@ -225,7 +225,7 @@
   "webdavInvalidUrl": "http:// または https:// を含む完全な URL を入力してください",
   "sourceWebdav": "WebDAV",
   "sourceWebdavHint": "WebDAV ネットワークストレージに接続",
-  "sourceWebdavReady": "タップしてサーバーのライブラリをスキャン",
+  "sourceWebdavConnected": "接続済み — タップして管理",
   "settingsMusicSources": "音楽ソース",
   "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS",
   "createPlaylistHint": "空のプレイリストを作成します。曲メニュー →「プレイリストに追加」で曲を追加してください"
