@@ -305,7 +305,7 @@ class PreferencesService {
   }
 
   // ── 语言偏好 ──
-  // 取值：'system' | 'zh' | 'en'；'system' 表示跟随系统
+  // 取值：'system' | 'zh' | 'ja' | 'en'；'system' 表示跟随系统
   static const _kLocale = 'locale';
   String get localePref => _prefs.getString(_kLocale) ?? 'system';
   Future<void> setLocalePref(String v) => _prefs.setString(_kLocale, v);

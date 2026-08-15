@@ -143,7 +143,7 @@ class SettingsPage extends ConsumerWidget {
 class _LanguageItem extends ConsumerWidget {
   const _LanguageItem();
 
-  static const _options = ['system', 'zh', 'en'];
+  static const _options = ['system', 'zh', 'ja', 'en'];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -155,6 +155,8 @@ class _LanguageItem extends ConsumerWidget {
       switch (mode) {
         case 'zh':
           return '中文';
+        case 'ja':
+          return '日本語';
         case 'en':
           return 'English';
         default:
@@ -179,6 +181,8 @@ class _LanguageItem extends ConsumerWidget {
       switch (mode) {
         case 'zh':
           return '中文';
+        case 'ja':
+          return '日本語';
         case 'en':
           return 'English';
         default:
