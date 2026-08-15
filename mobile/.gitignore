@@ -61,3 +61,4 @@ lib/l10n/app_localizations_zh.dart
 
 # Workbuddy agent tooling
 .workbuddy/
+lib/l10n/app_localizations_ja.dart

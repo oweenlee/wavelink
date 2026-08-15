@@ -297,8 +297,9 @@ String _formatFromPath(String? path) {
 }
 
 /// 构建顶栏格式信息字符串。
-/// bit-perfect 指示基于「有效」状态（偏好 && 实际链路 && 无 DSP）：
-/// - Android：仅实际 Exclusive 直通 显示 bit-perfect；Shared 静默降级如实标注
+/// bit-perfect 指示基于「有效」状态（偏好 && 实际链路 && 无信号改动）：
+/// - Android：仅实际 Exclusive 直通显示 bit-perfect；Shared 混音器路径如实
+///   标注（Oboe 每次开流已优先试独占，设备给不给由 HAL 决定）
 /// - iOS：速率匹配即 bit-exact（无独占概念，文案诚实区分，不做独占宣称）
 String _buildFormatInfo(Song song, PlaybackController player) {
   final fmt = _formatFromPath(song.path);
@@ -326,6 +327,9 @@ String _buildFormatInfo(Song song, PlaybackController player) {
     }
     if (player.dspAffectingSignal) {
       reasons.add('DSP 处理中');
+    }
+    if (player.replayGain) {
+      reasons.add('ReplayGain 增益');
     }
     if (reasons.isEmpty) reasons.add('等待播放');
   }
@@ -974,8 +978,11 @@ class _Backdrop extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 模糊强度偏好（0–1，默认 0.7）映射到 sigma 0–40；0 = 不模糊
-    final sigma = ref.watch(playbackControllerProvider).coverBlur * 40;
+    // 模糊强度偏好（0–1，默认 0.7）映射到 sigma 0–40；0 = 不模糊。
+    // 直接 watch playerProvider 的 select：设置页拖动滑块时实时重建本视图
+    //（原来 watch 的是永不通知的 playbackControllerProvider，更新依赖
+    // 父级被 position tick 带着重建的巧合，暂停时会冻结在旧值）。
+    final sigma = ref.watch(playerProvider.select((s) => s.coverBlur)) * 40;
     return RepaintBoundary(
       child: Stack(
         children: [

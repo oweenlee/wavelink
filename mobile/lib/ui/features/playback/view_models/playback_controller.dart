@@ -212,6 +212,8 @@ class PlaybackController {
   void setBitPerfect(bool v) {
     _prefsRepo.setBitPerfect(v);
     _player.setBitPerfect(v);
+    // 播放中切换：对当前曲立即重新协商速率（否则下一曲才生效）
+    _player.reapplyBitPerfect();
   }
 
   // ── 门面方法 ──
@@ -328,8 +330,7 @@ class PlaybackController {
   void toggleCrossfeed() => _dsp.toggleCrossfeed();
   void toggleWidener() => _dsp.toggleWidener();
   void toggleLimiter() => _dsp.toggleLimiter();
-  void toggleDither() => _dsp.toggleDither();
-  void toggleNoiseShaping() => _dsp.toggleNoiseShaping();
+  // TPDF 抖动/噪声整形：移动端 F32 输出无整数截断，不提供开关（引擎侧恒关）
 
   // ── AutoEQ ──
   String? get autoEqModel => _ref.read(dspProvider).autoEqModel;

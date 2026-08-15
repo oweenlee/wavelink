@@ -117,16 +117,28 @@ pub(crate) fn run_engine(
                         },
                         Ok(EngineCommand::SetOutputSampleRate(rate)) => {
                             state.config.sample_rate = rate;
-                            if let Some(ref mut output) = state.output {
-                                let _ = output.set_sample_rate(rate);
-                            }
-                            state.output_sample_rate = rate;
+                            // 流重建可能失败（设备不支持目标速率）：此时实际速率不变，
+                            // 遥测必须如实报告，否则指示器会误判「速率匹配」
+                            let prev = state.output_sample_rate;
+                            let actual = match state.output.as_mut() {
+                                Some(output) => {
+                                    output.set_sample_rate(rate).unwrap_or(prev)
+                                }
+                                None => rate,
+                            };
+                            state.output_sample_rate = actual;
                             state.sync_output_sample_rate();
                             state.sync_output_mode(); // 重建后模式可能降级（Exclusive→Shared）
                             if let Ok(mut shared) = config_shared.write() {
-                                shared.sample_rate = rate;
+                                shared.sample_rate = actual;
                             }
-                            info!("输出采样率设置: {rate}Hz（下次播放生效）");
+                            if actual == rate {
+                                info!("输出采样率设置: {rate}Hz（下次播放生效）");
+                            } else {
+                                warn!(
+                                    "输出采样率设置: 请求 {rate}Hz 重建失败，保持 {actual}Hz"
+                                );
+                            }
                         },
                         Ok(EngineCommand::SetSpeed(speed)) => state.set_speed(speed),
                         Ok(EngineCommand::SetNoiseShaping(enabled)) => state.set_noise_shaping(enabled),

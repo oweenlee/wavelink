@@ -50,14 +50,9 @@ class EffectsSheet extends ConsumerWidget {
               enabled: dsp.limiter,
               onToggle: player.toggleLimiter,
             ),
-            const _Divider(),
-            _EffectItem(
-              icon: LucideIcons.activity,
-              label: l10n.tpdfDither,
-              subtitle: 'Clean 16-bit downsampling',
-              enabled: dsp.dither,
-              onToggle: player.toggleDither,
-            ),
+            // TPDF 抖动/噪声整形已移除：移动端双端输出均为 F32（iOS source
+            // node / Android Oboe F32 流），无整数截断环节，抖动无量化可去
+            // 相关，属桌面整数输出场景。引擎内由 applyDsp 显式关闭。
             const SizedBox(height: 24),
           ],
         );

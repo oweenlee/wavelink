@@ -15,154 +15,102 @@ import '../view_models/dsp_provider.dart';
 import '../view_models/locale_provider.dart';
 import '../view_models/package_info_provider.dart';
 
-class SettingsPage extends ConsumerWidget {
+/// 设置页。
+///
+/// 滚动性能设计（对齐曲库列表手感）：
+/// - **真懒加载**：build 只收集轻量 builder 闭包，widget 在 itemBuilder
+///   内按可见性构建（旧实现把 21 个 item 在 build 里全量构建后再交给
+///   ListView.builder，懒构建被完全绕过，进页第一帧和每次重建都很重）。
+/// - **行级重建隔离**：开关/滑块行各自是 ConsumerWidget，只 select 自己的
+///   字段——切换任一开关只重建那一行，SettingsPage 自身不 watch 任何
+///   响应式源，不再整页重建。
+/// - **轻量行容器**：_RowShell 用 Container+BoxDecoration，去掉每行一个
+///   Material + Clip.antiAlias（滚动时逐帧裁剪开销显著）。
+class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final player = ref.watch(playbackControllerProvider);
-    final dsp = ref.watch(dspProvider).dspSettings;
-    // 这四个开关/滑块 read 的是偏好内存值（controller 的 getter 非响应式），
-    // 必须 watch playerProvider 的对应字段才能点击后立即刷新；
-    // 用 select 隔离，telemetry 高频更新不会带动本页重建
-    final bitPerfect = ref.watch(playerProvider.select((s) => s.bitPerfect));
-    final replayGain = ref.watch(playerProvider.select((s) => s.replayGain));
-    final coverBlur = ref.watch(playerProvider.select((s) => s.coverBlur));
 
-    // 行级懒加载：每个设置项（含组标题）是独立 item，
-    // 整组不再作为一个高 item，滚动只挂载可见行，与曲库列表同款手感
-    final items = <Widget>[];
+    final items = <Widget Function(BuildContext)>[];
 
-    void addSection(String title, List<Widget> rows) {
-      items.add(_SectionHeader(title: title));
+    void addSection(String title, List<Widget Function(BuildContext)> rows) {
+      items.add((_) => _SectionHeader(title: title));
       for (var i = 0; i < rows.length; i++) {
+        final isFirst = i == 0;
+        final isLast = i == rows.length - 1;
+        final row = rows[i];
         items.add(
-          _RowShell(
-            isFirst: i == 0,
-            isLast: i == rows.length - 1,
-            child: rows[i],
+          (ctx) => _RowShell(
+            isFirst: isFirst,
+            isLast: isLast,
+            child: row(ctx),
           ),
         );
       }
-      items.add(const SizedBox(height: 24));
+      items.add((_) => const SizedBox(height: 24));
     }
 
     addSection(l10n.settingsAudio, [
-      _SwitchItem(
+      (_) => _DspSwitchRow(
         icon: LucideIcons.slidersHorizontal,
         label: l10n.dspPipeline,
-        value: dsp.enabled,
-        onChanged: (_) => player.toggleDspEnabled(),
+        select: (s) => s.dspSettings.enabled,
+        toggle: (p) => p.toggleDspEnabled(),
       ),
-      _SwitchItem(
+      (_) => _DspSwitchRow(
         icon: LucideIcons.activity,
         label: l10n.dspCrossfeed,
-        value: dsp.crossfeed,
-        onChanged: (_) => player.toggleCrossfeed(),
+        select: (s) => s.dspSettings.crossfeed,
+        toggle: (p) => p.toggleCrossfeed(),
       ),
-      _SwitchItem(
+      (_) => _DspSwitchRow(
         icon: LucideIcons.arrowRight,
         label: l10n.stereoWidening,
-        value: dsp.widener,
-        onChanged: (_) => player.toggleWidener(),
+        select: (s) => s.dspSettings.widener,
+        toggle: (p) => p.toggleWidener(),
       ),
-      _SwitchItem(
+      (_) => _DspSwitchRow(
         icon: LucideIcons.volume2,
         label: l10n.truePeakLimiter,
-        value: dsp.limiter,
-        onChanged: (_) => player.toggleLimiter(),
+        select: (s) => s.dspSettings.limiter,
+        toggle: (p) => p.toggleLimiter(),
       ),
-      _SwitchItem(
-        icon: LucideIcons.droplets,
-        label: l10n.tpdfDither,
-        value: dsp.dither,
-        onChanged: (_) => player.toggleDither(),
-      ),
-      _SwitchItem(
-        icon: LucideIcons.waves,
-        label: l10n.noiseShaping,
-        value: dsp.noiseShaping,
-        onChanged: (_) => player.toggleNoiseShaping(),
-      ),
-      _SettingItem(
-        icon: LucideIcons.headphones,
-        label: l10n.autoEq,
-        trailing: player.autoEqModel ?? l10n.autoEqOff,
-        onTap: () => context.push('/autoeq'),
-      ),
-      _SettingItem(
-        icon: LucideIcons.building2,
-        label: l10n.roomCorrection,
-        trailing: player.roomIrPath != null
-            ? l10n.roomCorrectionActive
-            : l10n.roomCorrectionOff,
-        onTap: () => context.push('/room-correction'),
-      ),
-      _SwitchItem(
-        icon: LucideIcons.sparkles,
-        label: l10n.replayGain,
-        value: replayGain,
-        onChanged: (_) => player.setReplayGain(!replayGain),
-      ),
-      _SwitchItem(
-        icon: LucideIcons.badgeCheck,
-        label: l10n.bitPerfect,
-        value: bitPerfect,
-        onChanged: (_) => player.setBitPerfect(!bitPerfect),
-        subtitle: _bitPerfectStatus(player),
-      ),
+      // TPDF 抖动/噪声整形不在移动端暴露：双端输出均为 F32，无整数截断
+      // 环节，抖动无量化可去相关（桌面整数输出场景才适用）。
+      (_) => const _AutoEqRow(),
+      (_) => const _RoomCorrectionRow(),
+      (_) => const _ReplayGainRow(),
+      (_) => const _BitPerfectRow(),
     ]);
 
-    addSection(l10n.settingsAppearance, [
-      _SettingItem(
-        icon: LucideIcons.palette,
-        label: l10n.theme,
-        trailing: l10n.themeDark,
-      ),
-      _SliderItem(
-        icon: LucideIcons.droplets,
-        label: l10n.coverBlur,
-        value: coverBlur,
-        onChanged: player.setCoverBlur,
-      ),
-    ]);
+    // 主题项已移除：原来是无 onTap 的装饰行（点了没反应），仅深色主题，
+    // 与其伪装成功能项不如不展示。
+    addSection(l10n.settingsAppearance, [(_) => const _CoverBlurRow()]);
 
-    addSection(l10n.language, [_LanguageItem()]);
+    addSection(l10n.language, [(_) => const _LanguageItem()]);
 
     addSection(l10n.settingsAbout, [
-      _SettingItem(
+      (ctx) => _SettingItem(
         icon: LucideIcons.activity,
         label: l10n.diagnosticEntry,
-        onTap: () => context.push('/diagnostic'),
+        onTap: () => ctx.push('/diagnostic'),
       ),
-      _SettingItem(
+      (_) => _SettingItem(
         icon: LucideIcons.mail,
         label: l10n.contactEmail,
         trailing: l10n.contactEmailValue,
-        onTap: () => _copyContactEmail(ref, l10n),
+        onTap: () => _copyContactEmail(l10n),
       ),
-      // 版本号运行时从 PackageInfo 读取（与 pubspec 保持一致），
-      // 不再走 arb 文案硬编码（曾写死 v0.1.0 与实际 1.0.0 不符）。
-      _SettingItem(
-        icon: LucideIcons.info,
-        label: l10n.version,
-        trailing: _versionLabel(ref),
-      ),
+      (_) => const _VersionRow(),
     ]);
 
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
       itemCount: items.length,
-      itemBuilder: (context, index) => items[index],
+      itemBuilder: (context, index) => items[index](context),
     );
-  }
-
-  /// 版本号展示：PackageInfo 未就绪/不可用时显示占位，避免空 trailing。
-  static String _versionLabel(WidgetRef ref) {
-    final v = ref.watch(packageInfoProvider).value?.version;
-    if (v == null || v.isEmpty) return '—';
-    return 'v$v';
   }
 
   /// 复制联系邮箱到剪贴板并 toast 反馈。
@@ -171,10 +119,7 @@ class SettingsPage extends ConsumerWidget {
   /// - Clipboard.setData 在部分 iOS 版本会因隐私弹窗授权失败抛异常
   ///   （用户拒绝剪贴板权限），必须 catch，否则 toast 不显示且产生
   ///   unhandled exception。
-  static Future<void> _copyContactEmail(
-    WidgetRef ref,
-    AppLocalizations l10n,
-  ) async {
+  static Future<void> _copyContactEmail(AppLocalizations l10n) async {
     final email = l10n.contactEmailValue;
     try {
       await Clipboard.setData(ClipboardData(text: email));
@@ -189,6 +134,141 @@ class SettingsPage extends ConsumerWidget {
       backgroundColor: AppTheme.surfaceHigh,
       textColor: AppTheme.textPrimary,
       fontSize: 13,
+    );
+  }
+}
+
+// ── 行级 Consumer：每行只 select 自己的字段，切换只重建本行 ──
+
+/// DSP 开关行：watch 对应子开关字段，toggle 走 PlaybackController 门面。
+class _DspSwitchRow extends ConsumerWidget {
+  final IconData icon;
+  final String label;
+  final bool Function(DspState) select;
+  final void Function(PlaybackController) toggle;
+
+  const _DspSwitchRow({
+    required this.icon,
+    required this.label,
+    required this.select,
+    required this.toggle,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final value = ref.watch(dspProvider.select(select));
+    return _SwitchItem(
+      icon: icon,
+      label: label,
+      value: value,
+      onChanged: (_) => toggle(ref.read(playbackControllerProvider)),
+    );
+  }
+}
+
+class _AutoEqRow extends ConsumerWidget {
+  const _AutoEqRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final model = ref.watch(dspProvider.select((s) => s.autoEqModel));
+    return _SettingItem(
+      icon: LucideIcons.headphones,
+      label: l10n.autoEq,
+      trailing: model ?? l10n.autoEqOff,
+      onTap: () => context.push('/autoeq'),
+    );
+  }
+}
+
+class _RoomCorrectionRow extends ConsumerWidget {
+  const _RoomCorrectionRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final irPath = ref.watch(dspProvider.select((s) => s.roomIrPath));
+    return _SettingItem(
+      icon: LucideIcons.building2,
+      label: l10n.roomCorrection,
+      trailing: irPath != null
+          ? l10n.roomCorrectionActive
+          : l10n.roomCorrectionOff,
+      onTap: () => context.push('/room-correction'),
+    );
+  }
+}
+
+class _ReplayGainRow extends ConsumerWidget {
+  const _ReplayGainRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final value = ref.watch(playerProvider.select((s) => s.replayGain));
+    return _SwitchItem(
+      icon: LucideIcons.sparkles,
+      label: l10n.replayGain,
+      value: value,
+      onChanged: (_) =>
+          ref.read(playbackControllerProvider).setReplayGain(!value),
+    );
+  }
+}
+
+class _BitPerfectRow extends ConsumerWidget {
+  const _BitPerfectRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final bitPerfect = ref.watch(playerProvider.select((s) => s.bitPerfect));
+    // telemetry 播放中 500ms 刷新：副标题实时反映链路状态。
+    // 只重建本行（旧实现读非响应式 getter，状态长期 stale）。
+    final telemetry = ref.watch(playerProvider.select((s) => s.telemetry));
+    final dsp = ref.watch(dspProvider.select((s) => s.dspSettings));
+    final replayGain = ref.watch(playerProvider.select((s) => s.replayGain));
+    return _SwitchItem(
+      icon: LucideIcons.badgeCheck,
+      label: l10n.bitPerfect,
+      value: bitPerfect,
+      onChanged: (_) =>
+          ref.read(playbackControllerProvider).setBitPerfect(!bitPerfect),
+      subtitle: _bitPerfectStatus(bitPerfect, telemetry, dsp, replayGain),
+    );
+  }
+}
+
+class _CoverBlurRow extends ConsumerWidget {
+  const _CoverBlurRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final value = ref.watch(playerProvider.select((s) => s.coverBlur));
+    return _SliderItem(
+      icon: LucideIcons.droplets,
+      label: l10n.coverBlur,
+      value: value,
+      onChanged: (v) => ref.read(playbackControllerProvider).setCoverBlur(v),
+    );
+  }
+}
+
+/// 版本号展示：运行时从 PackageInfo 读取（与 pubspec 保持一致），
+/// 不再走 arb 文案硬编码（曾写死 v0.1.0 与实际 1.0.0 不符）。
+class _VersionRow extends ConsumerWidget {
+  const _VersionRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final v = ref.watch(packageInfoProvider).value?.version;
+    return _SettingItem(
+      icon: LucideIcons.info,
+      label: l10n.version,
+      trailing: (v == null || v.isEmpty) ? '—' : 'v$v',
     );
   }
 }
@@ -280,6 +360,46 @@ class _LanguageItem extends ConsumerWidget {
   }
 }
 
+/// bit-perfect 开关副标题：如实反映「有效」状态（偏好 + 实际链路 + DSP）。
+/// 与 PlaybackController.effectiveBitPerfect/dspAffectingSignal 判定一致：
+/// ReplayGain 逐首叠加增益缩放，同属信号改动，开启时不算 bit-perfect。
+String _bitPerfectStatus(
+  bool bitPerfect,
+  EngineTelemetry t,
+  DspSettings dsp,
+  bool replayGain,
+) {
+  if (!bitPerfect) return '未开启';
+  final dspTouching =
+      dsp.enabled || dsp.crossfeed || dsp.widener || dsp.limiter;
+  final effective =
+      t.fileRate > 0 &&
+      t.fileRate == t.outputRate &&
+      (!Platform.isAndroid || t.outputMode == 1) &&
+      !dspTouching &&
+      !replayGain;
+  if (effective) {
+    return Platform.isAndroid
+        ? 'Exclusive 直通生效中'
+        : 'bit-exact（速率匹配）生效中';
+  }
+  final reasons = <String>[];
+  if (t.fileRate > 0 && t.fileRate != t.outputRate) {
+    reasons.add('重采样中');
+  }
+  if (Platform.isAndroid && t.outputMode == 2) {
+    reasons.add('Shared 混音器路径');
+  }
+  if (dspTouching) {
+    reasons.add('DSP 未旁路');
+  }
+  if (replayGain) {
+    reasons.add('ReplayGain 开启');
+  }
+  if (reasons.isEmpty) reasons.add('等待播放');
+  return '未生效：${reasons.join(' / ')}';
+}
+
 /// 分组标题（独立 item，便于懒加载）
 class _SectionHeader extends StatelessWidget {
   final String title;
@@ -303,6 +423,8 @@ class _SectionHeader extends StatelessWidget {
 
 /// 分组内单行容器：行级圆角 + 分隔线。
 /// 首行上圆角、末行下圆角、中间无圆角；非首行顶部画分隔线。
+/// 背景用 Container+BoxDecoration：行内无图片/墨水溢出需求，不需要
+/// Material + Clip.antiAlias 逐帧裁剪（滚动 paint 成本显著更低）。
 class _RowShell extends StatelessWidget {
   final bool isFirst;
   final bool isLast;
@@ -316,10 +438,6 @@ class _RowShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final radius = BorderRadius.vertical(
-      top: Radius.circular(isFirst ? 14 : 0),
-      bottom: Radius.circular(isLast ? 14 : 0),
-    );
     return Container(
       decoration: BoxDecoration(
         border: Border(
@@ -331,10 +449,14 @@ class _RowShell extends StatelessWidget {
               : BorderSide.none,
         ),
       ),
-      child: Material(
-        color: AppTheme.surfaceDark,
-        shape: RoundedRectangleBorder(borderRadius: radius),
-        clipBehavior: Clip.antiAlias,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceDark,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(isFirst ? 14 : 0),
+            bottom: Radius.circular(isLast ? 14 : 0),
+          ),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -506,27 +628,6 @@ class _SwitchItem extends StatelessWidget {
       ),
     );
   }
-}
-
-/// bit-perfect 开关副标题：如实反映「有效」状态（偏好 + 实际链路 + DSP）。
-String _bitPerfectStatus(PlaybackController player) {
-  final t = player.telemetry;
-  if (!player.bitPerfect) return '未开启';
-  if (player.effectiveBitPerfect) {
-    return Platform.isAndroid ? 'Exclusive 直通生效中' : 'bit-exact（速率匹配）生效中';
-  }
-  final reasons = <String>[];
-  if (t.fileRate > 0 && t.fileRate != t.outputRate) {
-    reasons.add('重采样中');
-  }
-  if (Platform.isAndroid && t.outputMode == 2) {
-    reasons.add('Shared 降级');
-  }
-  if (player.dspAffectingSignal) {
-    reasons.add('DSP 未旁路');
-  }
-  if (reasons.isEmpty) reasons.add('等待播放');
-  return '未生效：${reasons.join(' / ')}';
 }
 
 class _SliderItem extends StatelessWidget {

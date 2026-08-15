@@ -135,22 +135,18 @@ class PreferencesService {
   static const _kCrossfeed = 'dsp_crossfeed';
   static const _kWidener = 'dsp_widener';
   static const _kLimiter = 'dsp_limiter';
-  static const _kDither = 'dsp_dither';
-  static const _kNoiseShaping = 'dsp_noise_shaping';
+  // 注：旧版本曾有 dsp_dither / dsp_noise_shaping 偏好；移动端 F32 输出无
+  // 整数截断，抖动无意义，已移除（旧 key 残留不读，引擎侧恒关）。
 
   bool get dspEnabled => _prefs.getBool(_kDspEnabled) ?? false;
   bool get dspCrossfeed => _prefs.getBool(_kCrossfeed) ?? false;
   bool get dspWidener => _prefs.getBool(_kWidener) ?? false;
   bool get dspLimiter => _prefs.getBool(_kLimiter) ?? false;
-  bool get dspDither => _prefs.getBool(_kDither) ?? false;
-  bool get dspNoiseShaping => _prefs.getBool(_kNoiseShaping) ?? false;
 
   Future<void> setDspEnabled(bool v) => _prefs.setBool(_kDspEnabled, v);
   Future<void> setDspCrossfeed(bool v) => _prefs.setBool(_kCrossfeed, v);
   Future<void> setDspWidener(bool v) => _prefs.setBool(_kWidener, v);
   Future<void> setDspLimiter(bool v) => _prefs.setBool(_kLimiter, v);
-  Future<void> setDspDither(bool v) => _prefs.setBool(_kDither, v);
-  Future<void> setDspNoiseShaping(bool v) => _prefs.setBool(_kNoiseShaping, v);
 
   // ── AutoEQ 耳机校正（型号名；null = 关闭）──
   static const _kAutoEqModel = 'auto_eq_model';

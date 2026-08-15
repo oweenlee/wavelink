@@ -274,13 +274,20 @@ pub fn engine_set_speed(speed: f32) {
     with_engine(|h| h.set_speed(speed.clamp(0.25, 4.0)));
 }
 
-/// 设置引擎输出采样率（下次播放生效）。
+/// 设置引擎输出采样率（重建输出流，bit-perfect 协调用）。
 ///
-/// iOS bit-perfect 协调：Swift 先把 `AVAudioSession` 设到目标速率并读回实际速率，
-/// Dart 再调用本方法使引擎输出速率与设备一致。命令走 FIFO 通道，
-/// 在同一首播放之前发送即可保证先于 play 生效。若速率 == 文件速率则不重采样（bit-perfect）。
+/// - iOS：Swift 先把 `AVAudioSession` 设到目标速率并读回实际速率，Dart 再调用
+///   本方法使引擎输出速率与设备一致
+/// - Android：无会话协商，Dart 直接以文件速率调用；Oboe 内部先试
+///   Exclusive（设备允许即真 bit-perfect），失败回退 Shared
+/// 命令走 FIFO 通道，在同一首播放之前发送即可保证先于 play 生效。
+/// 若速率 == 文件速率则不重采样（bit-perfect）。
 pub fn engine_set_output_sample_rate(rate: u32) {
     with_engine(|h| h.set_output_sample_rate(rate));
+    // 同步遥测 HW 速率记录（iOS 侧 Swift 另行维护，幂等）。命令经 FIFO 异步
+    // 处理，若流重建失败该记录会短暂失真；但误判 bit-perfect 需 mode==1
+    //（Exclusive 成功），而独占重建成功则速率必然已生效，不会假报。
+    crate::api::audio_output::set_hw_sample_rate_impl(rate);
 }
 
 pub fn engine_set_crossfeed(enabled: bool) {

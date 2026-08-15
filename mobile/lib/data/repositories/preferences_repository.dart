@@ -27,8 +27,6 @@ class PreferencesRepository {
   bool get dspCrossfeed => PreferencesService.instance.dspCrossfeed;
   bool get dspWidener => PreferencesService.instance.dspWidener;
   bool get dspLimiter => PreferencesService.instance.dspLimiter;
-  bool get dspDither => PreferencesService.instance.dspDither;
-  bool get dspNoiseShaping => PreferencesService.instance.dspNoiseShaping;
 
   Future<void> setDspEnabled(bool v) =>
       PreferencesService.instance.setDspEnabled(v);
@@ -38,10 +36,6 @@ class PreferencesRepository {
       PreferencesService.instance.setDspWidener(v);
   Future<void> setDspLimiter(bool v) =>
       PreferencesService.instance.setDspLimiter(v);
-  Future<void> setDspDither(bool v) =>
-      PreferencesService.instance.setDspDither(v);
-  Future<void> setDspNoiseShaping(bool v) =>
-      PreferencesService.instance.setDspNoiseShaping(v);
 
   // ── AutoEQ / 参量 EQ ──
 

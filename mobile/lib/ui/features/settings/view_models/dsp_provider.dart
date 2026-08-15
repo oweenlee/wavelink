@@ -92,21 +92,9 @@ class DspNotifier extends Notifier<DspState> {
     applyDsp();
   }
 
-  void toggleDither() {
-    final s = state.dspSettings.copyWith(dither: !state.dspSettings.dither);
-    state = state.copyWith(dspSettings: s);
-    ref.read(preferencesRepositoryProvider).setDspDither(s.dither);
-    applyDsp();
-  }
-
-  void toggleNoiseShaping() {
-    final s = state.dspSettings.copyWith(
-      noiseShaping: !state.dspSettings.noiseShaping,
-    );
-    state = state.copyWith(dspSettings: s);
-    ref.read(preferencesRepositoryProvider).setDspNoiseShaping(s.noiseShaping);
-    applyDsp();
-  }
+  // TPDF 抖动/噪声整形不在移动端暴露：双端输出均为 F32（iOS source node /
+  // Android Oboe F32 流），无整数截断环节，抖动无量化可去相关。引擎管线
+  // 默认 dither 开，故 applyDsp 仍显式下发关闭（见下）。
 
   // ── AutoEQ 耳机校正 ──
 
@@ -223,9 +211,10 @@ class DspNotifier extends Notifier<DspState> {
       await engineRepo.setCrossfeed(on && dsp.crossfeed);
       await engineRepo.setStereoWidener(on && dsp.widener, 0.5);
       await engineRepo.setLimiter(on && dsp.limiter);
-      await engineRepo.setDither(on && dsp.dither);
-      // 噪声整形仅在 dither 生效时有意义，随 dither 门控
-      await engineRepo.setNoiseShaping(on && dsp.noiseShaping);
+      // 抖动/噪声整形在移动端恒关（F32 输出无整数截断，见上方注释）；
+      // 引擎管线默认 dither 开，必须显式关闭，避免白叠加 ~-138dB 噪声
+      await engineRepo.setDither(false);
+      await engineRepo.setNoiseShaping(false);
       await engineRepo.setAutoEq(autoEq);
       // 房间校正独立于总开关（与 AutoEQ 同属"校正"而非"音效渲染"）。
       // 单独 try：IR 文件被外部删除（清缓存/重装）时加载失败，
@@ -259,8 +248,6 @@ class DspNotifier extends Notifier<DspState> {
         crossfeed: prefs.dspCrossfeed,
         widener: prefs.dspWidener,
         limiter: prefs.dspLimiter,
-        dither: prefs.dspDither,
-        noiseShaping: prefs.dspNoiseShaping,
       ),
       autoEqModel: prefs.autoEqModel,
       roomIrPath: prefs.roomIrPath,

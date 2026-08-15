@@ -194,6 +194,53 @@ class PlayerNotifier extends Notifier<PlayerState> {
     state = state.copyWith(bitPerfect: v);
   }
 
+  /// 播放中切换 bit-perfect 时立即重新协调速率：否则只有下一曲的起播
+  /// 链路才会重协商，当前曲会停留在旧速率（开关看似没生效）。
+  void reapplyBitPerfect() {
+    unawaited(_negotiateOutputRate());
+  }
+
+  /// 按 bit-perfect 状态协商输出采样率（分平台通路）：
+  /// - iOS：经 Swift 设 AVAudioSession 并读回实际速率 → 引擎跟随（内置输出
+  ///   常固定一档，外接 DAC 才会切）；未达目标时引擎按实际速率重采样
+  /// - Android：无会话协商，直接令引擎按文件速率重建 Oboe 流（Oboe 内部
+  ///   先试 Exclusive：设备允许 → 真 bit-perfect；不给 → Shared + HAL SRC，
+  ///   遥测 mode=2，UI 如实显示未生效）
+  /// - 关闭 → 恢复设备原生速率，避免硬件停留在上一曲的文件速率
+  /// 协商失败只记日志，不打断播放。
+  Future<void> _negotiateOutputRate() async {
+    try {
+      if (state.bitPerfect && _currentFileRate > 0) {
+        if (Platform.isIOS) {
+          final actualRate = await _nativeAudio.setOutputRate(
+            _currentFileRate.toDouble(),
+          );
+          if (!ref.mounted) return;
+          if (actualRate > 0) {
+            await _engineRepo.setOutputSampleRate(actualRate.round());
+          }
+        } else {
+          // Android：无原生会话协商，直接按文件速率重建引擎输出流
+          await _engineRepo.setOutputSampleRate(_currentFileRate);
+        }
+      } else if (!state.bitPerfect && _nativeOutRate > 0) {
+        if (Platform.isIOS) {
+          final actualRate = await _nativeAudio.setOutputRate(
+            _nativeOutRate.toDouble(),
+          );
+          if (!ref.mounted) return;
+          await _engineRepo.setOutputSampleRate(
+            actualRate > 0 ? actualRate.round() : _nativeOutRate,
+          );
+        } else {
+          await _engineRepo.setOutputSampleRate(_nativeOutRate);
+        }
+      }
+    } catch (e) {
+      Log.w('Audio', 'bit-perfect 速率协调失败: $e');
+    }
+  }
+
   /// 以下三个仅用于设置页响应式展示（值以偏好为唯一事实源，
   /// 由 PlaybackController 同步写入）：
   void setReplayGain(bool v) => state = state.copyWith(replayGain: v);
@@ -201,34 +248,32 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
   /// 有效 bit-perfect：请求偏好 && 实际链路 && 无 DSP 改动信号。
   /// - 速率维度：文件速率 == 实际输出速率（不等于时引擎在重采样）
-  /// - Android：需实际 Exclusive 直通（mode=1）；Shared 降级不算
+  /// - Android：需实际 Exclusive 直通（mode=1）；Shared 混音器路径不算
+  ///   （Oboe 每次开流已优先试独占，设备给不给由 HAL 决定，UI 如实反映）
   /// - iOS：速率匹配即 bit-exact（无独占概念，不做独占宣称）
-  /// - DSP：任一环节在动信号（EQ/Crossfeed/Widener/Limiter/Dither）即非
-  ///   bit-perfect（引擎在 bit_perfect 下会自动 bypass，UI 如实反映）
+  /// - DSP：任一环节在动信号（EQ/Crossfeed/Widener/Limiter）即非
+  ///   bit-perfect，UI 如实反映（抖动/噪声整形在移动端恒关，不参与判定）
+  /// - ReplayGain：逐首叠加增益缩放，同属信号改动，必须关闭才算
+  /// 注：移动端引擎 config.bit_perfect 恒为 false（引擎级 bypass 会连
+  /// 音量控制一起跳过，移动端不可接受），故以「速率匹配 + 无信号改动」
+  /// 为诚实判定标准。
   bool get effectiveBitPerfect {
     if (!state.bitPerfect) return false;
     final t = state.telemetry;
     if (t.fileRate <= 0 || t.fileRate != t.outputRate) return false;
     if (Platform.isAndroid && t.outputMode != 1) return false;
     final dsp = ref.read(dspProvider).dspSettings;
-    if (dsp.enabled ||
-        dsp.crossfeed ||
-        dsp.widener ||
-        dsp.limiter ||
-        dsp.dither) {
+    if (dsp.enabled || dsp.crossfeed || dsp.widener || dsp.limiter) {
       return false;
     }
+    if (state.replayGain) return false;
     return true;
   }
 
   /// DSP 是否在动信号（供指示器说明"被旁路/生效中"）
   bool get dspAffectingSignal {
     final dsp = ref.read(dspProvider).dspSettings;
-    return dsp.enabled ||
-        dsp.crossfeed ||
-        dsp.widener ||
-        dsp.limiter ||
-        dsp.dither;
+    return dsp.enabled || dsp.crossfeed || dsp.widener || dsp.limiter;
   }
 
   void setCurrentSong(Song? song) {
@@ -483,16 +528,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
       _currentFileRate = 0;
     }
 
-    // bit-perfect 协调：iOS 设 AVAudioSession 读回实际速率 → 引擎设输出速率。
-    // 实际速率 == 文件速率时解码器不重采样（bit-perfect）；iOS 未满足时引擎按实际速率重采样保证播放正确。
+    // bit-perfect 速率协商（见 [_negotiateOutputRate]）；token 守卫保持在协商后。
     if (state.bitPerfect && _currentFileRate > 0) {
-      final actualRate = await _nativeAudio.setOutputRate(
-        _currentFileRate.toDouble(),
-      );
+      await _negotiateOutputRate();
       if (token != _playToken || !ref.mounted) return;
-      if (actualRate > 0) {
-        await _engineRepo.setOutputSampleRate(actualRate.round());
-      }
     }
 
     if (_engineRepo.rustAvailable) {

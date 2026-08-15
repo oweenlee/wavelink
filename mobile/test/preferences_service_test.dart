@@ -37,12 +37,10 @@ void main() {
       await prefs.setDspCrossfeed(true);
       await prefs.setDspWidener(true);
       await prefs.setDspLimiter(true);
-      await prefs.setDspDither(true);
       check(prefs.dspEnabled).isTrue();
       check(prefs.dspCrossfeed).isTrue();
       check(prefs.dspWidener).isTrue();
       check(prefs.dspLimiter).isTrue();
-      check(prefs.dspDither).isTrue();
     });
 
     test('ReplayGain / 封面模糊读写', () async {

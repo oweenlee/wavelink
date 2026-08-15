@@ -258,7 +258,8 @@ class _RoomCorrectionPageState extends ConsumerState<RoomCorrectionPage> {
                 color: AppTheme.textTertiary.withValues(alpha: 0.9),
               ),
             ),
-            // Bit-perfect 开启时 DSP 整链绕过，提示用户校正不会生效
+            // Bit-perfect 开启时提示：房间校正属 DSP 会改动信号，应用后
+            // bit-perfect 将显示未生效（移动端引擎不绕过 DSP，校正本身正常生效）
             if (ref.watch(playerProvider.select((s) => s.bitPerfect)))
               Padding(
                 padding: const EdgeInsets.only(top: 8),

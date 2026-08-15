@@ -480,10 +480,11 @@ void main() {
       return (container, p, engine);
     }
 
-    test('速率匹配 + 无 DSP → 有效（非 Android 平台不要求独占模式）', () async {
+    test('速率匹配 + 无 DSP + ReplayGain 关闭 → 有效（非 Android 平台不要求独占模式）', () async {
       final (_, p, _) = buildPlayable();
       await waitUntil(() => p.currentSong != null); // 等曲库扫描完成
       p.setBitPerfect(true);
+      p.setReplayGain(false); // ReplayGain 逐首增益缩放属信号改动，须关闭
       p.play();
       await waitUntil(() => p.telemetry.fileRate == 44100);
 
@@ -492,10 +493,24 @@ void main() {
       check(p.effectiveBitPerfect).isTrue();
     });
 
-    test('DSP 开启 → 非有效（引擎会自动旁路，UI 如实反映）', () async {
+    test('ReplayGain 开启 → 非有效（增益缩放改动信号）', () async {
+      final (_, p, _) = buildPlayable();
+      await waitUntil(() => p.currentSong != null);
+      p.setBitPerfect(true);
+      p.setReplayGain(true);
+      p.play();
+      await waitUntil(() => p.telemetry.fileRate == 44100);
+      check(p.effectiveBitPerfect).isFalse();
+
+      p.setReplayGain(false);
+      check(p.effectiveBitPerfect).isTrue();
+    });
+
+    test('DSP 开启 → 非有效（DSP 改动信号）', () async {
       final (container, p, _) = buildPlayable();
       await waitUntil(() => p.currentSong != null);
       p.setBitPerfect(true);
+      p.setReplayGain(false);
       p.play();
       await waitUntil(() => p.telemetry.fileRate == 44100);
       check(p.effectiveBitPerfect).isTrue();
