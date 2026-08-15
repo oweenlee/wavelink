@@ -22,33 +22,6 @@ class NASImportCancelled implements Exception {
   const NASImportCancelled();
 }
 
-/// 收藏离线下载并发闸门：限制同时在途的远端下载数，
-/// 避免一次收藏大量歌曲时打满 NAS 连接（历史教训：4 并发
-/// 曾触发 NAS 连接数限制导致整批超时）。超出的排队等待。
-class _OfflineDownloadGate {
-  static const _max = 4;
-  static int _active = 0;
-  static final List<Completer<void>> _waiters = [];
-
-  static Future<void> acquire() async {
-    if (_active < _max) {
-      _active++;
-      return;
-    }
-    final c = Completer<void>();
-    _waiters.add(c);
-    await c.future;
-    _active++;
-  }
-
-  static void release() {
-    _active--;
-    if (_waiters.isNotEmpty) {
-      _waiters.removeAt(0).complete();
-    }
-  }
-}
-
 class LibraryState {
   final List<Song> importedSongs;
   final bool scanDone;
@@ -122,6 +95,44 @@ class LibraryState {
 class LibraryNotifier extends Notifier<LibraryState> {
   bool _isScanning = false;
 
+  /// 收藏离线下载并发闸门：限制同时在途的远端下载数，
+  /// 避免一次收藏大量歌曲时打满 NAS 连接（历史教训：4 并发
+  /// 曾触发 NAS 连接数限制导致整批超时）。超出的排队等待。
+  /// 用实例字段而非 static：static 状态在热重载/容器重建后残留
+  /// （_active 不归零 + 未 complete 的 waiter 永久不醒 → 后续
+  /// acquire 死锁），实例随 Notifier 生命周期干净地销毁。
+  static const _offlineMax = 4;
+  int _offlineActive = 0;
+  final List<Completer<void>> _offlineWaiters = [];
+
+  Future<void> _acquireOffline() async {
+    if (_offlineActive < _offlineMax) {
+      _offlineActive++;
+      return;
+    }
+    final c = Completer<void>();
+    _offlineWaiters.add(c);
+    await c.future;
+    _offlineActive++;
+  }
+
+  void _releaseOffline() {
+    _offlineActive--;
+    if (_offlineWaiters.isNotEmpty) {
+      _offlineWaiters.removeAt(0).complete();
+    }
+  }
+
+  /// 容器销毁时唤醒所有排队中的下载（避免 unawaited task 永久挂起）；
+  /// 新容器从零开始，不受旧闸门状态影响。
+  void _releaseOfflineGateOnDispose() {
+    for (final w in _offlineWaiters) {
+      if (!w.isCompleted) w.complete();
+    }
+    _offlineWaiters.clear();
+    _offlineActive = 0;
+  }
+
   /// 封面提取调度（拆分自本类）：完成后回调刷新 UI 并持久化
   late final CoverService _covers = CoverService(
     ref,
@@ -146,7 +157,11 @@ class LibraryNotifier extends Notifier<LibraryState> {
   VoidCallback? onSongsAdded;
 
   @override
-  LibraryState build() => const LibraryState();
+  LibraryState build() {
+    // Riverpod 3.x：Notifier 生命周期清理走 ref.onDispose（无 dispose 覆写点）
+    ref.onDispose(_releaseOfflineGateOnDispose);
+    return const LibraryState();
+  }
 
   /// 导入歌曲 + 播放队列合并去重后的全集（收藏/播放列表查找用）。
   List<Song> allKnownSongs() {
@@ -208,7 +223,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
   }
 
   Future<void> _downloadForOffline(Song song) async {
-    await _OfflineDownloadGate.acquire();
+    await _acquireOffline();
     try {
       if (song.smbPath != null && song.smbPath!.isNotEmpty) {
         await SmbService.downloadToLocal(song.smbPath!);
@@ -239,7 +254,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
     } catch (e) {
       Log.w('Library', '收藏离线下载失败: ${song.title} — $e');
     } finally {
-      _OfflineDownloadGate.release();
+      _releaseOffline();
     }
   }
 
@@ -249,10 +264,19 @@ class LibraryNotifier extends Notifier<LibraryState> {
     if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
     final cacheFile = File('${cacheDir.path}/$songId${strmExtFromUrl(url)}');
     if (await cacheFile.exists() && await cacheFile.length() > 0) return;
-    final response =
-        await http.get(Uri.parse(url)).timeout(const Duration(seconds: 30));
-    if (response.statusCode != 200) return;
-    await cacheFile.writeAsBytes(response.bodyBytes);
+    // 流式落盘而非全量进内存：50MB+ FLAC/WAV 直接读 bodyBytes 会撑爆
+    // Dart heap，边收边写只占一个小缓冲。
+    final req = http.Request('GET', Uri.parse(url));
+    final streamed =
+        await req.send().timeout(const Duration(seconds: 30));
+    if (streamed.statusCode != 200) return;
+    final sink = cacheFile.openWrite();
+    try {
+      await streamed.stream.pipe(sink);
+    } catch (_) {
+      if (await cacheFile.exists()) await cacheFile.delete();
+      rethrow;
+    }
   }
 
   void _persistFavorites() {
