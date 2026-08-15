@@ -291,6 +291,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
     final token = ++_playToken;
     _prefetchedNext = false;
     _lastLyricText = '';
+    // 歌词预取：与音频解析链路并行发起远端 .lrc 读取（SMB/WebDAV/
+    // STRM 各自按源走网络），结果写 `.lrc_cache`；解析链路末尾
+    // _loadLyrics 命中缓存秒回，歌词随播放同步上屏，不再等
+    // "先出声 → 再等远端歌词几秒"的断层。
+    unawaited(_prefetchRemoteLyrics(song));
     // 播放链路计时诊断：点击/切歌 → engine play 各阶段耗时
     final t0 = DateTime.now();
     void probeStage(String stage, [DateTime? from]) {
@@ -1207,6 +1212,45 @@ class PlayerNotifier extends Notifier<PlayerState> {
     }
   }
 
+  /// 预取远端歌词到 `.lrc_cache`（与播放解析并行，见 [_loadLyrics] 注释）。
+  /// 只处理 SMB/WebDAV/STRM 远端源；本地歌走本地 .lrc/内嵌，读取快无感。
+  /// 与 [_loadLyrics] 共享同一缓存路径与并发去重，`_loadLyrics` 复用
+  /// 预取的在途请求或命中缓存，避免双网络请求。
+  Future<void> _prefetchRemoteLyrics(Song song) async {
+    try {
+      if (song.smbPath != null && song.smbPath!.isNotEmpty) {
+        await _loadRemoteLyrics(song.smbPath!);
+      } else if (song.davPath != null && song.davPath!.isNotEmpty) {
+        await _loadWebdavLyrics(song.davPath!);
+      } else if (song.isStrm && song.targetUri != null) {
+        if (song.targetKind == 'smb') {
+          await _loadRemoteLyrics(song.targetUri!);
+        } else if (song.targetKind == 'dav') {
+          await _loadWebdavLyrics(song.targetUri!);
+        }
+      }
+    } catch (e) {
+      Log.d('Audio', '歌词预取失败（不影响播放）: $e');
+    }
+  }
+
+  /// 并发去重封装：同一远端路径的歌词预取/加载共享一次网络读取，
+  /// 第二次调用直接复用进行中的 Future（结果一致，都写同一缓存）。
+  final Map<String, Future<List<LyricLine>?>> _lyricsInFlight = {};
+
+  Future<List<LyricLine>?> _prefetchRemoteLyricsOnce(
+    String remotePath,
+    Future<List<LyricLine>?> Function() loader,
+  ) {
+    final existing = _lyricsInFlight[remotePath];
+    if (existing != null) return existing;
+    final future = loader();
+    // 结束后清除占位；不因失败保留（下次播放可重试）
+    future.whenComplete(() => _lyricsInFlight.remove(remotePath));
+    _lyricsInFlight[remotePath] = future;
+    return future;
+  }
+
   /// 加载歌词，来源优先级：
   /// 1) 本地歌词文件（导入时匹配的 lyricsPath / 音频旁同名 .lrc）
   /// 2) NAS 远端同名 .lrc（结果缓存到沙盒，一次读取后离线可用）
@@ -1262,7 +1306,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
   /// NAS 远端歌词：读取与音频同目录同名的 .lrc/.LRC，解析后缓存到
   /// 沙盒 `.lrc_cache/`（下次播放走缓存，不再发起 SMB 读取）。
-  Future<List<LyricLine>?> _loadRemoteLyrics(String smbPath) async {
+  /// 经 [_prefetchRemoteLyricsOnce] 并发去重：预取进行中时复用同一请求。
+  Future<List<LyricLine>?> _loadRemoteLyrics(String smbPath) =>
+      _prefetchRemoteLyricsOnce(smbPath, () => _loadRemoteLyricsImpl(smbPath));
+
+  Future<List<LyricLine>?> _loadRemoteLyricsImpl(String smbPath) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final cacheFile = File(
@@ -1289,7 +1337,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
   /// WebDAV 远端歌词：读取与音频同目录同名的 .lrc/.LRC（Range 读前部），
   /// 解析后缓存到沙盒 `.lrc_cache/`（下次播放走缓存，不再发起 HTTP）。
-  Future<List<LyricLine>?> _loadWebdavLyrics(String davPath) async {
+  /// 经 [_prefetchRemoteLyricsOnce] 并发去重：预取进行中时复用同一请求。
+  Future<List<LyricLine>?> _loadWebdavLyrics(String davPath) =>
+      _prefetchRemoteLyricsOnce(davPath, () => _loadWebdavLyricsImpl(davPath));
+
+  Future<List<LyricLine>?> _loadWebdavLyricsImpl(String davPath) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final cacheFile = File(
