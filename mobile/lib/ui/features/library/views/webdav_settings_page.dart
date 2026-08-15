@@ -121,6 +121,7 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         title: Text(l10n.webdavTitle),
+        centerTitle: true,
         backgroundColor: AppTheme.surfaceDark,
         leading: IconButton(
           icon: const Icon(

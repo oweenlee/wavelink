@@ -103,6 +103,7 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         title: Text(l10n.subsonicTitle),
+        centerTitle: true,
         backgroundColor: AppTheme.surfaceDark,
         leading: IconButton(
           icon: const Icon(

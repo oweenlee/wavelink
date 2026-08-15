@@ -228,6 +228,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         title: Text(l10n.nasTitle),
+        centerTitle: true,
         backgroundColor: AppTheme.surfaceDark,
         leading: IconButton(
           icon: const Icon(
