@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
+import 'package:path_provider/path_provider.dart';
 import '../services/rust_service.dart' as rs;
 
 /// Rust 音频引擎的数据访问封装
@@ -165,8 +169,17 @@ class AudioEngineRepository {
   Future<rs.AnalyzeResult> analyzeFile(String songId, String path) async {
     final cached = _analysisCache[songId];
     if (cached != null) return cached;
+
+    // 磁盘缓存（带 mtime 校验）：二次播放秒出，不重跑全曲分析
+    final disk = await _loadDiskAnalysis(path);
+    if (disk != null) {
+      _analysisCache[songId] = disk;
+      return disk;
+    }
+
     final result = await rs.analyzeAudioFile(path);
     _analysisCache[songId] = result;
+    unawaited(_saveDiskAnalysis(path, result));
     return result;
   }
 
@@ -175,6 +188,65 @@ class AudioEngineRepository {
   rs.AnalyzeResult? getAnalysis(String songId) => _analysisCache[songId];
 
   void clearAnalysisCache() => _analysisCache.clear();
+
+  /// 稳定字符串 hash（FNV-1a；Dart 的 String.hashCode 跨进程不保证稳定，
+  /// 不能用作磁盘缓存文件名）
+  static int _stableHash(String s) {
+    var h = 0x811c9dc5;
+    for (final c in s.codeUnits) {
+      h ^= c;
+      h = (h * 0x01000193) & 0x7fffffff;
+    }
+    return h;
+  }
+
+  Future<File?> _analysisCacheFile(String path) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final cacheDir = Directory('${dir.path}/.analysis_cache');
+      if (!await cacheDir.exists()) return null;
+      return File('${cacheDir.path}/${_stableHash(path)}.json');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<rs.AnalyzeResult?> _loadDiskAnalysis(String path) async {
+    try {
+      final file = await _analysisCacheFile(path);
+      if (file == null || !await file.exists()) return null;
+      final mtimeMs = (await File(path).lastModified()).millisecondsSinceEpoch;
+      final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      // 音频文件内容已变化（路径复用但 mtime 不同）→ 缓存作废重算
+      if (data['mtimeMs'] != mtimeMs) return null;
+      return rs.AnalyzeResult(
+        bpm: (data['bpm'] as num?)?.toDouble(),
+        key: data['key'] as String?,
+        energy: (data['energy'] as num?)?.toDouble(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _saveDiskAnalysis(String path, rs.AnalyzeResult result) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final cacheDir = Directory('${dir.path}/.analysis_cache');
+      if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
+      final mtimeMs = (await File(path).lastModified()).millisecondsSinceEpoch;
+      await File('${cacheDir.path}/${_stableHash(path)}.json').writeAsString(
+        jsonEncode({
+          'mtimeMs': mtimeMs,
+          'bpm': result.bpm,
+          'key': result.key,
+          'energy': result.energy,
+        }),
+      );
+    } catch (_) {
+      // 缓存写入失败不影响播放
+    }
+  }
 
   // ── Rust 可用性 ──
 

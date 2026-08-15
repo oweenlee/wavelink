@@ -405,20 +405,28 @@ class WebdavService {
 
   /// 远端歌词：读取与音频同目录同名的 .lrc/.LRC（小文本，Range 读前部
   /// 即全文）。失败（文件不存在/读取失败）返回 null。
+  /// 两个扩展名并行探测，省一个 HTTP 往返。
   static Future<String?> fetchRemoteLyrics(String davPath) async {
     final base = davPath.replaceFirst(RegExp(r'\.[^.]+$'), '');
-    for (final ext in const ['.lrc', '.LRC']) {
-      try {
-        final url = fullUrlFor('$base$ext');
-        if (url == null) return null;
-        final bytes = await readRemoteBytes(url, 512 * 1024);
-        if (bytes.isEmpty) continue;
-        return decodeLrcBytes(bytes);
-      } catch (_) {
-        continue;
-      }
+    final results = await Future.wait([
+      for (final ext in const ['.lrc', '.LRC'])
+        _tryReadLrcUrl(fullUrlFor('$base$ext')),
+    ]);
+    for (final r in results) {
+      if (r != null) return r;
     }
     return null;
+  }
+
+  static Future<String?> _tryReadLrcUrl(String? url) async {
+    if (url == null) return null;
+    try {
+      final bytes = await readRemoteBytes(url, 512 * 1024);
+      if (bytes.isEmpty) return null;
+      return decodeLrcBytes(bytes);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 读取远端文本文件内容（STRM 指针解析用），失败/为空返回 null。

@@ -584,9 +584,27 @@ fn run_from_stream(
 /// 将整个音频文件解码到内存，返回交错 PCM f32 样本。
 /// 适用于小文件（如音效、短片段）或离线分析。
 pub fn decode_to_memory(path: &Path, tr: u32, tc: u32) -> Result<Vec<f32>, String> {
+    decode_to_memory_prefix(path, tr, tc, None)
+}
+
+/// 同 [decode_to_memory]，但只解码前 `max_secs` 秒（`None` = 全曲）。
+/// BPM/调性等分析任务只需开头几十秒即可，避免全曲解码的 CPU 开销。
+pub fn decode_to_memory_prefix(
+    path: &Path,
+    tr: u32,
+    tc: u32,
+    max_secs: Option<f64>,
+) -> Result<Vec<f32>, String> {
     /// 最大解码样本数（~2GB @f32），防止超大文件 OOM
     const MAX_SAMPLES: usize = 512 * 1024 * 1024;
-    let (rx, dec) = Decoder::start(path, tr, tc, Arc::new(AtomicU64::new(0)), None, None)?;
+    let (rx, dec) = Decoder::start(
+        path,
+        tr,
+        tc,
+        Arc::new(AtomicU64::new(0)),
+        None,
+        max_secs,
+    )?;
     let mut all = Vec::new();
     while let Ok(f) = rx.recv_timeout(Duration::from_secs(10)) {
         all.extend(f.samples);

@@ -1209,6 +1209,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
   /// 下一曲预取：SMB / WebDAV 切歌需先整文件下载才能播（慢的直观来源），
   /// 播放进度过 60% 时后台提前下载下一曲，切歌直接命中缓存。
   /// downloadToLocal 内部按路径去重 + 缓存命中即返，重复调用无害。
+  /// 同时并行预热下一曲远端歌词到 `.lrc_cache`：切歌后 `_loadLyrics`
+  /// 命中本地缓存秒出，不再等 SMB/WebDAV 网络往返。
   void _prefetchNextIfNeeded(Song? current) {
     if (_prefetchedNext) return;
     if (current == null || current.duration.inMilliseconds <= 0) return;
@@ -1227,6 +1229,19 @@ class PlayerNotifier extends Notifier<PlayerState> {
         (strmUri == null ||
             (strmKind != 'smb' && strmKind != 'dav' && strmKind != 'http'))) {
       return;
+    }
+    // 歌词预热：与音频预取并行，_prefetchRemoteLyricsOnce 去重（与
+    // 播放时 _loadLyrics 共享在途请求/缓存，不会重复拉网络）
+    if (smbPath != null && smbPath.isNotEmpty) {
+      unawaited(_loadRemoteLyrics(smbPath));
+    } else if (davPath != null && davPath.isNotEmpty) {
+      unawaited(_loadWebdavLyrics(davPath));
+    } else if (next.isStrm && strmUri != null) {
+      if (strmKind == 'smb') {
+        unawaited(_loadRemoteLyrics(strmUri));
+      } else if (strmKind == 'dav') {
+        unawaited(_loadWebdavLyrics(strmUri));
+      }
     }
     _prefetchedNext = true;
     Log.d('Audio', '预取下一曲: ${next.title}');

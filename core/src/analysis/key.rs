@@ -68,6 +68,8 @@ fn compute_chromagram(mono: &[f32], sample_rate: u32) -> Option<[f32; 12]> {
         return None;
     }
     let mut mags = vec![0.0f32; frame_size / 2 + 1];
+    let mut spectrum =
+        vec![realfft::num_complex::Complex::new(0.0f32, 0.0f32); frame_size / 2 + 1];
     let mut frame_chroma: [f32; 12];
 
     for start in (0..mono.len().saturating_sub(frame_size)).step_by(hop_size) {
@@ -76,8 +78,6 @@ fn compute_chromagram(mono: &[f32], sample_rate: u32) -> Option<[f32; 12]> {
             frame.push(mono[start + i] * window[i]);
         }
 
-        let mut spectrum =
-            vec![realfft::num_complex::Complex::new(0.0f32, 0.0f32); frame_size / 2 + 1];
         if fft.process(&mut frame, &mut spectrum).is_err() {
             continue;
         }

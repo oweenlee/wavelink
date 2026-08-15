@@ -626,20 +626,28 @@ class SmbService {
 
   /// 从 NAS 远端读取与音频同目录同名的歌词文件（.lrc/.LRC），
   /// 失败（文件不存在/会话断）返回 null。歌词是小文本，直接读全文。
+  /// 两个扩展名并行探测（SMB 多 RTT 协议，串行探测多一个往返延迟）。
   static Future<String?> fetchRemoteLyrics(String smbPath) async {
     if (!_connected) return null;
     final base = smbPath.replaceFirst(RegExp(r'\.[^.]+$'), '');
-    for (final ext in const ['.lrc', '.LRC']) {
-      try {
-        final bytes = await smb.smbReadFile(path: '$base$ext');
-        if (bytes.isEmpty) continue;
-        return decodeLrcBytes(bytes);
-      } catch (_) {
-        // 文件不存在或读取失败，尝试下一个扩展名
-        continue;
-      }
+    final results = await Future.wait([
+      for (final ext in const ['.lrc', '.LRC']) _tryReadLrc('$base$ext'),
+    ]);
+    for (final r in results) {
+      if (r != null) return r;
     }
     return null;
+  }
+
+  static Future<String?> _tryReadLrc(String path) async {
+    try {
+      final bytes = await smb.smbReadFile(path: path);
+      if (bytes.isEmpty) return null;
+      return decodeLrcBytes(bytes);
+    } catch (_) {
+      // 文件不存在或读取失败
+      return null;
+    }
   }
 
   /// 读取远端文本文件内容（STRM 指针解析用），失败/为空返回 null。

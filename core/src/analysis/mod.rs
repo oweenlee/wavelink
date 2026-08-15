@@ -40,10 +40,21 @@ pub fn mix_to_mono(samples: &[f32], channels: u32) -> Vec<f32> {
     mono
 }
 
-/// 分析音频文件：解码 → BPM + 调性 + 能量
+/// 分析音频文件：解码前 N 秒 → BPM + 调性 + 能量
+///
+/// 只取开头 [ANALYSIS_MAX_SECS] 秒：BPM/调性对全曲采样不敏感，
+/// 但解码+FFT 成本与时长成正比，截断可将播放页标签的等待时间
+/// 从数秒压到亚秒级（3 分钟歌约 1/2，5 分钟歌约 1/3.3）。
+pub const ANALYSIS_MAX_SECS: f64 = 90.0;
+
 pub fn analyze_file(path: &Path) -> Result<AnalysisResult, String> {
-    let samples = decoder::decode_to_memory(path, TARGET_SAMPLE_RATE, TARGET_CHANNELS)
-        .map_err(|e| format!("解码失败: {e}"))?;
+    let samples = decoder::decode_to_memory_prefix(
+        path,
+        TARGET_SAMPLE_RATE,
+        TARGET_CHANNELS,
+        Some(ANALYSIS_MAX_SECS),
+    )
+    .map_err(|e| format!("解码失败: {e}"))?;
 
     Ok(analyze_from_samples(
         &samples,
