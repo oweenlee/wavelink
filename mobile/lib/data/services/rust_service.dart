@@ -197,6 +197,34 @@ Future<Uint8List> readWebdavRange({
   suffix: suffix,
 );
 
+/// 获取 WebDAV 远端文件大小（并发分片下载前置探大小）。
+Future<int> webdavFileSize({
+  required String url,
+  required String username,
+  required String password,
+}) async =>
+    (await webdav.engineWebdavFileSize(
+      url: url,
+      username: username,
+      password: password,
+    ))
+        .toInt();
+
+/// 读取 WebDAV 远端文件指定区间 `[offset, offset+maxLen)`（并发分片下载原语）。
+Future<Uint8List> webdavDownloadRange({
+  required String url,
+  required String username,
+  required String password,
+  required int offset,
+  required int maxLen,
+}) => webdav.engineWebdavDownloadRange(
+  url: url,
+  username: username,
+  password: password,
+  offset: BigInt.from(offset),
+  maxLen: BigInt.from(maxLen),
+);
+
 Future<void> enginePlayQueue(List<String> paths) =>
     engine.enginePlayQueue(paths: paths);
 Future<void> engineSetPeqBand({

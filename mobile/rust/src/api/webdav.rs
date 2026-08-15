@@ -412,6 +412,80 @@ pub async fn engine_play_webdav_stream(
     }
 }
 
+/// 获取远端文件大小（字节）：并发分片下载前置探大小，避免先整文件拉一遍。
+/// 用 `Range: bytes=0-0` 探：支持 Range 的服务器返回 206 + Content-Range
+/// `bytes 0-0/total`，从头部解析 total；忽略 Range 返回 200 的服务器
+/// 则退而取 Content-Length（可能无，此时 Err 由 Dart 回退单连接下载）。
+/// 认证协商与流式播放共用。
+pub async fn engine_webdav_file_size(
+    url: String,
+    username: String,
+    password: String,
+) -> Result<u64, String> {
+    let client = http_client()?;
+    let extra = vec![(reqwest::header::RANGE.as_str(), "bytes=0-0".to_string())];
+    let resp = webdav_get(client, &url, &username, &password, &extra).await?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}: {url}", resp.status()));
+    }
+    // 206 Partial Content：解析 Content-Range 的 total
+    if resp.status() == reqwest::StatusCode::PARTIAL_CONTENT {
+        if let Some(cr) = resp.headers().get(reqwest::header::CONTENT_RANGE) {
+            if let Ok(s) = cr.to_str() {
+                // 形如 "bytes 0-0/123456" 或 "bytes 0-0/123456/123456"
+                if let Some(total) = s.rsplit('/').next() {
+                    if let Ok(n) = total.trim().parse::<u64>() {
+                        return Ok(n);
+                    }
+                }
+            }
+        }
+    }
+    // 忽略 Range 返回 200：直接取 Content-Length
+    resp.content_length().ok_or_else(|| {
+        format!("WebDAV 服务器未提供文件大小且不支持 Range: {url}")
+    })
+}
+
+/// 读取远端文件指定区间 `[offset, offset+max_len)`（并发分片下载原语）。
+/// 与流式播放共用认证协商；返回实际读到的字节（可能少于 max_len，
+/// 取决于文件大小）。服务器不支持 Range → 报错，Dart 侧回退单连接下载。
+pub async fn engine_webdav_download_range(
+    url: String,
+    username: String,
+    password: String,
+    offset: u64,
+    max_len: u64,
+) -> Result<Vec<u8>, String> {
+    if max_len == 0 {
+        return Ok(Vec::new());
+    }
+    let client = http_client()?;
+    let end = offset + max_len - 1;
+    let extra = vec![(reqwest::header::RANGE.as_str(), format!("bytes={offset}-{end}"))];
+    let mut resp = webdav_get(client, &url, &username, &password, &extra).await?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}: {url}", resp.status()));
+    }
+    if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+        return Err(format!(
+            "HTTP {}: 服务器不支持 Range，无法并发分片下载: {url}",
+            resp.status()
+        ));
+    }
+    let mut buf: Vec<u8> = Vec::with_capacity((max_len.min(512 * 1024)) as usize);
+    while (buf.len() as u64) < max_len {
+        let chunk = match tokio::time::timeout(IO_READ_TIMEOUT, resp.chunk()).await {
+            Ok(Ok(Some(c))) => c,
+            Ok(Ok(None)) => break, // 已读尽
+            Ok(Err(e)) => return Err(format!("read error: {e}")),
+            Err(_) => return Err(format!("read timeout: {url}")),
+        };
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf)
+}
+
 /// 读取远端文件前缀/后缀字节（封面/歌词提取用）。
 /// [suffix]=false → GET + `Range: bytes=0-(max_len-1)` 读文件头；
 /// [suffix]=true → `Range: bytes=-max_len` 读文件尾（非 faststart 的

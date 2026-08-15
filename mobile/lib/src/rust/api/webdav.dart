@@ -26,11 +26,45 @@ Future<void> enginePlayWebdavStream({
   cacheFinalPath: cacheFinalPath,
 );
 
+/// 获取远端文件大小（字节）：并发分片下载前置探大小，避免先整文件拉一遍。
+/// 用 `Range: bytes=0-0` 探：支持 Range 的服务器返回 206 + Content-Range
+/// `bytes 0-0/total`，从头部解析 total；忽略 Range 返回 200 的服务器
+/// 则退而取 Content-Length（可能无，此时 Err 由 Dart 回退单连接下载）。
+/// 认证协商与流式播放共用。
+Future<BigInt> engineWebdavFileSize({
+  required String url,
+  required String username,
+  required String password,
+}) => RustLib.instance.api.crateApiWebdavEngineWebdavFileSize(
+  url: url,
+  username: username,
+  password: password,
+);
+
+/// 读取远端文件指定区间 `[offset, offset+max_len)`（并发分片下载原语）。
+/// 与流式播放共用认证协商；返回实际读到的字节（可能少于 max_len，
+/// 取决于文件大小）。服务器不支持 Range → 报错，Dart 侧回退单连接下载。
+Future<Uint8List> engineWebdavDownloadRange({
+  required String url,
+  required String username,
+  required String password,
+  required BigInt offset,
+  required BigInt maxLen,
+}) => RustLib.instance.api.crateApiWebdavEngineWebdavDownloadRange(
+  url: url,
+  username: username,
+  password: password,
+  offset: offset,
+  maxLen: maxLen,
+);
+
 /// 读取远端文件前缀/后缀字节（封面/歌词提取用）。
 /// [suffix]=false → GET + `Range: bytes=0-(max_len-1)` 读文件头；
 /// [suffix]=true → `Range: bytes=-max_len` 读文件尾（非 faststart 的
 /// M4A/ALAC moov 在尾部，头部提取不到元数据时兜底）。
-/// 服务器忽略 Range → 200 返回全文但只收取前 max_len 字节即断开。
+/// 服务器忽略 Range → 200 返回全文：头模式只收取前 max_len 字节即断开
+/// （头内容正确，可接受）；尾模式直接 Err（200 拿到的是文件头而非尾，
+/// 拼出的"头+尾"是错的，不如明说尾部不可用）。
 /// 认证协商与流式播放共用。max_len 上限 RANGE_READ_CAP（防拉满整曲）。
 /// 返回读取到的字节（可能少于 max_len，取决于文件大小/服务器 Range 支持）。
 Future<Uint8List> engineReadWebdavRange({

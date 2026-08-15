@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../domain/models/song.dart';
@@ -968,13 +969,16 @@ class SmbService {
       }
       // 先写临时文件再原子改名：避免失败时残留半截缓存被后续误命中
       final tmpFile = File('${localFile.path}.part');
-      final sink = tmpFile.openWrite();
-      try {
-        await for (final chunk in smb.smbReadFileStream(path: smbPath)) {
-          sink.add(chunk);
+      // 优先并发分片下载（多连接并行拉满 NAS 带宽）；失败回退顺序流。
+      if (!await _downloadParallel(smbPath, tmpFile)) {
+        final sink = tmpFile.openWrite();
+        try {
+          await for (final chunk in smb.smbReadFileStream(path: smbPath)) {
+            sink.add(chunk);
+          }
+        } finally {
+          await sink.close();
         }
-      } finally {
-        await sink.close();
       }
       // 下载完整性校验：文件缺失（会话断开时一个分片都没收到）
       // 或空文件均视为失败，不留下半截缓存
@@ -988,6 +992,61 @@ class SmbService {
     } catch (e) {
       Log.e('SMB', 'downloadToLocal failed ($smbPath): $e');
       return null;
+    }
+  }
+
+  /// 并发分片下载：把远端文件按 [ParallelChunks] 片均分，每片走一条
+  /// 独立池连接并发读取（写独立 `.part.N` 临时文件），最后按序拼接。
+  /// 单连接顺序读受会话吞吐限制（实测 ~15MB/s），4 连接并行可明显提速。
+  /// 任一逻辑失败（大小未知/任一片读取失败/拼接异常）返回 false，
+  /// 调用方回退单连接顺序流式下载；期间残留的 `.part.N` 一并清理。
+  static const int _parallelChunks = 4;
+
+  static Future<bool> _downloadParallel(String smbPath, File tmpFile) async {
+    try {
+      final total = await smb.smbFileSize(path: smbPath);
+      if (total <= BigInt.zero) return false;
+      final size = total.toInt();
+      final chunkSize = (size + _parallelChunks - 1) ~/ _parallelChunks;
+      final partFiles = <File>[];
+      try {
+        await Future.wait([
+          for (var i = 0; i < _parallelChunks; i++)
+            () async {
+              final start = i * chunkSize;
+              if (start >= size) return;
+              final len = math.min(chunkSize, size - start);
+              final data = await smb.smbReadFileRange(
+                path: smbPath,
+                offset: BigInt.from(start),
+                maxLen: BigInt.from(len),
+              );
+              if (data.isEmpty) {
+                throw StateError('分片 $i 读取为空');
+              }
+              final part = File('${tmpFile.path}.$i');
+              await part.writeAsBytes(data, flush: true);
+              partFiles.add(part);
+            }(),
+        ]);
+        // 按序拼接所有分片到最终临时文件
+        final sink = tmpFile.openWrite();
+        try {
+          for (final part in partFiles) {
+            await sink.addStream(part.openRead());
+          }
+        } finally {
+          await sink.close();
+        }
+        return true;
+      } finally {
+        for (final part in partFiles) {
+          if (await part.exists()) await part.delete();
+        }
+      }
+    } catch (e) {
+      Log.w('SMB', '并发分片下载失败，回退顺序流 ($smbPath): $e');
+      return false;
     }
   }
 

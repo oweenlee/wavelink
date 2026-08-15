@@ -89,6 +89,21 @@ Future<Uint8List> smbReadTail({required String path, required BigInt maxLen}) =>
 Future<Uint8List> smbReadHead({required String path, required BigInt maxLen}) =>
     RustLib.instance.api.crateApiSmbSmbReadHead(path: path, maxLen: maxLen);
 
+/// 读远端文件指定区间 `[offset, offset+max_len)`（相对共享根目录的路径）。
+/// 并发分片下载原语：Dart 侧把整曲切成多片并行调用，各片独立连接读取，
+/// 打满 NAS 带宽（单连接顺序读受单会话吞吐限制）。
+/// 会话在读完前独占（不回池）：与 smb_read_head 同理，避免同连接并发请求。
+/// 返回实际读到的字节（可能少于 max_len，取决于文件大小/读池状态）。
+Future<Uint8List> smbReadFileRange({
+  required String path,
+  required BigInt offset,
+  required BigInt maxLen,
+}) => RustLib.instance.api.crateApiSmbSmbReadFileRange(
+  path: path,
+  offset: offset,
+  maxLen: maxLen,
+);
+
 /// 远端文件大小（扫描时判断是否有变化，避免重复下载）
 Future<BigInt> smbFileSize({required String path}) =>
     RustLib.instance.api.crateApiSmbSmbFileSize(path: path);

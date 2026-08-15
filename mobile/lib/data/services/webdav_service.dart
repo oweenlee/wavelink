@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:path_provider/path_provider.dart';
 import 'package:webdav_client/webdav_client.dart' as wd;
 import '../../domain/models/song.dart';
@@ -496,14 +497,17 @@ class WebdavService {
       Log.i('WebDAV', '开始下载: $name');
       // 先写临时文件再原子改名：避免失败时残留半截缓存被后续误命中
       final tmpFile = File('${localFile.path}.part');
-      try {
-        await client
-            .read2File(davPath, tmpFile.path, onProgress: onProgress)
-            .timeout(const Duration(minutes: 5));
-      } catch (e) {
-        Log.e('WebDAV', 'read2File failed ($davPath): $e');
-        if (await tmpFile.exists()) await tmpFile.delete();
-        return null;
+      // 优先并发分片下载（Range 并行拉满带宽）；失败回退 webdav_client 顺序下载
+      if (!await _downloadParallel(davPath, tmpFile, onProgress)) {
+        try {
+          await client
+              .read2File(davPath, tmpFile.path, onProgress: onProgress)
+              .timeout(const Duration(minutes: 5));
+        } catch (e) {
+          Log.e('WebDAV', 'read2File failed ($davPath): $e');
+          if (await tmpFile.exists()) await tmpFile.delete();
+          return null;
+        }
       }
       // 下载完整性校验：文件缺失或空文件均视为失败，不留半截缓存
       if (!await tmpFile.exists() || await tmpFile.length() == 0) {
@@ -524,6 +528,72 @@ class WebdavService {
     } catch (e) {
       Log.e('WebDAV', 'downloadToLocal failed ($davPath): $e');
       return null;
+    }
+  }
+
+  /// 并发分片下载：先探远端文件大小，按 [ParallelChunks] 片均分，
+  /// 每片发独立 Range 请求（Rust reqwest 连接并行）写 `.part.N` 临时
+  /// 文件，最后按序拼接。比 webdav_client 单连接顺序读快。
+  /// 服务器不支持 Range / 大小未知 / 任一片失败 → 返回 false 回退顺序下载。
+  static const int _parallelChunks = 4;
+
+  static Future<bool> _downloadParallel(
+    String davPath,
+    File tmpFile,
+    void Function(int count, int total)? onProgress,
+  ) async {
+    final url = fullUrlFor(davPath);
+    if (url == null) return false;
+    final partFiles = <File>[];
+    try {
+      final total = await rs.webdavFileSize(
+        url: url,
+        username: username,
+        password: password,
+      );
+      if (total <= 0) return false;
+      final size = total.toInt();
+      final chunkSize = (size + _parallelChunks - 1) ~/ _parallelChunks;
+      await Future.wait([
+        for (var i = 0; i < _parallelChunks; i++)
+          () async {
+            final start = i * chunkSize;
+            if (start >= size) return;
+            final len = math.min(chunkSize, size - start);
+            final data = await rs.webdavDownloadRange(
+              url: url,
+              username: username,
+              password: password,
+              offset: start,
+              maxLen: len,
+            );
+            if (data.isEmpty) throw StateError('分片 $i 读取为空');
+            final part = File('${tmpFile.path}.$i');
+            await part.writeAsBytes(data, flush: true);
+            partFiles.add(part);
+          }(),
+      ]);
+      final sink = tmpFile.openWrite();
+      try {
+        var written = 0;
+        for (final part in partFiles) {
+          await sink.addStream(part.openRead());
+          written += await part.length();
+          onProgress?.call(written, size);
+        }
+      } finally {
+        await sink.close();
+      }
+      return true;
+    } catch (e) {
+      Log.w('WebDAV', '并发分片下载失败，回退顺序下载 ($davPath): $e');
+      return false;
+    } finally {
+      for (final part in partFiles) {
+        try {
+          if (await part.exists()) await part.delete();
+        } catch (_) {}
+      }
     }
   }
 }
