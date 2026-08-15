@@ -142,7 +142,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
   /// 当前 STRM 歌解析出的目标（kind: smb/dav/http + 路径/URL）。
   /// 每次播放时重新解析；seek 回退（[_scheduleStreamSeek]）依赖它。
-  ({String kind, String path, String? extInfTitle, int? extInfSecs})? _strmTarget;
+  ({String kind, String path, String? extInfTitle, int? extInfSecs})?
+  _strmTarget;
 
   /// 引擎是否已装载当前曲目。false 时即使 position>0 也不能 resume（引擎空），
   /// 需走完整装载流程再 seek——断点续播恢复场景依赖此判定。
@@ -295,7 +296,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // STRM 各自按源走网络），结果写 `.lrc_cache`；解析链路末尾
     // _loadLyrics 命中缓存秒回，歌词随播放同步上屏，不再等
     // "先出声 → 再等远端歌词几秒"的断层。
-    unawaited(_prefetchRemoteLyrics(song));
+    // 带 token：快速切歌（A→B→C）时旧预取在每次 await 前检查
+    // token 过期即放弃，不白跑剩下的 SMB/WebDAV 网络读取。
+    unawaited(_prefetchRemoteLyrics(song, token));
     // 播放链路计时诊断：点击/切歌 → engine play 各阶段耗时
     final t0 = DateTime.now();
     void probeStage(String stage, [DateTime? from]) {
@@ -364,7 +367,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
           case 'smb':
             resolvedPath = await _resolveSmbPlayable(target.path);
           case 'dav':
-            resolvedPath = await _resolveWebdavPlayable(target.path, song.title);
+            resolvedPath = await _resolveWebdavPlayable(
+              target.path,
+              song.title,
+            );
           case 'http':
             // 文件型 URL：优先流式（Rust 带 WebDAV 配置凭据直喂 core，
             // 支持 Digest/Basic），失败回退全量下载。
@@ -607,15 +613,18 @@ class PlayerNotifier extends Notifier<PlayerState> {
   /// 扫描时已落地（Song.targetUri/targetKind）的走落地结果，
   /// 此方法仅用于扫描时解析失败/内容异常的场合。
   Future<({String kind, String path, String? extInfTitle, int? extInfSecs})?>
-      _resolveStrmTarget(Song song) async {
+  _resolveStrmTarget(Song song) async {
     final strmPath = song.strmPath;
     if (strmPath == null || strmPath.isEmpty) return null;
     final text = song.strmFromWebdav
         ? await WebdavService.readRemoteText(strmPath)
         : await SmbService.readRemoteText(strmPath);
     if (text == null) return null;
-    final target =
-        parseStrmContent(text, fromWebdav: song.strmFromWebdav, strmPath: strmPath);
+    final target = parseStrmContent(
+      text,
+      fromWebdav: song.strmFromWebdav,
+      strmPath: strmPath,
+    );
     if (target == null) return null;
     return (
       kind: target.kind,
@@ -634,7 +643,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
   Future<bool> _startStrmStream(String url) async {
     try {
       final webdavBase = WebdavService.baseUrl;
-      final sameHost = webdavBase != null &&
+      final sameHost =
+          webdavBase != null &&
           Uri.tryParse(url)?.host.toLowerCase() ==
               Uri.tryParse(webdavBase)?.host.toLowerCase();
       await _engineRepo.playWebdavStream(
@@ -1097,8 +1107,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
         // 进度条/曲终判断均以 0 处理（避免 position/duration=∞ 满格）
         final cur = state.currentSong;
         state = state.copyWith(
-          position:
-              cur != null && cur.duration > Duration.zero ? enginePosMs : 0,
+          position: cur != null && cur.duration > Duration.zero
+              ? enginePosMs
+              : 0,
         );
       } catch (e) {
         Log.e('Audio', '位置查询失败，保留上次位置: ${state.position.toInt()}ms');
@@ -1184,16 +1195,20 @@ class PlayerNotifier extends Notifier<PlayerState> {
       smbPath != null && smbPath.isNotEmpty
           ? SmbService.downloadToLocal(smbPath).catchError((Object _) => null)
           : davPath != null && davPath.isNotEmpty
-              ? WebdavService.downloadToLocal(davPath)
-                  .catchError((Object _) => null)
-              : strmKind == 'smb'
-                  ? SmbService.downloadToLocal(strmUri!)
-                      .catchError((Object _) => null)
-                  : strmKind == 'dav'
-                      ? WebdavService.downloadToLocal(strmUri!)
-                          .catchError((Object _) => null)
-                      : _downloadToCache(strmUri!, next.id, next.title)
-                          .catchError((Object _) => null),
+          ? WebdavService.downloadToLocal(
+              davPath,
+            ).catchError((Object _) => null)
+          : strmKind == 'smb'
+          ? SmbService.downloadToLocal(strmUri!).catchError((Object _) => null)
+          : strmKind == 'dav'
+          ? WebdavService.downloadToLocal(
+              strmUri!,
+            ).catchError((Object _) => null)
+          : _downloadToCache(
+              strmUri!,
+              next.id,
+              next.title,
+            ).catchError((Object _) => null),
     );
   }
 
@@ -1216,17 +1231,25 @@ class PlayerNotifier extends Notifier<PlayerState> {
   /// 只处理 SMB/WebDAV/STRM 远端源；本地歌走本地 .lrc/内嵌，读取快无感。
   /// 与 [_loadLyrics] 共享同一缓存路径与并发去重，`_loadLyrics` 复用
   /// 预取的在途请求或命中缓存，避免双网络请求。
-  Future<void> _prefetchRemoteLyrics(Song song) async {
+  /// [token] 是发起时的 [_playToken]：切歌后 token 已过期，每次网络
+  /// await 前检查即放弃，不为已不播放的歌曲继续消耗带宽（结果写缓存
+  /// 无害，但读取本身浪费 NAS/服务器资源）。
+  Future<void> _prefetchRemoteLyrics(Song song, int token) async {
     try {
+      if (token != _playToken) return;
       if (song.smbPath != null && song.smbPath!.isNotEmpty) {
         await _loadRemoteLyrics(song.smbPath!);
+        if (token != _playToken) return;
       } else if (song.davPath != null && song.davPath!.isNotEmpty) {
         await _loadWebdavLyrics(song.davPath!);
+        if (token != _playToken) return;
       } else if (song.isStrm && song.targetUri != null) {
         if (song.targetKind == 'smb') {
           await _loadRemoteLyrics(song.targetUri!);
+          if (token != _playToken) return;
         } else if (song.targetKind == 'dav') {
           await _loadWebdavLyrics(song.targetUri!);
+          if (token != _playToken) return;
         }
       }
     } catch (e) {
@@ -1292,8 +1315,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
         lyrics = song.targetKind == 'smb'
             ? await _loadRemoteLyrics(t)
             : song.targetKind == 'dav'
-                ? await _loadWebdavLyrics(t)
-                : null;
+            ? await _loadWebdavLyrics(t)
+            : null;
       }
     }
     // 3) 内嵌元数据歌词
@@ -1448,20 +1471,29 @@ class PlayerNotifier extends Notifier<PlayerState> {
       }
 
       Log.d('Audio', '下载流式文件: $title');
-      final response = await http
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 30));
-      if (response.statusCode != 200) {
-        Log.e('Audio', '下载失败 HTTP ${response.statusCode}');
+      // 流式落盘而非全量进内存：50MB+ FLAC/WAV 直接读 bodyBytes 会撑爆
+      // Dart heap，边收边写只占一个小缓冲。
+      final req = http.Request('GET', Uri.parse(url));
+      final streamed = await req.send().timeout(const Duration(seconds: 30));
+      if (streamed.statusCode != 200) {
+        Log.e('Audio', '下载失败 HTTP ${streamed.statusCode}');
         return null;
       }
-
-      await cacheFile.writeAsBytes(response.bodyBytes);
+      final sink = cacheFile.openWrite();
+      var written = 0;
+      try {
+        await for (final chunk in streamed.stream) {
+          sink.add(chunk);
+          written += chunk.length;
+        }
+      } finally {
+        await sink.close();
+        if (written == 0 && await cacheFile.exists()) {
+          await cacheFile.delete();
+        }
+      }
       _streamCache[songId] = cacheFile.path;
-      Log.d(
-        'Audio',
-        '下载完成: ${cacheFile.path} (${response.bodyBytes.length} bytes)',
-      );
+      Log.d('Audio', '下载完成: ${cacheFile.path} ($written bytes)');
       return cacheFile.path;
     } catch (e) {
       Log.e('Audio', '流式下载失败: $e');

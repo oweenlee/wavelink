@@ -1000,6 +1000,9 @@ class SmbService {
   /// 单连接顺序读受会话吞吐限制（实测 ~15MB/s），4 连接并行可明显提速。
   /// 任一逻辑失败（大小未知/任一片读取失败/拼接异常）返回 false，
   /// 调用方回退单连接顺序流式下载；期间残留的 `.part.N` 一并清理。
+  /// 分片启动错峰 50ms×i：SMB 池 permit 有限（池+2 预留），4 片同刻抢会
+  /// 挤掉封面提取/播放连接；异步播放侧是 try_acquire 新建临时连接不受
+  /// 堵，但后台批量封面提取与下载争池时错峰减少同一波暴风抢占。
   static const int _parallelChunks = 4;
 
   static Future<bool> _downloadParallel(String smbPath, File tmpFile) async {
@@ -1013,6 +1016,9 @@ class SmbService {
         await Future.wait([
           for (var i = 0; i < _parallelChunks; i++)
             () async {
+              if (i > 0) {
+                await Future.delayed(Duration(milliseconds: 50 * i));
+              }
               final start = i * chunkSize;
               if (start >= size) return;
               final len = math.min(chunkSize, size - start);
@@ -1025,7 +1031,13 @@ class SmbService {
                 throw StateError('分片 $i 读取为空');
               }
               final part = File('${tmpFile.path}.$i');
-              await part.writeAsBytes(data, flush: true);
+              try {
+                await part.writeAsBytes(data, flush: true);
+              } catch (_) {
+                // 写入失败：立即清理本片，避免残留（该片可能被部分写入）
+                if (await part.exists()) await part.delete();
+                rethrow;
+              }
               partFiles.add(part);
             }(),
         ]);

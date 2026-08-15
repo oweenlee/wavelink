@@ -736,6 +736,9 @@ async fn feed_stream_to_core(
     // 双方各自独立写完 rename 成正式缓存（后完成者胜，均为完整内容）。
     let part_path = cache_final_path.map(|p| format!("{p}.part.stream.{}", random_hex(8)));
     let part_path = part_path.as_deref();
+    // 进程内首次播放时清扫历史残留 .part.stream.*（此前崩溃/强杀留下的），
+    // 只执行一次；跳过当前正在写的文件避免误删。
+    cleanup_stale_part_stream(cache_final_path, part_path);
 
     let result: Result<(), String> = async {
         let tree = sess.tree.as_ref().ok_or("no share connected")?;
@@ -837,14 +840,45 @@ async fn feed_stream_to_core(
     result
 }
 
-/// 简易伪随机 hex 串（缓存临时文件唯一后缀用）：时间播种的 LCG，
-/// 无需引入 rand 依赖
+/// 清扫历史残留的 `.part.stream.*` 临时文件：进程崩溃/强杀后
+/// 失败路径清理没机会执行，会越积越多占用磁盘。进程内只执行一次
+/// （首次喂流时），扫描缓存目录删除匹配文件，跳过当前正在写的。
+fn cleanup_stale_part_stream(cache_final_path: Option<&str>, current: Option<&str>) {
+    use std::sync::OnceLock;
+    static DONE: OnceLock<()> = OnceLock::new();
+    if DONE.get().is_some() {
+        return;
+    }
+    let Some(final_path) = cache_final_path else { return };
+    let Some(dir) = std::path::Path::new(final_path).parent() else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.contains(".part.stream.")
+            && current.map(|c| c != name.as_ref()).unwrap_or(true)
+        {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+    let _ = DONE.set(());
+}
+
+/// 简易伪随机 hex 串（缓存临时文件唯一后缀用）：时间播种的 LCG +
+/// 原子计数器搅动——同纳秒内多次调用（并发播放同曲/快速切歌）也能
+/// 拿到不同后缀，避免撞名互相覆盖；无需引入 rand 依赖
 fn random_hex(len: usize) -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
-    let mut seed = SystemTime::now()
+    static CTR: AtomicU64 = AtomicU64::new(0);
+    let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
+    let ctr = CTR.fetch_add(1, Ordering::Relaxed);
+    let mut seed = (nanos as u64) ^ ctr.wrapping_mul(0x9E37_79B9_7F4A_7C15);
     let mut out = String::new();
     while out.len() < len {
         seed = seed

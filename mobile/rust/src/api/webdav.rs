@@ -429,7 +429,7 @@ pub async fn engine_webdav_file_size(
         return Err(format!("HTTP {}: {url}", resp.status()));
     }
     // 206 Partial Content：解析 Content-Range 的 total
-    if resp.status() == reqwest::StatusCode::PARTIAL_CONTENT {
+    let total = if resp.status() == reqwest::StatusCode::PARTIAL_CONTENT {
         if let Some(cr) = resp.headers().get(reqwest::header::CONTENT_RANGE) {
             if let Ok(s) = cr.to_str() {
                 // 形如 "bytes 0-0/123456" 或 "bytes 0-0/123456/123456"
@@ -440,11 +440,19 @@ pub async fn engine_webdav_file_size(
                 }
             }
         }
-    }
-    // 忽略 Range 返回 200：直接取 Content-Length
-    resp.content_length().ok_or_else(|| {
-        format!("WebDAV 服务器未提供文件大小且不支持 Range: {url}")
-    })
+        resp.content_length().ok_or_else(|| {
+            format!("WebDAV 服务器未提供文件大小且不支持 Range: {url}")
+        })?
+    } else {
+        // 忽略 Range 返回 200：直接取 Content-Length
+        resp.content_length().ok_or_else(|| {
+            format!("WebDAV 服务器未提供文件大小且不支持 Range: {url}")
+        })?
+    };
+    // 显式归还连接（Range 0-0 的 1 字节 body 无需读完）：
+    // 显式 drop 比等作用域结束更明确，避免连接被 drain 逻辑拖住
+    drop(resp);
+    Ok(total)
 }
 
 /// 读取远端文件指定区间 `[offset, offset+max_len)`（并发分片下载原语）。

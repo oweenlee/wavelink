@@ -569,7 +569,15 @@ class WebdavService {
             );
             if (data.isEmpty) throw StateError('分片 $i 读取为空');
             final part = File('${tmpFile.path}.$i');
-            await part.writeAsBytes(data, flush: true);
+            try {
+              await part.writeAsBytes(data, flush: true);
+            } catch (_) {
+              // 写入失败：立即清理本片，避免残留（该片可能被部分写入）
+              try {
+                if (await part.exists()) await part.delete();
+              } catch (_) {}
+              rethrow;
+            }
             partFiles.add(part);
           }(),
       ]);
