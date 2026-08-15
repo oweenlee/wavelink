@@ -8,7 +8,6 @@ import '../../../../data/services/smb_service.dart';
 import '../../../../l10n/app_localizations.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/wl_toggle.dart';
 import '../view_models/library_provider.dart';
 
 /// NAS (SMB) 独立配置页面
@@ -26,7 +25,6 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
   final _shareCtrl = TextEditingController();
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
-  bool _offlineCache = false;
   String? _nasType;
   bool _connecting = false;
   String _connectionStatus = '';
@@ -40,7 +38,6 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     _userCtrl.text = prefs.nasUsername ?? '';
     _passCtrl.text = prefs.nasPassword;
     _nasType = prefs.nasType;
-    _offlineCache = prefs.smbOfflineCache;
   }
 
   @override
@@ -162,43 +159,6 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     );
   }
 
-  /// 切换离线缓存：开启前弹确认，说明会占用大量本地空间。
-  Future<void> _toggleOfflineCache() async {
-    if (_offlineCache) {
-      // 关闭：直接改
-      setState(() => _offlineCache = false);
-      return;
-    }
-    final l10n = AppLocalizations.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surfaceDark,
-        title: Text(l10n.smbOfflineCacheTitle),
-        content: Text(l10n.smbOfflineCacheMessage),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              l10n.nasCancel,
-              style: const TextStyle(color: AppTheme.textSecondary),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              l10n.smbOfflineCacheConfirm,
-              style: const TextStyle(color: AppTheme.accentFallback),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true && mounted) {
-      setState(() => _offlineCache = true);
-    }
-  }
-
   Future<void> _saveAndConnect() async {
     await PreferencesService.instance.setNasConfig(
       type: _nasType,
@@ -207,7 +167,6 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
       username: _userCtrl.text.trim(),
       password: _passCtrl.text,
     );
-    await PreferencesService.instance.setSmbOfflineCache(_offlineCache);
 
     // 触发后台导入（fire-and-forget，不阻塞页面）：
     // 立即返回曲库，导入进度在曲库页顶部展示，可随时取消。
@@ -283,47 +242,6 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
                       textInputAction: TextInputAction.done,
                     ),
                   ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            // ── 离线缓存开关 ──
-            Container(
-              decoration: BoxDecoration(
-                color: AppTheme.surfaceDark,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppTheme.highlight, width: 0.5),
-              ),
-              child: Material(
-                type: MaterialType.transparency,
-                child: ListTile(
-                  dense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                  // 整行可点（与设置页开关行为一致）
-                  onTap: () => _toggleOfflineCache(),
-                  leading: const Icon(
-                    LucideIcons.download,
-                    color: AppTheme.textSecondary,
-                    size: 22,
-                  ),
-                  title: Text(
-                    l10n.smbOfflineCache,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
-                  subtitle: Text(
-                    l10n.smbOfflineCacheHint,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textTertiary,
-                    ),
-                  ),
-                  trailing: WlToggle(
-                    value: _offlineCache,
-                    onChanged: () => _toggleOfflineCache(),
-                  ),
                 ),
               ),
             ),
@@ -418,10 +336,31 @@ class _NasField extends StatefulWidget {
 
 class _NasFieldState extends State<_NasField> {
   bool _show = false;
+  bool _hasText = false;
   final _focusNode = FocusNode();
 
   @override
+  void initState() {
+    super.initState();
+    _hasText = widget.controller.text.isNotEmpty;
+    widget.controller.addListener(_onCtrlChanged);
+    // 聚焦状态变化时刷新 × 显隐（仅在焦点内显示清除按钮）
+    _focusNode.addListener(_onFocusChanged);
+  }
+
+  void _onCtrlChanged() {
+    final has = widget.controller.text.isNotEmpty;
+    if (has != _hasText) setState(() => _hasText = has);
+  }
+
+  void _onFocusChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    _focusNode.removeListener(_onFocusChanged);
+    widget.controller.removeListener(_onCtrlChanged);
     _focusNode.dispose();
     super.dispose();
   }
@@ -450,6 +389,10 @@ class _NasFieldState extends State<_NasField> {
         decoration: InputDecoration(
           hintText: widget.hint,
           isDense: true,
+          // 限定眼图标区域 24×24：不设的话默认 48×48（Material 最小
+          // 交互尺寸），密码框会被撑得比其他输入框高、文本不再对齐
+          suffixIconConstraints:
+              const BoxConstraints.tightFor(width: 24, height: 24),
           hintStyle: const TextStyle(
             fontSize: 14,
             color: AppTheme.textTertiary,
@@ -462,9 +405,25 @@ class _NasFieldState extends State<_NasField> {
                     size: 18,
                     color: AppTheme.textSecondary,
                   ),
+                  // 缩掉 48×48 默认点击热区：否则密码框比
+                  // 普通输入框高出一截（IconButton tap target 撑高）
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                   onPressed: () => setState(() => _show = !_show),
                 )
-              : null,
+              : _hasText && _focusNode.hasFocus
+                  ? IconButton(
+                      icon: const Icon(
+                        LucideIcons.x,
+                        size: 18,
+                        color: AppTheme.textSecondary,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      tooltip: '清除',
+                      onPressed: () => widget.controller.clear(),
+                    )
+                  : null,
         ),
       ),
     );

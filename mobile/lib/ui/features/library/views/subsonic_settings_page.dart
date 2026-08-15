@@ -251,9 +251,30 @@ class _Field extends StatefulWidget {
 class _FieldState extends State<_Field> {
   final _focusNode = FocusNode();
   bool _show = false;
+  bool _hasText = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _hasText = widget.controller.text.isNotEmpty;
+    widget.controller.addListener(_onCtrlChanged);
+    // 聚焦状态变化时刷新 × 显隐（仅在焦点内显示清除按钮）
+    _focusNode.addListener(_onFocusChanged);
+  }
+
+  void _onCtrlChanged() {
+    final has = widget.controller.text.isNotEmpty;
+    if (has != _hasText) setState(() => _hasText = has);
+  }
+
+  void _onFocusChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void dispose() {
+    _focusNode.removeListener(_onFocusChanged);
+    widget.controller.removeListener(_onCtrlChanged);
     _focusNode.dispose();
     super.dispose();
   }
@@ -294,6 +315,10 @@ class _FieldState extends State<_Field> {
           ),
           isDense: true,
           border: InputBorder.none,
+          // 限定眼图标区域 24×24：不设的话默认 48×48（Material 最小
+          // 交互尺寸），密码框会被撑得比其他输入框高、文本不再对齐
+          suffixIconConstraints:
+              const BoxConstraints.tightFor(width: 24, height: 24),
           suffixIcon: obscure
               ? IconButton(
                   icon: Icon(
@@ -301,9 +326,25 @@ class _FieldState extends State<_Field> {
                     size: 18,
                     color: AppTheme.textSecondary,
                   ),
+                  // 缩掉 48×48 默认点击热区：否则密码框比
+                  // 普通输入框高出一截（IconButton tap target 撑高）
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                   onPressed: () => setState(() => _show = !_show),
                 )
-              : null,
+              : _hasText && _focusNode.hasFocus
+                  ? IconButton(
+                      icon: const Icon(
+                        LucideIcons.x,
+                        size: 18,
+                        color: AppTheme.textSecondary,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      tooltip: '清除',
+                      onPressed: () => controller.clear(),
+                    )
+                  : null,
         ),
       ),
     );
