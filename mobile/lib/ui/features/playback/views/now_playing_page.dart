@@ -765,7 +765,7 @@ class _TransportRow extends StatelessWidget {
             icon: Icons.skip_previous,
             size: 44,
             filled: true,
-            onTap: () => player.previous(),
+            onTap: () => player.previous(fromUser: true),
           ),
           _PlayBtn(
             isPlaying: player.isPlaying,
@@ -775,7 +775,7 @@ class _TransportRow extends StatelessWidget {
             icon: Icons.skip_next,
             size: 44,
             filled: true,
-            onTap: () => player.next(),
+            onTap: () => player.next(fromUser: true),
           ),
           _TransportBtn(
             icon: player.isFavorite ? Icons.favorite : Icons.favorite_border,

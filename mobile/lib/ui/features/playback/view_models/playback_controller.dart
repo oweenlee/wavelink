@@ -79,12 +79,12 @@ class PlaybackController {
     _player.onTrackEnd = () {
       next();
     };
-    // 锁屏/控制中心 next/previous 命令 → 复用播放器切歌逻辑
+    // 锁屏/控制中心 next/previous 命令 → 复用播放器切歌逻辑（视为手动）
     _player.onNext = () {
-      next();
+      next(fromUser: true);
     };
     _player.onPrevious = () {
-      previous();
+      previous(fromUser: true);
     };
   }
 
@@ -234,10 +234,12 @@ class PlaybackController {
   void skipBackward() => _player.skipBackward();
   set volume(double v) => _player.setVolume(v);
 
-  void next() {
+  void next({bool fromUser = false}) {
     if (!hasSong) return;
     final q = _ref.read(queueProvider);
-    if (q.loopMode == LoopMode.single) {
+    // 单曲循环：仅「自然曲终」拦截重播当前曲；用户手动切歌（按钮/
+    // 锁屏命令）仍应切到下一首——与 iOS Music 行为一致。
+    if (q.loopMode == LoopMode.single && !fromUser) {
       _player.playSong(q.currentSong!);
       return;
     }
@@ -246,12 +248,17 @@ class PlaybackController {
     _player.playSong(_ref.read(queueProvider).currentSong!);
   }
 
-  void previous() {
+  void previous({bool fromUser = false}) {
     if (!hasSong) return;
     if (_ref.read(playerProvider).position > 3000) {
       _player.seekToStart();
     } else {
       final q = _ref.read(queueProvider);
+      // 单曲循环：自然曲终重播当前曲；手动切歌切到上一首
+      if (q.loopMode == LoopMode.single && !fromUser) {
+        _player.playSong(q.currentSong!);
+        return;
+      }
       final prevIdx = (q.currentIndex - 1 + q.queue.length) % q.queue.length;
       _queue.advanceTo(prevIdx);
       _player.playSong(_ref.read(queueProvider).currentSong!);

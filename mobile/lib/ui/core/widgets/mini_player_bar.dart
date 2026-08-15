@@ -169,7 +169,7 @@ class MiniPlayerBar extends ConsumerWidget {
                       const SizedBox(width: 4),
                       // 下一曲 — 对齐播放页 _TransportBtn：圆形 + 灰色 Material 填充图标
                       GestureDetector(
-                        onTap: () => player.next(),
+                        onTap: () => player.next(fromUser: true),
                         child: Container(
                           width: 40,
                           height: 40,
