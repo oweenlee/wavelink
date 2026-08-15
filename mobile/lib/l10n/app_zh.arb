@@ -105,7 +105,6 @@
   "dspCrossfeed": "Crossfeed",
   "replayGain": "ReplayGain",
   "bitPerfect": "Bit-perfect（采样率跟随）",
-  "versionValue": "v0.1.0",
   "settingsAppearance": "外观",
   "theme": "主题",
   "themeDark": "深色",

@@ -13,6 +13,7 @@ import '../../playback/view_models/playback_controller.dart';
 import '../../playback/view_models/audio_player_provider.dart';
 import '../view_models/dsp_provider.dart';
 import '../view_models/locale_provider.dart';
+import '../view_models/package_info_provider.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -36,11 +37,13 @@ class SettingsPage extends ConsumerWidget {
     void addSection(String title, List<Widget> rows) {
       items.add(_SectionHeader(title: title));
       for (var i = 0; i < rows.length; i++) {
-        items.add(_RowShell(
-          isFirst: i == 0,
-          isLast: i == rows.length - 1,
-          child: rows[i],
-        ));
+        items.add(
+          _RowShell(
+            isFirst: i == 0,
+            isLast: i == rows.length - 1,
+            child: rows[i],
+          ),
+        );
       }
       items.add(const SizedBox(height: 24));
     }
@@ -137,12 +140,14 @@ class SettingsPage extends ConsumerWidget {
         icon: LucideIcons.mail,
         label: l10n.contactEmail,
         trailing: l10n.contactEmailValue,
-        onTap: () => _copyContactEmail(context, l10n),
+        onTap: () => _copyContactEmail(ref, l10n),
       ),
+      // 版本号运行时从 PackageInfo 读取（与 pubspec 保持一致），
+      // 不再走 arb 文案硬编码（曾写死 v0.1.0 与实际 1.0.0 不符）。
       _SettingItem(
         icon: LucideIcons.info,
         label: l10n.version,
-        trailing: l10n.versionValue,
+        trailing: _versionLabel(ref),
       ),
     ]);
 
@@ -153,17 +158,34 @@ class SettingsPage extends ConsumerWidget {
     );
   }
 
+  /// 版本号展示：PackageInfo 未就绪/不可用时显示占位，避免空 trailing。
+  static String _versionLabel(WidgetRef ref) {
+    final v = ref.watch(packageInfoProvider).value?.version;
+    if (v == null || v.isEmpty) return '—';
+    return 'v$v';
+  }
+
   /// 复制联系邮箱到剪贴板并 toast 反馈。
+  /// - toast 参数与全局统一（timeInSecForIosWeb，而非 Android 语义的
+  ///   toastLength，后者在 iOS 走另一条时长路径）；
+  /// - Clipboard.setData 在部分 iOS 版本会因隐私弹窗授权失败抛异常
+  ///   （用户拒绝剪贴板权限），必须 catch，否则 toast 不显示且产生
+  ///   unhandled exception。
   static Future<void> _copyContactEmail(
-    BuildContext context,
+    WidgetRef ref,
     AppLocalizations l10n,
   ) async {
     final email = l10n.contactEmailValue;
-    await Clipboard.setData(ClipboardData(text: email));
+    try {
+      await Clipboard.setData(ClipboardData(text: email));
+    } catch (_) {
+      // 剪贴板权限被拒：复制失败静默，不打断用户
+      return;
+    }
     Fluttertoast.showToast(
       msg: l10n.contactEmailCopied,
       gravity: ToastGravity.BOTTOM,
-      toastLength: Toast.LENGTH_SHORT,
+      timeInSecForIosWeb: 2,
       backgroundColor: AppTheme.surfaceHigh,
       textColor: AppTheme.textPrimary,
       fontSize: 13,
@@ -316,7 +338,8 @@ class _RowShell extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (!isFirst) Divider(height: 1, indent: 52, color: AppTheme.highlight),
+            if (!isFirst)
+              Divider(height: 1, indent: 52, color: AppTheme.highlight),
             child,
           ],
         ),
@@ -340,49 +363,61 @@ class _SettingItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Icon(icon, color: AppTheme.textSecondary, size: 22),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
-              ),
-            ),
-            if (trailing != null) ...[
-              const SizedBox(width: 8),
-              ConstrainedBox(
-                // 长文案（如 AutoEQ 型号名）限宽单行截断，避免换行挤压标题
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.sizeOf(context).width * 0.45,
-                ),
-                child: Text(
-                  trailing!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppTheme.textTertiary,
+    // GestureDetector 自带 tap action 语义，但需 MergeSemantics 把
+    // icon+label+trailing 聚合成单一可点击节点：VoiceOver/TalkBack 焦点
+    // 落在整行而非分离的文本片段，且保留 button role 与 enabled 状态。
+    return MergeSemantics(
+      child: Semantics(
+        button: true,
+        enabled: onTap != null,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Icon(icon, color: AppTheme.textSecondary, size: 22),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      color: AppTheme.textPrimary,
+                    ),
                   ),
                 ),
-              ),
-            ] else if (onTap != null) ...[
-              const SizedBox(width: 8),
-              const Icon(
-                LucideIcons.chevronRight,
-                color: AppTheme.textTertiary,
-                size: 20,
-              ),
-            ],
-          ],
+                if (trailing != null) ...[
+                  const SizedBox(width: 8),
+                  ConstrainedBox(
+                    // 长文案（如 AutoEQ 型号名）限宽单行截断，避免换行挤压标题
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.sizeOf(context).width * 0.45,
+                    ),
+                    child: Text(
+                      trailing!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppTheme.textTertiary,
+                      ),
+                    ),
+                  ),
+                ] else if (onTap != null) ...[
+                  const SizedBox(width: 8),
+                  const Icon(
+                    LucideIcons.chevronRight,
+                    color: AppTheme.textTertiary,
+                    size: 20,
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -406,31 +441,25 @@ class _SwitchItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      // 整行可点：行内任意位置（含文字/图标）都能切换
-      behavior: HitTestBehavior.opaque,
-      onTap: () => onChanged(!value),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Icon(icon, color: AppTheme.textSecondary, size: 22),
-            const SizedBox(width: 16),
-            Expanded(
-              child: subtitle == null
-                  ? Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        color: AppTheme.textPrimary,
-                      ),
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
+    return MergeSemantics(
+      child: Semantics(
+        // 整行开关：toggled 状态随切换同步，屏幕阅读器可朗读并操作
+        toggled: value,
+        enabled: true,
+        button: true,
+        child: GestureDetector(
+          // 整行可点：行内任意位置（含文字/图标）都能切换
+          behavior: HitTestBehavior.opaque,
+          onTap: () => onChanged(!value),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Icon(icon, color: AppTheme.textSecondary, size: 22),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: subtitle == null
+                      ? Text(
                           label,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -438,27 +467,41 @@ class _SwitchItem extends StatelessWidget {
                             fontSize: 15,
                             color: AppTheme.textPrimary,
                           ),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                color: AppTheme.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              subtitle!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppTheme.textTertiary,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: AppTheme.textTertiary,
-                          ),
-                        ),
-                      ],
-                    ),
+                ),
+                const SizedBox(width: 8),
+                WlToggle(
+                  value: value,
+                  // 与音效面板同一组件，开关视觉全局一致
+                  onChanged: () => onChanged(!value),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            WlToggle(
-              value: value,
-              // 与音效面板同一组件，开关视觉全局一致
-              onChanged: () => onChanged(!value),
-            ),
-          ],
+          ),
         ),
       ),
     );

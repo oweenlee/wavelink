@@ -351,9 +351,6 @@ class AppLocalizationsJa extends AppLocalizations {
   String get bitPerfect => 'Bit-perfect（サンプルレート追従）';
 
   @override
-  String get versionValue => 'v0.1.0';
-
-  @override
   String get settingsAppearance => '外観';
 
   @override

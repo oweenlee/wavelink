@@ -24,6 +24,7 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _testing = false;
+  bool _saving = false;
   String _status = ''; // '' | 'ok' | 'fail' | 'empty'
 
   @override
@@ -79,23 +80,31 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
   }
 
   Future<void> _save() async {
-    final validation = _validate();
-    if (validation != null) {
-      setState(() => _status = validation);
-      return;
+    // 防重复点击：保存触发后台扫描（fire-and-forget），快速双击会并发
+    // 起两个扫描共享同一 LibraryNotifier，onBatch 回调可能交叉写入。
+    if (_saving) return;
+    _saving = true;
+    try {
+      final validation = _validate();
+      if (validation != null) {
+        setState(() => _status = validation);
+        return;
+      }
+      await PreferencesService.instance.setWebdavConfig(
+        baseUrl: _urlCtrl.text.trim(),
+        path: _pathCtrl.text.trim(),
+        username: _userCtrl.text.trim(),
+        password: _passCtrl.text,
+      );
+      if (!mounted) return;
+      // 触发后台扫描（fire-and-forget，对齐 NAS 导入体验）：
+      // 立即返回曲库，扫描进度经 onBatch 增量入库实时可见，
+      // 真实错误经 webdavError 带出（曲库页顶部展示）。
+      startWebdavScan(ref);
+      if (mounted) context.pop(true);
+    } finally {
+      _saving = false;
     }
-    await PreferencesService.instance.setWebdavConfig(
-      baseUrl: _urlCtrl.text.trim(),
-      path: _pathCtrl.text.trim(),
-      username: _userCtrl.text.trim(),
-      password: _passCtrl.text,
-    );
-    if (!mounted) return;
-    // 触发后台扫描（fire-and-forget，对齐 NAS 导入体验）：
-    // 立即返回曲库，扫描进度经 onBatch 增量入库实时可见，
-    // 真实错误经 webdavError 带出（曲库页顶部展示）。
-    startWebdavScan(ref);
-    if (mounted) context.pop(true);
   }
 
   /// 后台启动 WebDAV 扫描（不阻塞调用方），错误经 [LibraryState.webdavError] 带出。
@@ -203,7 +212,7 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: _save,
+                    onPressed: _saving ? null : _save,
                     icon: const Icon(LucideIcons.save, size: 18),
                     label: Text(l10n.nasSave),
                     style: ElevatedButton.styleFrom(

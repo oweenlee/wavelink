@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wavelink_mobile/ui/core/app.dart';
 import 'package:wavelink_mobile/domain/models/song.dart';
@@ -12,6 +13,7 @@ import 'package:wavelink_mobile/ui/core/providers/repositories.dart';
 import 'package:wavelink_mobile/data/services/preferences_service.dart';
 import 'package:wavelink_mobile/data/repositories/preferences_repository.dart';
 import 'package:wavelink_mobile/ui/features/settings/view_models/locale_provider.dart';
+import 'package:wavelink_mobile/ui/features/settings/view_models/package_info_provider.dart';
 import 'helpers/mock_repositories.dart';
 
 /// 测试用：强制中文（测试设备语言为 en，断言文案为中文）
@@ -44,6 +46,16 @@ void main() {
           (_) => PreferencesRepository(),
         ),
         localeProvider.overrideWith(_TestLocaleNotifier.new),
+        // 测试环境无原生插件：固定版本号，避免 PackageInfo 通道异常
+        packageInfoProvider.overrideWith(
+          (ref) async => PackageInfo(
+            appName: 'wavelink',
+            packageName: 'com.wavelink.mobile',
+            version: '1.0.0',
+            buildNumber: '1',
+            buildSignature: '',
+          ),
+        ),
       ],
     );
     addTearDown(container.dispose);

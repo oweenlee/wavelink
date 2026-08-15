@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -105,19 +106,59 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
   }
 
   /// 失败时展示具体错误信息。
+  /// 有详细错误（含 SMB 协议栈 dump，可能很长）时弹 dialog：文案可选中、
+  /// 可复制，方便贴给开发者排查；toast 2 秒消失不可选中，只用于无错误
+  /// 场景的兜底提示。
   void _showErrorSnackBar() {
     final l10n = AppLocalizations.of(context);
+    final accent = AccentScope.of(context);
     final err = SmbService.lastError;
-    final text = err == null
-        ? l10n.nasConnectionFailedTitle
-        : '$err\n\n${l10n.nasCheckHint}';
-    Fluttertoast.showToast(
-      msg: text,
-      gravity: ToastGravity.BOTTOM,
-      timeInSecForIosWeb: 2,
-      fontSize: 13,
-      backgroundColor: AppTheme.danger,
-      textColor: AppTheme.textPrimary,
+    if (err == null) {
+      Fluttertoast.showToast(
+        msg: l10n.nasConnectionFailedTitle,
+        gravity: ToastGravity.BOTTOM,
+        timeInSecForIosWeb: 2,
+        fontSize: 13,
+        backgroundColor: AppTheme.danger,
+        textColor: AppTheme.textPrimary,
+      );
+      return;
+    }
+    final detail = '$err\n\n${l10n.nasCheckHint}';
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceDark,
+        title: Text(
+          l10n.nasConnectionFailedTitle,
+          style: const TextStyle(color: AppTheme.textPrimary),
+        ),
+        content: SingleChildScrollView(
+          child: SelectableText(
+            detail,
+            style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: detail));
+              Navigator.pop(ctx);
+            },
+            child: Text(
+              l10n.nasCopy,
+              style: TextStyle(color: accent),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              l10n.confirm,
+              style: const TextStyle(color: AppTheme.textSecondary),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
