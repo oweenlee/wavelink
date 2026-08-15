@@ -512,98 +512,20 @@ class SmbService {
       return song;
     }
 
-    // 关闭离线缓存 → 仅索引，不占本地空间。播放时经 downloadToLocal 拉取。
-    if (!PreferencesService.instance.smbOfflineCache) {
-      return Song(
-        id: 'smb_${smbPath.hashCode}',
-        title: parsed.title,
-        artist: parsed.artist ?? artistPlaceholder,
-        album: albumPlaceholder,
-        duration: ImportService.estimateDuration(remoteSize, name),
-        dominantColor: AppTheme.s2,
-        smbPath: smbPath,
-        durationEstimated: true,
-      );
-    }
-
-    try {
-      // 下载到本地缓存（按远端大小判断是否有变化）
-      final appDir = await getApplicationDocumentsDirectory();
-      final cacheDir = Directory('${appDir.path}/.smb_cache');
-      if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
-      final localFile = File('${cacheDir.path}/${smbPath.hashCode}_$name');
-
-      String localPath;
-      final cached = await localFile.exists();
-      final cachedSize = cached ? await localFile.length() : 0;
-      if (cached && cachedSize > 0 && cachedSize == remoteSize) {
-        localPath = localFile.path;
-      } else {
-        // 流式下载到本地（Rust 分块经 FRB stream 推送，边收边写，避免整文件进内存）
-        final sink = localFile.openWrite();
-        try {
-          await for (final chunk in smb.smbReadFileStream(path: smbPath)) {
-            sink.add(chunk);
-          }
-        } finally {
-          await sink.close();
-        }
-        localPath = localFile.path;
-      }
-
-      // 用 Rust 读取真实元数据
-      String title = fallbackTitle;
-      String artist = artistPlaceholder;
-      String album = albumPlaceholder;
-      Duration duration = ImportService.estimateDuration(
-        await localFile.length(),
-        localPath,
-      );
-      bool durationEstimated = true;
-      String? coverUrl;
-      bool hasCover = false;
-
-      if (rs.rustAvailable) {
-        try {
-          final meta = await rs.readMetadata(localPath);
-          if (meta.title != null && meta.title!.isNotEmpty) title = meta.title!;
-          if (meta.artist != null && meta.artist!.isNotEmpty) artist = meta.artist!;
-          if (meta.album != null && meta.album!.isNotEmpty) album = meta.album!;
-          if (meta.durationSecs > 0) {
-            duration = Duration(milliseconds: (meta.durationSecs * 1000).round());
-            durationEstimated = false;
-          }
-          if (meta.hasCover && meta.coverBytes.isNotEmpty) {
-            final coversDir = Directory('${appDir.path}/.covers');
-            if (!await coversDir.exists()) await coversDir.create(recursive: true);
-            final coverFile = File('${coversDir.path}/smb_${smbPath.hashCode}.jpg');
-            await coverFile.writeAsBytes(meta.coverBytes);
-            coverUrl = coverFile.path;
-            hasCover = true;
-          }
-        } catch (e) {
-          Log.e('SMB', 'Rust 元数据读取失败: $e');
-        }
-      }
-
-      return Song(
-        id: 'smb_${smbPath.hashCode}',
-        title: title,
-        artist: artist,
-        album: album,
-        duration: duration,
-        dominantColor: AppTheme.s2,
-        smbPath: smbPath,
-        path: localPath,
-        coverUrl: coverUrl,
-        hasCover: hasCover,
-        durationEstimated: durationEstimated,
-      );
-    } catch (e) {
-      // 降级：下载/元数据提取失败，返回 null 跳过该文件
-      Log.e('SMB', '文件处理失败 ($smbPath): $e');
-      return null;
-    }
+    // 仅索引，不占本地空间（离线缓存开关已移除）：播放时经
+    // 边下边播/按需下载拉取，会自动落入 .smb_cache；封面与真实
+    // 元数据（album/artist/时长）由后台封面服务 fetchRemoteCover
+    // 读取远端文件头回填。
+    return Song(
+      id: 'smb_${smbPath.hashCode}',
+      title: parsed.title,
+      artist: parsed.artist ?? artistPlaceholder,
+      album: albumPlaceholder,
+      duration: ImportService.estimateDuration(remoteSize, name),
+      dominantColor: AppTheme.s2,
+      smbPath: smbPath,
+      durationEstimated: true,
+    );
   }
 
   /// 读 SMB 远端文件头部提取内嵌封面，并一并回填真实元数据

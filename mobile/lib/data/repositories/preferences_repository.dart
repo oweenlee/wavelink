@@ -108,10 +108,6 @@ class PreferencesRepository {
   String? get nasUsername => PreferencesService.instance.nasUsername;
   String get nasPassword => PreferencesService.instance.nasPassword;
 
-  bool get smbOfflineCache => PreferencesService.instance.smbOfflineCache;
-  Future<void> setSmbOfflineCache(bool v) =>
-      PreferencesService.instance.setSmbOfflineCache(v);
-
   Future<void> setNasConfig({
     String? type,
     String? host,

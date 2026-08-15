@@ -265,13 +265,6 @@ class PreferencesService {
   static const _kNasUsername = 'nas_username';
   static const _kNasPassword = 'nas_password';
 
-  /// SMB 离线缓存：开启后扫描 NAS 时把整库下载到本机，关 SMB 也能播。
-  /// 默认关闭——只建索引，播放时才按需下载单曲。
-  static const _kSmbOfflineCache = 'smb_offline_cache';
-  bool get smbOfflineCache => _prefs.getBool(_kSmbOfflineCache) ?? false;
-  Future<void> setSmbOfflineCache(bool v) =>
-      _prefs.setBool(_kSmbOfflineCache, v);
-
   String? get nasType => _prefs.getString(_kNasType);
   String? get nasHost => _prefs.getString(_kNasHost);
   String? get nasShare => _prefs.getString(_kNasShare);
