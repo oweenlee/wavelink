@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
@@ -132,6 +134,12 @@ class SettingsPage extends ConsumerWidget {
         onTap: () => context.push('/diagnostic'),
       ),
       _SettingItem(
+        icon: LucideIcons.mail,
+        label: l10n.contactEmail,
+        trailing: l10n.contactEmailValue,
+        onTap: () => _copyContactEmail(context, l10n),
+      ),
+      _SettingItem(
         icon: LucideIcons.info,
         label: l10n.version,
         trailing: l10n.versionValue,
@@ -142,6 +150,23 @@ class SettingsPage extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
       itemCount: items.length,
       itemBuilder: (context, index) => items[index],
+    );
+  }
+
+  /// 复制联系邮箱到剪贴板并 toast 反馈。
+  static Future<void> _copyContactEmail(
+    BuildContext context,
+    AppLocalizations l10n,
+  ) async {
+    final email = l10n.contactEmailValue;
+    await Clipboard.setData(ClipboardData(text: email));
+    Fluttertoast.showToast(
+      msg: l10n.contactEmailCopied,
+      gravity: ToastGravity.BOTTOM,
+      toastLength: Toast.LENGTH_SHORT,
+      backgroundColor: AppTheme.surfaceHigh,
+      textColor: AppTheme.textPrimary,
+      fontSize: 13,
     );
   }
 }

@@ -506,6 +506,15 @@ class AppLocalizationsJa extends AppLocalizations {
   String get version => 'バージョン';
 
   @override
+  String get contactEmail => '連絡先メール';
+
+  @override
+  String get contactEmailValue => 'owen.lee.dev@outlook.com';
+
+  @override
+  String get contactEmailCopied => 'メールアドレスをコピーしました';
+
+  @override
   String get licenses => 'オープンソースライセンス';
 
   @override
