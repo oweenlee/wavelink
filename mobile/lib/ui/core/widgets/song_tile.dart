@@ -107,8 +107,11 @@ class SongTile extends StatelessWidget {
               const SizedBox(width: 8),
               GestureDetector(
                 onTap: onMore,
+                // 热区放大到 40×40（原 28×28）：三个点偏小难点，
+                // 与抽屉同步按钮/清除按钮同款热区习惯
+                behavior: HitTestBehavior.opaque,
                 child: Padding(
-                  padding: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.all(10),
                   child: Icon(
                     LucideIcons.moreHorizontal,
                     size: 20,

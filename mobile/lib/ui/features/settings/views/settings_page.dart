@@ -647,35 +647,53 @@ class _SliderItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      // 垂直 12 与 _SettingItem 对齐：整行高度一致，避免滑块行
+      // 因内部上下结构比其它分区行高而显得错位
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
           Icon(icon, color: AppTheme.textSecondary, size: 22),
           const SizedBox(width: 16),
+          // 长文案限宽（按屏宽 40% 自适应，非写死）：label 只占固有
+          // 宽度、不参与 flex，滑块 Expanded 独占剩余。
+          // 宽屏上限随屏宽放大避免滑块畸长；窄屏/大字体下截断 label
+          // 优先保住滑块可操作性。
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.sizeOf(context).width * 0.4,
+            ),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 15,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+          ),
+          // 间距与左侧 icon→文字一致（16px），三种间隔统一：
+          // icon |16| label |16| slider(full remaining)
+          const SizedBox(width: 16),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    color: AppTheme.textPrimary,
-                  ),
+            child: SliderTheme(
+              data: SliderThemeData(
+                // 与特效面板滑杆同款配色
+                trackHeight: 3,
+                // 小 thumb（5px）：减小覆盖轨道端点的视觉，轨道
+                // 更贴近两侧；track 已因 padding 非空而全宽
+                thumbShape:
+                    const RoundSliderThumbShape(enabledThumbRadius: 5),
+                activeTrackColor: accent,
+                inactiveTrackColor: AppTheme.textTertiary.withValues(
+                  alpha: 0.3,
                 ),
-                SliderTheme(
-                  data: SliderThemeData(
-                    // 与特效面板滑杆同款配色
-                    activeTrackColor: accent,
-                    inactiveTrackColor: AppTheme.textTertiary.withValues(
-                      alpha: 0.3,
-                    ),
-                    thumbColor: accent,
-                    overlayColor: accent.withValues(alpha: 0.08),
-                  ),
-                  child: Slider(value: value, onChanged: onChanged),
-                ),
-              ],
+                thumbColor: accent,
+                overlayColor: accent.withValues(alpha: 0.08),
+                // 去掉 Slider 默认 16px 横向 padding：贴齐标签
+                padding: EdgeInsets.zero,
+              ),
+              child: Slider(value: value, onChanged: onChanged),
             ),
           ),
         ],

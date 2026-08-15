@@ -29,7 +29,7 @@ class WaveLinkApp extends ConsumerWidget {
     final deviceLocale = PlatformDispatcher.instance.locale;
     final locale = LocaleNotifier.resolve(mode, deviceLocale);
     return MaterialApp.router(
-      title: 'WaveLink Mobile',
+      title: 'WaveLink',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme.copyWith(
         splashFactory: Platform.isIOS
