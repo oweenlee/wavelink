@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -22,7 +24,6 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _testing = false;
-  bool _saving = false;
   String _status = ''; // '' | 'ok' | 'fail' | 'empty'
 
   @override
@@ -83,7 +84,6 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
       setState(() => _status = validation);
       return;
     }
-    setState(() => _saving = true);
     await PreferencesService.instance.setWebdavConfig(
       baseUrl: _urlCtrl.text.trim(),
       path: _pathCtrl.text.trim(),
@@ -91,16 +91,17 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
       password: _passCtrl.text,
     );
     if (!mounted) return;
-    // 保存后立即扫描验证（复用 scanWebdav 的合并/持久化，真实错误经
-    // webdavError 带出）。空库不是错误：扫描正常完成说明连接与凭据正确。
-    await ref.read(libraryProvider.notifier).scanWebdav();
-    if (!mounted) return;
-    final hasError = ref.read(libraryProvider).webdavError != null;
-    setState(() {
-      _saving = false;
-      _status = hasError ? 'fail' : 'ok';
-    });
-    if (!hasError) context.pop();
+    // 触发后台扫描（fire-and-forget，对齐 NAS 导入体验）：
+    // 立即返回曲库，扫描进度经 onBatch 增量入库实时可见，
+    // 真实错误经 webdavError 带出（曲库页顶部展示）。
+    startWebdavScan(ref);
+    if (mounted) context.pop(true);
+  }
+
+  /// 后台启动 WebDAV 扫描（不阻塞调用方），错误经 [LibraryState.webdavError] 带出。
+  static void startWebdavScan(WidgetRef ref) {
+    final notifier = ref.read(libraryProvider.notifier);
+    unawaited(notifier.scanWebdav());
   }
 
   @override
@@ -202,7 +203,7 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: _saving ? null : _save,
+                    onPressed: _save,
                     icon: const Icon(LucideIcons.save, size: 18),
                     label: Text(l10n.nasSave),
                     style: ElevatedButton.styleFrom(

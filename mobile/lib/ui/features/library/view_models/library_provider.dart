@@ -400,6 +400,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
             'WebDAV 增量入库 +${batch.length} 首'
                 '（曲库共 ${state.importedSongs.length}）',
           );
+          // B：扫描期顺带触发读头回填——专辑 tab 随扫描同步成型，
+          // 不等整库扫完才提取元数据。队列防重入，批次合并续跑。
+          unawaited(_covers.extractNasCovers(batch));
           onSongsLoaded?.call();
         },
       );

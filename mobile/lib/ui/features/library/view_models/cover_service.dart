@@ -93,11 +93,12 @@ class CoverService {
   /// 返回本轮是否有进展（至少解析出一张封面/回填一组元数据）。
   Future<bool> _extractNasPass(List<Song> songs) async {
     var progressed = false;
-    const roundSize = 8;
     // 批内是否存在 SMB 歌：SMB 有连接数限制/熔断/会话探活需要让路与
     // 前置检查；WebDAV 走 reqwest 无此限制，直接提取即可。
     final hasSmb =
         songs.any((s) => s.smbPath != null && s.smbPath!.isNotEmpty);
+    // 轮大小：SMB 受限 8 首/轮；纯 WebDAV 放开（并发 6）提速
+    final roundSize = hasSmb ? 8 : 24;
     for (var i = 0; i < songs.length; i += roundSize) {
       // 播放/下载进行中：让路（不打断播放），由外层循环稍后继续
       if (hasSmb && SmbService.playbackActive) {
@@ -115,9 +116,12 @@ class CoverService {
       }
       final end = (i + roundSize > songs.length) ? songs.length : i + roundSize;
       final batch = songs.sublist(i, end);
-      // 组内并发 2 串行处理组：4 并发曾触发 NAS 连接数限制整批超时
-      for (var j = 0; j < batch.length; j += 2) {
-        final subEnd = (j + 2 > batch.length) ? batch.length : j + 2;
+      // 组内并发：SMB 受限（2，历史 4 并发曾触发 NAS 连接数限制整批
+      // 超时）；纯 WebDAV 走 reqwest 无连接数限制，放开到 6 提速。
+      final groupSize = hasSmb ? 2 : 6;
+      for (var j = 0; j < batch.length; j += groupSize) {
+        final subEnd =
+            (j + groupSize > batch.length) ? batch.length : j + groupSize;
         final sub = batch.sublist(j, subEnd);
         // 按源分流：SMB 走 SmbService（含熔断计数），WebDAV 走
         // WebdavService（Range 读头）。返回是否有进展（拿到封面或
