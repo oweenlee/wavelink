@@ -12,8 +12,7 @@ use crate::TARGET_CHANNELS;
 use crate::TARGET_SAMPLE_RATE;
 
 /// 音频分析结果（BPM / 调性 / 能量）
-#[derive(Debug, Clone)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AnalysisResult {
     /// 每分钟拍数，None 表示未检测到稳定节拍
     pub bpm: Option<f32>,
@@ -46,16 +45,16 @@ pub fn analyze_file(path: &Path) -> Result<AnalysisResult, String> {
     let samples = decoder::decode_to_memory(path, TARGET_SAMPLE_RATE, TARGET_CHANNELS)
         .map_err(|e| format!("解码失败: {e}"))?;
 
-    Ok(analyze_from_samples(&samples, TARGET_SAMPLE_RATE, TARGET_CHANNELS))
+    Ok(analyze_from_samples(
+        &samples,
+        TARGET_SAMPLE_RATE,
+        TARGET_CHANNELS,
+    ))
 }
 
 /// 从 PCM 样本分析 BPM + 调性 + 能量
 /// 从 PCM 样本数据中分析 BPM / 调性 / 能量
-pub fn analyze_from_samples(
-    samples: &[f32],
-    sample_rate: u32,
-    channels: u32,
-) -> AnalysisResult {
+pub fn analyze_from_samples(samples: &[f32], sample_rate: u32, channels: u32) -> AnalysisResult {
     let mono = mix_to_mono(samples, channels);
 
     let bpm = bpm::detect_bpm(&mono, sample_rate);
