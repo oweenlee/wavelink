@@ -130,6 +130,33 @@ class MiniPlayerBar extends ConsumerWidget {
                           ),
                         ),
                       ),
+                      const SizedBox(width: 12), // 控制组整体右移（与标题留白）
+                      // 收藏 — 播放按钮左侧，点击收藏/取消（与下一曲同款圆形按钮）
+                      GestureDetector(
+                        onTap: () => player.setFavorite(
+                          song.id,
+                          !player.isSongFavorite(song.id),
+                        ),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Icon(
+                              player.isSongFavorite(song.id)
+                                  ? Icons.favorite
+                                  : Icons.favorite_border,
+                              color: player.isSongFavorite(song.id)
+                                  ? AppTheme.danger
+                                  : AppTheme.textSecondary,
+                              size: 22,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       // 播放/暂停 — 图标 scale 过渡（对齐播放页 _PlayBtn）
                       GestureDetector(
                         onTap: () {
@@ -168,33 +195,7 @@ class MiniPlayerBar extends ConsumerWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      // 收藏 — 播放按钮右侧，点击收藏/取消（与下一曲同款圆形按钮）
-                      GestureDetector(
-                        onTap: () => player.setFavorite(
-                          song.id,
-                          !player.isSongFavorite(song.id),
-                        ),
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: Icon(
-                              player.isSongFavorite(song.id)
-                                  ? Icons.favorite
-                                  : Icons.favorite_border,
-                              color: player.isSongFavorite(song.id)
-                                  ? AppTheme.danger
-                                  : AppTheme.textSecondary,
-                              size: 22,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 8),
                       // 下一曲 — 对齐播放页 _TransportBtn：圆形 + 灰色 Material 填充图标
                       GestureDetector(
                         onTap: () => player.next(fromUser: true),
