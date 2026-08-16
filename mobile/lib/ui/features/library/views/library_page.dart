@@ -192,21 +192,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    // 键盘收起（点外部/按完成键等导致失焦）时关闭搜索框，回到列表态
-    _searchFocusNode.addListener(_onSearchFocusChanged);
-  }
-
-  void _onSearchFocusChanged() {
-    if (!_searchFocusNode.hasFocus &&
-        ref.read(libraryHeaderProvider).isSearchVisible) {
-      ref.read(libraryHeaderProvider.notifier).closeSearch();
-      _searchController.clear();
-    }
+    // 搜索状态与键盘焦点解耦：键盘收起（点完成/点外部）只收键盘、不关搜索；
+    // 关闭只走显式入口（顶部搜索图标 / 清空 X / 再点输入框外不关闭）。
   }
 
   @override
   void dispose() {
-    _searchFocusNode.removeListener(_onSearchFocusChanged);
     _searchFocusNode.dispose();
     _tabController.dispose();
     _searchController.dispose();
@@ -294,6 +285,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                       controller: _searchController,
                       focusNode: _searchFocusNode,
                       autofocus: true,
+                      textInputAction: TextInputAction.search,
+                      // 键盘"完成/搜索"只收键盘，搜索与结果保留
+                      onSubmitted: (_) => _searchFocusNode.unfocus(),
                       onChanged: (v) =>
                           headerNotifier.setQuery(v.toLowerCase()),
                       style: const TextStyle(
@@ -314,6 +308,26 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                       ),
                     ),
                   ),
+                  // 清空按钮：有输入时显示，点击清空关键词并回到输入态（不退出搜索）
+                  if (headerState.searchQuery.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        _searchController.clear();
+                        headerNotifier.setQuery('');
+                        _searchFocusNode.requestFocus();
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(
+                          LucideIcons.x,
+                          size: 16,
+                          color: AppTheme.textTertiary,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -357,13 +371,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                     Tab(height: 38, text: l10n.libArtists),
                     Tab(height: 38, text: l10n.libPlaylists),
                   ],
-                  onTap: (_) {
-                    // 切 tab 时关闭搜索
-                    if (ref.read(libraryHeaderProvider).isSearchVisible) {
-                      ref.read(libraryHeaderProvider.notifier).closeSearch();
-                      _searchController.clear();
-                    }
-                  },
                 ),
               ),
               // ── 来源图标按钮 ──
@@ -801,8 +808,10 @@ class _PlaylistsTab extends ConsumerWidget {
     ref.watch(libraryProvider); // 收藏/播放列表变化时刷新
     final favorites = player.favoriteSongs;
     final saved = player.playlists;
+    final query = ref.watch(libraryHeaderProvider).searchQuery;
 
-    // "我喜欢的音乐" 固定在最前，其余为已保存播放列表
+    // "我喜欢的音乐" 固定在最前，其余为已保存播放列表；
+    // 搜索时按播放列表名过滤（与歌曲/专辑/艺术家 tab 一致，搜索贯穿全库）
     final entries = <_PlaylistEntry>[
       _PlaylistEntry(
         name: l10n.favMusic,
@@ -819,7 +828,9 @@ class _PlaylistsTab extends ConsumerWidget {
           songs: player.playlistSongs(e.key),
         ),
       ),
-    ];
+    ]
+        .where((e) => query.isEmpty || e.name.toLowerCase().contains(query))
+        .toList();
 
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 80, left: 16, right: 16, top: 8),
