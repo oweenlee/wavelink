@@ -22,7 +22,7 @@
 	let searchResults = $state<Track[]>([]);
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;
 
-	const viewTitles: Record<string, string> = {
+	const viewTitles = $derived<Record<string, string>>({
 		library: t('header.view_library'),
 		effects: t('header.view_effects'),
 		settings: t('header.view_settings'),
@@ -30,7 +30,7 @@
 		subsonic: t('header.view_subsonic'),
 		webdav: t('header.view_webdav'),
 		cue: t('header.view_cue'),
-	};
+	});
 
 	function openSearch() {
 		ui.showSearch = true;

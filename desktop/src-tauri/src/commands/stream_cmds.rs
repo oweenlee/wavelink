@@ -1,7 +1,7 @@
+use super::lock_or_die;
+use crate::state::AppState;
 use std::path::Path;
 use tauri::{AppHandle, Manager, State};
-use crate::state::AppState;
-use super::lock_or_die;
 
 /// 开始流式播放（网络流媒体）
 /// 返回 true 表示启动成功
@@ -11,7 +11,10 @@ pub fn play_stream(
     content_length: Option<u64>,
     state: State<AppState>,
 ) -> Result<(), String> {
-    let handle = state.engine.play_stream(format_hint, content_length).map_err(|e| e.to_string())?;
+    let handle = state
+        .engine
+        .play_stream(format_hint, content_length)
+        .map_err(|e| e.to_string())?;
     *lock_or_die(&state.stream_handle) = Some(handle);
     Ok(())
 }
@@ -65,10 +68,20 @@ fn strm_fetch_blocking(url: &str, name: &str, cache_dir: &Path) -> Result<String
     };
     let safe_name: String = name
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ' ') { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ' ') {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let safe_name = safe_name.trim().trim_matches('.');
-    let safe_name = if safe_name.is_empty() { "remote".to_string() } else { safe_name.to_string() };
+    let safe_name = if safe_name.is_empty() {
+        "remote".to_string()
+    } else {
+        safe_name.to_string()
+    };
 
     // 缓存文件带音频扩展名，给 Symphonia 更可靠的格式 hint。
     // 旧版本缓存文件没有扩展名，仍兼容命中。
@@ -112,12 +125,18 @@ fn strm_fetch_blocking(url: &str, name: &str, cache_dir: &Path) -> Result<String
     }
     drop(file);
 
-    if std::fs::metadata(&part_path).map(|m| m.len() == 0).unwrap_or(true) {
+    if std::fs::metadata(&part_path)
+        .map(|m| m.len() == 0)
+        .unwrap_or(true)
+    {
         let _ = std::fs::remove_file(&part_path);
         return Err(format!("下载为空文件: {url}"));
     }
     // Windows 下 rename 不会覆盖已存在文件；目标只可能是残留的 0 字节文件，先清掉
-    if std::fs::metadata(&final_path).map(|m| m.len() == 0).unwrap_or(false) {
+    if std::fs::metadata(&final_path)
+        .map(|m| m.len() == 0)
+        .unwrap_or(false)
+    {
         let _ = std::fs::remove_file(&final_path);
     }
     std::fs::rename(&part_path, &final_path).map_err(|e| e.to_string())?;
@@ -125,27 +144,10 @@ fn strm_fetch_blocking(url: &str, name: &str, cache_dir: &Path) -> Result<String
     Ok(final_path.to_string_lossy().to_string())
 }
 
-/// 单曲直播 STRM http(s) URL：先下载到本地缓存，再交给引擎立即播放。
-/// 适用于「立即播放单个 URL」场景（命令内部直接 play，不建队列）。
-#[tauri::command]
-pub async fn strm_play(
-    url: String,
-    name: String,
-    state: State<'_, AppState>,
-    app: AppHandle,
-) -> Result<String, String> {
-    let final_str = strm_fetch(url, name, app).await?;
-
-    *lock_or_die(&state.current_track) = Some(final_str.clone());
-    crate::commands::apply_track_settings(&state);
-    state.engine.play(final_str.clone());
-    Ok(final_str)
-}
-
 /// STRM URL 缓存文件可识别的音频扩展名（与 library scanner 保持一致）
 const STRM_CACHE_AUDIO_EXTENSIONS: &[&str] = &[
-    "mp3", "flac", "wav", "ogg", "aac", "m4a", "m4b", "mp4",
-    "wma", "dsf", "dff", "ape", "opus", "aiff", "aif", "wv",
+    "mp3", "flac", "wav", "ogg", "aac", "m4a", "m4b", "mp4", "wma", "dsf", "dff", "ape", "opus",
+    "aiff", "aif", "wv",
 ];
 
 fn hex_encode(bytes: &[u8]) -> String {

@@ -38,6 +38,7 @@ fn main() {
         .setup(|app| {
             let data_dir = app.path().app_data_dir().expect("get app data dir failed");
             std::fs::create_dir_all(&data_dir).ok();
+            setup::cleanup_part_files(&data_dir);
             let db_path = data_dir.join("library.db");
             tracing::info!("db path: {}", db_path.display());
 
@@ -241,7 +242,6 @@ fn main() {
             commands::stream_cmds::stream_write,
             commands::stream_cmds::stream_eof,
             commands::stream_cmds::strm_fetch,
-            commands::stream_cmds::strm_play,
             commands::library::scan_dir,
             commands::library::get_scan_folders,
             commands::library::remove_scan_folder,

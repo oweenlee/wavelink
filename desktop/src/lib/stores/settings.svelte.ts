@@ -18,6 +18,8 @@ let _limiterEnabled = $state(true);
 let _ditherEnabled = $state(true);
 let _dsdMode = $state<'to_pcm' | 'dop'>('to_pcm');
 let _loaded = $state(false);
+let _volume = $state(1.0);
+let _playMode = $state<'normal' | 'repeat_one' | 'repeat_all' | 'shuffle'>('normal');
 // 设置保存串行队列：多个组件可能同时触发 save()，避免「读-改-写」竞态导致字段互相覆盖
 let _saveChain: Promise<void> = Promise.resolve();
 
@@ -63,6 +65,12 @@ export function getSettingsState() {
 		get dsdMode() { return _dsdMode; },
 		set dsdMode(v: 'to_pcm' | 'dop') { _dsdMode = v; },
 
+		get volume() { return _volume; },
+		set volume(v: number) { _volume = v; },
+
+		get playMode() { return _playMode; },
+		set playMode(v: 'normal' | 'repeat_one' | 'repeat_all' | 'shuffle') { _playMode = v; },
+
 		get loaded() { return _loaded; },
 
 		// ── Persistence ──
@@ -85,6 +93,8 @@ export function getSettingsState() {
 				if (typeof saved.limiterEnabled === 'boolean') _limiterEnabled = saved.limiterEnabled;
 				if (typeof saved.ditherEnabled === 'boolean') _ditherEnabled = saved.ditherEnabled;
 				if (saved.dsdMode === 'to_pcm' || saved.dsdMode === 'dop') _dsdMode = saved.dsdMode;
+				if (typeof saved.volume === 'number') _volume = saved.volume;
+				if (saved.playMode === 'normal' || saved.playMode === 'repeat_one' || saved.playMode === 'repeat_all' || saved.playMode === 'shuffle') _playMode = saved.playMode;
 				_loaded = true;
 				return saved;
 			} catch (err) {
@@ -119,6 +129,8 @@ export function getSettingsState() {
 							limiterEnabled: _limiterEnabled,
 							ditherEnabled: _ditherEnabled,
 							dsdMode: _dsdMode,
+							volume: _volume,
+							playMode: _playMode,
 							...extra,
 						},
 					});

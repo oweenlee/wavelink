@@ -1,6 +1,11 @@
+<script module>
+	// 封面数据 URL 缓存：同一首曲目切回时不需要反复从磁盘读封面
+	const coverCache = new Map<string, string>();
+</script>
+
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import { getPlaybackState, type PlayMode } from '$lib/stores/playback.svelte';
+	import { getPlaybackState } from '$lib/stores/playback.svelte';
 	import { getUiState } from '$lib/stores/ui.svelte';
 	import { getSettingsState } from '$lib/stores/settings.svelte';
 	import ProgressBar from '$lib/components/controls/ProgressBar.svelte';
@@ -18,28 +23,28 @@
 	let coverDataUrl = $state('');
 	let _invoke: ((cmd: string, args?: any) => Promise<any>) | null = null;
 
-	// Load settings on mount + sync playMode
+	// 只初始化 invoke；设置由 settings store 统一加载
 	$effect(() => {
 		if (!browser) return;
-		import('@tauri-apps/api/core').then(async (mod) => {
-			_invoke = mod.invoke;
-			try {
-				const saved: Record<string, any> = await mod.invoke('load_settings');
-				if (typeof saved.volume === 'number') playback.volume = saved.volume;
-				if (typeof saved.playMode === 'string') {
-					playback.playMode = saved.playMode as PlayMode;
-					await mod.invoke('set_play_mode', { mode: saved.playMode });
-				}
-			} catch { console.warn('[NowPlayingBar] 设置加载失败'); }
-			mod.invoke('get_play_mode').then((m: any) => { playback.playMode = m as PlayMode; }).catch(() => console.warn('[NowPlayingBar] 播放模式查询失败'));
-		});
+		import('@tauri-apps/api/core').then((mod) => { _invoke = mod.invoke; });
+	});
+
+	// settings 加载完成后，把持久化的 volume / playMode 同步到引擎
+	$effect(() => {
+		if (!settings.loaded) return;
+		playback.volume = settings.volume;
+		playback.playMode = settings.playMode;
+		if (browser) {
+			import('@tauri-apps/api/core').then(({ invoke }) => {
+				invoke('set_play_mode', { mode: settings.playMode }).catch(() => console.warn('[NowPlayingBar] 播放模式同步失败'));
+			});
+		}
 	});
 
 	async function cyclePlayMode() {
 		const next = playback.cyclePlayMode();
-		if (_invoke) {
-			await settings.save({ volume: playback.volume, playMode: next });
-		}
+		settings.playMode = next;
+		if (_invoke) await settings.save();
 	}
 
 	const SPEED_PRESETS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
@@ -52,7 +57,8 @@
 
 	function onVolumeInput(v: number) {
 		playback.volume = v;
-		if (_invoke) settings.save({ volume: v, playMode: playback.playMode });
+		settings.volume = v;
+		if (_invoke) settings.save();
 	}
 
 	function handleSeek(ratio: number) { playback.currentTime = ratio * playback.duration; }
@@ -70,10 +76,16 @@
 		const track = playback.currentTrack;
 		const invoke = _invoke;
 		if (!track || !invoke) { coverDataUrl = ''; return; }
+
+		const cached = coverCache.get(track.path);
+		if (cached) { coverDataUrl = cached; return; }
+
 		let cancelled = false;
 		invoke('get_file_cover_cmd', { path: track.path }).then((data: any) => {
 			if (cancelled) return;
-			coverDataUrl = (data && typeof data === 'string') ? data : '';
+			const url = (data && typeof data === 'string') ? data : '';
+			if (url) coverCache.set(track.path, url);
+			coverDataUrl = url;
 		}).catch(() => { coverDataUrl = ''; });
 		return () => { cancelled = true; };
 	});
