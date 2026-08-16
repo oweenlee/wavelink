@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/sheet_shell.dart';
 import '../../../core/widgets/wl_toggle.dart';
 import '../../playback/view_models/playback_controller.dart';
 import '../../playback/view_models/audio_player_provider.dart';
@@ -331,35 +330,78 @@ class _LanguageItem extends ConsumerWidget {
       }
     }
 
+    // 与曲库页 sheet 一致：走分支 Navigator（被 AppShell 的 Expanded 限定在
+    // body 区域，底部正好落在常驻播放条上方），内容自适应高度而非固定 55%。
     return showModalBottomSheet<String>(
       context: context,
-      useRootNavigator: true, // 覆盖整屏（含底部音乐条），避免被限制在分支 Navigator 内
       backgroundColor: Colors.transparent,
-      builder: (_) => SheetShell(
-        title: l10n.language,
-        builder: (scroll) => ListView(
-          controller: scroll,
-          padding: const EdgeInsets.only(top: 8, bottom: 32),
-          children: _options.map((mode) {
-            final selected = localeMode == mode;
-            return ListTile(
-              leading: Icon(
-                selected ? LucideIcons.checkCircle2 : LucideIcons.circle,
-                color: selected ? accent : AppTheme.textTertiary,
-                size: 20,
-              ),
-              title: Text(
-                labelFor(mode),
-                style: TextStyle(
-                  fontSize: 15,
-                  color: selected ? accent : AppTheme.textPrimary,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+      builder: (_) => SafeArea(
+        top: false,
+        child: Container(
+          decoration: const BoxDecoration(
+            color: AppTheme.surfaceDark,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 拖拽把手（与 SheetShell 一致）
+              Padding(
+                padding: const EdgeInsets.only(top: 10, bottom: 6),
+                child: Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppTheme.textTertiary.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
                 ),
               ),
-              dense: true,
-              onTap: () => Navigator.of(context).pop(mode),
-            );
-          }).toList(),
+              // 标题行（左对齐，与 SheetShell 一致）
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Text(
+                  l10n.language,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+              ),
+              const Divider(height: 1, color: AppTheme.textTertiary),
+              // 选项列表：内容过多时内部滚动，否则自适应高度
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(top: 8, bottom: 32),
+                  children: _options.map((mode) {
+                    final selected = localeMode == mode;
+                    return ListTile(
+                      leading: Icon(
+                        selected ? LucideIcons.checkCircle2 : LucideIcons.circle,
+                        color: selected ? accent : AppTheme.textTertiary,
+                        size: 20,
+                      ),
+                      title: Text(
+                        labelFor(mode),
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: selected ? accent : AppTheme.textPrimary,
+                          fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                        ),
+                      ),
+                      dense: true,
+                      onTap: () => Navigator.of(context).pop(mode),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     ).then((mode) {
