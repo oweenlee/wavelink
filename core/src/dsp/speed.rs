@@ -49,7 +49,9 @@ impl SpeedChanger {
     }
 
     /// 获取当前速度
-    pub fn speed(&self) -> f32 { self.speed }
+    pub fn speed(&self) -> f32 {
+        self.speed
+    }
 
     /// 确保重采样器已创建（延迟初始化，需要知道声道数）
     fn ensure_resampler(&mut self, channels: usize) {
@@ -67,9 +69,7 @@ impl SpeedChanger {
             oversampling_factor: 256,
             window: WindowFunction::BlackmanHarris2,
         };
-        self.resampler = Some(
-            SincFixedOut::<f64>::new(ratio, params, 1024, channels)
-        );
+        self.resampler = Some(SincFixedOut::<f64>::new(ratio, params, 1024, channels));
         self.accum = vec![Vec::new(); channels];
     }
 
@@ -80,7 +80,10 @@ impl SpeedChanger {
         }
 
         self.ensure_resampler(channels);
-        let resampler = self.resampler.as_mut().unwrap();
+        // ensure_resampler 保证此处为 Some；let-else 兜底，避免未来改动引入 panic 点
+        let Some(resampler) = self.resampler.as_mut() else {
+            return input;
+        };
         self.output.clear();
 
         // 解交错 → 累积到 per-channel 缓冲
@@ -97,7 +100,9 @@ impl SpeedChanger {
             if self.accum[0].len() < needed {
                 break;
             }
-            let waves_in: Vec<Vec<f64>> = self.accum.iter_mut()
+            let waves_in: Vec<Vec<f64>> = self
+                .accum
+                .iter_mut()
                 .map(|buf| buf.drain(..needed).collect())
                 .collect();
             match resampler.process(&waves_in) {
@@ -146,7 +151,12 @@ mod tests {
             total_out += out.len();
         }
         assert!(total_out > 0, "应有输出");
-        assert!(total_out < input.len(), "speed=2.0 输出应更短: {} < {}", total_out, input.len());
+        assert!(
+            total_out < input.len(),
+            "speed=2.0 输出应更短: {} < {}",
+            total_out,
+            input.len()
+        );
     }
 
     #[test]
@@ -159,7 +169,12 @@ mod tests {
             let out = s.process(chunk, 2);
             total_out += out.len();
         }
-        assert!(total_out > input.len(), "speed=0.5 输出应更长: {} > {}", total_out, input.len());
+        assert!(
+            total_out > input.len(),
+            "speed=0.5 输出应更长: {} > {}",
+            total_out,
+            input.len()
+        );
     }
 
     #[test]
@@ -203,7 +218,11 @@ mod tests {
             all_out.extend_from_slice(s.process(chunk, 2));
         }
         // 输出应非空且长度约为输入的一半
-        assert!(all_out.len() > input.len() / 4, "输出过短: {}", all_out.len());
+        assert!(
+            all_out.len() > input.len() / 4,
+            "输出过短: {}",
+            all_out.len()
+        );
         assert!(all_out.len() < input.len(), "2x 变速输出应更短");
         // 输出样本应在合理范围内（无 NaN/Inf）
         for &v in &all_out {

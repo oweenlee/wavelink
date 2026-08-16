@@ -115,12 +115,19 @@ pub fn parse_rew_txt(text: &str) -> Result<Vec<FreqPoint>, String> {
             Ok(v) if v.is_finite() => v,
             _ => continue,
         };
-        points.push(FreqPoint { freq, level_db: level });
+        points.push(FreqPoint {
+            freq,
+            level_db: level,
+        });
     }
     if points.len() < 2 {
         return Err("REW 数据点不足（至少 2 个有效点）".into());
     }
-    points.sort_by(|a, b| a.freq.partial_cmp(&b.freq).unwrap_or(std::cmp::Ordering::Equal));
+    points.sort_by(|a, b| {
+        a.freq
+            .partial_cmp(&b.freq)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     points.dedup_by(|a, b| a.freq == b.freq);
     if points.len() < 2 {
         return Err("REW 去重后数据点不足".into());
@@ -229,7 +236,12 @@ fn correction_curve(freqs: &[f32], measured: &[f32], cfg: &CorrectionConfig) -> 
 ///
 /// 频谱加 (N-1)/2 样本的线性相位项，IFFT 后冲激响应居中于 N/2，
 /// 再施加 Hann 窗控制截断旁瓣。
-fn design_fir(freqs: &[f32], corr_db: &[f32], taps: usize, sample_rate: u32) -> Result<Vec<f32>, String> {
+fn design_fir(
+    freqs: &[f32],
+    corr_db: &[f32],
+    taps: usize,
+    sample_rate: u32,
+) -> Result<Vec<f32>, String> {
     if !(64..=65536).contains(&taps) || !taps.is_multiple_of(2) {
         return Err(format!("taps 需为 64..=65536 的偶数，当前 {taps}"));
     }
@@ -367,11 +379,16 @@ pub fn export_ir_wav(ir: &[f32], sample_rate: u32, path: &str) -> Result<(), Str
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
     };
-    let mut writer = hound::WavWriter::create(path, spec).map_err(|e| format!("创建 WAV 失败: {e}"))?;
+    let mut writer =
+        hound::WavWriter::create(path, spec).map_err(|e| format!("创建 WAV 失败: {e}"))?;
     for &s in ir {
-        writer.write_sample(s).map_err(|e| format!("写入 WAV 失败: {e}"))?;
+        writer
+            .write_sample(s)
+            .map_err(|e| format!("写入 WAV 失败: {e}"))?;
     }
-    writer.finalize().map_err(|e| format!("收尾 WAV 失败: {e}"))?;
+    writer
+        .finalize()
+        .map_err(|e| format!("收尾 WAV 失败: {e}"))?;
     Ok(())
 }
 
@@ -389,7 +406,9 @@ pub fn resample_ir(ir: &[f32], src_rate: u32, dst_rate: u32) -> Result<Vec<f32>,
     if (src_rate as i64 - dst_rate as i64).abs() <= 1 {
         return Ok(ir.to_vec());
     }
-    use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedOut, WindowFunction};
+    use rubato::{
+        InterpolationParameters, InterpolationType, Resampler, SincFixedOut, WindowFunction,
+    };
     let params = InterpolationParameters {
         sinc_len: 256,
         f_cutoff: 0.95,
@@ -397,7 +416,8 @@ pub fn resample_ir(ir: &[f32], src_rate: u32, dst_rate: u32) -> Result<Vec<f32>,
         oversampling_factor: 256,
         window: WindowFunction::BlackmanHarris2,
     };
-    let mut resampler = SincFixedOut::<f64>::new(dst_rate as f64 / src_rate as f64, params, 1024, 1);
+    let mut resampler =
+        SincFixedOut::<f64>::new(dst_rate as f64 / src_rate as f64, params, 1024, 1);
     let input: Vec<f64> = ir.iter().map(|&s| s as f64).collect();
     let mut out: Vec<f64> = Vec::new();
     let mut buf = [input];
@@ -518,8 +538,16 @@ mod tests {
         // 冲激响应能量集中在中心
         let center = cfg.taps / 2;
         let total_e: f32 = report.ir.iter().map(|s| s * s).sum();
-        let center_e: f32 = report.ir[center - 32..center + 32].iter().map(|s| s * s).sum();
-        assert!(center_e / total_e > 0.95, "能量应集中于中心: {}/{}", center_e, total_e);
+        let center_e: f32 = report.ir[center - 32..center + 32]
+            .iter()
+            .map(|s| s * s)
+            .sum();
+        assert!(
+            center_e / total_e > 0.95,
+            "能量应集中于中心: {}/{}",
+            center_e,
+            total_e
+        );
     }
 
     // ── 校正效果：峰被压平，null 受限幅保护 ──
@@ -539,7 +567,10 @@ mod tests {
 
         // 300Hz null：补偿不超过 null_limit_db (3dB)，且确实有提升
         let mag300 = fir_magnitude_db(&report.ir, 300.0, 44100.0) - offset;
-        assert!(mag300 <= cfg.null_limit_db + 0.5, "null 补偿应受限: {mag300}dB");
+        assert!(
+            mag300 <= cfg.null_limit_db + 0.5,
+            "null 补偿应受限: {mag300}dB"
+        );
         assert!(mag300 > 1.0, "null 处应有受限提升: {mag300}dB");
 
         // 1kHz 参考点：无偏差 → 校正增益 ≈ 0
@@ -585,7 +616,10 @@ mod tests {
         let report = generate_correction(&synth_rew(&[]), &cfg, 44100).unwrap();
         let peak = report.ir.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
         let expected = 10f32.powf(-cfg.headroom_db / 20.0);
-        assert!((peak - expected).abs() < 1e-4, "峰值应归一化到 headroom: {peak} vs {expected}");
+        assert!(
+            (peak - expected).abs() < 1e-4,
+            "峰值应归一化到 headroom: {peak} vs {expected}"
+        );
     }
 
     // ── WAV 导出往返 ──
@@ -623,7 +657,10 @@ mod tests {
         let resampled = resample_ir(&r48.ir, 48000, 44100).unwrap();
         // 长度比例应接近采样率比例
         let ratio = resampled.len() as f32 / r48.ir.len() as f32;
-        assert!((ratio - 44100.0 / 48000.0).abs() < 0.02, "长度比例异常: {ratio}");
+        assert!(
+            (ratio - 44100.0 / 48000.0).abs() < 0.02,
+            "长度比例异常: {ratio}"
+        );
 
         // 重采样保持绝对幅度不变，直接比较原始幅值（不做峰值归一：
         // sinc 插值可能在样本间产生合法过冲，峰值不是稳定参考系）

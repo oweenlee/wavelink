@@ -42,7 +42,9 @@ fn measure_amplitude_at(samples: &[f32], freq: f32, sample_rate: u32) -> f32 {
     let mut max_mag = 0.0f32;
     for o in &output[start..end] {
         let mag = o.norm();
-        if mag > max_mag { max_mag = mag; }
+        if mag > max_mag {
+            max_mag = mag;
+        }
     }
     // Hann 窗补偿：相干增益 0.5，单边谱 ×2
     // amplitude = |X[k]| / (N/2) / coherent_gain = |X[k]| * 4 / N
@@ -63,14 +65,23 @@ fn true_peak(samples: &[f32]) -> f32 {
         for i in 0..4 {
             let t = i as f32 / 4.0;
             let v = w[0] + (w[1] - w[0]) * t;
-            if v.abs() > max { max = v.abs(); }
+            if v.abs() > max {
+                max = v.abs();
+            }
         }
     }
     max
 }
 
 /// 生成立体声正弦波 WAV
-fn generate_sine_wav(path: &str, freq: f32, amplitude: f32, sample_rate: u32, channels: u16, duration_secs: f64) {
+fn generate_sine_wav(
+    path: &str,
+    freq: f32,
+    amplitude: f32,
+    sample_rate: u32,
+    channels: u16,
+    duration_secs: f64,
+) {
     let _ = std::fs::remove_file(path);
     let spec = hound::WavSpec {
         channels,
@@ -225,7 +236,12 @@ fn test_full_chain_peq_gain() {
     let amp_before = measure_amplitude_at(&left, 1000.0, 44100);
 
     // 过 PEQ：1kHz +6dB
-    let bands = vec![PeqBand { freq: 1000.0, gain_db: 6.0, q: 1.0, ..Default::default() }];
+    let bands = vec![PeqBand {
+        freq: 1000.0,
+        gain_db: 6.0,
+        q: 1.0,
+        ..Default::default()
+    }];
     let mut dsp = DspPipeline::new(44100, 2, &bands, false, 1.0, 24);
     let mut buf = samples.clone();
     // 分帧处理（模拟实际 consumer 行为）
@@ -249,7 +265,12 @@ fn test_full_chain_peq_cut() {
     generate_sine_wav(path, 1000.0, 0.5, 44100, 2, 1.0);
     let samples = decode(path, 44100);
 
-    let bands = vec![PeqBand { freq: 1000.0, gain_db: -12.0, q: 1.0, ..Default::default() }];
+    let bands = vec![PeqBand {
+        freq: 1000.0,
+        gain_db: -12.0,
+        q: 1.0,
+        ..Default::default()
+    }];
     let mut dsp = DspPipeline::new(44100, 2, &bands, false, 1.0, 24);
     let mut buf = samples.clone();
     for chunk in buf.chunks_mut(4096) {
@@ -260,14 +281,8 @@ fn test_full_chain_peq_cut() {
     let amp = measure_amplitude_at(&left, 1000.0, 44100);
 
     // 0.5 * 10^(-12/20) = 0.5 * 0.251 = 0.126
-    assert!(
-        amp < 0.2,
-        "PEQ -12dB 后 1kHz 应大幅衰减: 实测 {amp}"
-    );
-    assert!(
-        amp > 0.05,
-        "PEQ -12dB 后 1kHz 不应完全消失: 实测 {amp}"
-    );
+    assert!(amp < 0.2, "PEQ -12dB 后 1kHz 应大幅衰减: 实测 {amp}");
+    assert!(amp > 0.05, "PEQ -12dB 后 1kHz 不应完全消失: 实测 {amp}");
 }
 
 /// 满刻度信号经全管线（31段PEQ + crossfeed + limiter + dither）不削波
@@ -285,10 +300,7 @@ fn test_full_chain_no_clipping() {
     }
 
     let tp = true_peak(&buf);
-    assert!(
-        tp <= 1.0 + 0.001,
-        "全管线输出真峰值超限: {tp}"
-    );
+    assert!(tp <= 1.0 + 0.001, "全管线输出真峰值超限: {tp}");
 }
 
 /// WAV 和 FLAC 解码同一信号，结果应高度一致
@@ -328,10 +340,14 @@ fn test_seek_pts_accuracy() {
 
     let seek_target = 1.5; // 秒
     let (rx, _dec) = Decoder::start(
-        Path::new(path), 44100, 2,
+        Path::new(path),
+        44100,
+        2,
         Arc::new(AtomicU64::new(0)),
-        Some(seek_target), None,
-    ).unwrap();
+        Some(seek_target),
+        None,
+    )
+    .unwrap();
 
     let mut first_pts = None;
     let mut total = 0usize;
@@ -340,7 +356,9 @@ fn test_seek_pts_accuracy() {
             first_pts = Some(f.pts_secs);
         }
         total += f.samples.len();
-        if total > 44100 * 2 { break; } // 收够 1 秒
+        if total > 44100 * 2 {
+            break;
+        } // 收够 1 秒
     }
 
     let pts = first_pts.expect("应收到至少一帧");
@@ -364,7 +382,9 @@ fn test_mono_to_stereo_duplication() {
     for chunk in samples.chunks(2) {
         if chunk.len() == 2 {
             let diff = (chunk[0] - chunk[1]).abs();
-            if diff > max_diff { max_diff = diff; }
+            if diff > max_diff {
+                max_diff = diff;
+            }
         }
     }
     assert!(
@@ -382,10 +402,7 @@ fn test_silence_decodes_to_near_zero() {
     assert!(samples.len() > 1000, "解码样本不足");
 
     let r = rms(&samples);
-    assert!(
-        r < 0.001,
-        "静音文件 RMS 应接近零: {r}"
-    );
+    assert!(r < 0.001, "静音文件 RMS 应接近零: {r}");
 }
 
 /// 不同频率正弦波的解码幅度一致性（频响平坦度）

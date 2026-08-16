@@ -38,7 +38,12 @@ impl ConvolutionEq {
     ///   （不匹配会导致频响静默错位，对房间校正类 IR 是致命的）
     ///
     /// 自动处理 Mono/Stereo IR：Mono IR 应用于所有声道，Stereo IR 逐声道匹配。
-    pub fn load_wav(&mut self, path: &str, block_size: usize, expected_sample_rate: u32) -> Result<(), String> {
+    pub fn load_wav(
+        &mut self,
+        path: &str,
+        block_size: usize,
+        expected_sample_rate: u32,
+    ) -> Result<(), String> {
         let mut reader = hound::WavReader::open(path).map_err(|e| format!("打开 IR 失败: {e}"))?;
         let spec = reader.spec();
 
@@ -62,11 +67,17 @@ impl ConvolutionEq {
 
         // IR 采样率与管线不一致 → 逐声道离线重采样（单声道 IR 只重采一次）
         let ir_channels = spec.channels as usize;
-        if expected_sample_rate > 0 && (spec.sample_rate as i64 - expected_sample_rate as i64).abs() > 1 {
+        if expected_sample_rate > 0
+            && (spec.sample_rate as i64 - expected_sample_rate as i64).abs() > 1
+        {
             let mut resampled = Vec::new();
             for ch in 0..ir_channels {
                 let ch_data: Vec<f32> = raw.iter().skip(ch).step_by(ir_channels).copied().collect();
-                let rs = crate::dsp::room_correction::resample_ir(&ch_data, spec.sample_rate, expected_sample_rate)?;
+                let rs = crate::dsp::room_correction::resample_ir(
+                    &ch_data,
+                    spec.sample_rate,
+                    expected_sample_rate,
+                )?;
                 resampled.push(rs);
             }
             // 重新交错（各声道重采样后长度可能差 1~2 样本，取最短对齐）
@@ -128,7 +139,10 @@ impl ConvolutionEq {
             self.work_in.extend(buf.iter().skip(c).step_by(ch).copied());
             self.work_out.clear();
             self.work_out.resize(frames, 0.0);
-            if self.convolvers[c].process(&self.work_in, &mut self.work_out).is_ok() {
+            if self.convolvers[c]
+                .process(&self.work_in, &mut self.work_out)
+                .is_ok()
+            {
                 for (i, &v) in self.work_out.iter().enumerate() {
                     buf[c + i * ch] = v;
                 }
@@ -160,7 +174,9 @@ mod tests {
 
     /// 生成单声道 32-bit float WAV
     fn write_ir_wav(path: &str, samples: &[f32]) {
-        if Path::new(path).exists() { return; }
+        if Path::new(path).exists() {
+            return;
+        }
         let spec = hound::WavSpec {
             channels: 1,
             sample_rate: 44100,
@@ -168,7 +184,9 @@ mod tests {
             sample_format: hound::SampleFormat::Float,
         };
         let mut w = hound::WavWriter::create(path, spec).unwrap();
-        for &s in samples { w.write_sample(s).unwrap(); }
+        for &s in samples {
+            w.write_sample(s).unwrap();
+        }
         w.finalize().unwrap();
     }
 
@@ -204,10 +222,22 @@ mod tests {
         conv.process(&mut buf);
 
         // 卷积结果应等于输入（IR 是单位冲激）
-        assert!((buf[0] - 3.14).abs() < 1e-6, "index 0: expected 3.14, got {}", buf[0]);
-        assert!((buf[2] - (-2.71)).abs() < 1e-6, "index 2: expected -2.71, got {}", buf[2]);
+        assert!(
+            (buf[0] - 3.14).abs() < 1e-6,
+            "index 0: expected 3.14, got {}",
+            buf[0]
+        );
+        assert!(
+            (buf[2] - (-2.71)).abs() < 1e-6,
+            "index 2: expected -2.71, got {}",
+            buf[2]
+        );
         for i in ir.len()..buf.len() {
-            assert!(buf[i].abs() < 1e-6, "index {i}: expected ~0, got {}", buf[i]);
+            assert!(
+                buf[i].abs() < 1e-6,
+                "index {i}: expected ~0, got {}",
+                buf[i]
+            );
         }
 
         std::fs::remove_file(path).ok();
@@ -231,8 +261,16 @@ mod tests {
             // Mono IR 应同时应用到两个声道
             let diff_l = (buf[i * 2] - 0.25).abs();
             let diff_r = (buf[i * 2 + 1] - 0.125).abs();
-            assert!(diff_l < 1e-4, "L index {i}: expected 0.25, got {}", buf[i * 2]);
-            assert!(diff_r < 1e-4, "R index {i}: expected 0.125, got {}", buf[i * 2 + 1]);
+            assert!(
+                diff_l < 1e-4,
+                "L index {i}: expected 0.25, got {}",
+                buf[i * 2]
+            );
+            assert!(
+                diff_r < 1e-4,
+                "R index {i}: expected 0.125, got {}",
+                buf[i * 2 + 1]
+            );
         }
 
         std::fs::remove_file(path).ok();
@@ -251,7 +289,9 @@ mod tests {
         let mut ir = vec![0.0f32; 1600];
         ir[0] = 1.0;
         let mut w = hound::WavWriter::create(path, spec).unwrap();
-        for &s in &ir { w.write_sample(s).unwrap(); }
+        for &s in &ir {
+            w.write_sample(s).unwrap();
+        }
         w.finalize().unwrap();
 
         let mut conv = ConvolutionEq::new(1);
@@ -272,7 +312,11 @@ mod tests {
         let mut conv = ConvolutionEq::new(2);
         assert_eq!(conv.latency_samples(), 0, "未加载 IR 时延迟应为 0");
         conv.load_wav(path, 256, 44100).unwrap();
-        assert_eq!(conv.latency_samples(), 100, "延迟应等于自适应 block_size(100)");
+        assert_eq!(
+            conv.latency_samples(),
+            100,
+            "延迟应等于自适应 block_size(100)"
+        );
 
         std::fs::remove_file(path).ok();
     }

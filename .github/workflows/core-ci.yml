@@ -38,6 +38,26 @@ jobs:
       - name: Cargo test
         run: cargo test -p audio-core --manifest-path core/Cargo.toml
 
+  # 无后端（headless）构建：验证 core 在无 cpal/coreaudio-sys 等任何音频后端时
+  # 仍能独立编译与链接。曾出现 macOS 上 raw CoreAudio FFI 未声明框架链接、
+  # 依赖 cpal 顺带链接才不报错的隐性 bug（--no-default-features 必现 undefined symbols），
+  # 默认 feature 的 CI 抓不到，故单独设此作业。
+  #
+  # 只测 --lib：链接 lib test 可执行文件即足以捕获上述 undefined symbols；
+  # 集成测试（tests/）里的自动切歌用例依赖真实输出设备消费 ringbuf，
+  # headless 下无回调拉取会必然超时，不属于 headless 场景。
+  headless:
+    name: Headless (no backend)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test lib with --no-default-features
+        run: cargo test -p audio-core --no-default-features --lib --manifest-path core/Cargo.toml
+
   platform:
     name: Platform backends
     strategy:

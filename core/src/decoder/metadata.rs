@@ -13,7 +13,6 @@ use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 
-
 /// 音频文件元数据
 pub struct Metadata {
     /// 曲名
@@ -58,14 +57,24 @@ pub fn read_metadata(path: &Path) -> Result<Metadata, String> {
         let duration_secs = tagged_file.properties().duration().as_secs_f64();
 
         let mut meta = Metadata {
-            title: None, artist: None, album: None,
-            genre: None, year: None,
-            track_number: None, disc_number: None,
-            duration_secs, has_cover: false, lyrics: None,
-            sample_rate: None, channels: None,
+            title: None,
+            artist: None,
+            album: None,
+            genre: None,
+            year: None,
+            track_number: None,
+            disc_number: None,
+            duration_secs,
+            has_cover: false,
+            lyrics: None,
+            sample_rate: None,
+            channels: None,
         };
 
-        if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+        if let Some(tag) = tagged_file
+            .primary_tag()
+            .or_else(|| tagged_file.first_tag())
+        {
             meta.title = tag.title().map(|s| s.to_string());
             meta.artist = tag.artist().map(|s| s.to_string());
             meta.album = tag.album().map(|s| s.to_string());
@@ -87,11 +96,18 @@ pub fn read_metadata(path: &Path) -> Result<Metadata, String> {
     let duration_secs = probe_duration_secs(path).unwrap_or(0.0);
 
     Ok(Metadata {
-        title: None, artist: None, album: None,
-        genre: None, year: None,
-        track_number: None, disc_number: None,
-        duration_secs, has_cover: false, lyrics: None,
-        sample_rate: None, channels: None,
+        title: None,
+        artist: None,
+        album: None,
+        genre: None,
+        year: None,
+        track_number: None,
+        disc_number: None,
+        duration_secs,
+        has_cover: false,
+        lyrics: None,
+        sample_rate: None,
+        channels: None,
     })
 }
 
@@ -104,7 +120,12 @@ fn open_symphonia_format(path: &Path) -> Option<Box<dyn symphonia::core::formats
         hint.with_extension(ext);
     }
     symphonia::default::get_probe()
-        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+        .probe(
+            &hint,
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
         .ok()
 }
 
@@ -117,14 +138,22 @@ pub fn probe_duration_secs(path: &Path) -> Option<f64> {
         }
     }
     let format = open_symphonia_format(path)?;
-    format.tracks().iter()
-        .find(|t| matches!(&t.codec_params, Some(symphonia::core::codecs::CodecParameters::Audio(p))
-            if p.codec != symphonia::core::codecs::audio::CODEC_ID_NULL_AUDIO))
+    format
+        .tracks()
+        .iter()
+        .find(|t| {
+            matches!(&t.codec_params, Some(symphonia::core::codecs::CodecParameters::Audio(p))
+            if p.codec != symphonia::core::codecs::audio::CODEC_ID_NULL_AUDIO)
+        })
         .and_then(|t| {
             let frames = t.num_frames?;
             let tb = t.time_base?;
             let secs = frames as f64 * tb.numer.get() as f64 / tb.denom.get() as f64;
-            if secs > 0.0 { Some(secs) } else { None }
+            if secs > 0.0 {
+                Some(secs)
+            } else {
+                None
+            }
         })
 }
 
@@ -133,7 +162,10 @@ pub fn probe_duration_secs(path: &Path) -> Option<f64> {
 pub fn read_cover(path: &Path) -> Result<Vec<u8>, String> {
     // 先用 lofty 读音频 + MP4 封面
     if let Ok(tagged_file) = read_from_path(path) {
-        if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+        if let Some(tag) = tagged_file
+            .primary_tag()
+            .or_else(|| tagged_file.first_tag())
+        {
             if let Some(pic) = tag.pictures().first() {
                 let data = pic.data();
                 if !data.is_empty() {
@@ -145,18 +177,21 @@ pub fn read_cover(path: &Path) -> Result<Vec<u8>, String> {
 
     // MKV/WebM 回退：从附件中找封面
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        if ext.eq_ignore_ascii_case("mkv") || ext.eq_ignore_ascii_case("webm") || ext.eq_ignore_ascii_case("mka") {
+        if ext.eq_ignore_ascii_case("mkv")
+            || ext.eq_ignore_ascii_case("webm")
+            || ext.eq_ignore_ascii_case("mka")
+        {
             if let Ok(mkv) = matroska::open(path) {
                 for att in &mkv.attachments {
                     let name = att.name.to_lowercase();
                     if (name.starts_with("cover") || name.contains("cover"))
                         && !att.data.is_empty()
-                            && (att.mime_type == "image/jpeg"
-                                || att.mime_type == "image/png"
-                                || att.mime_type == "image/webp")
-                        {
-                            return Ok(att.data.clone());
-                        }
+                        && (att.mime_type == "image/jpeg"
+                            || att.mime_type == "image/png"
+                            || att.mime_type == "image/webp")
+                    {
+                        return Ok(att.data.clone());
+                    }
                 }
                 // 没有命名规范匹配的，按魔数返回第一个图片附件
                 for att in &mkv.attachments {
@@ -164,7 +199,8 @@ pub fn read_cover(path: &Path) -> Result<Vec<u8>, String> {
                     if d.len() >= 4
                         && ((d[0] == 0xFF && d[1] == 0xD8)      // JPEG
                             || d[0..4] == [0x89, 0x50, 0x4E, 0x47] // PNG
-                            || (d.len() >= 12 && d[0..4] == [0x52, 0x49, 0x46, 0x46] && d[8..12] == [0x57, 0x45, 0x42, 0x50])) // RIFF+WEBP
+                            || (d.len() >= 12 && d[0..4] == [0x52, 0x49, 0x46, 0x46] && d[8..12] == [0x57, 0x45, 0x42, 0x50]))
+                    // RIFF+WEBP
                     {
                         return Ok(d.clone());
                     }
@@ -191,12 +227,19 @@ pub struct ReplayGain {
 
 /// 从音频文件读取 ReplayGain 标签（REPLAYGAIN_TRACK/ALBUM_GAIN/PEAK）
 pub fn read_replaygain(path: &Path) -> Result<ReplayGain, String> {
-    let tagged_file = read_from_path(path)
-        .map_err(|e| format!("无法读取 ReplayGain: {e}"))?;
+    let tagged_file = read_from_path(path).map_err(|e| format!("无法读取 ReplayGain: {e}"))?;
 
-    let mut rg = ReplayGain { track_gain_db: None, album_gain_db: None, track_peak: None, album_peak: None };
+    let mut rg = ReplayGain {
+        track_gain_db: None,
+        album_gain_db: None,
+        track_peak: None,
+        album_peak: None,
+    };
 
-    if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+    if let Some(tag) = tagged_file
+        .primary_tag()
+        .or_else(|| tagged_file.first_tag())
+    {
         // 从 ItemKey 获取 ReplayGain 值（lofty 自动映射 ID3v2 TXXX / Vorbis / MP4）
         if let Some(val) = tag.get_string(lofty::tag::ItemKey::ReplayGainTrackGain) {
             rg.track_gain_db = parse_replaygain_str(val);
@@ -233,7 +276,9 @@ pub fn probe_sample_rate(path: &Path) -> Option<u32> {
     for track in format.tracks() {
         if let Some(symphonia::core::codecs::CodecParameters::Audio(audio)) = &track.codec_params {
             let rate = audio.sample_rate.unwrap_or(44100);
-            if rate > 0 { return Some(rate); }
+            if rate > 0 {
+                return Some(rate);
+            }
         }
     }
     None
@@ -263,7 +308,9 @@ pub fn probe_bit_depth(path: &Path) -> Option<u16> {
     for track in format.tracks() {
         if let Some(symphonia::core::codecs::CodecParameters::Audio(audio)) = &track.codec_params {
             let bits = audio.bits_per_sample.unwrap_or(16);
-            if bits > 0 { return Some(bits as u16); }
+            if bits > 0 {
+                return Some(bits as u16);
+            }
         }
     }
     None

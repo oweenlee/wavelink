@@ -41,7 +41,12 @@ fn main() {
 
                 eprintln!(
                     "[{}] 首帧 {:?}, 样本 {}, 输出 {:.0}s, 耗时 {:.2}s, 速度 {:.1}x",
-                    name, first_frame, total, output_secs, elapsed.as_secs_f64(), speed
+                    name,
+                    first_frame,
+                    total,
+                    output_secs,
+                    elapsed.as_secs_f64(),
+                    speed
                 );
             }
             Err(e) => {

@@ -41,12 +41,10 @@ fn write_constant_wav(path: &str, value: f32, frame_count: usize) {
 fn capture_chained_output(track1: &str, track2: &str) -> Vec<f32> {
     let pos1 = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let pos2 = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let (rx1, _dec1) =
-        Decoder::start(std::path::Path::new(track1), 44100, 2, pos1, None, None)
-            .expect("decoder1 启动失败");
-    let (rx2, _dec2) =
-        Decoder::start(std::path::Path::new(track2), 44100, 2, pos2, None, None)
-            .expect("decoder2 启动失败");
+    let (rx1, _dec1) = Decoder::start(std::path::Path::new(track1), 44100, 2, pos1, None, None)
+        .expect("decoder1 启动失败");
+    let (rx2, _dec2) = Decoder::start(std::path::Path::new(track2), 44100, 2, pos2, None, None)
+        .expect("decoder2 启动失败");
 
     // 预加载的第二首 rx（模拟 engine 的 preload_next），on_end_of_track 取一次
     let next_rx = Arc::new(Mutex::new(Some(rx2)));
@@ -91,7 +89,9 @@ fn capture_chained_output(track1: &str, track2: &str) -> Vec<f32> {
         drop(_dec2);
     });
 
-    ready_rx.recv_timeout(Duration::from_secs(5)).expect("consumer 应就绪");
+    ready_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("consumer 应就绪");
     handle.join().expect("consumer 线程不应 panic");
 
     let out = captured.lock().clone();
@@ -146,8 +146,14 @@ fn gapless_junction_is_sample_accurate() {
     // ④ 两段内部电平稳定（无错位/串扰）
     let t1_mean: f32 = out[..junction].iter().sum::<f32>() / junction as f32;
     let t2_mean: f32 = out[junction..].iter().sum::<f32>() / (out.len() - junction) as f32;
-    assert!((t1_mean - 0.25).abs() < 0.001, "track1 段均值应 ≈ +0.25，实际 {t1_mean}");
-    assert!((t2_mean + 0.25).abs() < 0.001, "track2 段均值应 ≈ -0.25，实际 {t2_mean}");
+    assert!(
+        (t1_mean - 0.25).abs() < 0.001,
+        "track1 段均值应 ≈ +0.25，实际 {t1_mean}"
+    );
+    assert!(
+        (t2_mean + 0.25).abs() < 0.001,
+        "track2 段均值应 ≈ -0.25，实际 {t2_mean}"
+    );
 
     let _ = std::fs::remove_file(&t1);
     let _ = std::fs::remove_file(&t2);
@@ -171,9 +177,12 @@ fn gapless_three_track_chain() {
 
     // 链接 A→B→C：用队列依次提供后续 rx
     let pos = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let (rx_a, _da) = Decoder::start(std::path::Path::new(&ta), 44100, 2, pos.clone(), None, None).unwrap();
-    let (rx_b, _db) = Decoder::start(std::path::Path::new(&tb), 44100, 2, pos.clone(), None, None).unwrap();
-    let (rx_c, _dc) = Decoder::start(std::path::Path::new(&tc), 44100, 2, pos.clone(), None, None).unwrap();
+    let (rx_a, _da) =
+        Decoder::start(std::path::Path::new(&ta), 44100, 2, pos.clone(), None, None).unwrap();
+    let (rx_b, _db) =
+        Decoder::start(std::path::Path::new(&tb), 44100, 2, pos.clone(), None, None).unwrap();
+    let (rx_c, _dc) =
+        Decoder::start(std::path::Path::new(&tc), 44100, 2, pos.clone(), None, None).unwrap();
 
     let queue = Arc::new(Mutex::new(vec![rx_b, rx_c]));
     let q = queue.clone();
@@ -204,7 +213,11 @@ fn gapless_three_track_chain() {
             on_samples_output: &|_| {},
             on_end_of_track: &|| {
                 let mut g = q.lock();
-                if g.is_empty() { None } else { Some(g.remove(0)) }
+                if g.is_empty() {
+                    None
+                } else {
+                    Some(g.remove(0))
+                }
             },
         };
         let ctrl = ConsumerControl {
@@ -216,12 +229,19 @@ fn gapless_three_track_chain() {
         drop((_da, _db, _dc));
     });
 
-    ready_rx.recv_timeout(Duration::from_secs(5)).expect("consumer 应就绪");
+    ready_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("consumer 应就绪");
     handle.join().expect("consumer 线程不应 panic");
 
     let out = captured.lock().clone();
     let expected = (NA + NB + NC) * 2;
-    assert_eq!(out.len(), expected, "三首链接总样本数应精确：期望 {expected}，实际 {}", out.len());
+    assert_eq!(
+        out.len(),
+        expected,
+        "三首链接总样本数应精确：期望 {expected}，实际 {}",
+        out.len()
+    );
 
     // 各段均值正确（验证无错位/串扰）
     let ja = NA * 2;

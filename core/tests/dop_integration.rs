@@ -83,8 +83,8 @@ fn start_dop_produces_valid_dop_stream() {
     make_dsf(&path, 0x69, 0x96, 8192);
 
     let pos = Arc::new(AtomicU64::new(0));
-    let (rx, _dec) = Decoder::start_dop(&path, false, 2, pos, None, None)
-        .expect("start_dop 应成功");
+    let (rx, _dec) =
+        Decoder::start_dop(&path, false, 2, pos, None, None).expect("start_dop 应成功");
 
     let mut all: Vec<f32> = Vec::new();
     let mut frame_rate = 0u32;
@@ -161,7 +161,11 @@ fn start_dop_left_justify_mode() {
     assert!(!all.is_empty());
 
     // 左对齐：还原 i32 后高 24 位应为 DoP 字
-    let decode_i32 = |s: f32| (s * 2_147_483_648.0).round().clamp(-2_147_483_648.0, 2_147_483_647.0) as i32;
+    let decode_i32 = |s: f32| {
+        (s * 2_147_483_648.0)
+            .round()
+            .clamp(-2_147_483_648.0, 2_147_483_647.0) as i32
+    };
     let first = decode_i32(all[0]);
     let word = se24(0x056969);
     assert_eq!(first, word << 8, "左对齐首样本应为 DoP 字 << 8");

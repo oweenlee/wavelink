@@ -137,8 +137,18 @@ mod tests {
             assert!(!p.filters.is_empty(), "{} 应有滤波器", p.name);
             assert!(p.filters.len() <= 31, "{} 滤波器数超出 PEQ 槽位", p.name);
             for f in p.filters {
-                assert!(f.freq > 0.0 && f.freq <= 22000.0, "{} 频率异常: {}", p.name, f.freq);
-                assert!(f.gain_db.abs() <= 20.0, "{} 增益异常: {}", p.name, f.gain_db);
+                assert!(
+                    f.freq > 0.0 && f.freq <= 22000.0,
+                    "{} 频率异常: {}",
+                    p.name,
+                    f.freq
+                );
+                assert!(
+                    f.gain_db.abs() <= 20.0,
+                    "{} 增益异常: {}",
+                    p.name,
+                    f.gain_db
+                );
                 assert!(f.q > 0.0 && f.q <= 20.0, "{} Q 异常: {}", p.name, f.q);
             }
         }
@@ -160,7 +170,12 @@ mod tests {
     fn preamp_is_negative_or_zero() {
         // AutoEq 的 preamp 用于防削峰，几乎总是负值
         for p in catalog() {
-            assert!(p.preamp_db <= 0.5, "{} preamp 异常: {}", p.name, p.preamp_db);
+            assert!(
+                p.preamp_db <= 0.5,
+                "{} preamp 异常: {}",
+                p.name,
+                p.preamp_db
+            );
         }
     }
 }

@@ -13,8 +13,11 @@ use audio_core::decoder::Decoder;
 fn decode_expect_err(path: &str) -> bool {
     let result = Decoder::start(
         std::path::Path::new(path),
-        44100, 2,
-        Arc::new(AtomicU64::new(0)), None, None,
+        44100,
+        2,
+        Arc::new(AtomicU64::new(0)),
+        None,
+        None,
     );
     match result {
         Ok((rx, _dec)) => {
@@ -97,12 +100,12 @@ fn test_wav_zero_length_data_chunk() {
         0x57, 0x41, 0x56, 0x45, // WAVE
         0x66, 0x6D, 0x74, 0x20, // "fmt "
         0x10, 0x00, 0x00, 0x00, // chunk size = 16
-        0x01, 0x00,             // PCM
-        0x02, 0x00,             // channels = 2
+        0x01, 0x00, // PCM
+        0x02, 0x00, // channels = 2
         0x44, 0xAC, 0x00, 0x00, // sample rate = 44100
         0x88, 0x58, 0x01, 0x00, // byte rate = 88200
-        0x04, 0x00,             // block align = 4
-        0x10, 0x00,             // bits per sample = 16
+        0x04, 0x00, // block align = 4
+        0x10, 0x00, // bits per sample = 16
         0x64, 0x61, 0x74, 0x61, // "data"
         0x00, 0x00, 0x00, 0x00, // data size = 0
     ];

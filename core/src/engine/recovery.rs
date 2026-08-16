@@ -29,16 +29,26 @@ impl EngineState {
             }
         };
         let pos_samples = self.position.load(Ordering::Acquire);
-        let pos_secs = pos_samples as f64 / (self.output_sample_rate as f64 * self.config.channels as f64);
+        let pos_secs =
+            pos_samples as f64 / (self.output_sample_rate as f64 * self.config.channels as f64);
 
         // 停止当前播放（不重置 position，不清 current_entry）
         self.playing.store(false, Ordering::Release);
-        if let Some(flag) = &self.consumer_stop { flag.store(true, Ordering::SeqCst); }
-        if let Some(d) = &self.decoder { d.stop(); }
-        if let Some(d) = &self.next_decoder { d.stop(); }
+        if let Some(flag) = &self.consumer_stop {
+            flag.store(true, Ordering::SeqCst);
+        }
+        if let Some(d) = &self.decoder {
+            d.stop();
+        }
+        if let Some(d) = &self.next_decoder {
+            d.stop();
+        }
         if let Some(t) = self.consumer_thread.take() {
             let (done_tx, done_rx) = crossbeam_channel::bounded::<()>(1);
-            std::thread::spawn(move || { let _ = t.join(); let _ = done_tx.send(()); });
+            std::thread::spawn(move || {
+                let _ = t.join();
+                let _ = done_tx.send(());
+            });
             if done_rx.recv_timeout(Duration::from_secs(2)).is_err() {
                 warn!("消费者线程 join 超时（2s），放弃等待");
             }
@@ -59,8 +69,18 @@ impl EngineState {
         let ch = self.config.channels;
         let mut open_result = None;
         for attempt in 0..4u32 {
-            match crate::output::open(ch, sr, self.config.buffer_ms, self.config.output_device.as_deref(), 0, self.config.exclusive_mode) {
-                Ok(v) => { open_result = Some(v); break; }
+            match crate::output::open(
+                ch,
+                sr,
+                self.config.buffer_ms,
+                self.config.output_device.as_deref(),
+                0,
+                self.config.exclusive_mode,
+            ) {
+                Ok(v) => {
+                    open_result = Some(v);
+                    break;
+                }
                 Err(e) => {
                     if attempt < 3 {
                         warn!("设备恢复尝试 {}/4 失败: {e}，150ms 后重试", attempt + 1);
@@ -73,22 +93,29 @@ impl EngineState {
                 }
             }
         }
-        let (pcm, actual_sr, actual_ch) = {
-            let (output, prod, inner, actual_rate) = open_result.unwrap();
-            self.output_inner = Some(inner);
-            self.output = Some(output);
-            self.output_sample_rate = actual_rate;
-            self.sync_output_sample_rate();
-            self.sync_output_inner();
-            (prod, actual_rate, ch)
+        // 循环末尾失败分支已 return，此处 Some 必然成立；仍用 let-else 兜底，
+        // 避免未来改动重试逻辑时把 unwrap 变成潜在 panic 点。
+        let Some((output, prod, inner, actual_rate)) = open_result else {
+            self.emit(EngineEvent::Error("音频设备恢复失败：无可用输出设备".into()));
+            return;
         };
+        self.output_inner = Some(inner);
+        self.output = Some(output);
+        self.output_sample_rate = actual_rate;
+        self.sync_output_sample_rate();
+        self.sync_output_inner();
+        let (pcm, actual_sr, actual_ch) = (prod, actual_rate, ch);
 
         // 从断点位置重新启动解码器
         let seek_secs = entry.start_secs + pos_secs;
         let path_buf = Path::new(&entry.audio_file).to_path_buf();
         let (rx, mut decoder) = match Decoder::start(
-            &path_buf, actual_sr, actual_ch, self.position.clone(),
-            Some(seek_secs), entry.end_secs_opt(),
+            &path_buf,
+            actual_sr,
+            actual_ch,
+            self.position.clone(),
+            Some(seek_secs),
+            entry.end_secs_opt(),
         ) {
             Ok(v) => v,
             Err(e) => {
@@ -97,13 +124,19 @@ impl EngineState {
                 return;
             }
         };
-        let decode_err_rx = decoder.take_err_rx().unwrap_or_else(|| crossbeam_channel::bounded(1).1);
+        let decode_err_rx = decoder
+            .take_err_rx()
+            .unwrap_or_else(|| crossbeam_channel::bounded(1).1);
         self.decoder = Some(decoder);
 
         // 重建 DSP 管线
         let dsp = Arc::new(Mutex::new(DspPipeline::new(
-            actual_sr, actual_ch as usize, &self.peq_bands,
-            self.crossfeed_enabled, self.current_volume, self.output_bit_depth,
+            actual_sr,
+            actual_ch as usize,
+            &self.peq_bands,
+            self.crossfeed_enabled,
+            self.current_volume,
+            self.output_bit_depth,
         )));
         self.apply_dsp_settings(&dsp);
         self.dsp = Some(dsp.clone());
@@ -115,7 +148,24 @@ impl EngineState {
         self.consumer_stop = Some(stop_flag.clone());
         let consumer_event_tx = self.internal_event_tx.clone();
         let (ready_tx, ready_rx) = unbounded::<bool>();
-        let consumer = spawn_consumer(rx, pcm, dsp, stop_flag, self.position.clone(), consumer_event_tx, ready_tx, self.next_rx.clone(), actual_sr, actual_ch, self.config.crossfade_ms, self.speed.clone(), self.levels.clone(), decode_err_rx, false, self.playback_gen.clone());
+        let consumer = spawn_consumer(
+            rx,
+            pcm,
+            dsp,
+            stop_flag,
+            self.position.clone(),
+            consumer_event_tx,
+            ready_tx,
+            self.next_rx.clone(),
+            actual_sr,
+            actual_ch,
+            self.config.crossfade_ms,
+            self.speed.clone(),
+            self.levels.clone(),
+            decode_err_rx,
+            false,
+            self.playback_gen.clone(),
+        );
         self.consumer_thread = Some(consumer);
 
         let output = match self.output.as_ref() {

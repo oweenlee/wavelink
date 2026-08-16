@@ -30,14 +30,16 @@ pub fn decode_file(path: &Path) -> Result<DecodedDsd, String> {
 
     let channels = reader.channels_num() as u32;
     let rate_val = reader.dsd_rate();
-    let dsd_rate = DsdRate::try_from(rate_val as u32)
-        .map_err(|_| format!("不支持的 DSD 速率: {rate_val}"))?;
+    let dsd_rate =
+        DsdRate::try_from(rate_val as u32).map_err(|_| format!("不支持的 DSD 速率: {rate_val}"))?;
     let sample_rate = output_sample_rate(dsd_rate);
 
     // 逐声道收集 DSD 原始字节
     let mut chan_bytes: Vec<Vec<u8>> = (0..channels as usize).map(|_| Vec::new()).collect();
 
-    let iter = reader.dsd_iter().map_err(|e| format!("DSD 迭代器创建失败: {e}"))?;
+    let iter = reader
+        .dsd_iter()
+        .map_err(|e| format!("DSD 迭代器创建失败: {e}"))?;
     for (_nread, chan_frames) in iter {
         for (c, frame_data) in chan_frames.into_iter().enumerate() {
             if let Some(buf) = chan_bytes.get_mut(c) {
@@ -90,8 +92,12 @@ impl StreamingDsdDecoder {
         let sample_rate = output_sample_rate(dsd_rate);
 
         Ok(StreamingDsdDecoder {
-            chan_dsd: (0..channels).map(|_| Vec::with_capacity(FLUSH_THRESHOLD + 4096)).collect(),
-            chan_pending: (0..channels).map(|_| Vec::with_capacity(FLUSH_THRESHOLD / 8 + FIR_OVERLAP)).collect(),
+            chan_dsd: (0..channels)
+                .map(|_| Vec::with_capacity(FLUSH_THRESHOLD + 4096))
+                .collect(),
+            chan_pending: (0..channels)
+                .map(|_| Vec::with_capacity(FLUSH_THRESHOLD / 8 + FIR_OVERLAP))
+                .collect(),
             channels,
             dsd_rate,
             sample_rate,
@@ -99,11 +105,17 @@ impl StreamingDsdDecoder {
     }
 
     /// 获取输出采样率
-    pub fn sample_rate(&self) -> u32 { self.sample_rate }
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
     /// 获取声道数
-    pub fn channels(&self) -> usize { self.channels }
+    pub fn channels(&self) -> usize {
+        self.channels
+    }
     /// 获取 DSD 速率
-    pub fn dsd_rate(&self) -> DsdRate { self.dsd_rate }
+    pub fn dsd_rate(&self) -> DsdRate {
+        self.dsd_rate
+    }
 
     /// 喂入一个 DSD 块（来自 dsd_iter 的一帧），返回是否达到 flush 阈值
     pub fn feed(&mut self, chan_frames: &[Box<[u8]>]) -> bool {
@@ -112,13 +124,18 @@ impl StreamingDsdDecoder {
                 buf.extend_from_slice(frame_data);
             }
         }
-        self.chan_dsd.first().map(|b| b.len() >= FLUSH_THRESHOLD).unwrap_or(false)
+        self.chan_dsd
+            .first()
+            .map(|b| b.len() >= FLUSH_THRESHOLD)
+            .unwrap_or(false)
     }
 
     /// 将累积的 DSD 字节转换为交错 PCM f32。可多次调用，内部维护 FIR 重叠状态。
     pub fn flush(&mut self) -> Vec<f32> {
         let ch = self.channels;
-        if ch == 0 { return Vec::new(); }
+        if ch == 0 {
+            return Vec::new();
+        }
 
         // 各声道独立转换
         let mut pcm_chs: Vec<Vec<f32>> = Vec::with_capacity(ch);

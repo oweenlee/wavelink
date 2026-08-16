@@ -28,9 +28,7 @@ fn collect_ext(ext: &str) -> Vec<String> {
     if let Ok(rd) = std::fs::read_dir(PUBLIC_MUSIC) {
         for entry in rd.flatten() {
             let p = entry.path();
-            if p.is_file()
-                && p.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext))
-            {
+            if p.is_file() && p.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext)) {
                 files.push(p.display().to_string());
             }
         }
@@ -69,11 +67,19 @@ fn decode_one(name: &str, path: &str) {
                         frames += 1;
                         total += frame.samples.len() as u64;
                         let fl = frame.samples.len();
-                        if fl < min_frame { min_frame = fl; }
-                        if fl > max_frame { max_frame = fl; }
+                        if fl < min_frame {
+                            min_frame = fl;
+                        }
+                        if fl > max_frame {
+                            max_frame = fl;
+                        }
                         for &s in frame.samples.iter().take(4) {
-                            if s.is_nan() { has_nan = true; }
-                            if s.is_infinite() { has_inf = true; }
+                            if s.is_nan() {
+                                has_nan = true;
+                            }
+                            if s.is_infinite() {
+                                has_inf = true;
+                            }
                         }
                     }
                     Err(_) => break,
@@ -85,16 +91,21 @@ fn decode_one(name: &str, path: &str) {
             let output_secs = total as f64 / 44100.0 / 2.0;
             let speed = if elapsed.as_secs_f64() > 0.0 {
                 output_secs / elapsed.as_secs_f64()
-            } else { 0.0 };
+            } else {
+                0.0
+            };
 
-            let status = if has_nan || has_inf { "❌ NaN/Inf" }
-                else if speed < 0.5 { "⚠️ 极慢" }
-                else { "✅" };
+            let status = if has_nan || has_inf {
+                "❌ NaN/Inf"
+            } else if speed < 0.5 {
+                "⚠️ 极慢"
+            } else {
+                "✅"
+            };
 
             eprintln!(
                 "[{}] {}: {}帧 {}样本 ~{:.0}s 解码{:.1}x 帧{}-{}",
-                status, name, frames, total, output_secs, speed,
-                min_frame, max_frame,
+                status, name, frames, total, output_secs, speed, min_frame, max_frame,
             );
 
             assert!(!has_nan, "{name}: NaN 检测到!");

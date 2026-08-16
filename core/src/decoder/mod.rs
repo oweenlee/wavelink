@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use crossbeam_channel::{Receiver, Sender, bounded, unbounded, SendTimeoutError};
+use crossbeam_channel::{bounded, unbounded, Receiver, SendTimeoutError, Sender};
 use symphonia::core::codecs::audio::AudioDecoderOptions;
 use symphonia::core::codecs::registry::RegisterableAudioDecoder;
 use symphonia::core::formats::probe::Hint;
@@ -24,8 +24,8 @@ use tracing::{debug, error, info, warn};
 
 use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedOut, WindowFunction};
 
-use crate::error::EngineError;
 use crate::dsd;
+use crate::error::EngineError;
 
 /// 解码器输出 channel 容量（帧数），利用 crossbeam 背压阻塞避免内存无限增长
 const DECODE_CHANNEL_CAPACITY: usize = 8;
@@ -84,8 +84,11 @@ impl Decoder {
     /// - `seek_pos` — 可选起始位置（秒）
     /// - `end_secs` — 可选结束位置（秒），到达后停止解码（CUE 分轨用）
     pub fn start(
-        path: &Path, target_rate: u32, target_channels: u32,
-        position: Arc<AtomicU64>, seek_pos: Option<f64>,
+        path: &Path,
+        target_rate: u32,
+        target_channels: u32,
+        position: Arc<AtomicU64>,
+        seek_pos: Option<f64>,
         end_secs: Option<f64>,
     ) -> Result<(Receiver<DecodedFrame>, Self), EngineError> {
         let (tx, rx) = bounded(DECODE_CHANNEL_CAPACITY);
@@ -96,7 +99,16 @@ impl Decoder {
         let handle = thread::spawn(move || {
             crate::engine::thread_priority::elevate_audio_thread();
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run(&p, target_rate, target_channels, tx, srx, position, seek_pos, end_secs)
+                run(
+                    &p,
+                    target_rate,
+                    target_channels,
+                    tx,
+                    srx,
+                    position,
+                    seek_pos,
+                    end_secs,
+                )
             }));
             match result {
                 Ok(Err(e)) => {
@@ -104,16 +116,31 @@ impl Decoder {
                     let _ = err_tx.send(e);
                 }
                 Err(panic_info) => {
-                    let msg = if let Some(s) = panic_info.downcast_ref::<&str>() { s.to_string() }
-                              else if let Some(s) = panic_info.downcast_ref::<String>() { s.clone() }
-                              else { "解码线程未知 panic".to_string() };
+                    let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "解码线程未知 panic".to_string()
+                    };
                     error!("解码线程 crash: {msg}");
-                    let _ = err_tx.send(EngineError::DecodeFailed { path: p.clone(), reason: msg });
+                    let _ = err_tx.send(EngineError::DecodeFailed {
+                        path: p.clone(),
+                        reason: msg,
+                    });
                 }
                 Ok(Ok(())) => {}
             }
         });
-        Ok((rx, Decoder { tx: Some(stx), handle: Some(handle), position: pos_clone, err_rx: Some(err_rx) }))
+        Ok((
+            rx,
+            Decoder {
+                tx: Some(stx),
+                handle: Some(handle),
+                position: pos_clone,
+                err_rx: Some(err_rx),
+            },
+        ))
     }
 
     /// 以 DoP（DSD over PCM）方式启动 DSD 解码线程。
@@ -123,8 +150,11 @@ impl Decoder {
     /// - `left_justify` — 输出格式为 32-bit 整数时传 true（24-bit 字左对齐），24-bit/浮点传 false
     /// - `target_channels` — 期望声道数（通常用源文件声道数）
     pub fn start_dop(
-        path: &Path, left_justify: bool, target_channels: u32,
-        position: Arc<AtomicU64>, seek_pos: Option<f64>,
+        path: &Path,
+        left_justify: bool,
+        target_channels: u32,
+        position: Arc<AtomicU64>,
+        seek_pos: Option<f64>,
         end_secs: Option<f64>,
     ) -> Result<(Receiver<DecodedFrame>, Self), EngineError> {
         let (tx, rx) = bounded(DECODE_CHANNEL_CAPACITY);
@@ -135,7 +165,15 @@ impl Decoder {
         let handle = thread::spawn(move || {
             crate::engine::thread_priority::elevate_audio_thread();
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run_dsd_dop(&p, left_justify, target_channels, tx, srx, seek_pos, end_secs)
+                run_dsd_dop(
+                    &p,
+                    left_justify,
+                    target_channels,
+                    tx,
+                    srx,
+                    seek_pos,
+                    end_secs,
+                )
             }));
             match result {
                 Ok(Err(e)) => {
@@ -143,20 +181,39 @@ impl Decoder {
                     let _ = err_tx.send(e);
                 }
                 Err(panic_info) => {
-                    let msg = if let Some(s) = panic_info.downcast_ref::<&str>() { s.to_string() }
-                              else if let Some(s) = panic_info.downcast_ref::<String>() { s.clone() }
-                              else { "DoP 解码线程未知 panic".to_string() };
+                    let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "DoP 解码线程未知 panic".to_string()
+                    };
                     error!("DoP 解码线程 crash: {msg}");
-                    let _ = err_tx.send(EngineError::DecodeFailed { path: p.clone(), reason: msg });
+                    let _ = err_tx.send(EngineError::DecodeFailed {
+                        path: p.clone(),
+                        reason: msg,
+                    });
                 }
                 Ok(Ok(())) => {}
             }
         });
-        Ok((rx, Decoder { tx: Some(stx), handle: Some(handle), position: pos_clone, err_rx: Some(err_rx) }))
+        Ok((
+            rx,
+            Decoder {
+                tx: Some(stx),
+                handle: Some(handle),
+                position: pos_clone,
+                err_rx: Some(err_rx),
+            },
+        ))
     }
 
     /// 停止后台解码线程
-    pub fn stop(&self) { if let Some(ref t) = self.tx { let _ = t.send(()); } }
+    pub fn stop(&self) {
+        if let Some(ref t) = self.tx {
+            let _ = t.send(());
+        }
+    }
 
     /// 从流式数据源启动解码（网络流媒体用）。
     ///
@@ -166,7 +223,8 @@ impl Decoder {
     /// - `format_hint` — 可选格式提示（如 "mp3", "flac", "aac"），帮助 Symphonia 探测
     pub fn start_from_stream(
         source: crate::stream::StreamMediaSource,
-        target_rate: u32, target_channels: u32,
+        target_rate: u32,
+        target_channels: u32,
         position: Arc<AtomicU64>,
         format_hint: Option<String>,
     ) -> Result<(Receiver<DecodedFrame>, Self), EngineError> {
@@ -177,7 +235,15 @@ impl Decoder {
         let handle = thread::spawn(move || {
             crate::engine::thread_priority::elevate_audio_thread();
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run_from_stream(source, target_rate, target_channels, tx, srx, position, format_hint)
+                run_from_stream(
+                    source,
+                    target_rate,
+                    target_channels,
+                    tx,
+                    srx,
+                    position,
+                    format_hint,
+                )
             }));
             match result {
                 Ok(Err(e)) => {
@@ -185,16 +251,31 @@ impl Decoder {
                     let _ = err_tx.send(e);
                 }
                 Err(panic_info) => {
-                    let msg = if let Some(s) = panic_info.downcast_ref::<&str>() { s.to_string() }
-                              else if let Some(s) = panic_info.downcast_ref::<String>() { s.clone() }
-                              else { "流式解码线程未知 panic".to_string() };
+                    let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "流式解码线程未知 panic".to_string()
+                    };
                     error!("流式解码线程 crash: {msg}");
-                    let _ = err_tx.send(EngineError::DecodeFailed { path: "stream".into(), reason: msg });
+                    let _ = err_tx.send(EngineError::DecodeFailed {
+                        path: "stream".into(),
+                        reason: msg,
+                    });
                 }
                 Ok(Ok(())) => {}
             }
         });
-        Ok((rx, Decoder { tx: Some(stx), handle: Some(handle), position: pos_clone, err_rx: Some(err_rx) }))
+        Ok((
+            rx,
+            Decoder {
+                tx: Some(stx),
+                handle: Some(handle),
+                position: pos_clone,
+                err_rx: Some(err_rx),
+            },
+        ))
     }
 }
 
@@ -206,7 +287,9 @@ fn try_send_or_stop(tx: &Sender<DecodedFrame>, frame: DecodedFrame, stop_rx: &Re
             Ok(()) => return,
             Err(SendTimeoutError::Timeout(f)) => {
                 frame = f;
-                if !stop_rx.is_empty() { return; }
+                if !stop_rx.is_empty() {
+                    return;
+                }
             }
             Err(SendTimeoutError::Disconnected(_)) => return,
         }
@@ -215,7 +298,9 @@ fn try_send_or_stop(tx: &Sender<DecodedFrame>, frame: DecodedFrame, stop_rx: &Re
 
 /// 创建 rubato 重采样器（如源/目标采样率不同）
 fn create_resampler(src_rate: u32, target_rate: u32, out_ch: usize) -> Option<SincFixedOut<f64>> {
-    if (src_rate as i64 - target_rate as i64).abs() <= 1 { return None; }
+    if (src_rate as i64 - target_rate as i64).abs() <= 1 {
+        return None;
+    }
     let params = InterpolationParameters {
         sinc_len: 256,
         f_cutoff: 0.95,
@@ -224,7 +309,10 @@ fn create_resampler(src_rate: u32, target_rate: u32, out_ch: usize) -> Option<Si
         window: WindowFunction::BlackmanHarris2,
     };
     Some(SincFixedOut::<f64>::new(
-        target_rate as f64 / src_rate as f64, params, 1024, out_ch,
+        target_rate as f64 / src_rate as f64,
+        params,
+        1024,
+        out_ch,
     ))
 }
 
@@ -247,8 +335,11 @@ fn resample_and_send(
         let mut cur_pts = pts;
         loop {
             let needed = resampler.nbr_frames_needed();
-            if rubato_buf[0].len() < needed { break; }
-            let waves_in: Vec<Vec<f64>> = rubato_buf.iter_mut()
+            if rubato_buf[0].len() < needed {
+                break;
+            }
+            let waves_in: Vec<Vec<f64>> = rubato_buf
+                .iter_mut()
                 .map(|buf| buf.drain(..needed).collect())
                 .collect();
             match resampler.process(&waves_in) {
@@ -260,10 +351,16 @@ fn resample_and_send(
                             samples.push(waves_out[c][f] as f32);
                         }
                     }
-                    try_send_or_stop(tx, DecodedFrame {
-                        samples, pts_secs: cur_pts,
-                        sample_rate: target_rate, channels: target_ch,
-                    }, stop_rx);
+                    try_send_or_stop(
+                        tx,
+                        DecodedFrame {
+                            samples,
+                            pts_secs: cur_pts,
+                            sample_rate: target_rate,
+                            channels: target_ch,
+                        },
+                        stop_rx,
+                    );
                     cur_pts += out_frames as f64 / target_rate as f64;
                 }
                 Err(e) => warn!("rubato 重采样失败: {e:?}"),
@@ -271,24 +368,42 @@ fn resample_and_send(
         }
         cur_pts
     } else {
-        try_send_or_stop(tx, DecodedFrame {
-            samples: mixed.to_vec(), pts_secs: pts,
-            sample_rate: target_rate, channels: target_ch,
-        }, stop_rx);
+        try_send_or_stop(
+            tx,
+            DecodedFrame {
+                samples: mixed.to_vec(),
+                pts_secs: pts,
+                sample_rate: target_rate,
+                channels: target_ch,
+            },
+            stop_rx,
+        );
         pts + (mixed.len() / out_ch) as f64 / target_rate as f64
     }
 }
 
 fn run(
-    path: &Path, target_rate: u32, target_ch: u32,
-    tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
-    _position: Arc<AtomicU64>, seek_pos: Option<f64>,
+    path: &Path,
+    target_rate: u32,
+    target_ch: u32,
+    tx: Sender<DecodedFrame>,
+    stop_rx: Receiver<()>,
+    _position: Arc<AtomicU64>,
+    seek_pos: Option<f64>,
     end_secs: Option<f64>,
 ) -> Result<(), EngineError> {
     // 绕过 Symphonia 直解：DSD
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         if ext.eq_ignore_ascii_case("dsf") || ext.eq_ignore_ascii_case("dff") {
-            return run_dsd(path, target_rate, target_ch, tx, stop_rx, seek_pos, end_secs);
+            return run_dsd(
+                path,
+                target_rate,
+                target_ch,
+                tx,
+                stop_rx,
+                seek_pos,
+                end_secs,
+            );
         }
         // WavPack 无可用 Rust 解码器（Symphonia 上游亦不支持），明确报错而非“探测失败”
         if ext.eq_ignore_ascii_case("wv") || ext.eq_ignore_ascii_case("wvc") {
@@ -299,26 +414,51 @@ fn run(
         }
         // APE (Monkey's Audio)：Symphonia 不支持，用纯 Rust ape-decoder 直解
         if ext.eq_ignore_ascii_case("ape") {
-            return run_ape(path, target_rate, target_ch, tx, stop_rx, seek_pos, end_secs);
+            return run_ape(
+                path,
+                target_rate,
+                target_ch,
+                tx,
+                stop_rx,
+                seek_pos,
+                end_secs,
+            );
         }
     }
 
-    let file = File::open(path)
-        .map_err(|_| EngineError::FileNotFound(path.to_path_buf()))?;
+    let file = File::open(path).map_err(|_| EngineError::FileNotFound(path.to_path_buf()))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
     }
-    let mut format = symphonia::default::get_probe().probe(
-        &hint, mss, FormatOptions::default(), MetadataOptions::default(),
-    ).map_err(|e| EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("探测失败: {e}") })?;
+    let mut format = symphonia::default::get_probe()
+        .probe(
+            &hint,
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
+        .map_err(|e| EngineError::DecodeFailed {
+            path: path.to_path_buf(),
+            reason: format!("探测失败: {e}"),
+        })?;
     let (track_id, audio_cp) = {
-        let track = format.default_track(TrackType::Audio)
-            .ok_or_else(|| EngineError::DecodeFailed { path: path.to_path_buf(), reason: "无音频轨".into() })?;
+        let track =
+            format
+                .default_track(TrackType::Audio)
+                .ok_or_else(|| EngineError::DecodeFailed {
+                    path: path.to_path_buf(),
+                    reason: "无音频轨".into(),
+                })?;
         let cp = match &track.codec_params {
             Some(symphonia::core::codecs::CodecParameters::Audio(a)) => a.clone(),
-            _ => return Err(EngineError::DecodeFailed { path: path.to_path_buf(), reason: "非音频编解码参数".into() }),
+            _ => {
+                return Err(EngineError::DecodeFailed {
+                    path: path.to_path_buf(),
+                    reason: "非音频编解码参数".into(),
+                })
+            }
         };
         (track.id, cp)
     };
@@ -327,18 +467,32 @@ fn run(
     info!("解码: {} ({}Hz, {}ch)", path.display(), src_rate, src_ch);
 
     // 先尝试默认 codecs，失败则降级到 Opus 适配器
-    let mut decoder = match symphonia::default::get_codecs().make_audio_decoder(&audio_cp, &AudioDecoderOptions::default()) {
+    let mut decoder = match symphonia::default::get_codecs()
+        .make_audio_decoder(&audio_cp, &AudioDecoderOptions::default())
+    {
         Ok(d) => d,
-        Err(_) => match symphonia_adapter_oporus::OpusDecoder::try_registry_new(&audio_cp, &AudioDecoderOptions::default()) {
-            Ok(d) => { info!("使用 Opus 适配器解码"); d }
-            Err(e) => return Err(EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("创建解码器失败: {e}") }),
-        }
+        Err(_) => match symphonia_adapter_oporus::OpusDecoder::try_registry_new(
+            &audio_cp,
+            &AudioDecoderOptions::default(),
+        ) {
+            Ok(d) => {
+                info!("使用 Opus 适配器解码");
+                d
+            }
+            Err(e) => {
+                return Err(EngineError::DecodeFailed {
+                    path: path.to_path_buf(),
+                    reason: format!("创建解码器失败: {e}"),
+                })
+            }
+        },
     };
 
     // 跳转到指定时间位置
     if let Some(secs) = seek_pos {
         // 先用 format.seek() 尝试精确跳转
-        let seek_time = symphonia::core::units::Time::try_from_secs_f64(secs).unwrap_or(symphonia::core::units::Time::ZERO);
+        let seek_time = symphonia::core::units::Time::try_from_secs_f64(secs)
+            .unwrap_or(symphonia::core::units::Time::ZERO);
         let _seeked = format.seek(
             symphonia::core::formats::SeekMode::Accurate,
             symphonia::core::formats::SeekTo::Time {
@@ -350,11 +504,22 @@ fn run(
             debug!("format.seek() 不支持, 使用跳帧方式");
         }
         // 解码器状态在 seek 后需要重置，重建失败则终止（旧 decoder 状态已被 seek 污染）
-        let new_dec = symphonia::default::get_codecs().make_audio_decoder(&audio_cp, &AudioDecoderOptions::default())
-            .or_else(|_| symphonia_adapter_oporus::OpusDecoder::try_registry_new(&audio_cp, &AudioDecoderOptions::default()));
+        let new_dec = symphonia::default::get_codecs()
+            .make_audio_decoder(&audio_cp, &AudioDecoderOptions::default())
+            .or_else(|_| {
+                symphonia_adapter_oporus::OpusDecoder::try_registry_new(
+                    &audio_cp,
+                    &AudioDecoderOptions::default(),
+                )
+            });
         match new_dec {
             Ok(d) => decoder = d,
-            Err(e) => return Err(EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("seek 后解码器重建失败: {e}") }),
+            Err(e) => {
+                return Err(EngineError::DecodeFailed {
+                    path: path.to_path_buf(),
+                    reason: format!("seek 后解码器重建失败: {e}"),
+                })
+            }
         }
 
         // 样本级精确 seek：format.seek() 只保证落在包边界（可能偏移几十 ms），
@@ -365,16 +530,22 @@ fn run(
         let target_total = (secs * src_rate as f64) as u64 * src_ch as u64;
         let mut consumed: u64 = 0; // 无 pts 时的相对累计
         while consumed < target_total {
-            if stop_rx.try_recv().is_ok() { return Ok(()); }
+            if stop_rx.try_recv().is_ok() {
+                return Ok(());
+            }
             let packet = match format.next_packet() {
                 Ok(Some(pkt)) => pkt,
                 _ => break, // EOF/错误：无更多数据可丢
             };
-            if packet.track_id != track_id { continue; }
+            if packet.track_id != track_id {
+                continue;
+            }
             // 用 packet.pts 校准累计位置为绝对交错样本下标。
             // 注意 pts 单位是帧（frame），不是样本，需乘声道数
             let pkt_start_abs = packet.pts.get() as u64 * src_ch as u64;
-            if pkt_start_abs > consumed { consumed = pkt_start_abs; }
+            if pkt_start_abs > consumed {
+                consumed = pkt_start_abs;
+            }
             let decoded = match decoder.decode(&packet) {
                 Ok(buf) => buf,
                 Err(_) => continue,
@@ -397,8 +568,17 @@ fn run(
                     let out_ch = target_ch as usize;
                     let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
                     let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
-                    let _ = resample_and_send(&mixed, &mut rubato_resampler, &mut rubato_buf,
-                        out_ch, target_rate, target_ch, secs, &tx, &stop_rx);
+                    let _ = resample_and_send(
+                        &mixed,
+                        &mut rubato_resampler,
+                        &mut rubato_buf,
+                        out_ch,
+                        target_rate,
+                        target_ch,
+                        secs,
+                        &tx,
+                        &stop_rx,
+                    );
                 }
                 break;
             }
@@ -412,15 +592,29 @@ fn run(
     let mut consecutive_errors = 0u32;
 
     loop {
-        if stop_rx.try_recv().is_ok() { break; }
+        if stop_rx.try_recv().is_ok() {
+            break;
+        }
         let packet = match format.next_packet() {
             Ok(Some(pkt)) => pkt,
-            Ok(None) => { debug!("EOF"); break; }
+            Ok(None) => {
+                debug!("EOF");
+                break;
+            }
             Err(symphonia::core::errors::Error::IoError(ref e))
-                if e.kind() == std::io::ErrorKind::UnexpectedEof => { debug!("EOF"); break; }
-            Err(e) => { debug!("结束: {e}"); break; }
+                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                debug!("EOF");
+                break;
+            }
+            Err(e) => {
+                debug!("结束: {e}");
+                break;
+            }
         };
-        if packet.track_id != track_id { continue; }
+        if packet.track_id != track_id {
+            continue;
+        }
 
         // end_secs 分段截断
         if let Some(end) = end_secs {
@@ -470,8 +664,17 @@ fn run(
 
         // rubato 异步 SRC + 发送
         let pts = packet.pts.get() as f64 / src_rate as f64;
-        let _ = resample_and_send(&mixed, &mut rubato_resampler, &mut rubato_buf,
-            out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
+        let _ = resample_and_send(
+            &mixed,
+            &mut rubato_resampler,
+            &mut rubato_buf,
+            out_ch,
+            target_rate,
+            target_ch,
+            pts,
+            &tx,
+            &stop_rx,
+        );
     }
     Ok(())
 }
@@ -479,8 +682,10 @@ fn run(
 /// 流式解码：从 `StreamMediaSource` 读取字节流 → Symphonia 解码 → 重采样 → 发送
 fn run_from_stream(
     source: crate::stream::StreamMediaSource,
-    target_rate: u32, target_ch: u32,
-    tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
+    target_rate: u32,
+    target_ch: u32,
+    tx: Sender<DecodedFrame>,
+    stop_rx: Receiver<()>,
     _position: Arc<AtomicU64>,
     format_hint: Option<String>,
 ) -> Result<(), EngineError> {
@@ -489,28 +694,43 @@ fn run_from_stream(
     if let Some(ref ext) = format_hint {
         hint.with_extension(ext);
     }
-    let mut format = symphonia::default::get_probe().probe(
-        &hint, mss, FormatOptions::default(), MetadataOptions::default(),
-    ).map_err(|e| {
-        // probe 失败多为「远端字节不足/非音频数据/连接中断」，原始
-        // symphonia 报错对用户不可读，包装常见场景辅助定位
-        let reason = format!("流式探测失败: {e}");
-        error!("{reason}");
-        EngineError::DecodeFailed {
-            path: "stream".into(),
-            reason: if e.to_string().contains("no suitable format reader") {
-                "远端数据不是可播放的音频，或字节流尚未就绪（连接/格式问题）".into()
-            } else {
-                reason
-            },
-        }
-    })?;
+    let mut format = symphonia::default::get_probe()
+        .probe(
+            &hint,
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
+        .map_err(|e| {
+            // probe 失败多为「远端字节不足/非音频数据/连接中断」，原始
+            // symphonia 报错对用户不可读，包装常见场景辅助定位
+            let reason = format!("流式探测失败: {e}");
+            error!("{reason}");
+            EngineError::DecodeFailed {
+                path: "stream".into(),
+                reason: if e.to_string().contains("no suitable format reader") {
+                    "远端数据不是可播放的音频，或字节流尚未就绪（连接/格式问题）".into()
+                } else {
+                    reason
+                },
+            }
+        })?;
     let (track_id, audio_cp) = {
-        let track = format.default_track(TrackType::Audio)
-            .ok_or_else(|| EngineError::DecodeFailed { path: "stream".into(), reason: "无音频轨".into() })?;
+        let track =
+            format
+                .default_track(TrackType::Audio)
+                .ok_or_else(|| EngineError::DecodeFailed {
+                    path: "stream".into(),
+                    reason: "无音频轨".into(),
+                })?;
         let cp = match &track.codec_params {
             Some(symphonia::core::codecs::CodecParameters::Audio(a)) => a.clone(),
-            _ => return Err(EngineError::DecodeFailed { path: "stream".into(), reason: "非音频编解码参数".into() }),
+            _ => {
+                return Err(EngineError::DecodeFailed {
+                    path: "stream".into(),
+                    reason: "非音频编解码参数".into(),
+                })
+            }
         };
         (track.id, cp)
     };
@@ -518,12 +738,25 @@ fn run_from_stream(
     let out_ch = target_ch as usize;
     info!("流式解码: {}Hz, hint={:?}", src_rate, format_hint);
 
-    let mut decoder = match symphonia::default::get_codecs().make_audio_decoder(&audio_cp, &AudioDecoderOptions::default()) {
+    let mut decoder = match symphonia::default::get_codecs()
+        .make_audio_decoder(&audio_cp, &AudioDecoderOptions::default())
+    {
         Ok(d) => d,
-        Err(_) => match symphonia_adapter_oporus::OpusDecoder::try_registry_new(&audio_cp, &AudioDecoderOptions::default()) {
-            Ok(d) => { info!("流式: 使用 Opus 适配器解码"); d }
-            Err(e) => return Err(EngineError::DecodeFailed { path: "stream".into(), reason: format!("创建解码器失败: {e}") }),
-        }
+        Err(_) => match symphonia_adapter_oporus::OpusDecoder::try_registry_new(
+            &audio_cp,
+            &AudioDecoderOptions::default(),
+        ) {
+            Ok(d) => {
+                info!("流式: 使用 Opus 适配器解码");
+                d
+            }
+            Err(e) => {
+                return Err(EngineError::DecodeFailed {
+                    path: "stream".into(),
+                    reason: format!("创建解码器失败: {e}"),
+                })
+            }
+        },
     };
 
     let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
@@ -531,15 +764,29 @@ fn run_from_stream(
     let mut consecutive_errors = 0u32;
 
     loop {
-        if stop_rx.try_recv().is_ok() { break; }
+        if stop_rx.try_recv().is_ok() {
+            break;
+        }
         let packet = match format.next_packet() {
             Ok(Some(pkt)) => pkt,
-            Ok(None) => { debug!("流式 EOF"); break; }
+            Ok(None) => {
+                debug!("流式 EOF");
+                break;
+            }
             Err(symphonia::core::errors::Error::IoError(ref e))
-                if e.kind() == std::io::ErrorKind::UnexpectedEof => { debug!("流式 EOF"); break; }
-            Err(e) => { debug!("流式结束: {e}"); break; }
+                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                debug!("流式 EOF");
+                break;
+            }
+            Err(e) => {
+                debug!("流式结束: {e}");
+                break;
+            }
         };
-        if packet.track_id != track_id { continue; }
+        if packet.track_id != track_id {
+            continue;
+        }
 
         let decoded = match decoder.decode(&packet) {
             Ok(buf) => {
@@ -575,8 +822,17 @@ fn run_from_stream(
         let mixed = mix_channels(&interleaved, in_ch, out_ch);
 
         let pts = packet.pts.get() as f64 / src_rate as f64;
-        let _ = resample_and_send(&mixed, &mut rubato_resampler, &mut rubato_buf,
-            out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
+        let _ = resample_and_send(
+            &mixed,
+            &mut rubato_resampler,
+            &mut rubato_buf,
+            out_ch,
+            target_rate,
+            target_ch,
+            pts,
+            &tx,
+            &stop_rx,
+        );
     }
     Ok(())
 }
@@ -597,14 +853,7 @@ pub fn decode_to_memory_prefix(
 ) -> Result<Vec<f32>, String> {
     /// 最大解码样本数（~2GB @f32），防止超大文件 OOM
     const MAX_SAMPLES: usize = 512 * 1024 * 1024;
-    let (rx, dec) = Decoder::start(
-        path,
-        tr,
-        tc,
-        Arc::new(AtomicU64::new(0)),
-        None,
-        max_secs,
-    )?;
+    let (rx, dec) = Decoder::start(path, tr, tc, Arc::new(AtomicU64::new(0)), None, max_secs)?;
     let mut all = Vec::new();
     while let Ok(f) = rx.recv_timeout(Duration::from_secs(10)) {
         all.extend(f.samples);
@@ -614,31 +863,51 @@ pub fn decode_to_memory_prefix(
         }
     }
     dec.stop();
-    if all.is_empty() { Err("解码为空".into()) } else { Ok(all) }
+    if all.is_empty() {
+        Err("解码为空".into())
+    } else {
+        Ok(all)
+    }
 }
 
 fn run_dsd(
-    path: &Path, target_rate: u32, target_ch: u32,
-    tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
+    path: &Path,
+    target_rate: u32,
+    target_ch: u32,
+    tx: Sender<DecodedFrame>,
+    stop_rx: Receiver<()>,
     seek_pos: Option<f64>,
     end_secs: Option<f64>,
 ) -> Result<(), EngineError> {
     use dsd_reader::DsdReader;
 
     // 流式解码器：恒定内存占用
-    let mut converter = dsd::StreamingDsdDecoder::new(path)
-        .map_err(|e| EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("DSD 解码失败: {e}") })?;
+    let mut converter =
+        dsd::StreamingDsdDecoder::new(path).map_err(|e| EngineError::DecodeFailed {
+            path: path.to_path_buf(),
+            reason: format!("DSD 解码失败: {e}"),
+        })?;
     let src_rate = converter.sample_rate();
     let src_ch = converter.channels();
     let out_ch = target_ch as usize;
 
-    info!("DSD 流式解码: {} ({}Hz, {}ch)", path.display(), src_rate, src_ch);
+    info!(
+        "DSD 流式解码: {} ({}Hz, {}ch)",
+        path.display(),
+        src_rate,
+        src_ch
+    );
 
     // 创建 DSD 迭代器
-    let reader = DsdReader::from_container(path.to_path_buf())
-        .map_err(|e| EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("DSD 文件打开失败: {e}") })?;
-    let iter = reader.dsd_iter()
-        .map_err(|e| EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("DSD 迭代器创建失败: {e}") })?;
+    let reader =
+        DsdReader::from_container(path.to_path_buf()).map_err(|e| EngineError::DecodeFailed {
+            path: path.to_path_buf(),
+            reason: format!("DSD 文件打开失败: {e}"),
+        })?;
+    let iter = reader.dsd_iter().map_err(|e| EngineError::DecodeFailed {
+        path: path.to_path_buf(),
+        reason: format!("DSD 迭代器创建失败: {e}"),
+    })?;
 
     // Seek：计算需要跳过的 DSD 字节数（每声道）
     // DSD bytes_per_sec_per_channel = src_rate * 8 (64x 降采样后得 src_rate PCM frames/s)
@@ -652,7 +921,11 @@ fn run_dsd(
     let max_output_frames: Option<u64> = if let Some(end) = end_secs {
         let start = seek_pos.unwrap_or(0.0);
         let dur = end - start;
-        if dur > 0.0 { Some((dur * src_rate as f64) as u64) } else { None }
+        if dur > 0.0 {
+            Some((dur * src_rate as f64) as u64)
+        } else {
+            None
+        }
     } else {
         None
     };
@@ -665,12 +938,16 @@ fn run_dsd(
 
     // 主循环：流式读取 DSD 块 → 转换 → 混音 → 重采样 → 发送
     for (_nread, chan_frames) in iter {
-        if stop_rx.try_recv().is_ok() { return Ok(()); }
+        if stop_rx.try_recv().is_ok() {
+            return Ok(());
+        }
 
         // Seek 跳过
         if skip_bytes > 0 {
             let block_len = chan_frames.first().map(|b| b.len()).unwrap_or(0);
-            if block_len == 0 { continue; }
+            if block_len == 0 {
+                continue;
+            }
             if skip_bytes >= block_len {
                 skip_bytes -= block_len;
                 continue;
@@ -678,7 +955,8 @@ fn run_dsd(
                 // 部分跳过：截断每个声道的前 N 字节
                 let skip = skip_bytes;
                 skip_bytes = 0;
-                let truncated: Vec<Box<[u8]>> = chan_frames.iter()
+                let truncated: Vec<Box<[u8]>> = chan_frames
+                    .iter()
                     .map(|b| b[skip..].to_vec().into_boxed_slice())
                     .collect();
                 converter.feed(&truncated);
@@ -690,7 +968,9 @@ fn run_dsd(
         // 达到阈值时 flush 并发送
         // feed() 返回 bool 但我们每次都尝试 flush（小文件可能永远不达阈值）
         let pcm = converter.flush();
-        if pcm.is_empty() { continue; }
+        if pcm.is_empty() {
+            continue;
+        }
 
         // 声道混音
         let mixed = mix_channels(&pcm, src_ch, out_ch);
@@ -707,15 +987,28 @@ fn run_dsd(
         } else {
             mixed
         };
-        if mixed.is_empty() { break; }
+        if mixed.is_empty() {
+            break;
+        }
 
         // 重采样或直发
-        pts = resample_and_send(&mixed, &mut resampler, &mut rubato_buf,
-            out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
+        pts = resample_and_send(
+            &mixed,
+            &mut resampler,
+            &mut rubato_buf,
+            out_ch,
+            target_rate,
+            target_ch,
+            pts,
+            &tx,
+            &stop_rx,
+        );
 
         output_frames += (mixed.len() / out_ch) as u64;
         if let Some(max_frames) = max_output_frames {
-            if output_frames >= max_frames { break; }
+            if output_frames >= max_frames {
+                break;
+            }
         }
     }
 
@@ -724,8 +1017,17 @@ fn run_dsd(
     if !pcm.is_empty() && stop_rx.try_recv().is_err() {
         let mixed = mix_channels(&pcm, src_ch, out_ch);
         if !mixed.is_empty() {
-            let _ = resample_and_send(&mixed, &mut resampler, &mut rubato_buf,
-                out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
+            let _ = resample_and_send(
+                &mixed,
+                &mut resampler,
+                &mut rubato_buf,
+                out_ch,
+                target_rate,
+                target_ch,
+                pts,
+                &tx,
+                &stop_rx,
+            );
         }
     }
     Ok(())
@@ -734,17 +1036,21 @@ fn run_dsd(
 /// APE (Monkey's Audio) 直解：纯 Rust ape-decoder，输出统一小端交错 PCM 字节。
 /// 与 run_dsd 同构：逐帧解码 → 字节转 f32 → 混音 → 重采样 → 发送。
 fn run_ape(
-    path: &Path, target_rate: u32, target_ch: u32,
-    tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
+    path: &Path,
+    target_rate: u32,
+    target_ch: u32,
+    tx: Sender<DecodedFrame>,
+    stop_rx: Receiver<()>,
     seek_pos: Option<f64>,
     end_secs: Option<f64>,
 ) -> Result<(), EngineError> {
     use ape_decoder::ApeDecoder;
 
-    let file = File::open(path)
-        .map_err(|_| EngineError::FileNotFound(path.to_path_buf()))?;
-    let mut decoder = ApeDecoder::new(file)
-        .map_err(|e| EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("APE 打开失败: {e}") })?;
+    let file = File::open(path).map_err(|_| EngineError::FileNotFound(path.to_path_buf()))?;
+    let mut decoder = ApeDecoder::new(file).map_err(|e| EngineError::DecodeFailed {
+        path: path.to_path_buf(),
+        reason: format!("APE 打开失败: {e}"),
+    })?;
     let info = decoder.info().clone();
 
     // 老版本 APE (< 3.95) 不支持
@@ -762,7 +1068,13 @@ fn run_ape(
     let bytes_per_sample = bits.div_ceil(8);
     let is_float = info.is_floating_point;
 
-    info!("APE 直解: {} ({}Hz, {}ch, {}bit)", path.display(), src_rate, src_ch, bits);
+    info!(
+        "APE 直解: {} ({}Hz, {}ch, {}bit)",
+        path.display(),
+        src_rate,
+        src_ch,
+        bits
+    );
 
     // Seek：定位到目标样本（APE 按样本 seek，天然精确）
     if let Some(secs) = seek_pos {
@@ -774,7 +1086,11 @@ fn run_ape(
     let max_output_frames: Option<u64> = if let Some(end) = end_secs {
         let start = seek_pos.unwrap_or(0.0);
         let dur = end - start;
-        if dur > 0.0 { Some((dur * src_rate as f64) as u64) } else { None }
+        if dur > 0.0 {
+            Some((dur * src_rate as f64) as u64)
+        } else {
+            None
+        }
     } else {
         None
     };
@@ -787,7 +1103,9 @@ fn run_ape(
 
     // 主循环：逐帧解码 → 字节转 f32 → 混音 → 重采样 → 发送
     for frame_result in decoder.frames() {
-        if stop_rx.try_recv().is_ok() { return Ok(()); }
+        if stop_rx.try_recv().is_ok() {
+            return Ok(());
+        }
 
         let raw = match frame_result {
             Ok(v) => v,
@@ -796,7 +1114,9 @@ fn run_ape(
                 continue;
             }
         };
-        if raw.is_empty() { continue; }
+        if raw.is_empty() {
+            continue;
+        }
 
         // 字节 → 交错 f32（小端；8bit 无符号已 +128 偏置，float 已变换为 IEEE 位模式）
         let pcm = bytes_to_interleaved_f32(&raw, bytes_per_sample, is_float);
@@ -816,15 +1136,28 @@ fn run_ape(
         } else {
             mixed
         };
-        if mixed.is_empty() { break; }
+        if mixed.is_empty() {
+            break;
+        }
 
         // 重采样或直发
-        pts = resample_and_send(&mixed, &mut resampler, &mut rubato_buf,
-            out_ch, target_rate, target_ch, pts, &tx, &stop_rx);
+        pts = resample_and_send(
+            &mixed,
+            &mut resampler,
+            &mut rubato_buf,
+            out_ch,
+            target_rate,
+            target_ch,
+            pts,
+            &tx,
+            &stop_rx,
+        );
 
         output_frames += (mixed.len() / out_ch) as u64;
         if let Some(max_frames) = max_output_frames {
-            if output_frames >= max_frames { break; }
+            if output_frames >= max_frames {
+                break;
+            }
         }
     }
 
@@ -850,7 +1183,11 @@ fn bytes_to_interleaved_f32(raw: &[u8], bytes_per_sample: usize, is_float: bool)
                 }
                 3 => {
                     // 24bit 有符号（小端），左移 8 位后算术右移实现符号扩展
-                    let v = ((raw[i] as i32) | ((raw[i + 1] as i32) << 8) | ((raw[i + 2] as i32) << 16)) << 8 >> 8;
+                    let v = ((raw[i] as i32)
+                        | ((raw[i + 1] as i32) << 8)
+                        | ((raw[i + 2] as i32) << 16))
+                        << 8
+                        >> 8;
                     v as f32 / 8388608.0
                 }
                 _ => {
@@ -894,54 +1231,84 @@ fn flush_pack_dop(
     }
     // end_secs 截断
     let send_len = match max_output_frames {
-        Some(max) => packed.len().min(max.saturating_sub(*output_frames) as usize * out_ch),
+        Some(max) => packed
+            .len()
+            .min(max.saturating_sub(*output_frames) as usize * out_ch),
         None => packed.len(),
     };
     if send_len == 0 {
         return;
     }
     let n_frames = send_len / out_ch;
-    try_send_or_stop(tx, DecodedFrame {
-        samples: packed[..send_len].to_vec(),
-        pts_secs: *pts,
-        sample_rate: pcm_rate,
-        channels: out_ch as u32,
-    }, stop_rx);
+    try_send_or_stop(
+        tx,
+        DecodedFrame {
+            samples: packed[..send_len].to_vec(),
+            pts_secs: *pts,
+            sample_rate: pcm_rate,
+            channels: out_ch as u32,
+        },
+        stop_rx,
+    );
     *pts += n_frames as f64 / pcm_rate as f64;
     *output_frames += n_frames as u64;
 }
 
 /// DoP 直出：原始 DSD 比特 → DoP PCM 帧（不转 PCM、不重采样）
 fn run_dsd_dop(
-    path: &Path, left_justify: bool, target_ch: u32,
-    tx: Sender<DecodedFrame>, stop_rx: Receiver<()>,
+    path: &Path,
+    left_justify: bool,
+    target_ch: u32,
+    tx: Sender<DecodedFrame>,
+    stop_rx: Receiver<()>,
     seek_pos: Option<f64>,
     end_secs: Option<f64>,
 ) -> Result<(), EngineError> {
-    use dsd_reader::DsdReader;
     use crate::dsd::dop::{dop_pcm_rate, dop_supported, DopPacker};
+    use dsd_reader::DsdReader;
 
-    let reader = DsdReader::from_container(path.to_path_buf())
-        .map_err(|e| EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("DSD 文件打开失败: {e}") })?;
+    let reader =
+        DsdReader::from_container(path.to_path_buf()).map_err(|e| EngineError::DecodeFailed {
+            path: path.to_path_buf(),
+            reason: format!("DSD 文件打开失败: {e}"),
+        })?;
     let mult = reader.dsd_rate();
     let dsd_rate_hz = 2_822_400 * mult.max(1) as u32;
     let src_ch = reader.channels_num();
     if src_ch == 0 {
-        return Err(EngineError::DecodeFailed { path: path.to_path_buf(), reason: "DSD 文件无声道".into() });
+        return Err(EngineError::DecodeFailed {
+            path: path.to_path_buf(),
+            reason: "DSD 文件无声道".into(),
+        });
     }
     if !dop_supported(dsd_rate_hz) {
         return Err(EngineError::DecodeFailed {
             path: path.to_path_buf(),
-            reason: format!("DSD 速率 {}Hz 过高，无法 DoP 直出（上限 DSD256）", dsd_rate_hz),
+            reason: format!(
+                "DSD 速率 {}Hz 过高，无法 DoP 直出（上限 DSD256）",
+                dsd_rate_hz
+            ),
         });
     }
     let pcm_rate = dop_pcm_rate(dsd_rate_hz);
-    let out_ch = if target_ch == 0 { src_ch } else { src_ch.min(target_ch as usize).max(1) };
+    let out_ch = if target_ch == 0 {
+        src_ch
+    } else {
+        src_ch.min(target_ch as usize).max(1)
+    };
 
-    info!("DoP 直出: {} (DSD{} → {}kHz PCM, {}ch)", path.display(), mult * 64, pcm_rate / 1000, out_ch);
+    info!(
+        "DoP 直出: {} (DSD{} → {}kHz PCM, {}ch)",
+        path.display(),
+        mult * 64,
+        pcm_rate / 1000,
+        out_ch
+    );
 
-    let iter = reader.dsd_iter()
-        .map_err(|e| EngineError::DecodeFailed { path: path.to_path_buf(), reason: format!("DSD 迭代器创建失败: {e}") })?;
+    let iter = reader.dsd_iter().map_err(|e| EngineError::DecodeFailed {
+        path: path.to_path_buf(),
+        reason: format!("DSD 迭代器创建失败: {e}"),
+    })?;
 
     // Seek：每声道需跳过的 DSD 字节数 = secs * dsd_rate / 8
     let mut skip_bytes: usize = if let Some(secs) = seek_pos {
@@ -952,7 +1319,11 @@ fn run_dsd_dop(
     let max_output_frames: Option<u64> = if let Some(end) = end_secs {
         let start = seek_pos.unwrap_or(0.0);
         let dur = end - start;
-        if dur > 0.0 { Some((dur * pcm_rate as f64) as u64) } else { None }
+        if dur > 0.0 {
+            Some((dur * pcm_rate as f64) as u64)
+        } else {
+            None
+        }
     } else {
         None
     };
@@ -960,21 +1331,29 @@ fn run_dsd_dop(
     let mut packer = DopPacker::new(left_justify);
     // 每声道累积缓冲（达阈后打包发送）
     const FLUSH_BYTES: usize = 8192;
-    let mut chan_buf: Vec<Vec<u8>> = (0..src_ch).map(|_| Vec::with_capacity(FLUSH_BYTES + 4096)).collect();
+    let mut chan_buf: Vec<Vec<u8>> = (0..src_ch)
+        .map(|_| Vec::with_capacity(FLUSH_BYTES + 4096))
+        .collect();
     let mut packed: Vec<f32> = Vec::with_capacity(FLUSH_BYTES / 2 * out_ch);
     let mut output_frames: u64 = 0;
     let mut pts = 0.0f64;
 
     for (_nread, chan_frames) in iter {
-        if stop_rx.try_recv().is_ok() { return Ok(()); }
+        if stop_rx.try_recv().is_ok() {
+            return Ok(());
+        }
         if let Some(max_frames) = max_output_frames {
-            if output_frames >= max_frames { break; }
+            if output_frames >= max_frames {
+                break;
+            }
         }
 
         // Seek 跳过
         if skip_bytes > 0 {
             let block_len = chan_frames.first().map(|b| b.len()).unwrap_or(0);
-            if block_len == 0 { continue; }
+            if block_len == 0 {
+                continue;
+            }
             if skip_bytes >= block_len {
                 skip_bytes -= block_len;
                 continue;
@@ -995,16 +1374,40 @@ fn run_dsd_dop(
             }
         }
 
-        if chan_buf.first().map(|b| b.len() >= FLUSH_BYTES).unwrap_or(false) {
-            flush_pack_dop(&mut chan_buf, &mut packer, &mut packed, &tx, &stop_rx,
-                out_ch, pcm_rate, &mut pts, &mut output_frames, max_output_frames);
+        if chan_buf
+            .first()
+            .map(|b| b.len() >= FLUSH_BYTES)
+            .unwrap_or(false)
+        {
+            flush_pack_dop(
+                &mut chan_buf,
+                &mut packer,
+                &mut packed,
+                &tx,
+                &stop_rx,
+                out_ch,
+                pcm_rate,
+                &mut pts,
+                &mut output_frames,
+                max_output_frames,
+            );
         }
     }
 
     // 文件结束：打包剩余字节
     if stop_rx.try_recv().is_err() {
-        flush_pack_dop(&mut chan_buf, &mut packer, &mut packed, &tx, &stop_rx,
-            out_ch, pcm_rate, &mut pts, &mut output_frames, max_output_frames);
+        flush_pack_dop(
+            &mut chan_buf,
+            &mut packer,
+            &mut packed,
+            &tx,
+            &stop_rx,
+            out_ch,
+            pcm_rate,
+            &mut pts,
+            &mut output_frames,
+            max_output_frames,
+        );
     }
     Ok(())
 }
@@ -1017,7 +1420,9 @@ fn run_dsd_dop(
 /// - 3.0+ (FL FR FC ...) → 2.0: L' = FL + 0.707*FC, R' = FR + 0.707*FC
 /// - 单声道输出：所有声道等权平均
 fn mix_channels(pcm: &[f32], in_ch: usize, out_ch: usize) -> Vec<f32> {
-    if in_ch == out_ch { return pcm.to_vec(); }
+    if in_ch == out_ch {
+        return pcm.to_vec();
+    }
     let in_frames = pcm.len() / in_ch;
     let mut mixed = Vec::with_capacity(in_frames * out_ch);
 
@@ -1039,7 +1444,7 @@ fn mix_channels(pcm: &[f32], in_ch: usize, out_ch: usize) -> Vec<f32> {
     } else {
         // 多声道 → 立体声 downmix (ITU-R BS.775)
         const C: f32 = 0.707; // 中置/环绕衰减 -3dB
-        const S: f32 = 0.5;   // 侧环绕衰减 -6dB (7.1)
+        const S: f32 = 0.5; // 侧环绕衰减 -6dB (7.1)
         for f in 0..in_frames {
             let off = f * in_ch;
             let fl = pcm[off];
@@ -1067,8 +1472,17 @@ mod tests {
 
     fn test_decode(path: &str) -> Option<u64> {
         let p = std::path::Path::new(path);
-        if !p.exists() { return None; }
-        let (rx, _decoder) = match Decoder::start(p, TARGET_SAMPLE_RATE, TARGET_CHANNELS, Arc::new(AtomicU64::new(0)), None, None) {
+        if !p.exists() {
+            return None;
+        }
+        let (rx, _decoder) = match Decoder::start(
+            p,
+            TARGET_SAMPLE_RATE,
+            TARGET_CHANNELS,
+            Arc::new(AtomicU64::new(0)),
+            None,
+            None,
+        ) {
             Ok(v) => v,
             Err(_) => return None,
         };
@@ -1080,10 +1494,17 @@ mod tests {
     }
 
     fn ensure_test_tone(path: &str) {
-        if std::path::Path::new(path).exists() { return; }
-        use hound::WavSpec;
+        if std::path::Path::new(path).exists() {
+            return;
+        }
         use hound::SampleFormat::Int;
-        let spec = WavSpec { channels: 2, sample_rate: 44100, bits_per_sample: 16, sample_format: Int };
+        use hound::WavSpec;
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 44100,
+            bits_per_sample: 16,
+            sample_format: Int,
+        };
         let mut w = hound::WavWriter::create(path, spec).unwrap();
         let n = (44100.0 * 0.5) as u32;
         for i in 0..n * 2 {
@@ -1104,7 +1525,8 @@ mod tests {
     #[test]
     fn test_probe_duration_wav() {
         ensure_test_tone("/tmp/_test_decode.wav");
-        let secs = crate::decoder::probe_duration_secs(std::path::Path::new("/tmp/_test_decode.wav"));
+        let secs =
+            crate::decoder::probe_duration_secs(std::path::Path::new("/tmp/_test_decode.wav"));
         assert!(secs.is_some(), "WAV 应能从头探测时长");
         let secs = secs.unwrap();
         assert!(
@@ -1149,14 +1571,20 @@ mod tests {
         ensure_test_tone("/tmp/_test_stop.wav");
         let (rx, dec) = Decoder::start(
             std::path::Path::new("/tmp/_test_stop.wav"),
-            TARGET_SAMPLE_RATE, TARGET_CHANNELS,
-            Arc::new(AtomicU64::new(0)), None, None,
-        ).unwrap();
+            TARGET_SAMPLE_RATE,
+            TARGET_CHANNELS,
+            Arc::new(AtomicU64::new(0)),
+            None,
+            None,
+        )
+        .unwrap();
         // 接收少量帧后立即停止
         let mut count = 0u64;
         while let Ok(f) = rx.recv_timeout(Duration::from_millis(200)) {
             count += f.samples.len() as u64;
-            if count > 5000 { break; }
+            if count > 5000 {
+                break;
+            }
         }
         dec.stop(); // 应快速返回，不阻塞
         assert!(count > 0, "应收到至少一些样本");
@@ -1174,8 +1602,11 @@ mod tests {
             std::fs::write(&path, &data).ok();
             let _ = Decoder::start(
                 std::path::Path::new(&path),
-                TARGET_SAMPLE_RATE, TARGET_CHANNELS,
-                Arc::new(AtomicU64::new(0)), None, None,
+                TARGET_SAMPLE_RATE,
+                TARGET_CHANNELS,
+                Arc::new(AtomicU64::new(0)),
+                None,
+                None,
             );
             std::fs::remove_file(&path).ok();
         }
@@ -1186,9 +1617,13 @@ mod tests {
         ensure_test_tone("/tmp/_test_seek.wav");
         let (rx, _dec) = Decoder::start(
             std::path::Path::new("/tmp/_test_seek.wav"),
-            TARGET_SAMPLE_RATE, TARGET_CHANNELS,
-            Arc::new(AtomicU64::new(0)), Some(0.1), None,
-        ).unwrap();
+            TARGET_SAMPLE_RATE,
+            TARGET_CHANNELS,
+            Arc::new(AtomicU64::new(0)),
+            Some(0.1),
+            None,
+        )
+        .unwrap();
         let mut frames = Vec::new();
         while let Ok(f) = rx.recv_timeout(Duration::from_secs(3)) {
             frames.push(f);
@@ -1197,7 +1632,11 @@ mod tests {
         // 第一帧的 pts 应该在 0.1s 附近（允许 ±0.03s 误差）
         if let Some(first) = frames.first() {
             let delta = (first.pts_secs - 0.1).abs();
-            assert!(delta < 0.03, "seek 时间偏差过大: 期望 0.1s, 实际: {}", first.pts_secs);
+            assert!(
+                delta < 0.03,
+                "seek 时间偏差过大: 期望 0.1s, 实际: {}",
+                first.pts_secs
+            );
         }
     }
 
@@ -1222,9 +1661,13 @@ mod tests {
         }
         let (rx, _dec) = Decoder::start(
             std::path::Path::new("/tmp/_test_multiframe.ape"),
-            TARGET_SAMPLE_RATE, TARGET_CHANNELS,
-            Arc::new(AtomicU64::new(0)), Some(0.1), None,
-        ).unwrap();
+            TARGET_SAMPLE_RATE,
+            TARGET_CHANNELS,
+            Arc::new(AtomicU64::new(0)),
+            Some(0.1),
+            None,
+        )
+        .unwrap();
         let mut frames = Vec::new();
         while let Ok(f) = rx.recv_timeout(Duration::from_secs(5)) {
             frames.push(f);
@@ -1238,8 +1681,16 @@ mod tests {
         let raw = vec![0x00, 0x80, 0xFF, 0x7F];
         let out = bytes_to_interleaved_f32(&raw, 2, false);
         assert_eq!(out.len(), 2);
-        assert!((out[0] + 1.0).abs() < 1e-6, "16bit min 应映射到 -1.0: {}", out[0]);
-        assert!((out[1] - (32767.0 / 32768.0)).abs() < 1e-6, "16bit max 映射错误: {}", out[1]);
+        assert!(
+            (out[0] + 1.0).abs() < 1e-6,
+            "16bit min 应映射到 -1.0: {}",
+            out[0]
+        );
+        assert!(
+            (out[1] - (32767.0 / 32768.0)).abs() < 1e-6,
+            "16bit max 映射错误: {}",
+            out[1]
+        );
 
         // 8bit 无符号: 0 → -1.0, 255 → ~0.992
         let raw = vec![0x00, 0xFF];
@@ -1255,7 +1706,11 @@ mod tests {
         // 0xFFFFFF = 补码 -1 LSB ≈ -1.19e-7
         let raw = vec![0xFF, 0xFF, 0xFF];
         let out = bytes_to_interleaved_f32(&raw, 3, false);
-        assert!((out[0] + 1.0 / 8388608.0).abs() < 1e-6, "24bit 补码 -1 映射错误: {}", out[0]);
+        assert!(
+            (out[0] + 1.0 / 8388608.0).abs() < 1e-6,
+            "24bit 补码 -1 映射错误: {}",
+            out[0]
+        );
 
         // 32bit float: 1.0 的 IEEE 位模式
         let raw = 1.0f32.to_le_bytes().to_vec();
@@ -1263,4 +1718,3 @@ mod tests {
         assert!((out[0] - 1.0).abs() < 1e-6);
     }
 }
-

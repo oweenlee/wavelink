@@ -19,7 +19,8 @@ pub struct PlaylistEntry {
 pub fn parse_playlist(path: &Path) -> Result<Vec<PlaylistEntry>, String> {
     let file = File::open(path).map_err(|e| format!("无法打开播放列表: {e}"))?;
     let reader = BufReader::new(file);
-    let lines: Vec<String> = reader.lines()
+    let lines: Vec<String> = reader
+        .lines()
         .collect::<Result<_, std::io::Error>>()
         .map_err(|e| format!("读取播放列表失败: {e}"))?;
 
@@ -51,7 +52,11 @@ fn parse_m3u(lines: &[String], list_path: &Path) -> Result<Vec<PlaylistEntry>, S
                 if let Some(comma) = rest.find(',') {
                     extinf_dur = rest[..comma].trim().parse::<f64>().unwrap_or(0.0);
                     let title = rest[comma + 1..].trim();
-                    extinf_title = if title.is_empty() { None } else { Some(title.to_string()) };
+                    extinf_title = if title.is_empty() {
+                        None
+                    } else {
+                        Some(title.to_string())
+                    };
                 }
             }
             // 其他 # 注释 / #EXTM3U 忽略
@@ -85,7 +90,11 @@ fn parse_pls(lines: &[String], list_path: &Path) -> Result<Vec<PlaylistEntry>, S
 
     for line in lines {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('[') || trimmed.starts_with("NumberOfEntries") || trimmed.starts_with("Version") {
+        if trimmed.is_empty()
+            || trimmed.starts_with('[')
+            || trimmed.starts_with("NumberOfEntries")
+            || trimmed.starts_with("Version")
+        {
             continue;
         }
         // File1=path, Title1=name, Length1=123
@@ -93,7 +102,12 @@ fn parse_pls(lines: &[String], list_path: &Path) -> Result<Vec<PlaylistEntry>, S
             let key = trimmed[..eq].trim();
             let value = trimmed[eq + 1..].trim();
             // 提取数字索引
-            let num: usize = key.chars().skip_while(|c| !c.is_ascii_digit()).collect::<String>().parse().unwrap_or(0);
+            let num: usize = key
+                .chars()
+                .skip_while(|c| !c.is_ascii_digit())
+                .collect::<String>()
+                .parse()
+                .unwrap_or(0);
             if key.to_ascii_lowercase().starts_with("file") {
                 file_map.insert(num, resolve_path(value, list_dir));
             } else if key.to_ascii_lowercase().starts_with("title") {
@@ -173,7 +187,8 @@ pub fn export_pls(path: &Path, entries: &[PlaylistEntry]) -> Result<(), String> 
 
 /// 根据扩展名自动推导导出格式并写入播放列表
 pub fn export_playlist(path: &Path, entries: &[PlaylistEntry]) -> Result<(), String> {
-    let ext = path.extension()
+    let ext = path
+        .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase())
         .unwrap_or_default();
@@ -216,7 +231,10 @@ mod tests {
         let path = write_tmp("#EXTM3U\n#EXTINF:180,Test Artist - Test Title\nsong.mp3\n");
         let entries = parse_playlist(Path::new(&path)).unwrap();
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].title.as_deref(), Some("Test Artist - Test Title"));
+        assert_eq!(
+            entries[0].title.as_deref(),
+            Some("Test Artist - Test Title")
+        );
         assert!((entries[0].duration_secs - 180.0).abs() < 0.01);
     }
 

@@ -21,7 +21,17 @@ pub struct Biquad {
 impl Biquad {
     /// 用原始系数构造（a0 已归一化为 1）
     pub fn new(b0: f32, b1: f32, b2: f32, a1: f32, a2: f32) -> Self {
-        Biquad { b0, b1, b2, a1, a2, x1: 0.0, x2: 0.0, y1: 0.0, y2: 0.0 }
+        Biquad {
+            b0,
+            b1,
+            b2,
+            a1,
+            a2,
+            x1: 0.0,
+            x2: 0.0,
+            y1: 0.0,
+            y2: 0.0,
+        }
     }
 
     /// Peaking EQ（参数均衡，RBJ audio EQ cookbook）。
@@ -116,7 +126,8 @@ impl Biquad {
     #[inline]
     pub fn process(&mut self, x0: f32) -> f32 {
         let y0 = self.b0 * x0 + self.b1 * self.x1 + self.b2 * self.x2
-            - self.a1 * self.y1 - self.a2 * self.y2;
+            - self.a1 * self.y1
+            - self.a2 * self.y2;
         self.x2 = self.x1;
         self.x1 = x0;
         self.y2 = self.y1;

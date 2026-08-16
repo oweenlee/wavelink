@@ -3,12 +3,12 @@
 //! 验证 DSP 管线各处理级的频响、增益、限幅行为符合预期。
 //! 用合成信号 + 测量，避免人工试听判断。
 
-use audio_core::dsp::{default_peq_bands, DspPipeline, PeqBand};
-use audio_core::dsp::limiter::TruePeakLimiter;
 use audio_core::dsp::biquad::Biquad;
 use audio_core::dsp::crossfeed::Crossfeed;
-use audio_core::dsp::widener::StereoWidener;
 use audio_core::dsp::dither::Dither;
+use audio_core::dsp::limiter::TruePeakLimiter;
+use audio_core::dsp::widener::StereoWidener;
+use audio_core::dsp::{default_peq_bands, DspPipeline, PeqBand};
 
 // ── 测量工具 ──
 
@@ -61,7 +61,12 @@ fn pipeline_gain_at(dsp: &mut DspPipeline, sr: u32, freq: f32) -> f32 {
 #[test]
 fn test_peq_gain_at_center_frequency() {
     let sr = 44100u32;
-    let bands = vec![PeqBand { freq: 1000.0, gain_db: 12.0, q: 2.0, ..Default::default() }];
+    let bands = vec![PeqBand {
+        freq: 1000.0,
+        gain_db: 12.0,
+        q: 2.0,
+        ..Default::default()
+    }];
     let mut dsp = DspPipeline::new(sr, 2, &bands, false, 1.0, 24);
 
     let gain = pipeline_gain_at(&mut dsp, sr, 1000.0);
@@ -75,7 +80,12 @@ fn test_peq_gain_at_center_frequency() {
 #[test]
 fn test_peq_no_effect_at_distant_frequency() {
     let sr = 96000u32;
-    let bands = vec![PeqBand { freq: 1000.0, gain_db: 12.0, q: 2.0, ..Default::default() }];
+    let bands = vec![PeqBand {
+        freq: 1000.0,
+        gain_db: 12.0,
+        q: 2.0,
+        ..Default::default()
+    }];
     let mut dsp = DspPipeline::new(sr, 2, &bands, false, 1.0, 24);
 
     let gain = pipeline_gain_at(&mut dsp, sr, 10_000.0);
@@ -89,15 +99,17 @@ fn test_peq_no_effect_at_distant_frequency() {
 #[test]
 fn test_peq_negative_gain_cuts() {
     let sr = 44100u32;
-    let bands = vec![PeqBand { freq: 5000.0, gain_db: -9.0, q: 1.0, ..Default::default() }];
+    let bands = vec![PeqBand {
+        freq: 5000.0,
+        gain_db: -9.0,
+        q: 1.0,
+        ..Default::default()
+    }];
     let mut dsp = DspPipeline::new(sr, 2, &bands, false, 1.0, 24);
 
     let gain = pipeline_gain_at(&mut dsp, sr, 5000.0);
 
-    assert!(
-        gain < -7.0,
-        "PEQ @5kHz -9dB 实测 {gain:.2}dB (期望 < -7dB)"
-    );
+    assert!(gain < -7.0, "PEQ @5kHz -9dB 实测 {gain:.2}dB (期望 < -7dB)");
 }
 
 #[test]
@@ -144,10 +156,7 @@ fn test_limiter_passthrough_below_threshold() {
 
     for (a, b) in buf.iter().zip(expected.iter()) {
         let diff = (a - b).abs();
-        assert!(
-            diff < 0.01,
-            "低于阈值时应几乎无变化: {a} vs {b}"
-        );
+        assert!(diff < 0.01, "低于阈值时应几乎无变化: {a} vs {b}");
     }
 }
 
@@ -255,10 +264,7 @@ fn test_biquad_dc_gain_unit() {
     for _ in 0..1000 {
         y = bq.process(1.0);
     }
-    assert!(
-        (y - 1.0).abs() < 0.01,
-        "低通 DC 增益应 ≈1.0, 实测: {y}"
-    );
+    assert!((y - 1.0).abs() < 0.01, "低通 DC 增益应 ≈1.0, 实测: {y}");
 }
 
 // ── Crossfeed 正确性 ──
@@ -277,10 +283,7 @@ fn test_crossfeed_blends_channels() {
     cf.process(&mut buf);
 
     let r_energy: f32 = (1..buf.len()).step_by(2).map(|i| buf[i] * buf[i]).sum();
-    assert!(
-        r_energy > 0.0001,
-        "crossfeed 应在 R 声道产生串音信号"
-    );
+    assert!(r_energy > 0.0001, "crossfeed 应在 R 声道产生串音信号");
 
     let l_before = (128 * 2) as f32 * (0.5 * 0.5);
     let l_energy: f32 = (0..buf.len()).step_by(2).map(|i| buf[i] * buf[i]).sum();
@@ -302,10 +305,7 @@ fn test_dither_adds_noise_within_bounds() {
 
     for (orig, &dit) in original.iter().zip(dithered.iter()) {
         let diff = (orig - dit).abs();
-        assert!(
-            diff < 1e-4,
-            "TPDF dither 噪声不应超过 1 LSB, diff={diff:e}"
-        );
+        assert!(diff < 1e-4, "TPDF dither 噪声不应超过 1 LSB, diff={diff:e}");
     }
 }
 
@@ -316,10 +316,7 @@ fn test_dither_quiet_signal_has_noise() {
     d.process(&mut buf, 0);
 
     let energy: f32 = buf.iter().map(|&s| s * s).sum();
-    assert!(
-        energy > 0.0,
-        "静音输入经 dither 后应有噪声输出"
-    );
+    assert!(energy > 0.0, "静音输入经 dither 后应有噪声输出");
 }
 
 // ── 管线集成测试 ──
@@ -496,7 +493,12 @@ fn test_mixed_nan_no_panic() {
 #[test]
 fn test_peq_extreme_q_value() {
     let sr = 44100u32;
-    let bands = vec![PeqBand { freq: 1000.0, gain_db: 12.0, q: 100.0, ..Default::default() }];
+    let bands = vec![PeqBand {
+        freq: 1000.0,
+        gain_db: 12.0,
+        q: 100.0,
+        ..Default::default()
+    }];
     let mut dsp = DspPipeline::new(sr, 2, &bands, false, 1.0, 24);
     let signal = generate_sine(1000.0, 0.1, sr, 0.5);
     let mut buf = to_stereo(&signal);
@@ -509,7 +511,12 @@ fn test_peq_extreme_q_value() {
 #[test]
 fn test_peq_freq_above_nyquist_no_panic() {
     let sr = 44100u32;
-    let bands = vec![PeqBand { freq: 30000.0, gain_db: 12.0, q: 1.0, ..Default::default() }];
+    let bands = vec![PeqBand {
+        freq: 30000.0,
+        gain_db: 12.0,
+        q: 1.0,
+        ..Default::default()
+    }];
     let mut dsp = DspPipeline::new(sr, 2, &bands, false, 1.0, 24);
     let signal = generate_sine(1000.0, 0.1, sr, 0.2);
     let mut buf = to_stereo(&signal);
@@ -521,7 +528,12 @@ fn test_peq_freq_above_nyquist_no_panic() {
 fn test_peq_extreme_negative_gain() {
     let sr = 44100u32;
     // 用高 Q 值确保衰减精确
-    let bands = vec![PeqBand { freq: 1000.0, gain_db: -40.0, q: 5.0, ..Default::default() }];
+    let bands = vec![PeqBand {
+        freq: 1000.0,
+        gain_db: -40.0,
+        q: 5.0,
+        ..Default::default()
+    }];
     let mut dsp = DspPipeline::new(sr, 2, &bands, false, 1.0, 24);
     let signal = generate_sine(1000.0, 0.5, sr, 0.2);
     let mut buf = to_stereo(&signal);

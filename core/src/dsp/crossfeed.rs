@@ -118,7 +118,10 @@ mod tests {
         }
         cf.process(&mut buf);
         // 右声道应有泄漏
-        let r_peak = (1..buf.len()).step_by(2).map(|i| buf[i].abs()).fold(0.0f32, f32::max);
+        let r_peak = (1..buf.len())
+            .step_by(2)
+            .map(|i| buf[i].abs())
+            .fold(0.0f32, f32::max);
         assert!(r_peak > 0.0, "crossfeed 未产生右声道泄漏: r_peak={r_peak}");
         // 输出不应为 NaN
         for &s in &buf {
@@ -156,10 +159,19 @@ mod tests {
         for i in 0..64 {
             buf[2 * i] = if i % 5 < 3 { 1.0 } else { -1.0 };
         }
-        let orig_l_peak: f32 = (0..128).step_by(2).map(|i| buf[i].abs()).fold(0.0f32, f32::max);
+        let orig_l_peak: f32 = (0..128)
+            .step_by(2)
+            .map(|i| buf[i].abs())
+            .fold(0.0f32, f32::max);
         cf.process(&mut buf);
         // 延迟线上的低通滤波使泄漏到右声道的信号幅度小于原始
-        let xfeed_peak: f32 = (1..128).step_by(2).map(|i| buf[i].abs()).fold(0.0f32, f32::max);
-        assert!(xfeed_peak < orig_l_peak, "低通应衰减高频串音: {xfeed_peak} >= {orig_l_peak}");
+        let xfeed_peak: f32 = (1..128)
+            .step_by(2)
+            .map(|i| buf[i].abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            xfeed_peak < orig_l_peak,
+            "低通应衰减高频串音: {xfeed_peak} >= {orig_l_peak}"
+        );
     }
 }

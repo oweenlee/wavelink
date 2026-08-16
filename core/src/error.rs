@@ -33,7 +33,9 @@ impl fmt::Display for EngineError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             EngineError::FileNotFound(p) => write!(f, "文件不存在: {}", p.display()),
-            EngineError::DecodeFailed { path, reason } => write!(f, "解码失败: {}: {reason}", path.display()),
+            EngineError::DecodeFailed { path, reason } => {
+                write!(f, "解码失败: {}: {reason}", path.display())
+            }
             EngineError::OutputOpenFailed(msg) => write!(f, "打开音频输出失败: {msg}"),
             EngineError::DeviceLost => write!(f, "音频设备丢失"),
             EngineError::InvalidState(msg) => write!(f, "状态错误: {msg}"),

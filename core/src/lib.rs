@@ -13,38 +13,38 @@
 /// 音频分析（BPM 检测 / 调性识别 / 能量计算）
 pub mod analysis;
 
-/// 低层诊断日志（Android logcat / stderr，仅 crate 内部使用）
-pub(crate) mod diag;
 /// 音频输入捕获抽象层
 pub mod capture;
 /// 解码→DSP→ringbuf 消费循环（PC 和 Mobile 共享）。
 /// 引擎内部编排使用，公开以支持样本级集成测试（gapless / consumer 链路验证）
 pub mod consumer;
-/// 音频文件解码（Symphonia 流式解码 + DSD 直解）
-pub mod decoder;
-/// DSD（DSF/DFF）格式直解为 PCM
-pub mod dsd;
 /// CUE 分轨解析
 pub mod cue;
+/// 音频文件解码（Symphonia 流式解码 + DSD 直解）
+pub mod decoder;
+/// 低层诊断日志（Android logcat / stderr，仅 crate 内部使用）
+pub(crate) mod diag;
+/// DSD（DSF/DFF）格式直解为 PCM
+pub mod dsd;
 /// DSP 管线：参数均衡器 / 串音补偿 / 立体声展宽 / 限幅 / 抖动
 pub mod dsp;
 /// 统一错误类型
 pub mod error;
+/// 独占模式（macOS Hog Mode / Windows WASAPI Exclusive）
+pub mod exclusive;
 /// LRC 歌词解析与同步
 pub mod lyric;
 /// 元数据标签写入（lofty）
 pub mod tag;
-/// 独占模式（macOS Hog Mode / Windows WASAPI Exclusive）
-pub mod exclusive;
 
 /// 音频引擎（桌面端 cpal / 移动端 HeadlessOutput）
 pub mod engine;
 /// 音频输出抽象（cpal / HeadlessOutput）
 pub mod output;
-/// 流式音频数据源（网络流媒体解码用，平台层写入字节流）
-pub mod stream;
 /// 播放列表解析（M3U / M3U8 / PLS）
 pub mod playlist;
+/// 流式音频数据源（网络流媒体解码用，平台层写入字节流）
+pub mod stream;
 
 /// 目标输出采样率（默认 44100 Hz），可通过 EngineConfig 覆盖
 pub const TARGET_SAMPLE_RATE: u32 = 44100;

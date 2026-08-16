@@ -22,8 +22,13 @@ impl TestAudio {
     #[allow(dead_code)]
     pub fn all_paths(&self) -> Vec<&str> {
         vec![
-            &self.wav, &self.mp3, &self.flac, &self.ogg, &self.m4a,
-            &self.wav_48k, &self.aiff,
+            &self.wav,
+            &self.mp3,
+            &self.flac,
+            &self.ogg,
+            &self.m4a,
+            &self.wav_48k,
+            &self.aiff,
         ]
     }
 }
@@ -65,7 +70,9 @@ fn generate_wav(path: &str, sample_rate: u32, channels: u16, duration_secs: f64)
     for i in 0..total_samples {
         let t = i as f64 / sample_rate as f64;
         let sample = (t * 440.0 * 2.0 * std::f64::consts::PI).sin() * 0.5;
-        writer.write_sample((sample * i16::MAX as f64) as i16).unwrap();
+        writer
+            .write_sample((sample * i16::MAX as f64) as i16)
+            .unwrap();
     }
     writer.finalize().ok();
     eprintln!("已生成: {path}");

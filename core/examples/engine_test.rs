@@ -7,8 +7,12 @@ use std::time::{Duration, Instant};
 use audio_core::{EngineEvent, EngineHandle};
 
 fn main() {
-    tracing_subscriber::fmt().with_env_filter("audio_core=info").init();
-    let path = std::env::args().nth(1).expect("用法: engine_test <文件路径>");
+    tracing_subscriber::fmt()
+        .with_env_filter("audio_core=info")
+        .init();
+    let path = std::env::args()
+        .nth(1)
+        .expect("用法: engine_test <文件路径>");
     let file = std::path::Path::new(&path);
     if !file.exists() {
         eprintln!("文件不存在: {path}");
@@ -22,7 +26,9 @@ fn main() {
     std::thread::spawn(move || {
         let stdin = std::io::BufReader::new(std::io::stdin());
         for line in stdin.lines().map_while(Result::ok) {
-            if cmd_tx.send(line).is_err() { break; }
+            if cmd_tx.send(line).is_err() {
+                break;
+            }
         }
     });
 
@@ -37,7 +43,9 @@ fn main() {
                 let t = start.elapsed().as_secs_f64();
                 println!("\n[{t:.2}s] TrackChanged: {p}");
                 got_track = !p.is_empty();
-                if p.is_empty() { break; }
+                if p.is_empty() {
+                    break;
+                }
             }
             Ok(EngineEvent::PlaybackStopped) => {
                 let t = start.elapsed().as_secs_f64();
@@ -56,10 +64,18 @@ fn main() {
                 }
             }
             Ok(EngineEvent::DurationSecs(dur)) => {
-                println!("\n[{:.2}s] duration: {dur:.1}s", start.elapsed().as_secs_f64());
+                println!(
+                    "\n[{:.2}s] duration: {dur:.1}s",
+                    start.elapsed().as_secs_f64()
+                );
             }
             Ok(EngineEvent::QueueChanged(queue, current)) => {
-                println!("\n[{:.2}s] queue: {} tracks, current: {}", start.elapsed().as_secs_f64(), queue.len(), current);
+                println!(
+                    "\n[{:.2}s] queue: {} tracks, current: {}",
+                    start.elapsed().as_secs_f64(),
+                    queue.len(),
+                    current
+                );
             }
             Ok(EngineEvent::Spectrum(_)) => {}
             Ok(EngineEvent::Levels(_)) => {}
@@ -74,10 +90,23 @@ fn main() {
             Ok(line) => {
                 let line = line.trim().to_lowercase();
                 match line.as_str() {
-                    "p" => { engine.pause(); println!("⏸ 暂停"); }
-                    "r" => { engine.resume(); println!("▶ 恢复"); }
-                    "s" => { engine.stop(); println!("⏹ 停止"); break; }
-                    "q" => { engine.stop(); break; }
+                    "p" => {
+                        engine.pause();
+                        println!("⏸ 暂停");
+                    }
+                    "r" => {
+                        engine.resume();
+                        println!("▶ 恢复");
+                    }
+                    "s" => {
+                        engine.stop();
+                        println!("⏹ 停止");
+                        break;
+                    }
+                    "q" => {
+                        engine.stop();
+                        break;
+                    }
                     "" => {}
                     _ => {
                         if let Ok(secs) = line.parse::<f64>() {

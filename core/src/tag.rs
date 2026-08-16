@@ -77,8 +77,7 @@ pub fn write_tags(path: &Path, update: &TagUpdate) -> Result<(), String> {
         return Ok(());
     }
 
-    let mut tagged = lofty::read_from_path(path)
-        .map_err(|e| format!("打开文件失败: {e}"))?;
+    let mut tagged = lofty::read_from_path(path).map_err(|e| format!("打开文件失败: {e}"))?;
 
     // 无标签时按格式创建主标签
     if tagged.primary_tag_mut().is_none() && tagged.first_tag_mut().is_none() {
@@ -154,8 +153,7 @@ pub struct TagInfo {
 
 /// 读取文件标签（优先主标签，退而任意标签）
 pub fn read_tags(path: &Path) -> Result<TagInfo, String> {
-    let tagged = lofty::read_from_path(path)
-        .map_err(|e| format!("打开文件失败: {e}"))?;
+    let tagged = lofty::read_from_path(path).map_err(|e| format!("打开文件失败: {e}"))?;
     let Some(tag) = tagged.primary_tag().or_else(|| tagged.first_tag()) else {
         return Ok(TagInfo::default());
     };
@@ -164,9 +162,7 @@ pub fn read_tags(path: &Path) -> Result<TagInfo, String> {
         title: tag.title().map(|s| s.to_string()),
         artist: tag.artist().map(|s| s.to_string()),
         album: tag.album().map(|s| s.to_string()),
-        album_artist: tag
-            .get_string(ItemKey::AlbumArtist)
-            .map(|s| s.to_string()),
+        album_artist: tag.get_string(ItemKey::AlbumArtist).map(|s| s.to_string()),
         genre: tag.genre().map(|s| s.to_string()),
         track_number: tag.track(),
     })
@@ -186,7 +182,8 @@ mod tests {
         };
         let mut writer = hound::WavWriter::create(path, spec).unwrap();
         for i in 0..4410 {
-            let v = ((i as f32 / 44100.0 * 440.0 * 2.0 * std::f32::consts::PI).sin() * 10000.0) as i16;
+            let v =
+                ((i as f32 / 44100.0 * 440.0 * 2.0 * std::f32::consts::PI).sin() * 10000.0) as i16;
             writer.write_sample(v).unwrap();
         }
         writer.finalize().unwrap();
@@ -227,17 +224,25 @@ mod tests {
         let path = dir.join("tag_test2.wav");
         make_wav(&path);
 
-        write_tags(&path, &TagUpdate {
-            title: Some("原标题".into()),
-            artist: Some("原歌手".into()),
-            ..Default::default()
-        }).unwrap();
+        write_tags(
+            &path,
+            &TagUpdate {
+                title: Some("原标题".into()),
+                artist: Some("原歌手".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         // 只改标题，歌手应保留
-        write_tags(&path, &TagUpdate {
-            title: Some("新标题".into()),
-            ..Default::default()
-        }).unwrap();
+        write_tags(
+            &path,
+            &TagUpdate {
+                title: Some("新标题".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         let info = read_tags(&path).unwrap();
         assert_eq!(info.title.as_deref(), Some("新标题"));
@@ -265,7 +270,10 @@ mod tests {
     fn nonexistent_file_errors() {
         let result = write_tags(
             Path::new("/tmp/_wavelink_nonexistent_tag.wav"),
-            &TagUpdate { title: Some("x".into()), ..Default::default() },
+            &TagUpdate {
+                title: Some("x".into()),
+                ..Default::default()
+            },
         );
         assert!(result.is_err());
     }

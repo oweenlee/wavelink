@@ -13,9 +13,7 @@ use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use oboe::{
-    AudioOutputCallback, AudioOutputStreamSafe, DataCallbackResult, Mono, Stereo,
-};
+use oboe::{AudioOutputCallback, AudioOutputStreamSafe, DataCallbackResult, Mono, Stereo};
 use parking_lot::Mutex;
 use ringbuf::traits::{Consumer, Split};
 use ringbuf::HeapRb;
@@ -290,7 +288,11 @@ fn build_stream(
 ) -> Result<(Box<dyn oboe::AudioStream>, OboeFormat), String> {
     use oboe::{AudioStreamBuilder, PerformanceMode, SharingMode};
 
-    let sharing = if exclusive { SharingMode::Exclusive } else { SharingMode::Shared };
+    let sharing = if exclusive {
+        SharingMode::Exclusive
+    } else {
+        SharingMode::Shared
+    };
     let base = AudioStreamBuilder::default()
         .set_output()
         .set_sample_rate(sample_rate)
@@ -302,13 +304,19 @@ fn build_stream(
         match oboe_format {
             OboeFormat::I16 => Box::new(
                 b.set_i16()
-                    .set_callback(OboeOutputCallback::<i16, Stereo>::new(inner.clone(), playing.clone()))
+                    .set_callback(OboeOutputCallback::<i16, Stereo>::new(
+                        inner.clone(),
+                        playing.clone(),
+                    ))
                     .open_stream()
                     .map_err(|e| format!("Oboe I16 打开失败: {e:?}"))?,
             ),
             OboeFormat::F32 => Box::new(
                 b.set_f32()
-                    .set_callback(OboeOutputCallback::<f32, Stereo>::new(inner.clone(), playing.clone()))
+                    .set_callback(OboeOutputCallback::<f32, Stereo>::new(
+                        inner.clone(),
+                        playing.clone(),
+                    ))
                     .open_stream()
                     .map_err(|e| format!("Oboe F32 打开失败: {e:?}"))?,
             ),
@@ -318,13 +326,19 @@ fn build_stream(
         match oboe_format {
             OboeFormat::I16 => Box::new(
                 b.set_i16()
-                    .set_callback(OboeOutputCallback::<i16, Mono>::new(inner.clone(), playing.clone()))
+                    .set_callback(OboeOutputCallback::<i16, Mono>::new(
+                        inner.clone(),
+                        playing.clone(),
+                    ))
                     .open_stream()
                     .map_err(|e| format!("Oboe I16(mono) 打开失败: {e:?}"))?,
             ),
             OboeFormat::F32 => Box::new(
                 b.set_f32()
-                    .set_callback(OboeOutputCallback::<f32, Mono>::new(inner.clone(), playing.clone()))
+                    .set_callback(OboeOutputCallback::<f32, Mono>::new(
+                        inner.clone(),
+                        playing.clone(),
+                    ))
                     .open_stream()
                     .map_err(|e| format!("Oboe F32(mono) 打开失败: {e:?}"))?,
             ),
@@ -332,7 +346,9 @@ fn build_stream(
     };
 
     let mut stream = stream;
-    stream.start().map_err(|e| format!("Oboe start 失败: {e:?}"))?;
+    stream
+        .start()
+        .map_err(|e| format!("Oboe start 失败: {e:?}"))?;
     Ok((stream, oboe_format))
 }
 
@@ -377,7 +393,8 @@ impl AudioOutput for AudioOutputOboe {
     }
 
     fn swap_consumer(&self, buffer_ms: u32, sample_rate: u32, channels: u32) -> PcmProducer {
-        let buf_samples = (sample_rate as f32 * buffer_ms as f32 / 1000.0) as usize * channels as usize;
+        let buf_samples =
+            (sample_rate as f32 * buffer_ms as f32 / 1000.0) as usize * channels as usize;
         let rb = HeapRb::<f32>::new(buf_samples.max(64));
         let (prod, new_cons) = rb.split();
         let mut guard = self.inner.consumer.lock();
@@ -431,7 +448,8 @@ impl AudioOutput for AudioOutputOboe {
 
         error!("Oboe 采样率切换失败: {}", last_err);
         Err(crate::error::EngineError::OutputOpenFailed(format!(
-            "Oboe 不支持 {}Hz", rate
+            "Oboe 不支持 {}Hz",
+            rate
         )))
     }
 
@@ -451,7 +469,8 @@ impl AudioOutput for AudioOutputOboe {
         self.buffer_ms = ms;
         info!("Oboe 缓冲调整: {}ms → {}ms", old, ms);
         // 重建 ringbuf + stream 以应用新缓冲大小
-        let buf_samples = (self.sample_rate as f32 * ms as f32 / 1000.0) as usize * self.channels as usize;
+        let buf_samples =
+            (self.sample_rate as f32 * ms as f32 / 1000.0) as usize * self.channels as usize;
         let rb = HeapRb::<f32>::new(buf_samples.max(64));
         let (_prod, new_cons) = rb.split();
         {
@@ -552,7 +571,10 @@ fn rebuild_stream(output: &mut AudioOutputOboe) -> Result<(), String> {
             Ok((stream, actual_fmt)) => {
                 *output.stream.lock() = Some(stream);
                 output.oboe_format = actual_fmt;
-                info!("Oboe stream 重建成功: {}Hz {:?} exclusive={}", output.sample_rate, actual_fmt, output.exclusive);
+                info!(
+                    "Oboe stream 重建成功: {}Hz {:?} exclusive={}",
+                    output.sample_rate, actual_fmt, output.exclusive
+                );
                 return Ok(());
             }
             Err(e) => {
@@ -565,16 +587,43 @@ fn rebuild_stream(output: &mut AudioOutputOboe) -> Result<(), String> {
 
 // ─── 设备枚举 ────────────────────────────────────────────────
 
-fn sr_config(sr: u32, depth: u8, fmt: crate::output::SampleFormat, exclusive: bool) -> crate::output::DeviceConfig {
-    crate::output::DeviceConfig { sample_rate: sr, bit_depth: depth, channels: 2, sample_format: fmt, exclusive }
+fn sr_config(
+    sr: u32,
+    depth: u8,
+    fmt: crate::output::SampleFormat,
+    exclusive: bool,
+) -> crate::output::DeviceConfig {
+    crate::output::DeviceConfig {
+        sample_rate: sr,
+        bit_depth: depth,
+        channels: 2,
+        sample_format: fmt,
+        exclusive,
+    }
 }
 
-fn push_configs(configs: &mut Vec<crate::output::DeviceConfig>, sr: u32, has_i16: bool, has_f32: bool, exclusive: bool) {
+fn push_configs(
+    configs: &mut Vec<crate::output::DeviceConfig>,
+    sr: u32,
+    has_i16: bool,
+    has_f32: bool,
+    exclusive: bool,
+) {
     if has_i16 {
-        configs.push(sr_config(sr, 16, crate::output::SampleFormat::I16, exclusive));
+        configs.push(sr_config(
+            sr,
+            16,
+            crate::output::SampleFormat::I16,
+            exclusive,
+        ));
     }
     if has_f32 {
-        configs.push(sr_config(sr, 32, crate::output::SampleFormat::F32, exclusive));
+        configs.push(sr_config(
+            sr,
+            32,
+            crate::output::SampleFormat::F32,
+            exclusive,
+        ));
     }
 }
 
@@ -589,16 +638,20 @@ pub(crate) fn enumerate_devices() -> Vec<crate::output::OutputDeviceInfo> {
                 } else {
                     info.sample_rates.iter().map(|&r| r as u32).collect()
                 };
-                let has_i16 = info.formats.is_empty() || info.formats.contains(&oboe::AudioFormat::I16);
-                let has_f32 = info.formats.is_empty() || info.formats.contains(&oboe::AudioFormat::F32);
+                let has_i16 =
+                    info.formats.is_empty() || info.formats.contains(&oboe::AudioFormat::I16);
+                let has_f32 =
+                    info.formats.is_empty() || info.formats.contains(&oboe::AudioFormat::F32);
 
-                let is_usb = matches!(info.device_type,
-                    oboe::AudioDeviceType::UsbDevice |
-                    oboe::AudioDeviceType::UsbAccessory |
-                    oboe::AudioDeviceType::UsbHeadset
+                let is_usb = matches!(
+                    info.device_type,
+                    oboe::AudioDeviceType::UsbDevice
+                        | oboe::AudioDeviceType::UsbAccessory
+                        | oboe::AudioDeviceType::UsbHeadset
                 );
                 // 内置扬声器 or 唯一设备标记为默认
-                let is_default = matches!(info.device_type, oboe::AudioDeviceType::BuiltinSpeaker) || devices.is_empty();
+                let is_default = matches!(info.device_type, oboe::AudioDeviceType::BuiltinSpeaker)
+                    || devices.is_empty();
 
                 let mut configs = Vec::new();
                 for &sr in &sample_rates {
@@ -609,7 +662,11 @@ pub(crate) fn enumerate_devices() -> Vec<crate::output::OutputDeviceInfo> {
                 }
 
                 // 去重
-                configs.sort_by(|a, b| a.sample_rate.cmp(&b.sample_rate).then(a.bit_depth.cmp(&b.bit_depth)));
+                configs.sort_by(|a, b| {
+                    a.sample_rate
+                        .cmp(&b.sample_rate)
+                        .then(a.bit_depth.cmp(&b.bit_depth))
+                });
                 configs.dedup();
 
                 devices.push(crate::output::OutputDeviceInfo {

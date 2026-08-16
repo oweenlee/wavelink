@@ -7,9 +7,9 @@
 
 mod common;
 
+use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
-use parking_lot::Mutex;
 use std::thread;
 use std::time::Duration;
 
@@ -25,11 +25,8 @@ fn test_real_wav_through_consumer() {
 
     // 启动解码器
     let pos = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let (rx, _dec) = Decoder::start(
-        std::path::Path::new(&path),
-        44100, 2, pos, None, None,
-    )
-    .expect("Decoder::start 失败");
+    let (rx, _dec) = Decoder::start(std::path::Path::new(&path), 44100, 2, pos, None, None)
+        .expect("Decoder::start 失败");
 
     let total_pushed = Arc::new(Mutex::new(0usize));
     let tp = total_pushed.clone();
@@ -59,7 +56,8 @@ fn test_real_wav_through_consumer() {
             on_end_of_track: &|| None,
         };
         let ctrl = ConsumerControl {
-            stop: s, ready_tx,
+            stop: s,
+            ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
         };
         run_consumer_loop(rx, &config, &cb, &ctrl);
@@ -90,8 +88,8 @@ fn test_consumer_output_count_matches() {
     let path = a.wav.clone();
 
     let pos = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let (rx, _dec) =
-        Decoder::start(std::path::Path::new(&path), 44100, 2, pos, None, None).expect("Decoder::start");
+    let (rx, _dec) = Decoder::start(std::path::Path::new(&path), 44100, 2, pos, None, None)
+        .expect("Decoder::start");
 
     let output_count = Arc::new(Mutex::new(0u64));
     let oc = output_count.clone();
@@ -120,7 +118,8 @@ fn test_consumer_output_count_matches() {
             on_end_of_track: &|| None,
         };
         let ctrl = ConsumerControl {
-            stop: s, ready_tx,
+            stop: s,
+            ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
         };
         run_consumer_loop(rx, &config, &cb, &ctrl);
@@ -147,8 +146,8 @@ fn test_48k_wav_through_consumer() {
     let path = a.wav_48k.clone(); // 48000Hz, 2ch, 2s → 192000 samples
 
     let pos = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let (rx, _dec) =
-        Decoder::start(std::path::Path::new(&path), 48000, 2, pos, None, None).expect("Decoder::start");
+    let (rx, _dec) = Decoder::start(std::path::Path::new(&path), 48000, 2, pos, None, None)
+        .expect("Decoder::start");
 
     let total_pushed = Arc::new(Mutex::new(0usize));
     let tp = total_pushed.clone();
@@ -178,7 +177,8 @@ fn test_48k_wav_through_consumer() {
             on_end_of_track: &|| None,
         };
         let ctrl = ConsumerControl {
-            stop: s, ready_tx,
+            stop: s,
+            ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
         };
         run_consumer_loop(rx, &config, &cb, &ctrl);
@@ -207,8 +207,8 @@ fn test_consumer_stop_during_decoding() {
     let path = a.wav.clone();
 
     let pos = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let (rx, _dec) =
-        Decoder::start(std::path::Path::new(&path), 44100, 2, pos, None, None).expect("Decoder::start");
+    let (rx, _dec) = Decoder::start(std::path::Path::new(&path), 44100, 2, pos, None, None)
+        .expect("Decoder::start");
 
     let stop = Arc::new(AtomicBool::new(false));
     let s = stop.clone();
@@ -233,13 +233,16 @@ fn test_consumer_stop_during_decoding() {
             on_end_of_track: &|| None,
         };
         let ctrl = ConsumerControl {
-            stop: s, ready_tx,
+            stop: s,
+            ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
         };
         run_consumer_loop(rx, &config, &cb, &ctrl);
     });
 
-    ready_rx.recv_timeout(Duration::from_secs(5)).expect("ready");
+    ready_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("ready");
     stop.store(true, Ordering::SeqCst);
 
     // 应该快速退出
@@ -256,8 +259,8 @@ fn test_consumer_zero_timeout() {
     let path = a.wav.clone();
 
     let pos = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let (rx, _dec) =
-        Decoder::start(std::path::Path::new(&path), 44100, 2, pos, None, None).expect("Decoder::start");
+    let (rx, _dec) = Decoder::start(std::path::Path::new(&path), 44100, 2, pos, None, None)
+        .expect("Decoder::start");
 
     let total_pushed = Arc::new(Mutex::new(0usize));
     let tp = total_pushed.clone();
@@ -276,7 +279,10 @@ fn test_consumer_zero_timeout() {
 
     let consumer_h = thread::spawn(move || {
         let cb = ConsumerCallbacks {
-            push_samples: &|buf| { *tp.lock() += buf.len(); buf.len() },
+            push_samples: &|buf| {
+                *tp.lock() += buf.len();
+                buf.len()
+            },
             process_dsp: &|_| {},
             on_spectrum: &|_| {},
             on_bad_frame: &|| {},
@@ -284,13 +290,16 @@ fn test_consumer_zero_timeout() {
             on_end_of_track: &|| None,
         };
         let ctrl = ConsumerControl {
-            stop: s, ready_tx,
+            stop: s,
+            ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
         };
         run_consumer_loop(rx, &config, &cb, &ctrl);
     });
 
-    ready_rx.recv_timeout(Duration::from_secs(5)).expect("consumer ready");
+    ready_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("consumer ready");
     consumer_h.join().expect("consumer 不应 panic");
 
     let total = *total_pushed.lock();
@@ -303,7 +312,9 @@ fn test_consumer_very_short_file() {
     let path = "/tmp/_consumer_very_short.wav";
     {
         let spec = hound::WavSpec {
-            channels: 2, sample_rate: 44100, bits_per_sample: 16,
+            channels: 2,
+            sample_rate: 44100,
+            bits_per_sample: 16,
             sample_format: hound::SampleFormat::Int,
         };
         let mut writer = hound::WavWriter::create(path, spec).unwrap();
@@ -317,23 +328,30 @@ fn test_consumer_very_short_file() {
     }
 
     let pos = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let (rx, _dec) =
-        Decoder::start(std::path::Path::new(path), 44100, 2, pos, None, None).expect("Decoder::start");
+    let (rx, _dec) = Decoder::start(std::path::Path::new(path), 44100, 2, pos, None, None)
+        .expect("Decoder::start");
 
     let stop = Arc::new(AtomicBool::new(false));
     let s = stop.clone();
     let (ready_tx, ready_rx) = bounded(1);
 
     let config = ConsumerConfig {
-        sample_rate: 44100, channels: 2, fft_interval: 3,
-        crossfade_ms: 0, recv_timeout_ms: 200, passthrough: false,
+        sample_rate: 44100,
+        channels: 2,
+        fft_interval: 3,
+        crossfade_ms: 0,
+        recv_timeout_ms: 200,
+        passthrough: false,
     };
 
     let total = Arc::new(Mutex::new(0usize));
     let total_clone = total.clone();
     let consumer_h = thread::spawn(move || {
         let cb = ConsumerCallbacks {
-            push_samples: &|buf| { *total_clone.lock() += buf.len(); buf.len() },
+            push_samples: &|buf| {
+                *total_clone.lock() += buf.len();
+                buf.len()
+            },
             process_dsp: &|_| {},
             on_spectrum: &|_| {},
             on_bad_frame: &|| {},
@@ -341,13 +359,16 @@ fn test_consumer_very_short_file() {
             on_end_of_track: &|| None,
         };
         let ctrl = ConsumerControl {
-            stop: s, ready_tx,
+            stop: s,
+            ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
         };
         run_consumer_loop(rx, &config, &cb, &ctrl);
     });
 
-    ready_rx.recv_timeout(Duration::from_secs(5)).expect("consumer ready");
+    ready_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("consumer ready");
     let ok = consumer_h.join().is_ok();
     assert!(ok, "极短文件 consumer 不应 panic");
     let total_out = *total.lock();
@@ -362,36 +383,47 @@ fn test_consumer_dsp_silences_output() {
     let path = a.wav.clone();
 
     let pos = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let (rx, _dec) =
-        Decoder::start(std::path::Path::new(&path), 44100, 2, pos, None, None).expect("Decoder::start");
+    let (rx, _dec) = Decoder::start(std::path::Path::new(&path), 44100, 2, pos, None, None)
+        .expect("Decoder::start");
 
     let stop = Arc::new(AtomicBool::new(false));
     let s = stop.clone();
     let (ready_tx, ready_rx) = bounded(1);
 
     let config = ConsumerConfig {
-        sample_rate: 44100, channels: 2, fft_interval: 3,
-        crossfade_ms: 0, recv_timeout_ms: 200, passthrough: false,
+        sample_rate: 44100,
+        channels: 2,
+        fft_interval: 3,
+        crossfade_ms: 0,
+        recv_timeout_ms: 200,
+        passthrough: false,
     };
 
     let consumer_h = thread::spawn(move || {
         // process_dsp 将样本全设 0（模拟静音输出）
         let cb = ConsumerCallbacks {
-            push_samples: &|buf| { buf.len() },
-            process_dsp: &|buf: &mut [f32]| { for s in buf.iter_mut() { *s = 0.0; } },
+            push_samples: &|buf| buf.len(),
+            process_dsp: &|buf: &mut [f32]| {
+                for s in buf.iter_mut() {
+                    *s = 0.0;
+                }
+            },
             on_spectrum: &|_| {},
             on_bad_frame: &|| {},
             on_samples_output: &|_| {},
             on_end_of_track: &|| None,
         };
         let ctrl = ConsumerControl {
-            stop: s, ready_tx,
+            stop: s,
+            ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
         };
         run_consumer_loop(rx, &config, &cb, &ctrl);
     });
 
-    ready_rx.recv_timeout(Duration::from_secs(5)).expect("consumer ready");
+    ready_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("consumer ready");
     // stop flag 无需设置，解码完成后 consumer 自动退出
     let ok = consumer_h.join().is_ok();
     assert!(ok, "DSP 静音处理时 consumer 不应 panic");

@@ -74,7 +74,10 @@ pub struct DopPacker {
 impl DopPacker {
     /// 创建打包器。left_justify：输出格式为 32-bit 整数时传 true。
     pub fn new(left_justify: bool) -> Self {
-        DopPacker { marker_b: false, left_justify }
+        DopPacker {
+            marker_b: false,
+            left_justify,
+        }
     }
 
     /// 将各声道的原始 DSD 字节打包为交错 DoP f32，追加到 out。
@@ -90,7 +93,11 @@ impl DopPacker {
         let frames = chans.iter().map(|c| c.len() / 2).min().unwrap_or(0);
         out.reserve(out.len() + frames * ch);
         for f in 0..frames {
-            let marker = if self.marker_b { DOP_MARKER_B } else { DOP_MARKER_A };
+            let marker = if self.marker_b {
+                DOP_MARKER_B
+            } else {
+                DOP_MARKER_A
+            };
             self.marker_b = !self.marker_b;
             for c in chans.iter() {
                 let w = dop_word(marker, c[f * 2], c[f * 2 + 1]);
@@ -107,7 +114,11 @@ mod tests {
 
     /// 24-bit 符号扩展（测试期望值用）
     fn se24(raw: u32) -> i32 {
-        if raw & 0x0080_0000 != 0 { (raw | 0xFF00_0000) as i32 } else { raw as i32 }
+        if raw & 0x0080_0000 != 0 {
+            (raw | 0xFF00_0000) as i32
+        } else {
+            raw as i32
+        }
     }
 
     /// 后端 WASAPI I24 的还原公式（与 output_wasapi.rs 保持一致）
@@ -117,7 +128,9 @@ mod tests {
 
     /// 后端 I32（AudioUnit/WASAPI）的还原公式
     fn decode_i32(s: f32) -> i32 {
-        (s * 2_147_483_648.0).round().clamp(-2_147_483_648.0, 2_147_483_647.0) as i32
+        (s * 2_147_483_648.0)
+            .round()
+            .clamp(-2_147_483_648.0, 2_147_483_647.0) as i32
     }
 
     #[test]
@@ -187,7 +200,11 @@ mod tests {
             for data in 0..=0xFFFFu32 {
                 let word = se24((marker << 16) | data);
                 let s = encode_word(word, false);
-                assert_eq!(decode_i24(s), word, "I24 往返失败: marker={marker:#x} data={data:#x}");
+                assert_eq!(
+                    decode_i24(s),
+                    word,
+                    "I24 往返失败: marker={marker:#x} data={data:#x}"
+                );
             }
         }
     }
@@ -198,7 +215,11 @@ mod tests {
             for data in [0u32, 1, 0x5555, 0xAAAA, 0xFFFE, 0xFFFF] {
                 let word = se24((marker << 16) | data);
                 let s = encode_word(word, true);
-                assert_eq!(decode_i32(s), word << 8, "I32 往返失败: marker={marker:#x} data={data:#x}");
+                assert_eq!(
+                    decode_i32(s),
+                    word << 8,
+                    "I32 往返失败: marker={marker:#x} data={data:#x}"
+                );
             }
         }
     }
@@ -212,7 +233,11 @@ mod tests {
                 let s = encode_word(word, false);
                 assert_eq!(s * 8_388_608.0, word as f32, "右对齐编码应精确可逆");
                 let s2 = encode_word(word, true);
-                assert_eq!(s2 * 2_147_483_648.0, (word << 8) as f32, "左对齐编码应精确可逆");
+                assert_eq!(
+                    s2 * 2_147_483_648.0,
+                    (word << 8) as f32,
+                    "左对齐编码应精确可逆"
+                );
             }
         }
     }

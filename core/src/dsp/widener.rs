@@ -14,7 +14,10 @@ pub struct StereoWidener {
 
 impl Default for StereoWidener {
     fn default() -> Self {
-        Self { width: 1.0, enabled: false }
+        Self {
+            width: 1.0,
+            enabled: false,
+        }
     }
 }
 
@@ -35,13 +38,19 @@ impl StereoWidener {
     }
 
     /// 是否已启用
-    pub fn enabled(&self) -> bool { self.enabled }
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
     /// 当前展宽系数
-    pub fn width(&self) -> f32 { self.width }
+    pub fn width(&self) -> f32 {
+        self.width
+    }
 
     /// 处理交错立体声缓冲 [L, R, L, R, ...]
     pub fn process(&mut self, buf: &mut [f32]) {
-        if !self.enabled || self.width == 1.0 { return; }
+        if !self.enabled || self.width == 1.0 {
+            return;
+        }
         let n = buf.len();
         let mut i = 0;
         while i + 1 < n {
@@ -94,7 +103,10 @@ mod tests {
         // 展宽后左右差异应增大
         let diff_orig = (orig[0] - orig[1]).abs();
         let diff_new = (buf[0] - buf[1]).abs();
-        assert!(diff_new > diff_orig, "展宽应增大差异: {diff_orig} -> {diff_new}");
+        assert!(
+            diff_new > diff_orig,
+            "展宽应增大差异: {diff_orig} -> {diff_new}"
+        );
     }
 
     #[test]

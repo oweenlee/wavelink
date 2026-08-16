@@ -30,7 +30,9 @@ fn main() {
     let mut test_tone = Vec::with_capacity(total_samples);
     for i in 0..total_samples {
         let sample = ((i / target_channels as usize) as f64 / target_rate as f64
-            * 440.0 * 2.0 * std::f64::consts::PI)
+            * 440.0
+            * 2.0
+            * std::f64::consts::PI)
             .sin() as f32
             * 0.3;
         test_tone.push(sample);

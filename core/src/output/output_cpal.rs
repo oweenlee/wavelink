@@ -16,7 +16,9 @@ use ringbuf::traits::{Consumer, Split};
 use ringbuf::HeapRb;
 use tracing::{error, info, warn};
 
-use crate::output::{AudioOutput, AudioOutputInner, DeviceConfig, OutputDeviceInfo, PcmProducer, SampleFormat};
+use crate::output::{
+    AudioOutput, AudioOutputInner, DeviceConfig, OutputDeviceInfo, PcmProducer, SampleFormat,
+};
 
 /// cpal 音频输出句柄
 pub struct AudioOutputCpal {
@@ -39,12 +41,7 @@ impl AudioOutput for AudioOutputCpal {
     fn resume(&self) {
         self.playing.store(true, Ordering::Release);
     }
-    fn swap_consumer(
-        &self,
-        buffer_ms: u32,
-        sample_rate: u32,
-        channels: u32,
-    ) -> PcmProducer {
+    fn swap_consumer(&self, buffer_ms: u32, sample_rate: u32, channels: u32) -> PcmProducer {
         let buf_samples =
             (sample_rate as f32 * buffer_ms as f32 / 1000.0) as usize * channels as usize;
         let rb = HeapRb::<f32>::new(buf_samples.max(64));
@@ -56,8 +53,12 @@ impl AudioOutput for AudioOutputCpal {
 
         prod
     }
-    fn sample_rate(&self) -> u32 { self.sample_rate }
-    fn channels(&self) -> u32 { self.channels }
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+    fn channels(&self) -> u32 {
+        self.channels
+    }
 
     fn set_sample_rate(&mut self, rate: u32) -> Result<u32, crate::error::EngineError> {
         if rate == self.sample_rate {
@@ -68,12 +69,18 @@ impl AudioOutput for AudioOutputCpal {
         let host = cpal::default_host();
         let device = match &self.device_name {
             Some(name) => {
-                let mut devices = host.devices().map_err(|e| crate::error::EngineError::OutputOpenFailed(format!("枚举设备失败: {e}")))?;
-                devices.find(|d| d.name().ok().as_deref() == Some(name))
-                    .ok_or_else(|| crate::error::EngineError::OutputOpenFailed(format!("未找到设备: {name}")))?
+                let mut devices = host.devices().map_err(|e| {
+                    crate::error::EngineError::OutputOpenFailed(format!("枚举设备失败: {e}"))
+                })?;
+                devices
+                    .find(|d| d.name().ok().as_deref() == Some(name))
+                    .ok_or_else(|| {
+                        crate::error::EngineError::OutputOpenFailed(format!("未找到设备: {name}"))
+                    })?
             }
-            None => host.default_output_device()
-                .ok_or_else(|| crate::error::EngineError::OutputOpenFailed("未找到默认输出设备".into()))?,
+            None => host.default_output_device().ok_or_else(|| {
+                crate::error::EngineError::OutputOpenFailed("未找到默认输出设备".into())
+            })?,
         };
 
         let config = cpal::StreamConfig {
@@ -82,7 +89,8 @@ impl AudioOutput for AudioOutputCpal {
             buffer_size: cpal::BufferSize::Default,
         };
 
-        let buf_samples = (rate as f32 * self.buffer_ms as f32 / 1000.0) as usize * self.channels as usize;
+        let buf_samples =
+            (rate as f32 * self.buffer_ms as f32 / 1000.0) as usize * self.channels as usize;
         let rb = HeapRb::<f32>::new(buf_samples.max(64));
         let (_producer, consumer) = rb.split();
 
@@ -94,39 +102,49 @@ impl AudioOutput for AudioOutputCpal {
             guard.clear();
             *guard = consumer;
         }
-        self.inner.underrun_count.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.inner.stream_failed.store(false, std::sync::atomic::Ordering::Release);
+        self.inner
+            .underrun_count
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.inner
+            .stream_failed
+            .store(false, std::sync::atomic::Ordering::Release);
 
         // 继承当前 playing 状态：否则切采样率后新流默认静音且无报错
         let playing_clone = self.playing.clone();
         let inner_clone = self.inner.clone();
         let err_inner = self.inner.clone();
 
-        let stream = device.build_output_stream(
-            &config,
-            move |data: &mut [f32], _info: &cpal::OutputCallbackInfo| {
-                if !playing_clone.load(Ordering::Acquire) {
-                    data.fill(0.0);
-                    return;
-                }
-                let mut guard = inner_clone.consumer.lock();
-                let n = guard.pop_slice(data);
-                if n < data.len() {
-                    inner_clone.underrun_count.fetch_add(1, Ordering::Relaxed);
-                    data[n..].fill(0.0);
-                }
-            },
-            move |err| {
-                error!("音频流错误 (rate switch): {err}");
-                err_inner.stream_failed.store(true, Ordering::Release);
-            },
-            None,
-        ).map_err(|e| crate::error::EngineError::OutputOpenFailed(format!("采样率 {rate}Hz 不支持: {e}")))?;
+        let stream = device
+            .build_output_stream(
+                &config,
+                move |data: &mut [f32], _info: &cpal::OutputCallbackInfo| {
+                    if !playing_clone.load(Ordering::Acquire) {
+                        data.fill(0.0);
+                        return;
+                    }
+                    let mut guard = inner_clone.consumer.lock();
+                    let n = guard.pop_slice(data);
+                    if n < data.len() {
+                        inner_clone.underrun_count.fetch_add(1, Ordering::Relaxed);
+                        data[n..].fill(0.0);
+                    }
+                },
+                move |err| {
+                    error!("音频流错误 (rate switch): {err}");
+                    err_inner.stream_failed.store(true, Ordering::Release);
+                },
+                None,
+            )
+            .map_err(|e| {
+                crate::error::EngineError::OutputOpenFailed(format!("采样率 {rate}Hz 不支持: {e}"))
+            })?;
 
         // 停止旧 stream，启动新 stream
         let _ = self.stream.pause();
         if let Err(e) = stream.play() {
-            return Err(crate::error::EngineError::OutputOpenFailed(format!("启动新采样率流失败: {e}")));
+            return Err(crate::error::EngineError::OutputOpenFailed(format!(
+                "启动新采样率流失败: {e}"
+            )));
         }
 
         self.stream = stream;
@@ -139,7 +157,9 @@ impl AudioOutput for AudioOutputCpal {
         let host = cpal::default_host();
         let device = match &self.device_name {
             Some(name) => {
-                let Ok(mut devices) = host.devices() else { return vec![self.sample_rate] };
+                let Ok(mut devices) = host.devices() else {
+                    return vec![self.sample_rate];
+                };
                 match devices.find(|d| d.name().ok().as_deref() == Some(name)) {
                     Some(d) => d,
                     None => return vec![self.sample_rate],
@@ -150,8 +170,12 @@ impl AudioOutput for AudioOutputCpal {
                 None => return vec![self.sample_rate],
             },
         };
-        let mut rates: Vec<u32> = device.supported_output_configs()
-            .map(|cfgs| cfgs.flat_map(|c| vec![c.min_sample_rate().0, c.max_sample_rate().0]).collect())
+        let mut rates: Vec<u32> = device
+            .supported_output_configs()
+            .map(|cfgs| {
+                cfgs.flat_map(|c| vec![c.min_sample_rate().0, c.max_sample_rate().0])
+                    .collect()
+            })
             .unwrap_or_default();
         rates.sort();
         rates.dedup();
@@ -175,7 +199,9 @@ pub(crate) fn list_device_names() -> Vec<String> {
         Ok(devices) => devices
             .filter(|d| {
                 d.default_output_config().is_ok()
-                    || d.supported_output_configs().map(|mut c| c.next().is_some()).unwrap_or(false)
+                    || d.supported_output_configs()
+                        .map(|mut c| c.next().is_some())
+                        .unwrap_or(false)
             })
             .filter_map(|d| d.name().ok())
             .collect(),
@@ -186,14 +212,18 @@ pub(crate) fn list_device_names() -> Vec<String> {
 /// 枚举输出设备（通过 cpal），含格式探测
 pub(crate) fn enumerate_devices() -> Vec<OutputDeviceInfo> {
     let host = cpal::default_host();
-    let Ok(device_iter) = host.devices() else { return vec![] };
+    let Ok(device_iter) = host.devices() else {
+        return vec![];
+    };
     let default_device = host.default_output_device();
     let common_rates = [44100u32, 48000, 88200, 96000, 176400, 192000];
 
     let mut result = Vec::new();
     for device in device_iter {
         let Ok(name) = device.name() else { continue };
-        let Ok(config_ranges) = device.supported_output_configs() else { continue };
+        let Ok(config_ranges) = device.supported_output_configs() else {
+            continue;
+        };
 
         let mut configs = Vec::new();
         let mut seen = Vec::new();
@@ -241,7 +271,8 @@ pub(crate) fn enumerate_devices() -> Vec<OutputDeviceInfo> {
             }
         }
 
-        let is_default = default_device.as_ref()
+        let is_default = default_device
+            .as_ref()
             .and_then(|d| d.name().ok())
             .map(|n| n == name)
             .unwrap_or(false);
@@ -310,7 +341,11 @@ pub(crate) fn open_inner(
             if n < data.len() {
                 let cnt = inner_clone.underrun_count.fetch_add(1, Ordering::Relaxed) + 1;
                 if cnt <= 10 || cnt.is_multiple_of(100) {
-                    warn!("音频 underrun #{cnt}: 回调需要 {} 样本但仅读到 {}", data.len(), n);
+                    warn!(
+                        "音频 underrun #{cnt}: 回调需要 {} 样本但仅读到 {}",
+                        data.len(),
+                        n
+                    );
                 }
                 data[n..].fill(0.0);
             }
@@ -338,10 +373,7 @@ pub(crate) fn open_inner(
             }
         }
         Err(e) => {
-            warn!(
-                "设备不支持 {}Hz ({}), 回退到默认采样率",
-                sample_rate, e
-            );
+            warn!("设备不支持 {}Hz ({}), 回退到默认采样率", sample_rate, e);
             let default_cfg = device
                 .default_output_config()
                 .map_err(|e| format!("获取设备默认配置失败: {e}"))?;
@@ -379,9 +411,17 @@ pub(crate) fn open_inner(
                         let mut guard = fb_inner_clone.consumer.lock();
                         let n = guard.pop_slice(data);
                         if n < data.len() {
-                            let cnt = fb_inner_clone.underrun_count.fetch_add(1, Ordering::Relaxed) + 1;
+                            let cnt = fb_inner_clone
+                                .underrun_count
+                                .fetch_add(1, Ordering::Relaxed)
+                                + 1;
                             if cnt <= 10 || cnt.is_multiple_of(100) {
-                                warn!("音频 underrun #{} (fallback): 回调需要 {} 样本但仅读到 {}", cnt, data.len(), n);
+                                warn!(
+                                    "音频 underrun #{} (fallback): 回调需要 {} 样本但仅读到 {}",
+                                    cnt,
+                                    data.len(),
+                                    n
+                                );
                             }
                             data[n..].fill(0.0);
                         }

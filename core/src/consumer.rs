@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crossbeam_channel::{Receiver, Sender, RecvTimeoutError};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
 use realfft::num_complex::Complex;
 use realfft::RealFftPlanner;
 
@@ -79,11 +79,7 @@ pub struct ConsumerControl {
 /// ringbuf 满时的写入退避：先短暂 spin 抗抖动，随后逐级 sleep。
 /// 输出停摆（如 AVAudioEngine 被系统停止）时若只 yield_now 会变成
 /// 100% CPU 死循环，触发 iOS cpu_resource 看门狗杀进程。
-fn push_with_backoff(
-    mut remaining: &[f32],
-    push: &dyn Fn(&[f32]) -> usize,
-    stop: &AtomicBool,
-) {
+fn push_with_backoff(mut remaining: &[f32], push: &dyn Fn(&[f32]) -> usize, stop: &AtomicBool) {
     let mut spin_count = 0u32;
     let mut stalled = 0u32;
     while !remaining.is_empty() && !stop.load(Ordering::SeqCst) {
@@ -136,8 +132,8 @@ pub fn run_consumer_loop(
     let freq_per_bin = config.sample_rate as f32 / fft_size as f32;
     // 与 PC 一致的频段划分
     let band_edges: [f32; SPECTRUM_BANDS] = [
-        120.0, 200.0, 300.0, 450.0, 650.0, 900.0, 1200.0, 1600.0,
-        2200.0, 3200.0, 4600.0, 6400.0, 8800.0, 12000.0, 16000.0, 22050.0,
+        120.0, 200.0, 300.0, 450.0, 650.0, 900.0, 1200.0, 1600.0, 2200.0, 3200.0, 4600.0, 6400.0,
+        8800.0, 12000.0, 16000.0, 22050.0,
     ];
     let mut bin_to_band = vec![0usize; fft_size / 2];
     for bin in 0..fft_size / 2 {
@@ -210,7 +206,9 @@ pub fn run_consumer_loop(
                 (cb.process_dsp)(&mut buf);
 
                 // 2) 实时频谱
-                if frame_count.is_multiple_of(config.fft_interval as u64) && buf.len() >= fft_size * ch {
+                if frame_count.is_multiple_of(config.fft_interval as u64)
+                    && buf.len() >= fft_size * ch
+                {
                     for i in 0..fft_size {
                         let l = buf[i * ch];
                         let r = if ch >= 2 { buf[i * ch + 1] } else { l };
@@ -231,11 +229,7 @@ pub fn run_consumer_loop(
                             if band_counts[b] > 0 {
                                 let avg = bands[b] / band_counts[b] as f32;
                                 let peak = band_peaks[b];
-                                band_peaks[b] = if avg > peak {
-                                    avg * 1.1
-                                } else {
-                                    peak * 0.93
-                                };
+                                band_peaks[b] = if avg > peak { avg * 1.1 } else { peak * 0.93 };
                                 bands[b] = (avg / band_peaks[b].max(0.001)).min(1.0);
                             } else {
                                 band_peaks[b] *= 0.90;
@@ -272,7 +266,11 @@ pub fn run_consumer_loop(
                     if (sp - 1.0).abs() > 0.001 {
                         speed_changer.set_speed(sp);
                         let out = speed_changer.process(&buf, ch);
-                        if out.is_empty() { &buf } else { out }
+                        if out.is_empty() {
+                            &buf
+                        } else {
+                            out
+                        }
                     } else {
                         &buf
                     }
@@ -307,9 +305,9 @@ pub fn run_consumer_loop(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossbeam_channel::{bounded, unbounded};
     use std::sync::{Arc, Mutex};
     use std::thread;
-    use crossbeam_channel::{bounded, unbounded};
 
     fn make_frame(samples: Vec<f32>) -> DecodedFrame {
         DecodedFrame {
@@ -353,7 +351,11 @@ mod tests {
                 on_samples_output: &|_: u64| {},
                 on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
             };
-            let ctrl = ConsumerControl { stop: s, ready_tx, speed };
+            let ctrl = ConsumerControl {
+                stop: s,
+                ready_tx,
+                speed,
+            };
             run_consumer_loop(rx, &config, &cb, &ctrl);
         });
         (handle, stop, ready_rx)
@@ -385,15 +387,21 @@ mod tests {
         let (ready_tx, _ready_rx) = bounded(1);
         let handle = thread::spawn(move || {
             let cb = ConsumerCallbacks {
-                push_samples: &|s: &[f32]| { *p.lock().unwrap() += s.len(); s.len() },
+                push_samples: &|s: &[f32]| {
+                    *p.lock().unwrap() += s.len();
+                    s.len()
+                },
                 process_dsp: &|_: &mut [f32]| {},
                 on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| {},
-                on_bad_frame: &|| { b.store(true, Ordering::SeqCst); },
+                on_bad_frame: &|| {
+                    b.store(true, Ordering::SeqCst);
+                },
                 on_samples_output: &|_: u64| {},
                 on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
             };
             let ctrl = ConsumerControl {
-                stop: s, ready_tx,
+                stop: s,
+                ready_tx,
                 speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             };
             run_consumer_loop(rx, &default_config(), &cb, &ctrl);
@@ -409,7 +417,10 @@ mod tests {
         handle.join().unwrap();
 
         assert_eq!(*pushed.lock().unwrap(), 256, "静音帧应照常推入输出");
-        assert!(!bad_called.load(Ordering::SeqCst), "全零帧不应触发 on_bad_frame");
+        assert!(
+            !bad_called.load(Ordering::SeqCst),
+            "全零帧不应触发 on_bad_frame"
+        );
     }
 
     #[test]
@@ -425,7 +436,10 @@ mod tests {
         let (ready_tx, _ready_rx) = bounded(1);
         let handle = thread::spawn(move || {
             let cb = ConsumerCallbacks {
-                push_samples: &|s: &[f32]| { *p.lock().unwrap() += s.len(); s.len() },
+                push_samples: &|s: &[f32]| {
+                    *p.lock().unwrap() += s.len();
+                    s.len()
+                },
                 process_dsp: &|_: &mut [f32]| {},
                 on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| {},
                 on_bad_frame: &|| {
@@ -437,7 +451,8 @@ mod tests {
                 on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
             };
             let ctrl = ConsumerControl {
-                stop: s, ready_tx,
+                stop: s,
+                ready_tx,
                 speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             };
             run_consumer_loop(rx, &default_config(), &cb, &ctrl);
@@ -473,7 +488,8 @@ mod tests {
                 on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
             };
             let ctrl = ConsumerControl {
-                stop: s, ready_tx,
+                stop: s,
+                ready_tx,
                 speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             };
             run_consumer_loop(rx, &cfg, &cb, &ctrl);
@@ -499,7 +515,10 @@ mod tests {
 
         let handle = thread::spawn(move || {
             let cb = ConsumerCallbacks {
-                push_samples: &|s: &[f32]| { p.lock().unwrap().extend_from_slice(s); s.len() },
+                push_samples: &|s: &[f32]| {
+                    p.lock().unwrap().extend_from_slice(s);
+                    s.len()
+                },
                 process_dsp: &|_: &mut [f32]| {},
                 on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| {},
                 on_bad_frame: &|| {},
@@ -507,7 +526,8 @@ mod tests {
                 on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
             };
             let ctrl = ConsumerControl {
-                stop: s, ready_tx,
+                stop: s,
+                ready_tx,
                 speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             };
             run_consumer_loop(rx, &cfg, &cb, &ctrl);
@@ -556,11 +576,16 @@ mod tests {
                 process_dsp: &|_: &mut [f32]| {},
                 on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| {},
                 on_bad_frame: &|| {},
-                on_samples_output: &|_: u64| { let _ = done_tx.send(()); },
-                on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { nr.lock().unwrap().take() },
+                on_samples_output: &|_: u64| {
+                    let _ = done_tx.send(());
+                },
+                on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> {
+                    nr.lock().unwrap().take()
+                },
             };
             let ctrl = ConsumerControl {
-                stop: s, ready_tx,
+                stop: s,
+                ready_tx,
                 speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             };
             run_consumer_loop(rx, &default_config(), &cb, &ctrl);
@@ -570,11 +595,15 @@ mod tests {
         let _ = ready_rx.recv_timeout(Duration::from_secs(3));
         drop(tx);
         // 等第一帧处理完（替代 sleep）
-        done_rx.recv_timeout(Duration::from_secs(3)).expect("frame 1 processed");
+        done_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("frame 1 processed");
 
         tx2.send(make_frame(vec![0.5; 256])).unwrap();
         // 等第二帧处理完（替代 sleep）
-        done_rx.recv_timeout(Duration::from_secs(3)).expect("frame 2 processed");
+        done_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("frame 2 processed");
         drop(tx2);
         handle.join().unwrap();
     }
@@ -605,13 +634,16 @@ mod tests {
             let cb = ConsumerCallbacks {
                 push_samples: &|s: &[f32]| s.len(),
                 process_dsp: &|_: &mut [f32]| {},
-                on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| { *sc.lock().unwrap() += 1; },
+                on_spectrum: &|_: &[f32; SPECTRUM_BANDS]| {
+                    *sc.lock().unwrap() += 1;
+                },
                 on_bad_frame: &|| {},
                 on_samples_output: &|_: u64| {},
                 on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
             };
             let ctrl = ConsumerControl {
-                stop: s, ready_tx,
+                stop: s,
+                ready_tx,
                 speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             };
             run_consumer_loop(rx, &cfg, &cb, &ctrl);
@@ -658,7 +690,8 @@ mod tests {
                 on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
             };
             let ctrl = ConsumerControl {
-                stop: s, ready_tx,
+                stop: s,
+                ready_tx,
                 speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             };
             run_consumer_loop(rx, &default_config(), &cb, &ctrl);
@@ -668,12 +701,18 @@ mod tests {
         tx.send(make_frame(vec![0.5; 512])).unwrap();
         let _ = ready_rx.recv_timeout(Duration::from_secs(3));
         // 等待累计样本数达标（替代 sleep）
-        done_rx.recv_timeout(Duration::from_secs(3)).expect("samples should reach 768");
+        done_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("samples should reach 768");
         drop(tx);
         handle.join().unwrap();
 
         let total = *total_samples.lock().unwrap();
-        assert_eq!(total, 768, "on_samples_output should sum sample counts: got {}", total);
+        assert_eq!(
+            total, 768,
+            "on_samples_output should sum sample counts: got {}",
+            total
+        );
     }
 
     #[test]
@@ -693,7 +732,9 @@ mod tests {
         let handle = thread::spawn(move || {
             let dsp_fn = move |buf: &mut [f32]| {
                 *dc.lock().unwrap() = true;
-                for sample in buf.iter_mut() { *sample = 0.0; }
+                for sample in buf.iter_mut() {
+                    *sample = 0.0;
+                }
             };
             let cb = ConsumerCallbacks {
                 push_samples: &|s: &[f32]| {
@@ -708,7 +749,8 @@ mod tests {
                 on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
             };
             let ctrl = ConsumerControl {
-                stop: s, ready_tx,
+                stop: s,
+                ready_tx,
                 speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             };
             run_consumer_loop(rx, &cfg, &cb, &ctrl);
@@ -718,12 +760,18 @@ mod tests {
         let dop_like = vec![0.0596f32, -0.0469, 0.0596, -0.0469];
         tx.send(make_frame(dop_like.clone())).unwrap();
         let _ = ready_rx.recv_timeout(Duration::from_secs(3));
-        done_rx.recv_timeout(Duration::from_secs(3)).expect("frame pushed");
+        done_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("frame pushed");
         drop(tx);
         handle.join().unwrap();
 
         assert!(!*dsp_called.lock().unwrap(), "passthrough 不应调用 DSP");
-        assert_eq!(*pushed.lock().unwrap(), dop_like, "passthrough 应逐比特原样推送");
+        assert_eq!(
+            *pushed.lock().unwrap(),
+            dop_like,
+            "passthrough 应逐比特原样推送"
+        );
     }
 
     #[test]
@@ -753,7 +801,8 @@ mod tests {
                 on_end_of_track: &|| -> Option<Receiver<DecodedFrame>> { None },
             };
             let ctrl = ConsumerControl {
-                stop: s, ready_tx,
+                stop: s,
+                ready_tx,
                 speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             };
             run_consumer_loop(rx, &default_config(), &cb, &ctrl);
@@ -762,7 +811,9 @@ mod tests {
         tx.send(make_frame(vec![1.0; 128])).unwrap();
         let _ = ready_rx.recv_timeout(Duration::from_secs(3));
         // 等待 DSP 处理完成（替代 sleep）
-        done_rx.recv_timeout(Duration::from_secs(3)).expect("dsp should process");
+        done_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("dsp should process");
         drop(tx);
         handle.join().unwrap();
 

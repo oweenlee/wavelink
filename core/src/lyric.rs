@@ -50,7 +50,11 @@ impl Lyrics {
     /// 二分查找给定时刻（秒）应显示的歌词行索引。
     /// 返回最后一个 time_secs <= secs 的行；若尚未到第一行则 None。
     pub fn line_at(&self, secs: f64) -> Option<usize> {
-        match self.lines.binary_search_by(|l| l.time_secs.partial_cmp(&secs).unwrap_or(std::cmp::Ordering::Equal)) {
+        match self.lines.binary_search_by(|l| {
+            l.time_secs
+                .partial_cmp(&secs)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }) {
             Ok(i) => Some(i),
             Err(i) => i.checked_sub(1),
         }
@@ -77,7 +81,9 @@ pub fn parse_lrc(content: &str) -> Lyrics {
         let mut id_tags: Vec<(String, String)> = Vec::new();
 
         while let Some(start) = rest.find('[') {
-            let Some(end_rel) = rest[start..].find(']') else { break };
+            let Some(end_rel) = rest[start..].find(']') else {
+                break;
+            };
             let end = start + end_rel;
             let tag = &rest[start + 1..end];
             rest = &rest[end + 1..];
@@ -112,7 +118,10 @@ pub fn parse_lrc(content: &str) -> Lyrics {
         let text = rest.trim().to_string();
         // 一行多标签：每个时间戳生成一行（共享文本）
         for t in stamps {
-            lines.push(LyricLine { time_secs: t, text: text.clone() });
+            lines.push(LyricLine {
+                time_secs: t,
+                text: text.clone(),
+            });
         }
     }
 
@@ -121,9 +130,18 @@ pub fn parse_lrc(content: &str) -> Lyrics {
     for l in lines.iter_mut() {
         l.time_secs = (l.time_secs - offset_secs).max(0.0);
     }
-    lines.sort_by(|a, b| a.time_secs.partial_cmp(&b.time_secs).unwrap_or(std::cmp::Ordering::Equal));
+    lines.sort_by(|a, b| {
+        a.time_secs
+            .partial_cmp(&b.time_secs)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
-    Lyrics { lines, title, artist, album }
+    Lyrics {
+        lines,
+        title,
+        artist,
+        album,
+    }
 }
 
 /// 解析时间标签内容（不含方括号），如 "01:23.45" → 83.45 秒。

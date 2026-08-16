@@ -77,17 +77,27 @@ impl TruePeakLimiter {
             if target_gain < self.gain {
                 // 平滑 attack：每样本逼近目标增益，避免瞬态 click
                 // 极端过载（>6dB）加快收敛速度
-                let coeff = if peak > self.threshold * 2.0 { 1.0 } else { self.attack };
+                let coeff = if peak > self.threshold * 2.0 {
+                    1.0
+                } else {
+                    self.attack
+                };
                 self.gain += (target_gain - self.gain) * coeff;
-                if self.gain < target_gain { self.gain = target_gain; }
+                if self.gain < target_gain {
+                    self.gain = target_gain;
+                }
             } else {
                 self.gain = self.gain * self.release + target_gain * (1.0 - self.release);
             }
             let out = xv * self.gain;
             // 安全截断：平滑 attack 期间可能有 1-2 样本过冲，硬截断保护
-            *x = if out > self.threshold { self.threshold }
-                 else if out < -self.threshold { -self.threshold }
-                 else { out };
+            *x = if out > self.threshold {
+                self.threshold
+            } else if out < -self.threshold {
+                -self.threshold
+            } else {
+                out
+            };
             pos = rpos;
         }
 
@@ -178,17 +188,11 @@ mod tests {
         let phases = build_polyphase_filter();
         // 所有系数之和应接近 1.0
         let sum: f32 = phases.iter().flat_map(|p| p.iter()).sum();
-        assert!(
-            (sum - 1.0).abs() < 0.05,
-            "多相滤波器总增益偏差过大: {sum}"
-        );
+        assert!((sum - 1.0).abs() < 0.05, "多相滤波器总增益偏差过大: {sum}");
         // 每相位自身也应合理
         for (p, phase) in phases.iter().enumerate() {
             let psum: f32 = phase.iter().sum();
-            assert!(
-                psum > 0.0,
-                "相位 {p} 系数和不正, 可能符号错误: {psum}"
-            );
+            assert!(psum > 0.0, "相位 {p} 系数和不正, 可能符号错误: {psum}");
         }
     }
 }

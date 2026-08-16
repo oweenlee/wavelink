@@ -173,10 +173,10 @@ fn test_concurrent_extreme_seek() {
         let h = Arc::clone(&handle);
         threads.push(std::thread::spawn(move || {
             for _ in 0..20 {
-                h.seek(-5.0);   // 负值
-                h.seek(999.0);  // 远超时长
-                h.seek(0.0);    // 起点
-                h.seek(0.001);  // 极小值
+                h.seek(-5.0); // 负值
+                h.seek(999.0); // 远超时长
+                h.seek(0.0); // 起点
+                h.seek(0.001); // 极小值
             }
         }));
     }

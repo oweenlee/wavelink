@@ -59,9 +59,15 @@ fn missing_file_then_replay_converges_cleanly() {
 
     // 第一轮：正常播放，建立预加载状态
     handle.play_queue(vec![a.clone(), b.clone()]);
-    assert!(wait_for_playing(&handle, true, Duration::from_secs(5)), "首轮应开始播放");
+    assert!(
+        wait_for_playing(&handle, true, Duration::from_secs(5)),
+        "首轮应开始播放"
+    );
     // 等第一轮播完（两首共 0.4s + 余量）
-    assert!(wait_for_playing(&handle, false, Duration::from_secs(10)), "首轮应自然播完");
+    assert!(
+        wait_for_playing(&handle, false, Duration::from_secs(10)),
+        "首轮应自然播完"
+    );
 
     // 模拟用户删除/移动文件 A
     std::fs::rename(&a, &a_moved).expect("改名模拟删除失败");
@@ -81,14 +87,24 @@ fn missing_file_then_replay_converges_cleanly() {
         }
     }
     assert!(got_b, "失效文件应被跳过并播放 B");
-    assert!(wait_for_playing(&handle, false, Duration::from_secs(5)), "播完后 playing 必须为 false");
-    assert!(handle.position_secs() < 0.05, "停止后位置应归零，实际 {}", handle.position_secs());
+    assert!(
+        wait_for_playing(&handle, false, Duration::from_secs(5)),
+        "播完后 playing 必须为 false"
+    );
+    assert!(
+        handle.position_secs() < 0.05,
+        "停止后位置应归零，实际 {}",
+        handle.position_secs()
+    );
 
     // underrun 不应持续增长（状态机卡死的标志）
     let u1 = handle.underrun_count();
     std::thread::sleep(Duration::from_millis(300));
     let u2 = handle.underrun_count();
-    assert!(u2.saturating_sub(u1) <= 2, "停止后 underrun 不应持续增长: {u1} -> {u2}");
+    assert!(
+        u2.saturating_sub(u1) <= 2,
+        "停止后 underrun 不应持续增长: {u1} -> {u2}"
+    );
 
     let _ = std::fs::remove_file(&a_moved);
     let _ = std::fs::remove_file(&b);

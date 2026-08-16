@@ -67,10 +67,7 @@ fn test_play_stream_returns_handle_immediately() {
     let start = std::time::Instant::now();
     let result = _handle.play_stream(Some("wav".to_string()), None);
     let elapsed = start.elapsed();
-    assert!(
-        result.is_ok(),
-        "play_stream 应立即返回 handle"
-    );
+    assert!(result.is_ok(), "play_stream 应立即返回 handle");
     assert!(
         elapsed < Duration::from_secs(2),
         "handle 应在 2s 内返回（不被 ready 阻塞），实际 {elapsed:?}"
@@ -93,7 +90,11 @@ fn test_play_stream_feeds_data_then_playing() {
     let wav = generate_wav_bytes(1);
     for chunk in wav.chunks(64 * 1024) {
         let written = sh.write(chunk);
-        assert!(written == chunk.len(), "写入应完整，写 {written}/{}", chunk.len());
+        assert!(
+            written == chunk.len(),
+            "写入应完整，写 {written}/{}",
+            chunk.len()
+        );
         // 首块写入后应该开始播放（probe 拿到数据 → ready）
         if handle.is_playing() {
             break;

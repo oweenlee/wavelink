@@ -89,7 +89,12 @@ fn wait_for_position_event(rx: &Receiver<EngineEvent>, timeout: Duration) -> Opt
 }
 
 /// 等待位置接近目标值（stop 后位置归零）
-fn wait_for_position_near(handle: &EngineHandle, target: f64, tolerance: f64, timeout: Duration) -> bool {
+fn wait_for_position_near(
+    handle: &EngineHandle,
+    target: f64,
+    tolerance: f64,
+    timeout: Duration,
+) -> bool {
     let deadline = std::time::Instant::now() + timeout;
     while std::time::Instant::now() < deadline {
         if (handle.position_secs() - target).abs() < tolerance {
@@ -112,7 +117,8 @@ fn test_engine_play_emits_track_changed() {
 
     handle.play(path.clone());
 
-    let ev = rx.recv_timeout(Duration::from_secs(5))
+    let ev = rx
+        .recv_timeout(Duration::from_secs(5))
         .expect("应收到 TrackChanged 事件");
     match ev {
         EngineEvent::TrackChanged(ref p) => assert_eq!(p, &path, "路径应匹配"),
@@ -133,15 +139,22 @@ fn test_engine_pause_resume_toggles_playing() {
     });
 
     handle.play(path.clone());
-    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("TrackChanged");
 
     assert!(handle.is_playing(), "播放后应处于播放状态");
 
     handle.pause();
-    assert!(wait_for_playing(&handle, false, Duration::from_secs(2)), "暂停后应停止");
+    assert!(
+        wait_for_playing(&handle, false, Duration::from_secs(2)),
+        "暂停后应停止"
+    );
 
     handle.resume();
-    assert!(wait_for_playing(&handle, true, Duration::from_secs(2)), "恢复后应继续");
+    assert!(
+        wait_for_playing(&handle, true, Duration::from_secs(2)),
+        "恢复后应继续"
+    );
 
     handle.stop();
 }
@@ -155,7 +168,8 @@ fn test_engine_seek_changes_position() {
     });
 
     handle.play(path.clone());
-    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("TrackChanged");
 
     let pos_before = handle.position_secs();
 
@@ -186,7 +200,8 @@ fn test_engine_position_increases_monotonically() {
     });
 
     handle.play(path.clone());
-    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("TrackChanged");
 
     let mut positions = Vec::new();
     for _ in 0..5 {
@@ -196,10 +211,7 @@ fn test_engine_position_increases_monotonically() {
 
     // 验证位置单调递增
     for w in positions.windows(2) {
-        assert!(
-            w[1] >= w[0],
-            "位置应单调递增: {} -> {}", w[0], w[1]
-        );
+        assert!(w[1] >= w[0], "位置应单调递增: {} -> {}", w[0], w[1]);
     }
 
     handle.stop();
@@ -214,11 +226,15 @@ fn test_engine_stop_resets_position() {
     });
 
     handle.play(path.clone());
-    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("TrackChanged");
     wait_for_playing(&handle, true, Duration::from_secs(2));
 
     handle.stop();
-    assert!(wait_for_playing(&handle, false, Duration::from_secs(2)), "stop 后应停止播放");
+    assert!(
+        wait_for_playing(&handle, false, Duration::from_secs(2)),
+        "stop 后应停止播放"
+    );
     // 等待引擎线程完成 stop 处理（position 归零在 consumer join 之后）
     wait_for_position_near(&handle, 0.0, 0.01, Duration::from_secs(2));
     let pos = handle.position_secs();
@@ -238,7 +254,8 @@ fn test_engine_play_after_stop() {
 
     // 第一次播放
     handle.play(path.clone());
-    rx.recv_timeout(Duration::from_secs(5)).expect("第一次 TrackChanged");
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("第一次 TrackChanged");
     wait_for_playing(&handle, true, Duration::from_secs(2));
     handle.stop();
     wait_for_playing(&handle, false, Duration::from_secs(2));
@@ -249,10 +266,11 @@ fn test_engine_play_after_stop() {
 
     // 第二次播放同文件
     handle.play(path.clone());
-    let ev = rx.recv_timeout(Duration::from_secs(5))
+    let ev = rx
+        .recv_timeout(Duration::from_secs(5))
         .expect("第二次应收到 TrackChanged");
     match ev {
-        EngineEvent::TrackChanged(_) => {}, // ok
+        EngineEvent::TrackChanged(_) => {} // ok
         other => panic!("期望 TrackChanged, 收到: {other:?}"),
     }
     assert!(handle.is_playing(), "第二次播放后应是播放状态");
@@ -269,11 +287,14 @@ fn test_engine_duration_is_reported() {
     });
 
     handle.play(path.clone());
-    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("TrackChanged");
 
     // 收集事件找 DurationSecs
     let events = collect_events(&rx, Duration::from_secs(2));
-    let has_duration = events.iter().any(|e| matches!(e, EngineEvent::DurationSecs(_)));
+    let has_duration = events
+        .iter()
+        .any(|e| matches!(e, EngineEvent::DurationSecs(_)));
 
     assert!(has_duration, "应收到 DurationSecs 事件");
 
@@ -342,7 +363,8 @@ fn test_engine_handle_clone_works() {
     let h2 = handle.clone();
     h2.play(path.clone());
 
-    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("TrackChanged");
     assert!(handle.is_playing());
 
     handle.stop();
@@ -357,7 +379,8 @@ fn test_engine_play_nonexistent_file() {
 
     handle.play("/tmp/_nonexistent_song_12345.wav".into());
 
-    let ev = rx.recv_timeout(Duration::from_secs(5))
+    let ev = rx
+        .recv_timeout(Duration::from_secs(5))
         .expect("不存在的文件应返回 Error 事件");
     match ev {
         EngineEvent::Error(ref msg) => assert!(!msg.is_empty(), "错误消息不应为空"),
@@ -371,7 +394,8 @@ fn test_engine_seek_beyond_end() {
     let path = ensure_test_wav();
     let (handle, rx) = EngineHandle::start();
     handle.play(path.clone());
-    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("TrackChanged");
 
     // seek 到远超出时长，不 panic 即可
     handle.seek(999.0);
@@ -388,7 +412,8 @@ fn test_engine_seek_negative() {
     let path = ensure_test_wav();
     let (handle, rx) = EngineHandle::start();
     handle.play(path.clone());
-    rx.recv_timeout(Duration::from_secs(5)).expect("TrackChanged");
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("TrackChanged");
 
     // seek 到负数，不 panic 即可
     handle.seek(-5.0);
@@ -447,9 +472,11 @@ fn test_engine_zero_buffer_ms() {
         ..Default::default()
     });
     handle.play(path.clone());
-    let ev = rx.recv_timeout(Duration::from_secs(5)).expect("buffer_ms=0 应正常播放");
+    let ev = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("buffer_ms=0 应正常播放");
     match ev {
-        EngineEvent::TrackChanged(_) => {},
+        EngineEvent::TrackChanged(_) => {}
         other => panic!("期望 TrackChanged, 收到: {other:?}"),
     }
     assert!(handle.is_playing());
@@ -487,10 +514,14 @@ fn test_engine_unicode_path() {
         ..Default::default()
     });
     handle.play(path.clone());
-    let ev = rx.recv_timeout(Duration::from_secs(5)).expect("unicode 路径应正常");
+    let ev = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("unicode 路径应正常");
     match ev {
-        EngineEvent::TrackChanged(ref p) => assert!(p.contains("🎵") || p.contains("测试"),
-            "unicode 路径应传回完整: {p}"),
+        EngineEvent::TrackChanged(ref p) => assert!(
+            p.contains("🎵") || p.contains("测试"),
+            "unicode 路径应传回完整: {p}"
+        ),
         EngineEvent::Error(ref msg) => panic!("unicode 路径出错: {msg}"),
         other => panic!("期望 TrackChanged, 收到: {other:?}"),
     }

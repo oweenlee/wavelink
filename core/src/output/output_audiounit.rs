@@ -39,12 +39,16 @@ unsafe impl Send for AudioOutputUnit {}
 impl AudioOutput for AudioOutputUnit {
     fn pause(&self) {
         self.playing.store(false, Ordering::Release);
-        unsafe { coreaudio_sys::AudioOutputUnitStop(self.unit); }
+        unsafe {
+            coreaudio_sys::AudioOutputUnitStop(self.unit);
+        }
     }
 
     fn resume(&self) {
         self.playing.store(true, Ordering::Release);
-        unsafe { coreaudio_sys::AudioOutputUnitStart(self.unit); }
+        unsafe {
+            coreaudio_sys::AudioOutputUnitStart(self.unit);
+        }
     }
 
     fn swap_consumer(&self, buffer_ms: u32, sample_rate: u32, channels: u32) -> PcmProducer {
@@ -58,9 +62,15 @@ impl AudioOutput for AudioOutputUnit {
         prod
     }
 
-    fn sample_rate(&self) -> u32 { self.sample_rate }
-    fn channels(&self) -> u32 { self.channels }
-    fn sample_format(&self) -> SampleFormat { self.sample_format }
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+    fn channels(&self) -> u32 {
+        self.channels
+    }
+    fn sample_format(&self) -> SampleFormat {
+        self.sample_format
+    }
 
     fn supported_sample_rates(&self) -> Vec<u32> {
         vec![44100, 48000, 88200, 96000, 176400, 192000]
@@ -155,22 +165,32 @@ extern "C" fn render_callback(
                 for i in 0..buf_list.mNumberBuffers as usize {
                     let buf = &mut buf_list.mBuffers[i];
                     let sample_count = buf.mDataByteSize as usize
-                        / if ctx.sample_format == SampleFormat::I16 { 2 } else { 4 };
+                        / if ctx.sample_format == SampleFormat::I16 {
+                            2
+                        } else {
+                            4
+                        };
                     match ctx.sample_format {
                         SampleFormat::I16 => {
-                            let data = std::slice::from_raw_parts_mut(
-                                buf.mData as *mut i16, sample_count);
+                            let data =
+                                std::slice::from_raw_parts_mut(buf.mData as *mut i16, sample_count);
                             for dst in data.iter_mut() {
-                                *dst = (ctx.tmp_buf[si].clamp(-1.0, 1.0) * 32768.0).round().clamp(-32768.0, 32767.0) as i16;
+                                *dst = (ctx.tmp_buf[si].clamp(-1.0, 1.0) * 32768.0)
+                                    .round()
+                                    .clamp(-32768.0, 32767.0)
+                                    as i16;
                                 si += 1;
                             }
                         }
                         SampleFormat::I32 => {
-                            let data = std::slice::from_raw_parts_mut(
-                                buf.mData as *mut i32, sample_count);
+                            let data =
+                                std::slice::from_raw_parts_mut(buf.mData as *mut i32, sample_count);
                             for dst in data.iter_mut() {
                                 // 2^31 缩放 + round：DoP 左对齐 24-bit 字逐比特无损
-                                *dst = (ctx.tmp_buf[si].clamp(-1.0, 1.0) * 2147483648.0).round().clamp(-2147483648.0, 2147483647.0) as i32;
+                                *dst = (ctx.tmp_buf[si].clamp(-1.0, 1.0) * 2147483648.0)
+                                    .round()
+                                    .clamp(-2147483648.0, 2147483647.0)
+                                    as i32;
                                 si += 1;
                             }
                         }
@@ -260,7 +280,10 @@ fn negotiate_format(
         if status == 0 {
             return fmt;
         }
-        warn!("AudioUnit 不支持整数格式 (bit_depth={}), 回退 Float32", bit_depth);
+        warn!(
+            "AudioUnit 不支持整数格式 (bit_depth={}), 回退 Float32",
+            bit_depth
+        );
     }
 
     SampleFormat::F32
@@ -389,7 +412,10 @@ pub(crate) fn open_inner(
             return Err(format!("AudioUnitInitialize 失败: {hr}"));
         }
 
-        info!("AudioUnit 输出: {}Hz {}ch 格式:{:?}", sample_rate, channels, sample_format);
+        info!(
+            "AudioUnit 输出: {}Hz {}ch 格式:{:?}",
+            sample_rate, channels, sample_format
+        );
 
         let output = AudioOutputUnit {
             unit,
@@ -444,7 +470,7 @@ unsafe fn find_device_id_by_name(name: &str) -> Option<u32> {
     for &dev_id in &ids {
         let name_addr = AudioObjectPropertyAddress {
             mSelector: 0x6E616D65, // kAudioDevicePropertyDeviceName
-            mScope: 0x676C6F62,   // kAudioObjectPropertyScopeGlobal
+            mScope: 0x676C6F62,    // kAudioObjectPropertyScopeGlobal
             mElement: 0,
         };
         let mut buf = [0u8; 256];

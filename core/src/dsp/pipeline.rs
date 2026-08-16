@@ -29,7 +29,6 @@ enum FadeState {
     FadeOut { remaining: u32, total: u32 },
 }
 
-
 /// DSP 管线，按顺序串联：DC HPF → ReplayGain → 卷积 EQ → PEQ → Crossfeed → 展宽 → 限幅 → 音量 → 链尾软限幅 → 淡入淡出 → 抖动
 pub struct DspPipeline {
     channels: usize,
@@ -112,11 +111,7 @@ impl DspPipeline {
         // 每段 PEQ 为每个声道创建独立的 Biquad
         let peq = peq_bands
             .iter()
-            .map(|b| {
-                (0..channels)
-                    .map(|_| b.to_biquad(sr))
-                    .collect()
-            })
+            .map(|b| (0..channels).map(|_| b.to_biquad(sr)).collect())
             .collect();
         // 每声道一个 DC HPF
         let dc_hpf = (0..channels)
@@ -222,7 +217,10 @@ impl DspPipeline {
 
         // 7.5 淡入淡出（防 pause/stop 爆音）
         match &mut self.fade {
-            FadeState::FadeIn { ref mut remaining, total } => {
+            FadeState::FadeIn {
+                ref mut remaining,
+                total,
+            } => {
                 let total_f = *total as f32;
                 for s in buf.iter_mut() {
                     if *remaining > 0 {
@@ -234,7 +232,10 @@ impl DspPipeline {
                     self.fade = FadeState::Idle;
                 }
             }
-            FadeState::FadeOut { ref mut remaining, total } => {
+            FadeState::FadeOut {
+                ref mut remaining,
+                total,
+            } => {
                 let total_f = *total as f32;
                 for s in buf.iter_mut() {
                     if *remaining > 0 {
@@ -294,7 +295,10 @@ impl DspPipeline {
         if self.bypass {
             return 0;
         }
-        self.conv_eq.as_ref().map(|c| c.latency_samples()).unwrap_or(0)
+        self.conv_eq
+            .as_ref()
+            .map(|c| c.latency_samples())
+            .unwrap_or(0)
     }
 
     /// 管线声道数
@@ -322,7 +326,11 @@ impl DspPipeline {
     pub fn replace_peq_bands(&mut self, bands: &[PeqBand], sample_rate: f32) {
         self.peq = bands
             .iter()
-            .map(|b| (0..self.channels).map(|_| b.to_biquad(sample_rate)).collect())
+            .map(|b| {
+                (0..self.channels)
+                    .map(|_| b.to_biquad(sample_rate))
+                    .collect()
+            })
             .collect();
     }
 
@@ -342,7 +350,10 @@ impl DspPipeline {
     pub fn start_fade_in(&mut self, duration_ms: u32) {
         let samples = (self.sample_rate * duration_ms as f32 / 1000.0) as u32;
         if samples > 0 {
-            self.fade = FadeState::FadeIn { remaining: samples, total: samples };
+            self.fade = FadeState::FadeIn {
+                remaining: samples,
+                total: samples,
+            };
         }
     }
 
@@ -350,7 +361,10 @@ impl DspPipeline {
     pub fn start_fade_out(&mut self, duration_ms: u32) {
         let samples = (self.sample_rate * duration_ms as f32 / 1000.0) as u32;
         if samples > 0 {
-            self.fade = FadeState::FadeOut { remaining: samples, total: samples };
+            self.fade = FadeState::FadeOut {
+                remaining: samples,
+                total: samples,
+            };
         }
     }
 
@@ -384,12 +398,19 @@ impl DspPipeline {
 /// 返回默认 31 段 ISO PEQ 频段（所有增益 0 dB，flat 响应）
 pub fn default_peq_bands() -> Vec<PeqBand> {
     let freqs = [
-        20.0, 25.0, 31.5, 40.0, 50.0, 63.0, 80.0, 100.0, 125.0, 160.0,
-        200.0, 250.0, 315.0, 400.0, 500.0, 630.0, 800.0, 1000.0, 1250.0, 1600.0,
-        2000.0, 2500.0, 3150.0, 4000.0, 5000.0, 6300.0, 8000.0, 10000.0, 12500.0, 16000.0,
-        20000.0,
+        20.0, 25.0, 31.5, 40.0, 50.0, 63.0, 80.0, 100.0, 125.0, 160.0, 200.0, 250.0, 315.0, 400.0,
+        500.0, 630.0, 800.0, 1000.0, 1250.0, 1600.0, 2000.0, 2500.0, 3150.0, 4000.0, 5000.0,
+        6300.0, 8000.0, 10000.0, 12500.0, 16000.0, 20000.0,
     ];
-    freqs.iter().map(|&f| PeqBand { freq: f, gain_db: 0.0, q: 1.41, kind: PeqKind::Peaking }).collect()
+    freqs
+        .iter()
+        .map(|&f| PeqBand {
+            freq: f,
+            gain_db: 0.0,
+            q: 1.41,
+            kind: PeqKind::Peaking,
+        })
+        .collect()
 }
 
 /// 音效预设名称（10 种 EQ 预设）
@@ -421,7 +442,9 @@ pub enum PresetName {
 /// 按预设名称返回对应的 PEQ 频段参数
 pub fn preset_bands(name: PresetName) -> Vec<PeqBand> {
     let q = 1.41;
-    let freq: [f32; 10] = [31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0];
+    let freq: [f32; 10] = [
+        31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
+    ];
 
     let gains: [f32; 10] = match name {
         PresetName::Flat => [0.0; 10],
@@ -436,7 +459,15 @@ pub fn preset_bands(name: PresetName) -> Vec<PeqBand> {
         PresetName::Vocals => [-3.0, -3.0, -2.0, -0.5, 1.0, 2.5, 3.0, 1.5, 0.0, 0.0],
     };
 
-    freq.iter().zip(gains.iter()).map(|(&f, &g)| PeqBand { freq: f, gain_db: g, q, kind: PeqKind::Peaking }).collect()
+    freq.iter()
+        .zip(gains.iter())
+        .map(|(&f, &g)| PeqBand {
+            freq: f,
+            gain_db: g,
+            q,
+            kind: PeqKind::Peaking,
+        })
+        .collect()
 }
 
 /// 对交错缓冲逐声道应用 Biquad（每声道独立状态）。
@@ -562,10 +593,18 @@ mod tests {
 
     #[test]
     fn test_preset_bands_structure() {
-        for name in &[PresetName::Flat, PresetName::Rock, PresetName::Pop,
-                      PresetName::Dance, PresetName::Classical, PresetName::Soft,
-                      PresetName::FullBass, PresetName::FullTreble, PresetName::Techno,
-                      PresetName::Vocals] {
+        for name in &[
+            PresetName::Flat,
+            PresetName::Rock,
+            PresetName::Pop,
+            PresetName::Dance,
+            PresetName::Classical,
+            PresetName::Soft,
+            PresetName::FullBass,
+            PresetName::FullTreble,
+            PresetName::Techno,
+            PresetName::Vocals,
+        ] {
             let bands = preset_bands(*name);
             assert_eq!(bands.len(), 10, "预设 {name:?} 应返回 10 段");
             for (i, b) in bands.iter().enumerate() {
@@ -588,7 +627,12 @@ mod tests {
     /// 验证左右声道 Biquad 状态独立——连续两帧 DC 输入，左右应各自收敛
     #[test]
     fn test_biquad_per_channel_state_independence() {
-        let bands = [PeqBand { freq: 1000.0, gain_db: 6.0, q: 1.0, ..Default::default() }];
+        let bands = [PeqBand {
+            freq: 1000.0,
+            gain_db: 6.0,
+            q: 1.0,
+            ..Default::default()
+        }];
         let mut p = DspPipeline::new(44100, 2, &bands, false, 1.0, 24);
         // 第一帧：左声道 0.5，右声道 0.0
         let mut buf1: Vec<f32> = (0..512).flat_map(|_| [0.5f32, 0.0]).collect();
@@ -615,7 +659,10 @@ mod tests {
         let mut buf = vec![0.5f32, -0.3, 0.2, -0.1];
         p.process(&mut buf);
         for &s in &buf {
-            assert!(s.abs() <= 1.0 + 1e-2, "ReplayGain +6dB 后限幅器应防止过冲: {s}");
+            assert!(
+                s.abs() <= 1.0 + 1e-2,
+                "ReplayGain +6dB 后限幅器应防止过冲: {s}"
+            );
         }
         let avg = buf.iter().map(|x| x.abs()).sum::<f32>() / buf.len() as f32;
         assert!(avg > 0.4, "ReplayGain +6dB 后平均幅值应明显增大: {avg}");
@@ -639,7 +686,11 @@ mod tests {
         let input = vec![0.3f32, -0.2, 0.1, -0.4];
         let mut buf = input.clone();
         p.process(&mut buf);
-        assert!((buf[0] - input[0]).abs() < 0.1, "0dB ReplayGain 应接近无变化: {}", buf[0]);
+        assert!(
+            (buf[0] - input[0]).abs() < 0.1,
+            "0dB ReplayGain 应接近无变化: {}",
+            buf[0]
+        );
     }
 
     #[test]
@@ -746,7 +797,11 @@ mod tests {
         p.process(&mut buf);
         // 前几个样本应接近 0，最后一个应接近 1.0
         assert!(buf[0] < 0.3, "fade in 首样本应小: {}", buf[0]);
-        assert!(buf[buf.len() - 1] > 0.5, "fade in 末样本应大: {}", buf[buf.len() - 1]);
+        assert!(
+            buf[buf.len() - 1] > 0.5,
+            "fade in 末样本应大: {}",
+            buf[buf.len() - 1]
+        );
         // 处理完后 fade 应回到 Idle
         assert!(matches!(p.fade, FadeState::Idle), "fade 完成后应 Idle");
     }
@@ -759,7 +814,11 @@ mod tests {
         p.process(&mut buf);
         // 前几个样本应接近 1.0，最后一个应接近 0
         assert!(buf[0] > 0.5, "fade out 首样本应大: {}", buf[0]);
-        assert!(buf[buf.len() - 1].abs() < 0.3, "fade out 末样本应小: {}", buf[buf.len() - 1]);
+        assert!(
+            buf[buf.len() - 1].abs() < 0.3,
+            "fade out 末样本应小: {}",
+            buf[buf.len() - 1]
+        );
         assert!(matches!(p.fade, FadeState::Idle), "fade 完成后应 Idle");
     }
 
@@ -800,14 +859,18 @@ mod tests {
         let zero_count = buf.iter().filter(|&&s| s.abs() < 1e-10).count();
         assert!(
             zero_count < buf.len() / 100,
-            "输出中出现过多接近零的样本: {}/{}", zero_count, buf.len()
+            "输出中出现过多接近零的样本: {}/{}",
+            zero_count,
+            buf.len()
         );
 
         // 检查 2: 信号连续（相邻样本间无 >0.5 的跳变，表明无 fill(0) 插入）
         let mut max_jump = 0.0f32;
         for i in 1..buf.len() {
             let jump = (buf[i] - buf[i - 1]).abs();
-            if jump > max_jump { max_jump = jump; }
+            if jump > max_jump {
+                max_jump = jump;
+            }
         }
         assert!(
             max_jump < 0.5,

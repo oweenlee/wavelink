@@ -22,13 +22,26 @@ pub(crate) struct QueueEntry {
 
 impl QueueEntry {
     pub fn for_file(path: String) -> Self {
-        QueueEntry { display: path.clone(), audio_file: path, start_secs: 0.0, end_secs: 0.0 }
+        QueueEntry {
+            display: path.clone(),
+            audio_file: path,
+            start_secs: 0.0,
+            end_secs: 0.0,
+        }
     }
     pub fn seek_pos(&self) -> Option<f64> {
-        if self.start_secs > 0.0 { Some(self.start_secs) } else { None }
+        if self.start_secs > 0.0 {
+            Some(self.start_secs)
+        } else {
+            None
+        }
     }
     pub fn end_secs_opt(&self) -> Option<f64> {
-        if self.end_secs > 0.0 { Some(self.end_secs) } else { None }
+        if self.end_secs > 0.0 {
+            Some(self.end_secs)
+        } else {
+            None
+        }
     }
     /// 唯一标识（audio_file + start_secs），用于队列移除时精确匹配
     pub fn unique_key(&self) -> (&str, u64) {
@@ -41,7 +54,12 @@ pub(crate) fn resolve_entries(paths: Vec<String>) -> Vec<QueueEntry> {
     let mut entries = Vec::new();
     for p in paths {
         let path = Path::new(&p);
-        if path.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("cue")).unwrap_or(false) {
+        if path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.eq_ignore_ascii_case("cue"))
+            .unwrap_or(false)
+        {
             match crate::cue::parse_cue(path) {
                 Ok(sheet) => {
                     let parent = path.parent().unwrap_or(Path::new(""));
@@ -101,7 +119,9 @@ impl EngineState {
     pub(crate) fn advance_normal(&mut self) {
         if !self.queue.is_empty() {
             let next = self.queue.remove(0);
-            let match_seamless = self.next_entry.as_ref()
+            let match_seamless = self
+                .next_entry
+                .as_ref()
                 .map(|e| e.display == next.display)
                 .unwrap_or(false);
             if match_seamless {
@@ -129,7 +149,9 @@ impl EngineState {
     pub(crate) fn advance_repeat_all(&mut self) {
         if self.queue.is_empty() && !self.original_queue.is_empty() {
             let current = self.current_entry.as_ref().map(|e| &e.display);
-            self.queue = self.original_queue.iter()
+            self.queue = self
+                .original_queue
+                .iter()
                 .filter(|e| Some(&e.display) != current)
                 .cloned()
                 .collect();
@@ -152,7 +174,9 @@ impl EngineState {
         }
         let idx = fastrand::usize(..self.queue.len());
         let next = self.queue.remove(idx);
-        let match_seamless = self.next_entry.as_ref()
+        let match_seamless = self
+            .next_entry
+            .as_ref()
             .map(|e| e.display == next.display)
             .unwrap_or(false);
         if match_seamless {
@@ -205,7 +229,9 @@ impl EngineState {
 
     pub(crate) fn remove_from_queue(&mut self, idx: usize) {
         // idx 是 player.queue 中的 0-based 位置，0=当前曲目，不允许移除
-        if idx == 0 { return; }
+        if idx == 0 {
+            return;
+        }
         let q_idx = idx - 1;
         if q_idx < self.queue.len() {
             let removed = self.queue.remove(q_idx);
@@ -233,7 +259,9 @@ mod tests {
     fn next_state_event(rx: &Receiver<EngineEvent>) -> Option<EngineEvent> {
         loop {
             match rx.recv_timeout(Duration::from_secs(2)) {
-                Ok(EngineEvent::DurationSecs(_)) | Ok(EngineEvent::Position(_)) | Ok(EngineEvent::QueueChanged(..)) => continue,
+                Ok(EngineEvent::DurationSecs(_))
+                | Ok(EngineEvent::Position(_))
+                | Ok(EngineEvent::QueueChanged(..)) => continue,
                 other => return other.ok(),
             }
         }
@@ -255,28 +283,33 @@ mod tests {
         let (mut state, rx) = make_state(vec![], PlayMode::Normal);
         state.advance_normal();
         let ev = next_state_event(&rx).expect("应收到事件");
-        assert!(matches!(ev, EngineEvent::PlaybackStopped), "预期停止, 收到: {ev:?}");
+        assert!(
+            matches!(ev, EngineEvent::PlaybackStopped),
+            "预期停止, 收到: {ev:?}"
+        );
     }
 
     #[test]
     fn test_repeat_one_inserts_current_to_front() {
-        let (mut state, _rx) = make_state(
-            vec!["/tmp/next1.wav".into()],
-            PlayMode::RepeatOne,
-        );
+        let (mut state, _rx) = make_state(vec!["/tmp/next1.wav".into()], PlayMode::RepeatOne);
         let before = state.queue.len();
         if let Some(entry) = state.current_entry.clone() {
             state.queue.insert(0, entry);
         }
         assert_eq!(state.queue.len(), before + 1, "应为 current_entry 插入队首");
-        assert_eq!(state.queue[0].display, "/tmp/test.wav", "应插回 current_entry");
+        assert_eq!(
+            state.queue[0].display, "/tmp/test.wav",
+            "应插回 current_entry"
+        );
     }
 
     #[test]
     fn test_repeat_all_refills_queue_on_empty() {
         let (mut state, _rx) = make_state(vec![], PlayMode::RepeatAll);
         let current = state.current_entry.as_ref().map(|e| e.display.clone());
-        state.queue = state.original_queue.iter()
+        state.queue = state
+            .original_queue
+            .iter()
             .filter(|e| Some(e.display.as_str()) != current.as_deref())
             .cloned()
             .collect();
@@ -296,7 +329,9 @@ mod tests {
         state.current_entry = Some(QueueEntry::for_file("/tmp/a.wav".into()));
         state.original_queue = vec![QueueEntry::for_file("/tmp/a.wav".into())];
         let current = state.current_entry.as_ref().map(|e| e.display.clone());
-        state.queue = state.original_queue.iter()
+        state.queue = state
+            .original_queue
+            .iter()
             .filter(|e| Some(e.display.as_str()) != current.as_deref())
             .cloned()
             .collect();
@@ -312,7 +347,11 @@ mod tests {
     #[test]
     fn test_shuffle_removes_random_track() {
         let (mut state, _rx) = make_state(
-            vec!["/tmp/a.wav".into(), "/tmp/b.wav".into(), "/tmp/c.wav".into()],
+            vec![
+                "/tmp/a.wav".into(),
+                "/tmp/b.wav".into(),
+                "/tmp/c.wav".into(),
+            ],
             PlayMode::Shuffle,
         );
         let before = state.queue.len();
@@ -328,28 +367,35 @@ mod tests {
         let (mut state, rx) = make_state(vec![], PlayMode::Shuffle);
         state.advance_shuffle();
         let ev = next_state_event(&rx).expect("应收到事件");
-        assert!(matches!(ev, EngineEvent::PlaybackStopped), "预期停止, 收到: {ev:?}");
+        assert!(
+            matches!(ev, EngineEvent::PlaybackStopped),
+            "预期停止, 收到: {ev:?}"
+        );
     }
 
     #[test]
     fn test_remove_from_queue_removes_at_index() {
         let (mut state, _rx) = make_state(
-            vec!["/tmp/song1.wav".into(), "/tmp/song2.wav".into(), "/tmp/song3.wav".into()],
+            vec![
+                "/tmp/song1.wav".into(),
+                "/tmp/song2.wav".into(),
+                "/tmp/song3.wav".into(),
+            ],
             PlayMode::Normal,
         );
         state.remove_from_queue(0);
         assert_eq!(state.queue.len(), 3, "不应移除当前曲目");
         state.remove_from_queue(1);
         assert_eq!(state.queue.len(), 2, "应移除一首");
-        assert!(!state.queue.iter().any(|e| e.display == "/tmp/song1.wav"), "song1 应从队列移除");
+        assert!(
+            !state.queue.iter().any(|e| e.display == "/tmp/song1.wav"),
+            "song1 应从队列移除"
+        );
     }
 
     #[test]
     fn test_remove_from_queue_out_of_bounds() {
-        let (mut state, _rx) = make_state(
-            vec!["/tmp/song1.wav".into()],
-            PlayMode::Normal,
-        );
+        let (mut state, _rx) = make_state(vec!["/tmp/song1.wav".into()], PlayMode::Normal);
         state.remove_from_queue(5);
         assert_eq!(state.queue.len(), 1, "越界移除不应影响队列");
     }

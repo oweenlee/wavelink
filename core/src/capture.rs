@@ -68,7 +68,10 @@ pub fn start_global_capture(sample_rate: u32, channels: u32) -> Result<(), Strin
             let host = cpal::default_host();
             let device = match host.default_input_device() {
                 Some(d) => d,
-                None => { let _ = ready_tx.send(Err("未找到输入设备".into())); return; }
+                None => {
+                    let _ = ready_tx.send(Err("未找到输入设备".into()));
+                    return;
+                }
             };
             let config = cpal::StreamConfig {
                 channels: channels as u16,
@@ -88,7 +91,10 @@ pub fn start_global_capture(sample_rate: u32, channels: u32) -> Result<(), Strin
                 None,
             ) {
                 Ok(s) => s,
-                Err(e) => { let _ = ready_tx.send(Err(format!("构建输入流失败: {e}"))); return; }
+                Err(e) => {
+                    let _ = ready_tx.send(Err(format!("构建输入流失败: {e}")));
+                    return;
+                }
             };
             if let Err(e) = stream.play() {
                 let _ = ready_tx.send(Err(format!("启动输入流失败: {e}")));

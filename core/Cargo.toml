@@ -63,3 +63,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [lib]
 # 作为纯 Rust 库被各端 path 依赖（PC Tauri / 移动端 flutter_rust_bridge），只需 rlib
 crate-type = ["lib"]
+
+# play_test 直接调用 cpal 后端，仅在有 cpal-backend feature 时编译；
+# 无后端（--no-default-features）构建时自动跳过，避免 headless 下编译失败。
+[[example]]
+name = "play_test"
+required-features = ["cpal-backend"]

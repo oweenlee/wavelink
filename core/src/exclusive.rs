@@ -31,7 +31,10 @@ struct AudioObjectPropertyAddress {
     element: u32,
 }
 
+// 显式声明 CoreAudio 框架链接（Hog Mode 用 raw FFI），不依赖其他依赖顺带链接，
+// 否则 --no-default-features 的 macOS 构建会报未定义符号。
 #[cfg(target_os = "macos")]
+#[link(name = "CoreAudio", kind = "framework")]
 extern "C" {
     fn AudioObjectGetPropertyData(
         object_id: AudioDeviceID,
@@ -180,8 +183,7 @@ pub fn acquire_exclusive_mode(_device_name: Option<&str>) -> bool {
 
 /// Windows: 独占随音频流关闭自动释放，此处无操作
 #[cfg(target_os = "windows")]
-pub fn release_exclusive_mode(_device_name: Option<&str>) {
-}
+pub fn release_exclusive_mode(_device_name: Option<&str>) {}
 
 // ───────────────────────── 其他平台 ─────────────────────────
 
@@ -194,5 +196,4 @@ pub fn acquire_exclusive_mode(_device_name: Option<&str>) -> bool {
 
 /// 其他平台：释放独占模式（无操作）
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-pub fn release_exclusive_mode(_device_name: Option<&str>) {
-}
+pub fn release_exclusive_mode(_device_name: Option<&str>) {}

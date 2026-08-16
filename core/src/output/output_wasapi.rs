@@ -17,8 +17,8 @@ use crate::output::{AudioOutput, AudioOutputInner, PcmProducer, SampleFormat};
 
 // ─── windows-sys 导入 ────────────────────────────────────────
 
-use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE};
 use windows_sys::core::HRESULT;
+use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE};
 use windows_sys::Win32::Media::Audio::{
     AUDCLNT_SHAREMODE_EXCLUSIVE, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
     WAVEFORMATEX, WAVEFORMATEXTENSIBLE, WAVEFORMATEXTENSIBLE_0,
@@ -26,111 +26,170 @@ use windows_sys::Win32::Media::Audio::{
 use windows_sys::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
 };
-use windows_sys::Win32::System::Threading::{CreateEventW, SetEvent, WaitForSingleObject, INFINITE,
-    GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL};
+use windows_sys::Win32::System::Threading::{
+    CreateEventW, GetCurrentThread, SetEvent, SetThreadPriority, WaitForSingleObject, INFINITE,
+    THREAD_PRIORITY_TIME_CRITICAL,
+};
 
 // ─── GUID 常量 ───────────────────────────────────────────────
 
-const CLSID_MMDEVICE_ENUMERATOR: windows_sys::core::GUID =
-    windows_sys::core::GUID {
-        data1: 0xBCDE0395,
-        data2: 0xE52F,
-        data3: 0x467C,
-        data4: [0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E],
-    };
+const CLSID_MMDEVICE_ENUMERATOR: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0xBCDE0395,
+    data2: 0xE52F,
+    data3: 0x467C,
+    data4: [0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E],
+};
 
-const IID_IMMDEVICE_ENUMERATOR: windows_sys::core::GUID =
-    windows_sys::core::GUID {
-        data1: 0xA95664D2,
-        data2: 0x9614,
-        data3: 0x4F35,
-        data4: [0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6],
-    };
+const IID_IMMDEVICE_ENUMERATOR: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0xA95664D2,
+    data2: 0x9614,
+    data3: 0x4F35,
+    data4: [0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6],
+};
 
-const IID_IAUDIO_CLIENT: windows_sys::core::GUID =
-    windows_sys::core::GUID {
-        data1: 0x1CB9AD4C,
-        data2: 0xDBFA,
-        data3: 0x4C32,
-        data4: [0xB1, 0x78, 0xC2, 0xF5, 0x68, 0xA7, 0x03, 0xB2],
-    };
+const IID_IAUDIO_CLIENT: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0x1CB9AD4C,
+    data2: 0xDBFA,
+    data3: 0x4C32,
+    data4: [0xB1, 0x78, 0xC2, 0xF5, 0x68, 0xA7, 0x03, 0xB2],
+};
 
-const IID_IAUDIO_RENDER_CLIENT: windows_sys::core::GUID =
-    windows_sys::core::GUID {
-        data1: 0xF294ACFC,
-        data2: 0x3146,
-        data3: 0x4483,
-        data4: [0xA7, 0xBF, 0xAD, 0xDC, 0xA7, 0xC2, 0x60, 0xE2],
-    };
+const IID_IAUDIO_RENDER_CLIENT: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0xF294ACFC,
+    data2: 0x3146,
+    data3: 0x4483,
+    data4: [0xA7, 0xBF, 0xAD, 0xDC, 0xA7, 0xC2, 0x60, 0xE2],
+};
 
-const KSDATAFORMAT_SUBTYPE_PCM: windows_sys::core::GUID =
-    windows_sys::core::GUID {
-        data1: 0x00000001,
-        data2: 0x0000,
-        data3: 0x0010,
-        data4: [0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71],
-    };
+const KSDATAFORMAT_SUBTYPE_PCM: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0x00000001,
+    data2: 0x0000,
+    data3: 0x0010,
+    data4: [0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71],
+};
 
-const KSDATAFORMAT_SUBTYPE_IEEE_FLOAT: windows_sys::core::GUID =
-    windows_sys::core::GUID {
-        data1: 0x00000003,
-        data2: 0x0000,
-        data3: 0x0010,
-        data4: [0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71],
-    };
+const KSDATAFORMAT_SUBTYPE_IEEE_FLOAT: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0x00000003,
+    data2: 0x0000,
+    data3: 0x0010,
+    data4: [0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71],
+};
 
 // ─── COM Vtables ─────────────────────────────────────────────
 
 #[repr(C)]
 struct IUnknownVtbl {
-    query_interface: unsafe extern "system" fn(*mut std::ffi::c_void, *const windows_sys::core::GUID, *mut *mut std::ffi::c_void) -> HRESULT,
+    query_interface: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const windows_sys::core::GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> HRESULT,
     add_ref: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
     release: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
 }
 
 #[repr(C)]
 struct IMMDeviceEnumeratorVtbl {
-    qi: unsafe extern "system" fn(*mut std::ffi::c_void, *const windows_sys::core::GUID, *mut *mut std::ffi::c_void) -> HRESULT,
+    qi: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const windows_sys::core::GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> HRESULT,
     add: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
     rel: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
-    enum_audio_endpoints: unsafe extern "system" fn(*mut std::ffi::c_void, u32, u32, *mut *mut std::ffi::c_void) -> HRESULT,
-    get_default_audio_endpoint: unsafe extern "system" fn(*mut std::ffi::c_void, u32, u32, *mut *mut std::ffi::c_void) -> HRESULT,
-    get_device: unsafe extern "system" fn(*mut std::ffi::c_void, *const u16, *mut *mut std::ffi::c_void) -> HRESULT,
+    enum_audio_endpoints: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        u32,
+        u32,
+        *mut *mut std::ffi::c_void,
+    ) -> HRESULT,
+    get_default_audio_endpoint: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        u32,
+        u32,
+        *mut *mut std::ffi::c_void,
+    ) -> HRESULT,
+    get_device: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const u16,
+        *mut *mut std::ffi::c_void,
+    ) -> HRESULT,
 }
 
 #[repr(C)]
 struct IMMDeviceVtbl {
-    qi: unsafe extern "system" fn(*mut std::ffi::c_void, *const windows_sys::core::GUID, *mut *mut std::ffi::c_void) -> HRESULT,
+    qi: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const windows_sys::core::GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> HRESULT,
     add: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
     rel: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
-    activate: unsafe extern "system" fn(*mut std::ffi::c_void, *const windows_sys::core::GUID, u32, *mut std::ffi::c_void, *mut *mut std::ffi::c_void) -> HRESULT,
-    open_property_store: unsafe extern "system" fn(*mut std::ffi::c_void, u32, *mut *mut std::ffi::c_void) -> HRESULT,
+    activate: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const windows_sys::core::GUID,
+        u32,
+        *mut std::ffi::c_void,
+        *mut *mut std::ffi::c_void,
+    ) -> HRESULT,
+    open_property_store: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        u32,
+        *mut *mut std::ffi::c_void,
+    ) -> HRESULT,
     get_id: unsafe extern "system" fn(*mut std::ffi::c_void, *mut *mut u16) -> HRESULT,
     get_state: unsafe extern "system" fn(*mut std::ffi::c_void, *mut u32) -> HRESULT,
 }
 
 #[repr(C)]
 struct IAudioClientVtbl {
-    qi: unsafe extern "system" fn(*mut std::ffi::c_void, *const windows_sys::core::GUID, *mut *mut std::ffi::c_void) -> HRESULT,
+    qi: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const windows_sys::core::GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> HRESULT,
     add: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
     rel: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
-    initialize: unsafe extern "system" fn(*mut std::ffi::c_void, u32, u32, i64, i64, *const WAVEFORMATEX, *const windows_sys::core::GUID) -> HRESULT,
+    initialize: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        u32,
+        u32,
+        i64,
+        i64,
+        *const WAVEFORMATEX,
+        *const windows_sys::core::GUID,
+    ) -> HRESULT,
     get_buffer_size: unsafe extern "system" fn(*mut std::ffi::c_void, *mut u32) -> HRESULT,
     get_stream_latency: unsafe extern "system" fn(*mut std::ffi::c_void, *mut i64) -> HRESULT,
     get_current_padding: unsafe extern "system" fn(*mut std::ffi::c_void, *mut u32) -> HRESULT,
-    is_format_supported: unsafe extern "system" fn(*mut std::ffi::c_void, u32, *const WAVEFORMATEX, *mut *mut WAVEFORMATEX) -> HRESULT,
-    get_mix_format: unsafe extern "system" fn(*mut std::ffi::c_void, *mut *mut WAVEFORMATEX) -> HRESULT,
-    get_device_period: unsafe extern "system" fn(*mut std::ffi::c_void, *mut i64, *mut i64) -> HRESULT,
+    is_format_supported: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        u32,
+        *const WAVEFORMATEX,
+        *mut *mut WAVEFORMATEX,
+    ) -> HRESULT,
+    get_mix_format:
+        unsafe extern "system" fn(*mut std::ffi::c_void, *mut *mut WAVEFORMATEX) -> HRESULT,
+    get_device_period:
+        unsafe extern "system" fn(*mut std::ffi::c_void, *mut i64, *mut i64) -> HRESULT,
     start: unsafe extern "system" fn(*mut std::ffi::c_void) -> HRESULT,
     stop: unsafe extern "system" fn(*mut std::ffi::c_void) -> HRESULT,
     reset: unsafe extern "system" fn(*mut std::ffi::c_void) -> HRESULT,
     set_event_handle: unsafe extern "system" fn(*mut std::ffi::c_void, HANDLE) -> HRESULT,
-    get_service: unsafe extern "system" fn(*mut std::ffi::c_void, *const windows_sys::core::GUID, *mut *mut std::ffi::c_void) -> HRESULT,
+    get_service: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const windows_sys::core::GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> HRESULT,
 }
 
 #[repr(C)]
 struct IAudioRenderClientVtbl {
-    qi: unsafe extern "system" fn(*mut std::ffi::c_void, *const windows_sys::core::GUID, *mut *mut std::ffi::c_void) -> HRESULT,
+    qi: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const windows_sys::core::GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> HRESULT,
     add: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
     rel: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
     get_buffer: unsafe extern "system" fn(*mut std::ffi::c_void, u32, *mut *mut u8) -> HRESULT,
@@ -140,7 +199,9 @@ struct IAudioRenderClientVtbl {
 // ─── COM 辅助 ────────────────────────────────────────────────
 
 unsafe fn release_com(ptr: *mut std::ffi::c_void) {
-    if ptr.is_null() { return; }
+    if ptr.is_null() {
+        return;
+    }
     let vtbl = *(ptr as *mut *mut IUnknownVtbl);
     ((*vtbl).release)(ptr);
 }
@@ -161,20 +222,36 @@ impl SendPtr {
 
 impl SampleFormat {
     fn bits_per_sample(self) -> u16 {
-        match self { SampleFormat::I16 => 16, SampleFormat::I24 => 24, SampleFormat::I32 => 32, SampleFormat::F32 => 32 }
+        match self {
+            SampleFormat::I16 => 16,
+            SampleFormat::I24 => 24,
+            SampleFormat::I32 => 32,
+            SampleFormat::F32 => 32,
+        }
     }
     fn block_align(self, channels: u16) -> u16 {
-        match self { SampleFormat::I16 => channels * 2, SampleFormat::I24 => channels * 3, SampleFormat::I32 | SampleFormat::F32 => channels * 4 }
+        match self {
+            SampleFormat::I16 => channels * 2,
+            SampleFormat::I24 => channels * 3,
+            SampleFormat::I32 | SampleFormat::F32 => channels * 4,
+        }
     }
     fn avg_bytes_per_sec(self, sample_rate: u32, channels: u16) -> u32 {
         sample_rate * self.block_align(channels) as u32
     }
     fn sub_format(self) -> windows_sys::core::GUID {
-        match self { SampleFormat::I16 | SampleFormat::I24 | SampleFormat::I32 => KSDATAFORMAT_SUBTYPE_PCM, SampleFormat::F32 => KSDATAFORMAT_SUBTYPE_IEEE_FLOAT }
+        match self {
+            SampleFormat::I16 | SampleFormat::I24 | SampleFormat::I32 => KSDATAFORMAT_SUBTYPE_PCM,
+            SampleFormat::F32 => KSDATAFORMAT_SUBTYPE_IEEE_FLOAT,
+        }
     }
 }
 
-fn create_waveformatextensible(format: SampleFormat, channels: u16, sample_rate: u32) -> WAVEFORMATEXTENSIBLE {
+fn create_waveformatextensible(
+    format: SampleFormat,
+    channels: u16,
+    sample_rate: u32,
+) -> WAVEFORMATEXTENSIBLE {
     let bits = format.bits_per_sample();
     let block_align = format.block_align(channels);
     let avg_bytes = format.avg_bytes_per_sec(sample_rate, channels);
@@ -188,7 +265,9 @@ fn create_waveformatextensible(format: SampleFormat, channels: u16, sample_rate:
             wBitsPerSample: bits,
             cbSize: 22,
         },
-        Samples: WAVEFORMATEXTENSIBLE_0 { wValidBitsPerSample: bits },
+        Samples: WAVEFORMATEXTENSIBLE_0 {
+            wValidBitsPerSample: bits,
+        },
         dwChannelMask: 0x0003,
         SubFormat: format.sub_format(),
     }
@@ -218,13 +297,21 @@ unsafe fn parse_waveformat(ptr: *const WAVEFORMATEX) -> Option<(u32, u16, Sample
         if guid_eq(&sub_format, &KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) {
             SampleFormat::F32
         } else {
-            match bits { 16 => SampleFormat::I16, 24 => SampleFormat::I24, _ => SampleFormat::I32 }
+            match bits {
+                16 => SampleFormat::I16,
+                24 => SampleFormat::I24,
+                _ => SampleFormat::I32,
+            }
         }
     } else if wfx.wFormatTag == 3 {
         // WAVE_FORMAT_IEEE_FLOAT
         SampleFormat::F32
     } else {
-        match bits { 16 => SampleFormat::I16, 24 => SampleFormat::I24, _ => SampleFormat::I32 }
+        match bits {
+            16 => SampleFormat::I16,
+            24 => SampleFormat::I24,
+            _ => SampleFormat::I32,
+        }
     };
     Some((rate, ch, fmt))
 }
@@ -267,7 +354,12 @@ unsafe fn negotiate_format(
         }
     }
     // 补充 fallback 列表（去重）
-    for f in [SampleFormat::I24, SampleFormat::I16, SampleFormat::F32, SampleFormat::I32] {
+    for f in [
+        SampleFormat::I24,
+        SampleFormat::I16,
+        SampleFormat::F32,
+        SampleFormat::I32,
+    ] {
         if !try_formats.contains(&f) {
             try_formats.push(f);
         }
@@ -338,7 +430,9 @@ fn render_thread(
             if hr != 0 || buf_ptr.is_null() {
                 if hr as u32 == 0x88890004 {
                     error!("WASAPI 设备已断开");
-                    inner.stream_failed.store(true, std::sync::atomic::Ordering::Release);
+                    inner
+                        .stream_failed
+                        .store(true, std::sync::atomic::Ordering::Release);
                     break;
                 }
                 error!("WASAPI GetBuffer 失败: HRESULT=0x{hr:08X}");
@@ -355,14 +449,20 @@ fn render_thread(
                 SampleFormat::I16 => {
                     let dst = std::slice::from_raw_parts_mut(buf_ptr as *mut i16, samples_needed);
                     for i in 0..n {
-                        dst[i] = (tmp_buf[i].clamp(-1.0, 1.0) * 32768.0).round().clamp(-32768.0, 32767.0) as i16;
+                        dst[i] = (tmp_buf[i].clamp(-1.0, 1.0) * 32768.0)
+                            .round()
+                            .clamp(-32768.0, 32767.0) as i16;
                     }
-                    if underrun { dst[n..].fill(0); }
+                    if underrun {
+                        dst[n..].fill(0);
+                    }
                 }
                 SampleFormat::I24 => {
                     for i in 0..n {
                         // 2^23 缩放 + round：对 DoP 的 24-bit 字逐比特无损，普通音频等价于四舍五入（优于截断）
-                        let val = (tmp_buf[i].clamp(-1.0, 1.0) * 8388608.0).round().clamp(-8388608.0, 8388607.0) as i32;
+                        let val = (tmp_buf[i].clamp(-1.0, 1.0) * 8388608.0)
+                            .round()
+                            .clamp(-8388608.0, 8388607.0) as i32;
                         let dest = buf_ptr.add(i * 3);
                         dest.write(val as u8);
                         dest.add(1).write((val >> 8) as u8);
@@ -375,14 +475,21 @@ fn render_thread(
                 SampleFormat::F32 => {
                     let dst = std::slice::from_raw_parts_mut(buf_ptr as *mut f32, samples_needed);
                     dst[..n].copy_from_slice(&tmp_buf[..n]);
-                    if underrun { dst[n..].fill(0.0); }
+                    if underrun {
+                        dst[n..].fill(0.0);
+                    }
                 }
                 SampleFormat::I32 => {
                     let dst = std::slice::from_raw_parts_mut(buf_ptr as *mut i32, samples_needed);
                     for i in 0..n {
-                        dst[i] = (tmp_buf[i].clamp(-1.0, 1.0) * 2147483648.0).round().clamp(-2147483648.0, 2147483647.0) as i32;
+                        dst[i] = (tmp_buf[i].clamp(-1.0, 1.0) * 2147483648.0)
+                            .round()
+                            .clamp(-2147483648.0, 2147483647.0)
+                            as i32;
                     }
-                    if underrun { dst[n..].fill(0); }
+                    if underrun {
+                        dst[n..].fill(0);
+                    }
                 }
             }
 
@@ -424,15 +531,20 @@ unsafe impl Sync for AudioOutputWasapi {}
 
 impl AudioOutput for AudioOutputWasapi {
     fn pause(&self) {
-        unsafe { call_audio_client_stop(self.audio_client); }
+        unsafe {
+            call_audio_client_stop(self.audio_client);
+        }
     }
 
     fn resume(&self) {
-        unsafe { let _ = call_audio_client_start(self.audio_client); }
+        unsafe {
+            let _ = call_audio_client_start(self.audio_client);
+        }
     }
 
     fn swap_consumer(&self, buffer_ms: u32, sample_rate: u32, channels: u32) -> PcmProducer {
-        let buf_samples = (sample_rate as f32 * buffer_ms as f32 / 1000.0) as usize * channels as usize;
+        let buf_samples =
+            (sample_rate as f32 * buffer_ms as f32 / 1000.0) as usize * channels as usize;
         let rb = HeapRb::<f32>::new(buf_samples.max(64));
         let (prod, new_cons) = rb.split();
         let mut guard = self.inner.consumer.lock();
@@ -440,8 +552,12 @@ impl AudioOutput for AudioOutputWasapi {
         prod
     }
 
-    fn sample_rate(&self) -> u32 { self.sample_rate }
-    fn channels(&self) -> u32 { self.channels }
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+    fn channels(&self) -> u32 {
+        self.channels
+    }
     fn sample_format(&self) -> SampleFormat {
         match self.bit_depth {
             16 => SampleFormat::I16,
@@ -450,7 +566,9 @@ impl AudioOutput for AudioOutputWasapi {
             _ => SampleFormat::F32,
         }
     }
-    fn supported_sample_rates(&self) -> Vec<u32> { vec![self.sample_rate] }
+    fn supported_sample_rates(&self) -> Vec<u32> {
+        vec![self.sample_rate]
+    }
 
     fn set_bit_depth(&mut self, depth: u16) {
         self.bit_depth = depth;
@@ -458,7 +576,9 @@ impl AudioOutput for AudioOutputWasapi {
 }
 
 unsafe fn call_audio_client_stop(client: *mut std::ffi::c_void) {
-    if client.is_null() { return; }
+    if client.is_null() {
+        return;
+    }
     let vtbl = *(client as *mut *mut IAudioClientVtbl);
     ((*vtbl).stop)(client);
 }
@@ -466,7 +586,9 @@ unsafe fn call_audio_client_stop(client: *mut std::ffi::c_void) {
 unsafe fn call_audio_client_start(client: *mut std::ffi::c_void) -> Result<(), String> {
     let vtbl = *(client as *mut *mut IAudioClientVtbl);
     let hr = ((*vtbl).start)(client);
-    if hr != 0 { return Err(format!("Start 失败: 0x{hr:08X}")); }
+    if hr != 0 {
+        return Err(format!("Start 失败: 0x{hr:08X}"));
+    }
     Ok(())
 }
 
@@ -525,19 +647,26 @@ unsafe fn init_audio_stream(
     // Activate IAudioClient
     let dev_vtbl = *(mm_device as *mut *mut IMMDeviceVtbl);
     let mut audio_client: *mut std::ffi::c_void = std::ptr::null_mut();
-    let hr = ((*dev_vtbl).activate)(mm_device, &IID_IAUDIO_CLIENT, CLSCTX_ALL, std::ptr::null_mut(), &mut audio_client);
+    let hr = ((*dev_vtbl).activate)(
+        mm_device,
+        &IID_IAUDIO_CLIENT,
+        CLSCTX_ALL,
+        std::ptr::null_mut(),
+        &mut audio_client,
+    );
     if hr != 0 || audio_client.is_null() {
         return Err(format!("激活 IAudioClient 失败: 0x{hr:08X}"));
     }
 
     // 格式协商
-    let (wfx, sample_format) = match negotiate_format(audio_client, ch, sample_rate, source_bit_depth, share_mode) {
-        Some(f) => f,
-        None => {
-            release_com(audio_client);
-            return Err(format!("设备不支持 {sample_rate}Hz {ch}ch 的可用格式"));
-        }
-    };
+    let (wfx, sample_format) =
+        match negotiate_format(audio_client, ch, sample_rate, source_bit_depth, share_mode) {
+            Some(f) => f,
+            None => {
+                release_com(audio_client);
+                return Err(format!("设备不支持 {sample_rate}Hz {ch}ch 的可用格式"));
+            }
+        };
 
     // 创建事件句柄
     let event_handle = CreateEventW(std::ptr::null_mut(), FALSE, FALSE, std::ptr::null());
@@ -551,34 +680,58 @@ unsafe fn init_audio_stream(
 
     // 初始化
     let ac_vtbl = *(audio_client as *mut *mut IAudioClientVtbl);
-    let hr = ((*ac_vtbl).initialize)(audio_client, share_mode, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, buffer_hns, 0, &wfx.Format, std::ptr::null());
+    let hr = ((*ac_vtbl).initialize)(
+        audio_client,
+        share_mode,
+        AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+        buffer_hns,
+        0,
+        &wfx.Format,
+        std::ptr::null(),
+    );
     if hr != 0 {
-        let err = if hr as u32 == 0x8889000A { "设备被其他应用占用".into() } else { format!("Initialize 失败: 0x{hr:08X}") };
-        CloseHandle(event_handle); release_com(audio_client);
+        let err = if hr as u32 == 0x8889000A {
+            "设备被其他应用占用".into()
+        } else {
+            format!("Initialize 失败: 0x{hr:08X}")
+        };
+        CloseHandle(event_handle);
+        release_com(audio_client);
         return Err(err);
     }
 
     // SetEventHandle
     let hr = ((*ac_vtbl).set_event_handle)(audio_client, event_handle);
     if hr != 0 {
-        CloseHandle(event_handle); release_com(audio_client);
+        CloseHandle(event_handle);
+        release_com(audio_client);
         return Err(format!("SetEventHandle 失败: 0x{hr:08X}"));
     }
 
     // 缓冲区大小
     let mut buffer_size: u32 = 0;
     let hr = ((*ac_vtbl).get_buffer_size)(audio_client, &mut buffer_size);
-    if hr != 0 { buffer_size = (actual_rate as f32 * buffer_ms as f32 / 1000.0) as u32; }
+    if hr != 0 {
+        buffer_size = (actual_rate as f32 * buffer_ms as f32 / 1000.0) as u32;
+    }
 
     // 获取 IAudioRenderClient
     let mut render_client: *mut std::ffi::c_void = std::ptr::null_mut();
     let hr = ((*ac_vtbl).get_service)(audio_client, &IID_IAUDIO_RENDER_CLIENT, &mut render_client);
     if hr != 0 || render_client.is_null() {
-        CloseHandle(event_handle); release_com(audio_client);
+        CloseHandle(event_handle);
+        release_com(audio_client);
         return Err(format!("GetService 失败: 0x{hr:08X}"));
     }
 
-    Ok(StreamInit { audio_client, render_client, event_handle, buffer_size, actual_rate, sample_format })
+    Ok(StreamInit {
+        audio_client,
+        render_client,
+        event_handle,
+        buffer_size,
+        actual_rate,
+        sample_format,
+    })
 }
 
 pub(crate) fn open_inner(
@@ -595,10 +748,16 @@ pub(crate) fn open_inner(
         // 创建枚举器
         let mut enumerator: *mut std::ffi::c_void = std::ptr::null_mut();
         let hr = CoCreateInstance(
-            &CLSID_MMDEVICE_ENUMERATOR, std::ptr::null_mut(), CLSCTX_ALL,
-            &IID_IMMDEVICE_ENUMERATOR, &mut enumerator,
+            &CLSID_MMDEVICE_ENUMERATOR,
+            std::ptr::null_mut(),
+            CLSCTX_ALL,
+            &IID_IMMDEVICE_ENUMERATOR,
+            &mut enumerator,
         );
-        if hr != 0 { CoUninitialize(); return Err(format!("创建 MMDeviceEnumerator 失败: 0x{hr:08X}")); }
+        if hr != 0 {
+            CoUninitialize();
+            return Err(format!("创建 MMDeviceEnumerator 失败: 0x{hr:08X}"));
+        }
 
         // 获取设备
         let mm_device = if let Some(name) = device_name {
@@ -607,7 +766,8 @@ pub(crate) fn open_inner(
             let name_wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
             let hr = ((*vtbl).get_device)(enumerator, name_wide.as_ptr(), &mut device);
             if hr != 0 || device.is_null() {
-                release_com(enumerator); CoUninitialize();
+                release_com(enumerator);
+                CoUninitialize();
                 return Err(format!("未找到设备: {name}"));
             }
             device
@@ -616,7 +776,8 @@ pub(crate) fn open_inner(
             let mut device: *mut std::ffi::c_void = std::ptr::null_mut();
             let hr = ((*vtbl).get_default_audio_endpoint)(enumerator, 0, 0, &mut device);
             if hr != 0 || device.is_null() {
-                release_com(enumerator); CoUninitialize();
+                release_com(enumerator);
+                CoUninitialize();
                 return Err("未找到默认输出设备".into());
             }
             device
@@ -626,31 +787,64 @@ pub(crate) fn open_inner(
         let ch = channels as u16;
         let source_bit_depth = if bit_depth > 0 { Some(bit_depth) } else { None };
         let (init, is_exclusive) = if exclusive {
-            match init_audio_stream(mm_device, AUDCLNT_SHAREMODE_EXCLUSIVE as u32, ch, sample_rate, source_bit_depth, buffer_ms) {
+            match init_audio_stream(
+                mm_device,
+                AUDCLNT_SHAREMODE_EXCLUSIVE as u32,
+                ch,
+                sample_rate,
+                source_bit_depth,
+                buffer_ms,
+            ) {
                 Ok(r) => (r, true),
                 Err(e) => {
                     warn!("WASAPI 独占模式失败（{e}），降级到共享模式");
-                    let r = init_audio_stream(mm_device, AUDCLNT_SHAREMODE_SHARED as u32, ch, sample_rate, source_bit_depth, buffer_ms)
-                        .map_err(|e2| {
-                            release_com(mm_device); release_com(enumerator); CoUninitialize();
-                            format!("独占失败: {e}；共享降级也失败: {e2}")
-                        })?;
+                    let r = init_audio_stream(
+                        mm_device,
+                        AUDCLNT_SHAREMODE_SHARED as u32,
+                        ch,
+                        sample_rate,
+                        source_bit_depth,
+                        buffer_ms,
+                    )
+                    .map_err(|e2| {
+                        release_com(mm_device);
+                        release_com(enumerator);
+                        CoUninitialize();
+                        format!("独占失败: {e}；共享降级也失败: {e2}")
+                    })?;
                     (r, false)
                 }
             }
         } else {
-            let r = init_audio_stream(mm_device, AUDCLNT_SHAREMODE_SHARED as u32, ch, sample_rate, source_bit_depth, buffer_ms)
-                .map_err(|e| {
-                    release_com(mm_device); release_com(enumerator); CoUninitialize();
-                    e
-                })?;
+            let r = init_audio_stream(
+                mm_device,
+                AUDCLNT_SHAREMODE_SHARED as u32,
+                ch,
+                sample_rate,
+                source_bit_depth,
+                buffer_ms,
+            )
+            .map_err(|e| {
+                release_com(mm_device);
+                release_com(enumerator);
+                CoUninitialize();
+                e
+            })?;
             (r, false)
         };
 
-        let StreamInit { audio_client, render_client, event_handle, buffer_size, actual_rate, sample_format } = init;
+        let StreamInit {
+            audio_client,
+            render_client,
+            event_handle,
+            buffer_size,
+            actual_rate,
+            sample_format,
+        } = init;
 
         // Ringbuf
-        let buf_samples = (actual_rate as f32 * buffer_ms as f32 / 1000.0) as usize * channels as usize;
+        let buf_samples =
+            (actual_rate as f32 * buffer_ms as f32 / 1000.0) as usize * channels as usize;
         let rb = HeapRb::<f32>::new(buf_samples.max(64));
         let (prod, cons) = rb.split();
         let inner = Arc::new(AudioOutputInner {
@@ -667,9 +861,21 @@ pub(crate) fn open_inner(
         let ac_ptr = SendPtr(audio_client);
         let rc_ptr = SendPtr(render_client);
         let ev_ptr = SendPtr(event_handle);
-        let render_handle = thread::Builder::new().name("wasapi-render".into()).spawn(move || {
-            render_thread(ac_ptr.into_inner(), rc_ptr.into_inner(), ev_ptr.into_inner(), render_inner, buffer_size, channels, sample_format, render_stop);
-        }).map_err(|e| format!("创建渲染线程失败: {e}"))?;
+        let render_handle = thread::Builder::new()
+            .name("wasapi-render".into())
+            .spawn(move || {
+                render_thread(
+                    ac_ptr.into_inner(),
+                    rc_ptr.into_inner(),
+                    ev_ptr.into_inner(),
+                    render_inner,
+                    buffer_size,
+                    channels,
+                    sample_format,
+                    render_stop,
+                );
+            })
+            .map_err(|e| format!("创建渲染线程失败: {e}"))?;
 
         // 启动音频流
         let ac_vtbl = *(audio_client as *mut *mut IAudioClientVtbl);
@@ -678,20 +884,37 @@ pub(crate) fn open_inner(
             stop_flag.store(true, Ordering::Release);
             SetEvent(event_handle);
             let _ = render_handle.join();
-            CloseHandle(event_handle); release_com(render_client); release_com(audio_client); release_com(mm_device); release_com(enumerator); CoUninitialize();
+            CloseHandle(event_handle);
+            release_com(render_client);
+            release_com(audio_client);
+            release_com(mm_device);
+            release_com(enumerator);
+            CoUninitialize();
             return Err(format!("Start 失败: 0x{hr:08X}"));
         }
 
         let mode_name = if is_exclusive { "Exclusive" } else { "Shared" };
         info!("WASAPI {mode_name}: {actual_rate}Hz {channels}ch, 格式: {sample_format:?}, {buffer_size} 帧");
 
-        Ok((AudioOutputWasapi {
-            inner: inner.clone(), sample_rate: actual_rate, channels: channels.max(2),
-            enumerator, mm_device, audio_client, render_client,
-            render_thread: Some(render_handle), stop_flag, event_handle,
-            bit_depth,
-            com_inited: true,
-        }, prod, inner, actual_rate))
+        Ok((
+            AudioOutputWasapi {
+                inner: inner.clone(),
+                sample_rate: actual_rate,
+                channels: channels.max(2),
+                enumerator,
+                mm_device,
+                audio_client,
+                render_client,
+                render_thread: Some(render_handle),
+                stop_flag,
+                event_handle,
+                bit_depth,
+                com_inited: true,
+            },
+            prod,
+            inner,
+            actual_rate,
+        ))
     }
 }
 
@@ -699,22 +922,42 @@ pub(crate) fn open_inner(
 
 #[repr(C)]
 struct IMMDeviceCollectionVtbl {
-    qi: unsafe extern "system" fn(*mut std::ffi::c_void, *const windows_sys::core::GUID, *mut *mut std::ffi::c_void) -> HRESULT,
+    qi: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const windows_sys::core::GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> HRESULT,
     add: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
     rel: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
     get_count: unsafe extern "system" fn(*mut std::ffi::c_void, *mut u32) -> HRESULT,
-    item: unsafe extern "system" fn(*mut std::ffi::c_void, u32, *mut *mut std::ffi::c_void) -> HRESULT,
+    item: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        u32,
+        *mut *mut std::ffi::c_void,
+    ) -> HRESULT,
 }
 
 #[repr(C)]
 struct IPropertyStoreVtbl {
-    qi: unsafe extern "system" fn(*mut std::ffi::c_void, *const windows_sys::core::GUID, *mut *mut std::ffi::c_void) -> HRESULT,
+    qi: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const windows_sys::core::GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> HRESULT,
     add: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
     rel: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
     get_count: unsafe extern "system" fn(*mut std::ffi::c_void, *mut u32) -> HRESULT,
     get_at: unsafe extern "system" fn(*mut std::ffi::c_void, u32, *mut PROPERTYKEY) -> HRESULT,
-    get_value: unsafe extern "system" fn(*mut std::ffi::c_void, *const PROPERTYKEY, *mut PROPVARIANT) -> HRESULT,
-    set_value: unsafe extern "system" fn(*mut std::ffi::c_void, *const PROPERTYKEY, *const PROPVARIANT) -> HRESULT,
+    get_value: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const PROPERTYKEY,
+        *mut PROPVARIANT,
+    ) -> HRESULT,
+    set_value: unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const PROPERTYKEY,
+        *const PROPVARIANT,
+    ) -> HRESULT,
     commit: unsafe extern "system" fn(*mut std::ffi::c_void) -> HRESULT,
 }
 
@@ -729,7 +972,13 @@ struct PROPVARIANT {
 
 impl PROPVARIANT {
     fn new() -> Self {
-        Self { vt: 0, w_reserved1: 0, w_reserved2: 0, w_reserved3: 0, payload: [0u8; 16] }
+        Self {
+            vt: 0,
+            w_reserved1: 0,
+            w_reserved2: 0,
+            w_reserved3: 0,
+            payload: [0u8; 16],
+        }
     }
 
     fn pwsz_val(&self) -> *mut u16 {
@@ -796,9 +1045,16 @@ unsafe fn get_device_string_property(
         let pwstr = pv.pwsz_val();
         if !pwstr.is_null() {
             let len = (0..).find(|&i| *pwstr.offset(i) == 0).unwrap_or(0);
-            Some(String::from_utf16_lossy(std::slice::from_raw_parts(pwstr, len as usize)))
-        } else { None }
-    } else { None };
+            Some(String::from_utf16_lossy(std::slice::from_raw_parts(
+                pwstr,
+                len as usize,
+            )))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     pv.clear();
     release_com(store);
     result
@@ -840,19 +1096,35 @@ unsafe fn get_default_device_id(enumerator: *mut std::ffi::c_void) -> String {
 unsafe fn probe_device_configs(device: *mut std::ffi::c_void) -> Vec<crate::output::DeviceConfig> {
     let dev_vtbl = *(device as *mut *mut IMMDeviceVtbl);
     let mut audio_client: *mut std::ffi::c_void = std::ptr::null_mut();
-    let hr = ((*dev_vtbl).activate)(device, &IID_IAUDIO_CLIENT, CLSCTX_ALL, std::ptr::null_mut(), &mut audio_client);
+    let hr = ((*dev_vtbl).activate)(
+        device,
+        &IID_IAUDIO_CLIENT,
+        CLSCTX_ALL,
+        std::ptr::null_mut(),
+        &mut audio_client,
+    );
     if hr != 0 || audio_client.is_null() {
         return vec![];
     }
     let test_rates = [44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000];
-    let test_formats = [SampleFormat::I16, SampleFormat::I24, SampleFormat::I32, SampleFormat::F32];
+    let test_formats = [
+        SampleFormat::I16,
+        SampleFormat::I24,
+        SampleFormat::I32,
+        SampleFormat::F32,
+    ];
     let mut configs = Vec::new();
     let ac_vtbl = *(audio_client as *mut *mut IAudioClientVtbl);
     for fmt in &test_formats {
         for &rate in &test_rates {
             let wfx = create_waveformatextensible(*fmt, 2, rate);
             let mut closest: *mut WAVEFORMATEX = std::ptr::null_mut();
-            let hr = ((*ac_vtbl).is_format_supported)(audio_client, AUDCLNT_SHAREMODE_EXCLUSIVE as u32, &wfx.Format, &mut closest);
+            let hr = ((*ac_vtbl).is_format_supported)(
+                audio_client,
+                AUDCLNT_SHAREMODE_EXCLUSIVE as u32,
+                &wfx.Format,
+                &mut closest,
+            );
             if hr == 0 {
                 configs.push(crate::output::DeviceConfig {
                     sample_rate: rate,
@@ -878,8 +1150,11 @@ pub(crate) fn enumerate_devices() -> Vec<crate::output::OutputDeviceInfo> {
         CoInitializeEx(std::ptr::null_mut(), COINIT_MULTITHREADED as u32);
         let mut enumerator: *mut std::ffi::c_void = std::ptr::null_mut();
         let hr = CoCreateInstance(
-            &CLSID_MMDEVICE_ENUMERATOR, std::ptr::null_mut(), CLSCTX_ALL,
-            &IID_IMMDEVICE_ENUMERATOR, &mut enumerator,
+            &CLSID_MMDEVICE_ENUMERATOR,
+            std::ptr::null_mut(),
+            CLSCTX_ALL,
+            &IID_IMMDEVICE_ENUMERATOR,
+            &mut enumerator,
         );
         if hr != 0 || enumerator.is_null() {
             CoUninitialize();

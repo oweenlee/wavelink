@@ -27,7 +27,9 @@ pub(crate) fn probe_duration_symphonia(path: &std::path::Path) -> Option<u64> {
 /// 计算切歌淡入所需的样本数
 #[allow(dead_code)]
 pub(crate) fn crossfade_sample_count(sample_rate: u32, channels: u32, crossfade_ms: u32) -> usize {
-    if crossfade_ms == 0 { return 0; }
+    if crossfade_ms == 0 {
+        return 0;
+    }
     (sample_rate as usize * channels as usize) * crossfade_ms as usize / 1000
 }
 
@@ -47,7 +49,14 @@ pub(crate) fn run_engine(
     capture_inner_shared: Arc<std::sync::RwLock<Option<Arc<crate::capture::CaptureInner>>>>,
     dsp_latency_shared: Arc<AtomicU64>,
 ) {
-    let mut state = EngineState::new(config, position, duration_us, playing, external_tx.clone(), levels);
+    let mut state = EngineState::new(
+        config,
+        position,
+        duration_us,
+        playing,
+        external_tx.clone(),
+        levels,
+    );
     state.output_inner_shared = Some(output_inner_shared);
     state.output_sample_rate_shared = Some(output_sample_rate_shared);
     state.output_mode_shared = Some(output_mode_shared);
@@ -287,7 +296,9 @@ pub(crate) fn spawn_consumer(
                     for &s in buf.iter() {
                         let abs = s.abs();
                         sum_sq += s * s;
-                        if abs > peak_val { peak_val = abs; }
+                        if abs > peak_val {
+                            peak_val = abs;
+                        }
                     }
                     let n = buf.len() as f32;
                     let rms = (sum_sq / n).sqrt();
@@ -296,9 +307,17 @@ pub(crate) fn spawn_consumer(
                     lv.peak = lv.peak.max(peak_val) * 0.95;
                     lv.clip = peak_val >= 1.0;
                 },
-                on_spectrum: &|bands| { let _ = event_tx.send(EngineEvent::Spectrum(bands.to_vec())); },
-                on_bad_frame: &|| { let _ = event_tx.send(EngineEvent::Error("解码器输出坏帧（全零/NaN），已跳过".into())); },
-                on_samples_output: &|n| { position.fetch_add(n, Ordering::Release); },
+                on_spectrum: &|bands| {
+                    let _ = event_tx.send(EngineEvent::Spectrum(bands.to_vec()));
+                },
+                on_bad_frame: &|| {
+                    let _ = event_tx.send(EngineEvent::Error(
+                        "解码器输出坏帧（全零/NaN），已跳过".into(),
+                    ));
+                },
+                on_samples_output: &|n| {
+                    position.fetch_add(n, Ordering::Release);
+                },
                 on_end_of_track: &|| {
                     // 检查解码错误（后台解码线程失败时发送）
                     if let Ok(e) = err_rx.try_recv() {
@@ -309,7 +328,10 @@ pub(crate) fn spawn_consumer(
                     if playback_gen.load(Ordering::SeqCst) == my_gen {
                         let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
                     } else {
-                        debug!("消费者线程 gen={my_gen} 已过期（当前 gen={}），跳过 TrackChanged", playback_gen.load(Ordering::Relaxed));
+                        debug!(
+                            "消费者线程 gen={my_gen} 已过期（当前 gen={}），跳过 TrackChanged",
+                            playback_gen.load(Ordering::Relaxed)
+                        );
                     }
                     preloaded
                 },
@@ -320,12 +342,15 @@ pub(crate) fn spawn_consumer(
                 speed,
             };
             crate::consumer::run_consumer_loop(rx, &config, &callbacks, &control);
-
         }));
         if let Err(panic_info) = result {
-            let msg = if let Some(s) = panic_info.downcast_ref::<&str>() { s.to_string() }
-                      else if let Some(s) = panic_info.downcast_ref::<String>() { s.clone() }
-                      else { "消费者线程未知 panic".to_string() };
+            let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "消费者线程未知 panic".to_string()
+            };
             error!("消费者线程 crash: {msg}");
             if playback_gen.load(Ordering::SeqCst) == my_gen {
                 let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
@@ -350,8 +375,16 @@ mod tests {
     fn test_crossfade_sample_count() {
         let n = crossfade_sample_count(44100, 2, 50);
         assert_eq!(n, 4410, "50ms 立体声应 = 4410 samples");
-        assert_eq!(crossfade_sample_count(48000, 2, 50), 4800, "48kHz 50ms 立体声");
-        assert_eq!(crossfade_sample_count(44100, 1, 50), 2205, "44.1kHz 50ms 单声道");
+        assert_eq!(
+            crossfade_sample_count(48000, 2, 50),
+            4800,
+            "48kHz 50ms 立体声"
+        );
+        assert_eq!(
+            crossfade_sample_count(44100, 1, 50),
+            2205,
+            "44.1kHz 50ms 单声道"
+        );
     }
 
     #[test]
@@ -363,13 +396,19 @@ mod tests {
     #[test]
     fn test_crossfade_curve_midpoint() {
         let gain = (1.0 - (0.5f32 * std::f32::consts::PI).cos()) / 2.0;
-        assert!((gain - 0.5).abs() < 0.01, "i=total/2 时 gain 应 ≈0.5, 实际 {gain}");
+        assert!(
+            (gain - 0.5).abs() < 0.01,
+            "i=total/2 时 gain 应 ≈0.5, 实际 {gain}"
+        );
     }
 
     #[test]
     fn test_crossfade_curve_ends_at_one() {
         let gain = (1.0 - (1.0f32 * std::f32::consts::PI).cos()) / 2.0;
-        assert!((gain - 1.0).abs() < 1e-6, "i=total 时 gain 应为 1, 实际 {gain}");
+        assert!(
+            (gain - 1.0).abs() < 1e-6,
+            "i=total 时 gain 应为 1, 实际 {gain}"
+        );
     }
 
     #[test]
@@ -387,7 +426,24 @@ mod tests {
         let rb = ringbuf::HeapRb::<f32>::new(65536);
         let (prod, _cons) = rb.split();
 
-        let consumer = spawn_consumer(rx1, prod, dsp, stop.clone(), pos, ev_tx, ready_tx, next_rx.clone(), 44100, 2, 0, Arc::new(AtomicU32::new(1.0f32.to_bits())), Arc::new(Mutex::new(Levels::default())), bounded(1).1, false, Arc::new(AtomicU64::new(1)));
+        let consumer = spawn_consumer(
+            rx1,
+            prod,
+            dsp,
+            stop.clone(),
+            pos,
+            ev_tx,
+            ready_tx,
+            next_rx.clone(),
+            44100,
+            2,
+            0,
+            Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            Arc::new(Mutex::new(Levels::default())),
+            bounded(1).1,
+            false,
+            Arc::new(AtomicU64::new(1)),
+        );
 
         let frame = DecodedFrame {
             samples: vec![0.5f32; 1024],
@@ -396,7 +452,12 @@ mod tests {
             channels: 2,
         };
         tx1.send(frame).ok();
-        assert!(ready_rx.recv_timeout(Duration::from_secs(1)).unwrap_or(false), "消费者应就绪");
+        assert!(
+            ready_rx
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap_or(false),
+            "消费者应就绪"
+        );
 
         drop(tx1);
         thread::sleep(Duration::from_millis(50));
@@ -454,7 +515,10 @@ mod tests {
         assert_eq!(handle.position_secs(), 0.0);
         handle.position.store(96000 * 2 * 5, Ordering::SeqCst);
         let pos = handle.position_secs();
-        assert!((pos - 5.0).abs() < 0.001, "96000Hz 下 5s 应≈5.0, 实际: {pos}");
+        assert!(
+            (pos - 5.0).abs() < 0.001,
+            "96000Hz 下 5s 应≈5.0, 实际: {pos}"
+        );
         drop(handle);
     }
 
@@ -472,7 +536,10 @@ mod tests {
         let (handle, _rx) = EngineHandle::start_with_config(cfg);
         handle.position.store(44100 * 10, Ordering::SeqCst);
         let pos = handle.position_secs();
-        assert!((pos - 10.0).abs() < 0.001, "44100Hz 单声道 10s 应≈10.0, 实际: {pos}");
+        assert!(
+            (pos - 10.0).abs() < 0.001,
+            "44100Hz 单声道 10s 应≈10.0, 实际: {pos}"
+        );
         drop(handle);
     }
 }

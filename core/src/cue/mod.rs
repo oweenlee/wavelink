@@ -93,15 +93,10 @@ fn extract_first_value(args: &str) -> Result<String, String> {
         return Err("缺少值".into());
     }
     if let Some(rest) = s.strip_prefix('"') {
-        let end = rest
-            .find('"')
-            .ok_or_else(|| "未闭合的引号".to_string())?;
+        let end = rest.find('"').ok_or_else(|| "未闭合的引号".to_string())?;
         Ok(rest[..end].to_string())
     } else {
-        Ok(s.split_whitespace()
-            .next()
-            .unwrap_or("")
-            .to_string())
+        Ok(s.split_whitespace().next().unwrap_or("").to_string())
     }
 }
 
@@ -258,8 +253,14 @@ FILE "My Bloody Valentine - Loveless.wav" WAVE
         assert_eq!(sheet.files[0].path, "My Bloody Valentine - Loveless.wav");
         assert_eq!(sheet.files[0].tracks.len(), 3);
         assert_eq!(sheet.files[0].tracks[0].num, "01");
-        assert_eq!(sheet.files[0].tracks[0].title.as_deref(), Some("Only Shallow"));
-        assert_eq!(sheet.files[0].tracks[0].performer.as_deref(), Some("My Bloody Valentine"));
+        assert_eq!(
+            sheet.files[0].tracks[0].title.as_deref(),
+            Some("Only Shallow")
+        );
+        assert_eq!(
+            sheet.files[0].tracks[0].performer.as_deref(),
+            Some("My Bloody Valentine")
+        );
         assert!((sheet.files[0].tracks[0].start_secs - 0.0).abs() < 1e-9);
         assert!((sheet.files[0].tracks[1].start_secs - 153.0).abs() < 1e-9);
         assert!((sheet.files[0].tracks[2].start_secs - 296.0).abs() < 1e-9);
@@ -383,9 +384,6 @@ FILE "compilation.wav" WAVE
     INDEX 01 00:00:00
 "#;
         let sheet = parse_cue_str(cue).unwrap();
-        assert_eq!(
-            sheet.files[0].path,
-            "My Music/Life & Death/01 - Intro.flac"
-        );
+        assert_eq!(sheet.files[0].path, "My Music/Life & Death/01 - Intro.flac");
     }
 }

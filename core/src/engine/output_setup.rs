@@ -23,7 +23,8 @@ pub(crate) fn negotiate_sample_rate(file_sr: u32, supported: &[u32]) -> u32 {
     if supported.contains(&file_sr) {
         return file_sr;
     }
-    supported.iter()
+    supported
+        .iter()
         .min_by_key(|&&r| (r as i64 - file_sr as i64).unsigned_abs())
         .copied()
         .unwrap_or(file_sr)
@@ -65,7 +66,10 @@ pub(crate) fn setup_output_for_entry(
                                 shared.store(new_sr, Ordering::Release);
                             }
                             if target_sr != file_sr {
-                                warn!("bit-perfect: 采样率 {}Hz 设备不支持，使用 {}Hz", file_sr, new_sr);
+                                warn!(
+                                    "bit-perfect: 采样率 {}Hz 设备不支持，使用 {}Hz",
+                                    file_sr, new_sr
+                                );
                             }
                             info!("采样率自适应: 文件={}Hz, 输出切换为={}Hz", file_sr, new_sr);
                         }
@@ -101,9 +105,19 @@ pub(crate) fn setup_output_for_entry(
         // 源文件率走——source node 按硬件速率拉取 ringbuf，产出速率与拉取速率
         // 失配时 44.1k 数据被按 48k 播放 → 音调升高（偏尖锐）。真实后端
         // （cpal/oboe/audiounit）则以源速率配置设备，利于 bit-perfect/减少 SRC。
-        #[cfg(not(any(feature = "cpal-backend", feature = "oboe-backend", feature = "audiounit-backend", feature = "wasapi-backend")))]
+        #[cfg(not(any(
+            feature = "cpal-backend",
+            feature = "oboe-backend",
+            feature = "audiounit-backend",
+            feature = "wasapi-backend"
+        )))]
         let open_sample_rate = state.config.sample_rate;
-        #[cfg(any(feature = "cpal-backend", feature = "oboe-backend", feature = "audiounit-backend", feature = "wasapi-backend"))]
+        #[cfg(any(
+            feature = "cpal-backend",
+            feature = "oboe-backend",
+            feature = "audiounit-backend",
+            feature = "wasapi-backend"
+        ))]
         let open_sample_rate = sample_rate;
         match crate::output::open(
             channels,
@@ -116,13 +130,20 @@ pub(crate) fn setup_output_for_entry(
             Ok((output, prod, inner, actual_rate)) => {
                 state.output_inner = Some(inner);
                 if state.config.bit_perfect && actual_rate != open_sample_rate {
-                    warn!("bit-perfect: 请求采样率 {}Hz, 实际得到 {}Hz", open_sample_rate, actual_rate);
+                    warn!(
+                        "bit-perfect: 请求采样率 {}Hz, 实际得到 {}Hz",
+                        open_sample_rate, actual_rate
+                    );
                 }
                 state.output = Some(output);
                 state.output_sample_rate = actual_rate;
                 state.sync_output_sample_rate();
                 state.sync_output_inner();
-                let actual_bits = if source_bit_depth > 0 { source_bit_depth as u32 } else { 24 };
+                let actual_bits = if source_bit_depth > 0 {
+                    source_bit_depth as u32
+                } else {
+                    24
+                };
                 state.output_bit_depth = actual_bits;
                 Ok(OutputSetup {
                     pcm: prod,

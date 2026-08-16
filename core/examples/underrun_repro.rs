@@ -16,17 +16,29 @@ use std::time::{Duration, Instant};
 fn main() {
     // 生成 30s 44.1k 立体声 wav（模拟用户的 44.1k 文件）
     let path = "/tmp/wavelink_underrun_test.wav";
-    let spec = hound::WavSpec { channels: 2, sample_rate: 44100, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
+    let spec = hound::WavSpec {
+        channels: 2,
+        sample_rate: 44100,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
     let mut w = hound::WavWriter::create(path, spec).unwrap();
     for i in 0..(44100 * 30) {
-        let s = ((i as f32 / 44100.0 * 440.0 * 2.0 * std::f32::consts::PI).sin() * 0.3 * i16::MAX as f32) as i16;
+        let s = ((i as f32 / 44100.0 * 440.0 * 2.0 * std::f32::consts::PI).sin()
+            * 0.3
+            * i16::MAX as f32) as i16;
         w.write_sample(s).unwrap();
         w.write_sample(s).unwrap();
     }
     w.finalize().unwrap();
 
     // 引擎 48k 输出（= iOS 外放链路：44.1k → 48k resample）
-    let config = EngineConfig { sample_rate: 48000, channels: 2, buffer_ms: 280, ..Default::default() };
+    let config = EngineConfig {
+        sample_rate: 48000,
+        channels: 2,
+        buffer_ms: 280,
+        ..Default::default()
+    };
     let (handle, _rx) = EngineHandle::start_with_config(config);
     handle.play_sync(path.to_string()).expect("play failed");
     eprintln!("playing 44.1k→48k, consuming realtime 1024-frame chunks @48k...");
@@ -44,8 +56,12 @@ fn main() {
     loop {
         let now = Instant::now();
         let t = now.duration_since(start);
-        if t > Duration::from_secs(26) { break; }
-        if now < next { std::thread::sleep(next - now); }
+        if t > Duration::from_secs(26) {
+            break;
+        }
+        if now < next {
+            std::thread::sleep(next - now);
+        }
         next += chunk_dur;
 
         let n = handle.read_samples(&mut buf);
@@ -58,17 +74,29 @@ fn main() {
             current_run = 0;
         }
         if last_report.elapsed() > Duration::from_secs(5) {
-            println!("t={:5.1}s  underruns={:<4} 输出={:.2}s（应≈{:.1}s）",
-                t.as_secs_f64(), underruns, frames_out as f64 / 48000.0, t.as_secs_f64());
+            println!(
+                "t={:5.1}s  underruns={:<4} 输出={:.2}s（应≈{:.1}s）",
+                t.as_secs_f64(),
+                underruns,
+                frames_out as f64 / 48000.0,
+                t.as_secs_f64()
+            );
             last_report = now;
         }
     }
-    if current_run > 0 { zero_runs.push((26.0, current_run)); }
+    if current_run > 0 {
+        zero_runs.push((26.0, current_run));
+    }
 
     println!("\n== 结果：underrun 总数 = {underruns}");
     for (t, run) in &zero_runs {
-        println!("  t≈{t:.1}s 处连续 {run} 次短读（约 {:.0}ms 缺口）", *run as f64 * 21.3);
+        println!(
+            "  t≈{t:.1}s 处连续 {run} 次短读（约 {:.0}ms 缺口）",
+            *run as f64 * 21.3
+        );
     }
-    if underruns == 0 { println!("  本地无 underrun —— 引擎链路干净，问题在设备侧环境"); }
+    if underruns == 0 {
+        println!("  本地无 underrun —— 引擎链路干净，问题在设备侧环境");
+    }
     handle.stop();
 }

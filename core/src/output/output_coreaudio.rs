@@ -29,6 +29,10 @@ const K_AUDIO_SCOPE_GLOBAL: u32 = 0x676C6F62;
 const K_AUDIO_ELEMENT_MAIN: u32 = 0;
 const K_AUDIO_OBJECT_SYSTEM: u32 = 1;
 
+// 显式声明 CoreAudio 框架链接：本模块用 raw FFI 直调 CoreAudio，不依赖
+// coreaudio-sys/cpal 顺带链接。否则在 --no-default-features（无任何音频后端）
+// 的 macOS 构建里会出现 `_AudioObjectGetPropertyData` 等未定义符号的链接错误。
+#[link(name = "CoreAudio", kind = "framework")]
 extern "C" {
     fn AudioObjectGetPropertyDataSize(
         object_id: AudioDeviceID,
@@ -58,16 +62,26 @@ pub(crate) fn enumerate_devices() -> Vec<OutputDeviceInfo> {
         };
         let mut data_size: u32 = 0;
         if AudioObjectGetPropertyDataSize(
-            K_AUDIO_OBJECT_SYSTEM, &addr, 0, std::ptr::null(), &mut data_size,
-        ) != 0 || data_size == 0 {
+            K_AUDIO_OBJECT_SYSTEM,
+            &addr,
+            0,
+            std::ptr::null(),
+            &mut data_size,
+        ) != 0
+            || data_size == 0
+        {
             return vec![];
         }
 
         let count = data_size as usize / std::mem::size_of::<AudioDeviceID>();
         let mut devices: Vec<AudioDeviceID> = vec![0; count];
         AudioObjectGetPropertyData(
-            K_AUDIO_OBJECT_SYSTEM, &addr, 0, std::ptr::null(),
-            &mut data_size, devices.as_mut_ptr() as *mut std::ffi::c_void,
+            K_AUDIO_OBJECT_SYSTEM,
+            &addr,
+            0,
+            std::ptr::null(),
+            &mut data_size,
+            devices.as_mut_ptr() as *mut std::ffi::c_void,
         );
 
         // 默认输出设备
@@ -79,8 +93,12 @@ pub(crate) fn enumerate_devices() -> Vec<OutputDeviceInfo> {
         let mut default_id: AudioDeviceID = 0;
         let mut default_size = std::mem::size_of::<AudioDeviceID>() as u32;
         AudioObjectGetPropertyData(
-            K_AUDIO_OBJECT_SYSTEM, &default_addr, 0, std::ptr::null(),
-            &mut default_size, &mut default_id as *mut _ as *mut std::ffi::c_void,
+            K_AUDIO_OBJECT_SYSTEM,
+            &default_addr,
+            0,
+            std::ptr::null(),
+            &mut default_size,
+            &mut default_id as *mut _ as *mut std::ffi::c_void,
         );
 
         let mut result = Vec::new();
@@ -94,9 +112,14 @@ pub(crate) fn enumerate_devices() -> Vec<OutputDeviceInfo> {
             let mut name_buf = [0u8; 256];
             let mut name_size = 256u32;
             let name = if AudioObjectGetPropertyData(
-                device_id, &name_addr, 0, std::ptr::null(),
-                &mut name_size, name_buf.as_mut_ptr() as *mut std::ffi::c_void,
-            ) == 0 {
+                device_id,
+                &name_addr,
+                0,
+                std::ptr::null(),
+                &mut name_size,
+                name_buf.as_mut_ptr() as *mut std::ffi::c_void,
+            ) == 0
+            {
                 std::ffi::CStr::from_bytes_until_nul(&name_buf)
                     .map(|c| c.to_string_lossy().to_string())
                     .unwrap_or_default()
@@ -112,35 +135,77 @@ pub(crate) fn enumerate_devices() -> Vec<OutputDeviceInfo> {
             };
             let mut rate_size: u32 = 0;
             let configs = if AudioObjectGetPropertyDataSize(
-                device_id, &rate_addr, 0, std::ptr::null(), &mut rate_size,
-            ) == 0 && rate_size > 0 {
+                device_id,
+                &rate_addr,
+                0,
+                std::ptr::null(),
+                &mut rate_size,
+            ) == 0
+                && rate_size > 0
+            {
                 let rate_count = rate_size as usize / std::mem::size_of::<AudioValueRange>();
                 let mut ranges: Vec<AudioValueRange> = (0..rate_count)
-                    .map(|_| AudioValueRange { minimum: 0.0, maximum: 0.0 })
+                    .map(|_| AudioValueRange {
+                        minimum: 0.0,
+                        maximum: 0.0,
+                    })
                     .collect();
                 AudioObjectGetPropertyData(
-                    device_id, &rate_addr, 0, std::ptr::null(),
-                    &mut rate_size, ranges.as_mut_ptr() as *mut std::ffi::c_void,
+                    device_id,
+                    &rate_addr,
+                    0,
+                    std::ptr::null(),
+                    &mut rate_size,
+                    ranges.as_mut_ptr() as *mut std::ffi::c_void,
                 );
-                ranges.iter().filter_map(|r| {
-                    let rate = r.minimum as u32;
-                    if (8000..=768000).contains(&rate) && (r.minimum - r.maximum).abs() < 0.5 {
-                        Some(DeviceConfig {
-                            sample_rate: rate,
-                            bit_depth: 24,
-                            channels: 2,
-                            sample_format: SampleFormat::I24,
-                            exclusive: false,
-                        })
-                    } else { None }
-                }).collect()
+                ranges
+                    .iter()
+                    .filter_map(|r| {
+                        let rate = r.minimum as u32;
+                        if (8000..=768000).contains(&rate) && (r.minimum - r.maximum).abs() < 0.5 {
+                            Some(DeviceConfig {
+                                sample_rate: rate,
+                                bit_depth: 24,
+                                channels: 2,
+                                sample_format: SampleFormat::I24,
+                                exclusive: false,
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
             } else {
                 // Fallback：常见采样率
                 vec![
-                    DeviceConfig { sample_rate: 44100, bit_depth: 24, channels: 2, sample_format: SampleFormat::I24, exclusive: false },
-                    DeviceConfig { sample_rate: 48000, bit_depth: 24, channels: 2, sample_format: SampleFormat::I24, exclusive: false },
-                    DeviceConfig { sample_rate: 96000, bit_depth: 24, channels: 2, sample_format: SampleFormat::I24, exclusive: false },
-                    DeviceConfig { sample_rate: 192000, bit_depth: 24, channels: 2, sample_format: SampleFormat::I24, exclusive: false },
+                    DeviceConfig {
+                        sample_rate: 44100,
+                        bit_depth: 24,
+                        channels: 2,
+                        sample_format: SampleFormat::I24,
+                        exclusive: false,
+                    },
+                    DeviceConfig {
+                        sample_rate: 48000,
+                        bit_depth: 24,
+                        channels: 2,
+                        sample_format: SampleFormat::I24,
+                        exclusive: false,
+                    },
+                    DeviceConfig {
+                        sample_rate: 96000,
+                        bit_depth: 24,
+                        channels: 2,
+                        sample_format: SampleFormat::I24,
+                        exclusive: false,
+                    },
+                    DeviceConfig {
+                        sample_rate: 192000,
+                        bit_depth: 24,
+                        channels: 2,
+                        sample_format: SampleFormat::I24,
+                        exclusive: false,
+                    },
                 ]
             };
 

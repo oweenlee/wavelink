@@ -196,8 +196,12 @@ impl AudioOutput for HeadlessOutput {
         let _ = std::mem::replace(&mut *guard, new_cons);
         prod
     }
-    fn sample_rate(&self) -> u32 { self.sample_rate }
-    fn channels(&self) -> u32 { self.channels }
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+    fn channels(&self) -> u32 {
+        self.channels
+    }
 
     /// 切换输出采样率（Headless：更新内部速率标记）。
     ///
@@ -227,7 +231,10 @@ mod output_cpal;
 #[cfg(feature = "oboe-backend")]
 mod output_oboe;
 
-#[cfg(all(feature = "audiounit-backend", any(target_os = "macos", target_os = "ios")))]
+#[cfg(all(
+    feature = "audiounit-backend",
+    any(target_os = "macos", target_os = "ios")
+))]
 mod output_audiounit;
 
 #[cfg(feature = "wasapi-backend")]
@@ -249,7 +256,18 @@ mod output_coreaudio;
 ///   5. HeadlessOutput（ringbuf 无输出设备，纯数据模式）
 ///
 /// `bit_depth` 在 WASAPI、AudioUnit、Oboe 后端用于格式协商，其他后端忽略。
-#[cfg_attr(not(any(feature = "cpal-backend", all(feature = "wasapi-backend", target_os = "windows"), all(feature = "audiounit-backend", any(target_os = "macos", target_os = "ios")), all(feature = "oboe-backend", target_os = "android"))), allow(unused_variables))]
+#[cfg_attr(
+    not(any(
+        feature = "cpal-backend",
+        all(feature = "wasapi-backend", target_os = "windows"),
+        all(
+            feature = "audiounit-backend",
+            any(target_os = "macos", target_os = "ios")
+        ),
+        all(feature = "oboe-backend", target_os = "android")
+    )),
+    allow(unused_variables)
+)]
 pub fn open(
     channels: u32,
     sample_rate: u32,
@@ -257,46 +275,83 @@ pub fn open(
     device_name: Option<&str>,
     _bit_depth: u16,
     _exclusive: bool,
-) -> Result<(Box<dyn AudioOutput>, PcmProducer, Arc<AudioOutputInner>, u32), String> {
+) -> Result<
+    (
+        Box<dyn AudioOutput>,
+        PcmProducer,
+        Arc<AudioOutputInner>,
+        u32,
+    ),
+    String,
+> {
     // WASAPI Exclusive 后端 (仅 Windows)
     #[cfg(all(feature = "wasapi-backend", target_os = "windows"))]
     {
-        if let Ok(result) = output_wasapi::open_inner(channels, sample_rate, buffer_ms, device_name, _bit_depth, _exclusive)
-        {
-            return Ok((Box::new(result.0) as Box<dyn AudioOutput>, result.1, result.2, result.3));
+        if let Ok(result) = output_wasapi::open_inner(
+            channels,
+            sample_rate,
+            buffer_ms,
+            device_name,
+            _bit_depth,
+            _exclusive,
+        ) {
+            return Ok((
+                Box::new(result.0) as Box<dyn AudioOutput>,
+                result.1,
+                result.2,
+                result.3,
+            ));
         }
     }
 
     // macOS/iOS AudioUnit 后端（低延迟 + 整数直出）
-    #[cfg(all(feature = "audiounit-backend", any(target_os = "macos", target_os = "ios")))]
+    #[cfg(all(
+        feature = "audiounit-backend",
+        any(target_os = "macos", target_os = "ios")
+    ))]
     {
-        if let Ok(result) = output_audiounit::open_inner(channels, sample_rate, buffer_ms, device_name, _bit_depth)
+        if let Ok(result) =
+            output_audiounit::open_inner(channels, sample_rate, buffer_ms, device_name, _bit_depth)
         {
-            return Ok((Box::new(result.0) as Box<dyn AudioOutput>, result.1, result.2, result.3));
+            return Ok((
+                Box::new(result.0) as Box<dyn AudioOutput>,
+                result.1,
+                result.2,
+                result.3,
+            ));
         }
     }
 
     // Android Oboe/AAudio 后端（独占模式 + 整数直出）
     #[cfg(all(feature = "oboe-backend", target_os = "android"))]
     {
-        if let Ok(result) = output_oboe::open_inner(channels, sample_rate, buffer_ms, device_name, _bit_depth)
+        if let Ok(result) =
+            output_oboe::open_inner(channels, sample_rate, buffer_ms, device_name, _bit_depth)
         {
-            return Ok((Box::new(result.0) as Box<dyn AudioOutput>, result.1, result.2, result.3));
+            return Ok((
+                Box::new(result.0) as Box<dyn AudioOutput>,
+                result.1,
+                result.2,
+                result.3,
+            ));
         }
     }
 
     // cpal 共享模式（跨平台 fallback）
     #[cfg(feature = "cpal-backend")]
     {
-        if let Ok(result) = output_cpal::open_inner(channels, sample_rate, buffer_ms, device_name)
-        {
-            return Ok((Box::new(result.0) as Box<dyn AudioOutput>, result.1, result.2, result.3));
+        if let Ok(result) = output_cpal::open_inner(channels, sample_rate, buffer_ms, device_name) {
+            return Ok((
+                Box::new(result.0) as Box<dyn AudioOutput>,
+                result.1,
+                result.2,
+                result.3,
+            ));
         }
     }
 
     // Headless 模式
-    let buf_samples =
-        (sample_rate as f32 * buffer_ms as f32 / 1000.0) as usize * channels as usize;
+    let buf_samples = (sample_rate as f32 * buffer_ms as f32 / 1000.0) as usize * channels as usize;
     let rb = HeapRb::<f32>::new(buf_samples.max(64));
     let (prod, cons) = rb.split();
     let inner = Arc::new(AudioOutputInner {
@@ -310,7 +365,12 @@ pub fn open(
         sample_rate,
         channels,
     };
-    Ok((Box::new(out) as Box<dyn AudioOutput>, prod, inner, sample_rate))
+    Ok((
+        Box::new(out) as Box<dyn AudioOutput>,
+        prod,
+        inner,
+        sample_rate,
+    ))
 }
 
 /// 列出所有可用输出设备名称
@@ -358,13 +418,20 @@ pub fn enumerate_devices() -> Vec<OutputDeviceInfo> {
         return output_oboe::enumerate_devices();
     }
 
-    #[cfg(all(feature = "cpal-backend", not(all(feature = "oboe-backend", target_os = "android"))))]
+    #[cfg(all(
+        feature = "cpal-backend",
+        not(all(feature = "oboe-backend", target_os = "android"))
+    ))]
     {
         output_cpal::enumerate_devices()
     }
 
     // macOS 无 cpal 时 fallback 到空（CoreAudio 本身已处理）
-    #[cfg(not(any(all(feature = "wasapi-backend", target_os = "windows"), all(feature = "oboe-backend", target_os = "android"), feature = "cpal-backend")))]
+    #[cfg(not(any(
+        all(feature = "wasapi-backend", target_os = "windows"),
+        all(feature = "oboe-backend", target_os = "android"),
+        feature = "cpal-backend"
+    )))]
     Vec::new()
 }
 
@@ -399,7 +466,8 @@ impl DeviceMonitor {
 
 impl Drop for DeviceMonitor {
     fn drop(&mut self) {
-        self.stop_flag.store(true, std::sync::atomic::Ordering::Release);
+        self.stop_flag
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 }
 
@@ -431,26 +499,36 @@ pub fn start_device_monitor() -> DeviceMonitor {
 
                 for device in &cur {
                     if !prev.iter().any(|d| d.id == device.id)
-                        && tx.send(DeviceEvent::DeviceAdded(device.name.clone())).is_err() {
-                            return;
-                        }
+                        && tx
+                            .send(DeviceEvent::DeviceAdded(device.name.clone()))
+                            .is_err()
+                    {
+                        return;
+                    }
                 }
 
                 for device in &prev {
                     if !cur.iter().any(|d| d.id == device.id)
-                        && tx.send(DeviceEvent::DeviceRemoved(device.name.clone())).is_err() {
-                            return;
-                        }
+                        && tx
+                            .send(DeviceEvent::DeviceRemoved(device.name.clone()))
+                            .is_err()
+                    {
+                        return;
+                    }
                 }
 
                 let prev_default = prev.iter().find(|d| d.is_default);
                 let cur_default = cur.iter().find(|d| d.is_default);
                 match (prev_default, cur_default) {
                     (Some(p), Some(c)) if p.id != c.id => {
-                        if tx.send(DeviceEvent::DefaultDeviceChanged).is_err() { return; }
+                        if tx.send(DeviceEvent::DefaultDeviceChanged).is_err() {
+                            return;
+                        }
                     }
                     (Some(_), None) | (None, Some(_)) => {
-                        if tx.send(DeviceEvent::DefaultDeviceChanged).is_err() { return; }
+                        if tx.send(DeviceEvent::DefaultDeviceChanged).is_err() {
+                            return;
+                        }
                     }
                     _ => {}
                 }
@@ -469,18 +547,22 @@ fn find_exact_match<'a>(
     configs: &[&'a DeviceConfig],
     source: &SourceFormat,
 ) -> Option<&'a DeviceConfig> {
-    configs.iter().find(|c| {
-        c.sample_rate == source.sample_rate
-            && c.channels == source.channels
-            && c.bit_depth >= source.bit_depth
-    }).copied()
+    configs
+        .iter()
+        .find(|c| {
+            c.sample_rate == source.sample_rate
+                && c.channels == source.channels
+                && c.bit_depth >= source.bit_depth
+        })
+        .copied()
 }
 
 fn find_sample_rate_match<'a>(
     configs: &[&'a DeviceConfig],
     sample_rate: u32,
 ) -> Option<&'a DeviceConfig> {
-    configs.iter()
+    configs
+        .iter()
         .filter(|c| c.sample_rate == sample_rate)
         .max_by_key(|c| c.bit_depth)
         .copied()
@@ -490,13 +572,16 @@ fn choose_best_target_rate<'a>(
     configs: &[&'a DeviceConfig],
     source_rate: u32,
 ) -> Result<&'a DeviceConfig, OutputError> {
-    configs.iter()
+    configs
+        .iter()
         .min_by_key(|c| {
             let diff = (c.sample_rate as i64 - source_rate as i64).abs();
             (diff, -(c.bit_depth as i32))
         })
         .copied()
-        .ok_or(OutputError::NoCompatibleConfig("设备无可用的采样率配置".into()))
+        .ok_or(OutputError::NoCompatibleConfig(
+            "设备无可用的采样率配置".into(),
+        ))
 }
 
 /// 输出决策入口
@@ -514,9 +599,10 @@ pub fn decide_output(
         if let Some(dsd_rate) = source.dsd_rate {
             let dop_rate = crate::dsd::dop::dop_pcm_rate(dsd_rate);
             if crate::dsd::dop::dop_supported(dsd_rate) {
-                if let Some(cfg) = candidates.iter().find(|c| {
-                    c.sample_rate == dop_rate && c.bit_depth >= 24
-                }) {
+                if let Some(cfg) = candidates
+                    .iter()
+                    .find(|c| c.sample_rate == dop_rate && c.bit_depth >= 24)
+                {
                     return Ok(OutputDecision {
                         device_id: device.id.clone(),
                         sample_rate: cfg.sample_rate,
@@ -638,7 +724,9 @@ mod tests {
         let out = headless(48000);
         let supported = out.supported_sample_rates();
         // 常见 HiFi 速率都应支持，使 bit-perfect 能协商到源文件速率
-        for rate in [44100u32, 48000, 88200, 96000, 176400, 192000, 352800, 384000] {
+        for rate in [
+            44100u32, 48000, 88200, 96000, 176400, 192000, 352800, 384000,
+        ] {
             assert!(supported.contains(&rate), "应支持 {rate}Hz");
         }
     }

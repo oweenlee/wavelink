@@ -66,15 +66,23 @@ fn main() {
         eprintln!("  输出时长: {:.1}s (目标输出率)", output_secs);
         eprintln!("  帧数: {}, 总样本: {}", frames, samples);
         eprintln!("  首帧延迟: {:.0}µs", first_frame_us);
-        eprintln!("  帧平均: {:.1} 样本/帧", if frames > 0 { samples as f64 / frames as f64 } else { 0.0 });
+        eprintln!(
+            "  帧平均: {:.1} 样本/帧",
+            if frames > 0 {
+                samples as f64 / frames as f64
+            } else {
+                0.0
+            }
+        );
         eprintln!("  解码速度: {:.1}x", speed);
 
         if speed < 0.5 {
-            eprintln!("  ❌ 严重不足: 解 1 秒需要 {:.1}s，必定 underrun",
-                1.0 / speed);
+            eprintln!(
+                "  ❌ 严重不足: 解 1 秒需要 {:.1}s，必定 underrun",
+                1.0 / speed
+            );
         } else if speed < 2.0 {
-            eprintln!("  ⚠️ 不足: 解 1 秒需要 {:.1}s，可能 underrun",
-                1.0 / speed);
+            eprintln!("  ⚠️ 不足: 解 1 秒需要 {:.1}s，可能 underrun", 1.0 / speed);
         } else if speed < 5.0 {
             eprintln!("  ⚡ 临界: {:.1}x", speed);
         } else {

@@ -4,8 +4,8 @@
 
 mod command;
 mod handle;
-mod queue;
 pub(crate) mod output_setup;
+mod queue;
 pub(crate) mod recovery;
 pub(crate) mod state;
 pub mod thread_priority;
