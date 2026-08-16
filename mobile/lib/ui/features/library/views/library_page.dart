@@ -488,9 +488,24 @@ class _SongsTab extends ConsumerWidget {
               }
             },
             onMore: () => _showContextMenu(context, song, player),
-            trailing: player.isSongFavorite(song.id)
-                ? const Icon(Icons.favorite, size: 16, color: AppTheme.danger)
-                : null,
+            // 收藏爱心常驻可点：收藏/取消一步完成（高频操作不进三点菜单）
+            trailing: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () =>
+                  player.setFavorite(song.id, !player.isSongFavorite(song.id)),
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Icon(
+                  player.isSongFavorite(song.id)
+                      ? Icons.favorite
+                      : Icons.favorite_border,
+                  size: 16,
+                  color: player.isSongFavorite(song.id)
+                      ? AppTheme.danger
+                      : AppTheme.textTertiary,
+                ),
+              ),
+            ),
           ),
           index,
         );
@@ -1255,53 +1270,9 @@ void _showContextMenu(
               ),
               const Divider(height: 1),
               _MenuItem(
-                icon: LucideIcons.skipForward,
-                label: l10n.playNext,
-                onTap: () {
-                  player.playNext(song);
-                  Navigator.pop(ctx);
-                  // 加队列/下一曲等操作菜单无视觉变化，必须 toast
-                  // 反馈，否则用户以为点击未生效
-                  Fluttertoast.showToast(
-                    msg: l10n.playNextHint,
-                    gravity: ToastGravity.BOTTOM,
-                    fontSize: 13,
-                    backgroundColor: AppTheme.ok,
-                    textColor: AppTheme.textPrimary,
-                  );
-                },
-              ),
-              _MenuItem(
-                icon: LucideIcons.listMusic,
-                label: l10n.addToQueue,
-                onTap: () {
-                  player.addToQueue(song);
-                  Navigator.pop(ctx);
-                  Fluttertoast.showToast(
-                    msg: l10n.addToQueueHint,
-                    gravity: ToastGravity.BOTTOM,
-                    fontSize: 13,
-                    backgroundColor: AppTheme.ok,
-                    textColor: AppTheme.textPrimary,
-                  );
-                },
-              ),
-              _MenuItem(
                 icon: LucideIcons.listPlus,
                 label: l10n.addToPlaylist,
                 onTap: () => _showAddToPlaylist(ctx, song, player),
-              ),
-              _MenuItem(
-                icon: player.isSongFavorite(song.id)
-                    ? Icons.favorite
-                    : Icons.favorite_border,
-                label: player.isSongFavorite(song.id)
-                    ? l10n.unfavorite
-                    : l10n.favorite,
-                onTap: () {
-                  player.setFavorite(song.id, !player.isSongFavorite(song.id));
-                  Navigator.pop(ctx);
-                },
               ),
               const Divider(height: 1),
               _MenuItem(

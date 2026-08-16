@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1199,35 +1198,6 @@ Future<void> _openMoreMenu(
             if (hasSong) const Divider(height: 1),
             if (hasSong)
               _ArrowMenuItem(
-                icon: LucideIcons.skipForward,
-                label: l10n.playNext,
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  player.playNext(song);
-                  _toast(ctx, l10n.playNextHint);
-                },
-              ),
-            if (hasSong)
-              _ArrowMenuItem(
-                icon: LucideIcons.listPlus,
-                label: l10n.addToQueue,
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  player.addToQueue(song);
-                  _toast(ctx, l10n.addToQueueHint);
-                },
-              ),
-            if (hasSong)
-              _ArrowMenuItem(
-                icon: LucideIcons.folderPlus,
-                label: l10n.addToPlaylist,
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _showAddToPlaylistSheet(ctx, song, player);
-                },
-              ),
-            if (hasSong)
-              _ArrowMenuItem(
                 icon: player.isSongFavorite(song.id)
                     ? Icons.favorite
                     : Icons.favorite_border,
@@ -1246,85 +1216,7 @@ Future<void> _openMoreMenu(
   );
 }
 
-/// 轻量 toast（列表/播放页菜单的即时反馈）。
-void _toast(BuildContext context, String msg) {
-  Fluttertoast.showToast(
-    msg: msg,
-    gravity: ToastGravity.BOTTOM,
-    fontSize: 13,
-    backgroundColor: AppTheme.ok,
-    textColor: AppTheme.textPrimary,
-  );
-}
-
-/// 播放页「添加到播放列表」：与曲库菜单同款选择表。
-Future<void> _showAddToPlaylistSheet(
-  BuildContext context,
-  Song song,
-  PlaybackController player,
-) async {
-  final l10n = AppLocalizations.of(context);
-  final saved = player.playlists;
-  await showModalBottomSheet(
-    context: context,
-    backgroundColor: Colors.transparent,
-    builder: (ctx) => Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: const BoxDecoration(
-        color: AppTheme.surfaceDark,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              l10n.addToPlaylist,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
-              ),
-            ),
-          ),
-          const Divider(height: 1),
-          if (saved.isEmpty)
-            ListTile(
-              leading: const Icon(
-                LucideIcons.info,
-                color: AppTheme.textTertiary,
-              ),
-              title: Text(
-                l10n.noPlaylists,
-                style: const TextStyle(
-                  color: AppTheme.textSecondary,
-                  fontSize: 14,
-                ),
-              ),
-            ),
-          ...saved.entries.map(
-            (e) => ListTile(
-              leading: const Icon(
-                LucideIcons.listMusic,
-                color: AppTheme.brand,
-              ),
-              title: Text(
-                e.key,
-                style: const TextStyle(color: AppTheme.textPrimary),
-              ),
-              onTap: () async {
-                final ids = [...e.value, song.id];
-                await player.savePlaylist(e.key, ids);
-                if (ctx.mounted) Navigator.pop(ctx);
-              },
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
+/// 播放页「添加到播放列表」已随菜单精简移除：添加歌单入口保留在曲库菜单。
 
 /// 菜单单项：图标 + 文字 + 可选尾部徽标
 class _ArrowMenuItem extends StatelessWidget {
