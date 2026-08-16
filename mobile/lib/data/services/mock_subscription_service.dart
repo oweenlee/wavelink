@@ -22,9 +22,13 @@ class MockSubscriptionService implements SubscriptionService {
   // 与真实 RevenueCat 平台回调的即时性一致，测试无需等待异步派发。
   final _controller = StreamController<SubscriptionStatus>.broadcast(sync: true);
   bool _failNextPurchase = false;
+  bool _cancelNextPurchase = false;
 
   /// 模拟下一次购买失败（测试失败路径用，用完自动复位）。
   void setFailNextPurchase() => _failNextPurchase = true;
+
+  /// 模拟下一次购买被用户取消（测试取消静默路径用，用完自动复位）。
+  void setCancelNextPurchase() => _cancelNextPurchase = true;
 
   /// 直接设置订阅状态（UI 联调快捷方式）。
   void debugSetSubscribed(bool value) {
@@ -68,16 +72,20 @@ class MockSubscriptionService implements SubscriptionService {
   }
 
   @override
-  Future<bool> purchase(SubscriptionPlan plan) async {
+  Future<PurchaseOutcome> purchase(SubscriptionPlan plan) async {
     if (_failNextPurchase) {
       _failNextPurchase = false;
       _emit(); // 失败也广播当前状态（UI 同步"仍未订阅"）
-      return false;
+      return PurchaseOutcome.failed;
+    }
+    if (_cancelNextPurchase) {
+      _cancelNextPurchase = false;
+      return PurchaseOutcome.cancelled;
     }
     _subscribed = true;
     _activePlan = plan;
     _emit();
-    return true;
+    return PurchaseOutcome.success;
   }
 
   @override

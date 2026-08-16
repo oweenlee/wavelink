@@ -243,6 +243,7 @@
   "paywallFeatureDsp": "Professional audio: AutoEQ / Room Correction / Bit-Perfect",
   "paywallRestore": "Restore purchase",
   "paywallPurchaseFailed": "Purchase did not complete. Please try again",
+  "paywallRestoreFailed": "No previous purchase found to restore",
   "paywallActive": "Subscription active",
   "paywallSubscribe": "Subscribe · {price}",
   "paywallTerms": "Subscription auto-renews and can be cancelled anytime in your store settings. Payment is charged to your App Store / Google Play account upon confirmation."

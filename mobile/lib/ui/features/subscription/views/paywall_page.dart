@@ -27,7 +27,7 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final status = ref.watch(subscriptionProvider);
-    final plans = ref.watch(subscriptionProvider.notifier).plans;
+    final plans = status.plans;
 
     // 已订阅：直接显示已激活状态（购买/恢复成功后回到这里）
     if (status.isSubscribed) {
@@ -170,11 +170,11 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
                   plan: selected,
                   loading: status.isLoading,
                   onPressed: () async {
-                    final ok = await ref
+                    final outcome = await ref
                         .read(subscriptionProvider.notifier)
                         .purchase(selected);
                     if (!mounted) return;
-                    if (!ok) {
+                    if (outcome == PurchaseOutcome.failed) {
                       ScaffoldMessenger.of(this.context).showSnackBar(
                         SnackBar(
                           content: Text(l10n.paywallPurchaseFailed),
@@ -182,6 +182,8 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
                         ),
                       );
                     }
+                    // 成功：status.isSubscribed 变 true，页面自动切到已激活；
+                    // 用户取消：静默，留在付费墙。
                   },
                 ),
               const SizedBox(height: 12),
@@ -190,9 +192,20 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
               TextButton(
                 onPressed: status.isLoading
                     ? null
-                    : () => ref
-                        .read(subscriptionProvider.notifier)
-                        .restore(),
+                    : () async {
+                        final ok = await ref
+                            .read(subscriptionProvider.notifier)
+                            .restore();
+                        if (!mounted) return;
+                        if (!ok) {
+                          ScaffoldMessenger.of(this.context).showSnackBar(
+                            SnackBar(
+                              content: Text(l10n.paywallRestoreFailed),
+                              backgroundColor: AppTheme.surfaceHigh,
+                            ),
+                          );
+                        }
+                      },
                 child: Text(
                   l10n.paywallRestore,
                   style: const TextStyle(

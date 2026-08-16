@@ -243,6 +243,7 @@
   "paywallFeatureDsp": "专业音频：AutoEQ / 房间校正 / Bit-Perfect",
   "paywallRestore": "恢复购买",
   "paywallPurchaseFailed": "购买未完成，请重试",
+  "paywallRestoreFailed": "未找到可恢复的购买记录",
   "paywallActive": "订阅已激活",
   "paywallSubscribe": "订阅 · {price}",
   "paywallTerms": "订阅为自动续订，可随时在商店设置中取消。付款将在确认购买时通过你的 App Store / Google Play 账户收取。"

@@ -28,14 +28,14 @@ void main() {
       // 年度档标记 isAnnual，且年度排在首位（付费墙默认推荐）
       expect(plans.first.isAnnual, isTrue);
 
-      final ok = await svc.purchase(plans.first);
-      expect(ok, isTrue);
+      final outcome = await svc.purchase(plans.first);
+      expect(outcome, PurchaseOutcome.success);
       // sync 派发：purchase 返回时 listener 已收到最新状态
       expect(latest!.isSubscribed, isTrue);
       expect(latest!.activePlan?.productId, plans.first.productId);
     });
 
-    test('purchase 失败路径：setFailNextPurchase 后返回 false 且不订阅', () async {
+    test('purchase 失败路径：setFailNextPurchase 后返回 failed 且不订阅', () async {
       final svc = MockSubscriptionService();
       await svc.initialize();
 
@@ -44,9 +44,19 @@ void main() {
 
       final plans = await svc.fetchPlans();
       svc.setFailNextPurchase();
-      final ok = await svc.purchase(plans.first);
-      expect(ok, isFalse);
+      final outcome = await svc.purchase(plans.first);
+      expect(outcome, PurchaseOutcome.failed);
       expect(latest!.isSubscribed, isFalse);
+    });
+
+    test('purchase 取消路径：setCancelNextPurchase 后返回 cancelled 且不订阅', () async {
+      final svc = MockSubscriptionService();
+      await svc.initialize();
+
+      final plans = await svc.fetchPlans();
+      svc.setCancelNextPurchase();
+      final outcome = await svc.purchase(plans.first);
+      expect(outcome, PurchaseOutcome.cancelled);
     });
 
     test('restorePurchases 恢复上次购买状态', () async {

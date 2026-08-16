@@ -55,10 +55,13 @@ class SubscriptionNotifier extends Notifier<SubscriptionStatus> {
   Future<void> initialize() async {
     try {
       await _service.initialize();
-      // 套餐只拉一次，供付费墙展示
+      // 套餐拉取后并入 state（响应式，付费墙 watch state 即自动刷新）
       final plans = await _service.fetchPlans();
-      _plans = plans;
-      state = state.copyWith(isLoading: false, clearError: true);
+      state = state.copyWith(
+        plans: plans,
+        isLoading: false,
+        clearError: true,
+      );
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -67,21 +70,19 @@ class SubscriptionNotifier extends Notifier<SubscriptionStatus> {
     }
   }
 
-  List<SubscriptionPlan> _plans = const [];
-
   /// 可购买的套餐列表（默认年度在前）。
-  List<SubscriptionPlan> get plans => _plans;
+  List<SubscriptionPlan> get plans => state.plans;
 
-  /// 发起购买。成功返回 true（状态流会自动更新订阅态）。
-  Future<bool> purchase(SubscriptionPlan plan) async {
+  /// 发起购买。返回购买结局（成功/用户取消/失败）。
+  Future<PurchaseOutcome> purchase(SubscriptionPlan plan) async {
     state = state.copyWith(isLoading: true, clearError: true);
-    final ok = await _service.purchase(plan);
+    final outcome = await _service.purchase(plan);
     // 购买失败/用户取消：状态流已同步，这里只清除 loading
     state = state.copyWith(isLoading: false, clearError: true);
-    return ok;
+    return outcome;
   }
 
-  /// 恢复购买。
+  /// 恢复购买。返回是否已恢复订阅。
   Future<bool> restore() async {
     state = state.copyWith(isLoading: true, clearError: true);
     final ok = await _service.restorePurchases();

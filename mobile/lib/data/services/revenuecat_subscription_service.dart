@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:purchases_flutter/purchases_flutter.dart' as rc;
 import 'subscription_service.dart';
 
@@ -32,6 +33,10 @@ class RevenueCatSubscriptionService implements SubscriptionService {
   DateTime? _expiresAt;
   final _controller = StreamController<SubscriptionStatus>.broadcast();
 
+  /// productIdentifier → plan 映射（fetchPlans 时缓存），
+  /// 用于从 entitlement.productIdentifier 反查当前生效套餐。
+  final Map<String, SubscriptionPlan> _plansByProductId = {};
+
   @override
   Future<void> initialize() async {
     if (_initialized) return;
@@ -57,6 +62,11 @@ class RevenueCatSubscriptionService implements SubscriptionService {
     _subscribed = entitlement != null;
     final expires = entitlement?.expirationDate;
     _expiresAt = expires == null ? null : DateTime.tryParse(expires);
+    // 反查当前生效套餐（重启后 activePlan 为空时，凭 entitlement 恢复套餐名展示）
+    final productId = entitlement?.productIdentifier;
+    if (_subscribed && productId != null) {
+      _activePlan = _plansByProductId[productId] ?? _activePlan;
+    }
     _emit();
   }
 
@@ -82,17 +92,19 @@ class RevenueCatSubscriptionService implements SubscriptionService {
     for (final pkg in current.availablePackages) {
       final storeProduct = pkg.storeProduct;
       final period = storeProduct.subscriptionPeriod;
-      // RevenueCat 的 period 是 ISO8601 时长（如 P1M / P1Y）
-      final isAnnual = period != null && period.contains('Y');
-      plans.add(
-        SubscriptionPlan(
-          productId: pkg.identifier,
-          title: pkg.storeProduct.title,
-          priceText: storeProduct.priceString,
-          periodDays: isAnnual ? 365 : 30,
-          isAnnual: isAnnual,
-        ),
+      // RevenueCat 的 period 是 ISO8601 时长（如 P1M / P1Y / P12M）。
+      // 用解析而非 contains('Y')：P12M 等值于一年，避免误判为月度。
+      final isAnnual = _isAnnualPeriod(period);
+      final plan = SubscriptionPlan(
+        productId: pkg.identifier,
+        title: pkg.storeProduct.title,
+        priceText: storeProduct.priceString,
+        periodDays: isAnnual ? 365 : 30,
+        isAnnual: isAnnual,
       );
+      plans.add(plan);
+      // 缓存 productIdentifier → plan，供 _applyCustomerInfo 反查套餐名
+      _plansByProductId[storeProduct.identifier] = plan;
     }
     // 年度优先（付费墙默认推荐）
     plans.sort((a, b) {
@@ -102,8 +114,32 @@ class RevenueCatSubscriptionService implements SubscriptionService {
     return plans;
   }
 
+  /// 判断 ISO8601 订阅周期是否 ≥1 年（处理 P1Y、P12M 等）。
+  static bool _isAnnualPeriod(String? period) {
+    if (period == null || period.isEmpty) return false;
+    // 匹配 P 后跟若干「数值+单位」段，如 P1Y / P12M / P1Y2M
+    final matches = RegExp(r'(\d+)([YMWD])').allMatches(period);
+    var totalDays = 0;
+    for (final m in matches) {
+      final n = int.tryParse(m.group(1)!) ?? 0;
+      final unit = m.group(2)!;
+      switch (unit) {
+        case 'Y':
+          totalDays += n * 365;
+        case 'M':
+          totalDays += n * 30;
+        case 'W':
+          totalDays += n * 7;
+        case 'D':
+          totalDays += n;
+      }
+    }
+    // ≥11 个月视为年度档（P12M = 360 天），阈值留一点余量
+    return totalDays >= 330;
+  }
+
   @override
-  Future<bool> purchase(SubscriptionPlan plan) async {
+  Future<PurchaseOutcome> purchase(SubscriptionPlan plan) async {
     try {
       // 方案 C：无试用，直接购买套餐
       final result = await rc.Purchases.purchase(
@@ -113,10 +149,17 @@ class RevenueCatSubscriptionService implements SubscriptionService {
       _applyCustomerInfo(result.customerInfo);
       if (_subscribed) _activePlan = plan;
       _emit();
-      return _subscribed;
-    } catch (e) {
-      // 用户取消购买/支付失败等：不当作致命错误，由调用方展示状态
-      return false;
+      return _subscribed ? PurchaseOutcome.success : PurchaseOutcome.failed;
+    } on PlatformException catch (e) {
+      // 用户主动取消购买：静默，非错误
+      if (rc.PurchasesErrorHelper.getErrorCode(e) ==
+          rc.PurchasesErrorCode.purchaseCancelledError) {
+        return PurchaseOutcome.cancelled;
+      }
+      return PurchaseOutcome.failed;
+    } catch (_) {
+      // 其他异常：由调用方展示失败提示
+      return PurchaseOutcome.failed;
     }
   }
 

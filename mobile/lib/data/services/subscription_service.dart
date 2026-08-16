@@ -38,6 +38,7 @@ class SubscriptionStatus {
     this.error,
     this.activePlan,
     this.expiresAt,
+    this.plans = const [],
   });
 
   /// 是否已订阅（含已激活的年/月度会员）。
@@ -55,6 +56,9 @@ class SubscriptionStatus {
   /// 订阅到期时间（可空）。
   final DateTime? expiresAt;
 
+  /// 可购买的套餐列表（付费墙展示用，年度在前）。
+  final List<SubscriptionPlan> plans;
+
   SubscriptionStatus copyWith({
     bool? isSubscribed,
     bool? isLoading,
@@ -62,6 +66,7 @@ class SubscriptionStatus {
     bool clearError = false,
     SubscriptionPlan? activePlan,
     DateTime? expiresAt,
+    List<SubscriptionPlan>? plans,
   }) {
     return SubscriptionStatus(
       isSubscribed: isSubscribed ?? this.isSubscribed,
@@ -69,8 +74,21 @@ class SubscriptionStatus {
       error: clearError ? null : (error ?? this.error),
       activePlan: activePlan ?? this.activePlan,
       expiresAt: expiresAt ?? this.expiresAt,
+      plans: plans ?? this.plans,
     );
   }
+}
+
+/// 购买结局（区分三种，让 UI 对「用户主动取消」静默、对「真失败」提示）。
+enum PurchaseOutcome {
+  /// 购买成功（订阅已激活）。
+  success,
+
+  /// 用户主动取消购买（商店弹窗关闭等），非错误，UI 静默。
+  cancelled,
+
+  /// 真正失败（支付失败/网络/配置错误等），UI 提示重试。
+  failed,
 }
 
 /// 订阅服务抽象。
@@ -88,9 +106,9 @@ abstract class SubscriptionService {
   Future<List<SubscriptionPlan>> fetchPlans();
 
   /// 发起订阅购买（方案 C 无试用期，直接激活）。
-  Future<bool> purchase(SubscriptionPlan plan);
+  Future<PurchaseOutcome> purchase(SubscriptionPlan plan);
 
-  /// 恢复购买（换设备/重装后找回订阅）。
+  /// 恢复购买（换设备/重装后找回订阅）。返回是否已恢复订阅。
   Future<bool> restorePurchases();
 
   /// 订阅状态变化流（购买成功、恢复、失效都会推送）。

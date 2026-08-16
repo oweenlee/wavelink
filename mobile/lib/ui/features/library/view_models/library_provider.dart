@@ -502,9 +502,10 @@ class LibraryNotifier extends Notifier<LibraryState> {
       final ok = await scanSmb(sharePath);
       state = state.copyWith(
         nasImporting: false,
-        // 扫描完成但 0 首：明确提示（连接成功 ≠ 共享可读/含音频）
+        // 扫描成功：清空上次错误；失败（0 首/连接错误）：明确提示，
+        // 连接成功 ≠ 共享可读/含音频
         nasImportError: ok
-            ? state.nasImportError
+            ? null
             : SmbService.lastError ??
                   '共享中没有找到音频文件，请检查共享路径是否正确',
       );

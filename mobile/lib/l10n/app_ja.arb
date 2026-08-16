@@ -243,6 +243,7 @@
   "paywallFeatureDsp": "プロ向けオーディオ：AutoEQ / ルーム補正 / Bit-Perfect",
   "paywallRestore": "購入を復元",
   "paywallPurchaseFailed": "購入が完了しませんでした。もう一度お試しください",
+  "paywallRestoreFailed": "復元できる購入が見つかりませんでした",
   "paywallActive": "サブスクリプション有効",
   "paywallSubscribe": "登録する · {price}",
   "paywallTerms": "サブスクリプションは自動更新され、ストア設定でいつでも解約できます。支払いは確認時に App Store / Google Play アカウントに請求されます。"

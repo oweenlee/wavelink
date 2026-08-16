@@ -243,6 +243,7 @@
   "paywallFeatureDsp": "Professionelles Audio: AutoEQ / Raumkorrektur / Bit-Perfect",
   "paywallRestore": "Kauf wiederherstellen",
   "paywallPurchaseFailed": "Kauf nicht abgeschlossen. Bitte erneut versuchen",
+  "paywallRestoreFailed": "Kein wiederherstellbarer Kauf gefunden",
   "paywallActive": "Abo aktiv",
   "paywallSubscribe": "Abonnieren · {price}",
   "paywallTerms": "Das Abo verlängert sich automatisch und kann jederzeit in den Store-Einstellungen gekündigt werden. Die Zahlung wird nach Bestätigung über dein App-Store-/Google-Play-Konto abgerechnet."
