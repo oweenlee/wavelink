@@ -146,6 +146,7 @@
   "nasTitle": "NAS (SMB)",
   "nasEnable": "NAS 활성화",
   "nasEnterHost": "호스트 주소를 입력하세요",
+  "nasShareInvalid": "서버 연결은 성공했지만 공유 이름이 올바르지 않습니다. 공유 이름이 존재하고 불필요한 공백이 없는지 확인하세요(예: \"musi c\"가 아닌 \"Music\").",
   "nasConnectionFailed": "연결에 실패했습니다",
   "nasConnectionFailedTitle": "NAS 연결에 실패했습니다",
   "nasCheckHint": "휴대폰과 PC가 같은 Wi-Fi에 연결되어 있고 NAS 주소가 올바른지 확인하세요.",

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math' show cos, pi;
 
-/// 品牌进入动画：黑底 + WaveLink 字标 + 脉冲波形。
+/// 品牌进入动画：黑底 + App logo + WaveLink 字标 + 脉冲波形。
 /// 呼应启动页 A 方案 Pulse，原生静态启动页消失后由本组件接管动效。
 class BrandSplash extends StatefulWidget {
   const BrandSplash({super.key});
@@ -48,6 +48,17 @@ class _BrandSplashState extends State<BrandSplash>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          // App logo（圆角方块，与 App 图标一致）
+          ClipRRect(
+            borderRadius: BorderRadius.circular(19),
+            child: Image.asset(
+              'assets/splash/logo.png',
+              width: 84,
+              height: 84,
+              fit: BoxFit.cover,
+            ),
+          ),
+          const SizedBox(height: 22),
           const Text(
             'WaveLink',
             style: TextStyle(
@@ -83,7 +94,9 @@ class SplashGate extends StatefulWidget {
   const SplashGate({
     super.key,
     required this.child,
-    this.hold = const Duration(milliseconds: 1150),
+    // 品牌瞬间甜点值：500ms 足够看清 logo+字标，又无明显等待感；
+    // 原有 1150ms 纯遮挡偏长，砍掉约 0.6s 白等。
+    this.hold = const Duration(milliseconds: 500),
   });
 
   @override

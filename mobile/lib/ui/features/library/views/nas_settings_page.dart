@@ -77,13 +77,30 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
       password: pass,
     );
 
+    // 服务器通了还要验证共享名：STATUS_BAD_NETWORK_NAME 是共享名错而非
+    // 服务器错——连接成功≠共享可读，避免误报"已连接"。
+    var shareOk = true;
+    if (ok) {
+      final shareParts = _shareCtrl.text
+          .trim()
+          .split('/')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+      final shareName = shareParts.isEmpty ? null : shareParts.first;
+      if (shareName != null) {
+        shareOk = await SmbService.connectShare(shareName);
+      }
+    }
+
     if (!mounted) return;
     setState(() {
       _connecting = false;
-      _connectionStatus = ok ? 'connected' : 'failed';
+      _connectionStatus =
+          ok && shareOk ? 'connected' : (ok ? 'share_failed' : 'failed');
     });
 
-    if (ok) {
+    if (ok && shareOk) {
       final shares = await SmbService.listShares();
       if (mounted) {
         final l10n = AppLocalizations.of(context);
@@ -98,6 +115,9 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
       }
       // 测试成功后不断开会话：保留给后续 SMB 播放直接用
       // （原来 disconnect 会销毁会话，导致之后所有 SMB 歌无法播放）
+    } else if (ok) {
+      // 服务器通但共享名错：弹出详细错误（lastError = STATUS_BAD_NETWORK_NAME）
+      _showErrorSnackBar();
     } else if (mounted) {
       _showErrorSnackBar();
     }
@@ -229,7 +249,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
                       ConfigField(
                         icon: LucideIcons.folder,
                         label: l10n.nasShare,
-                        hint: '/Music or /public/music',
+                        hint: 'Share name, e.g. Music or /public/music (no spaces)',
                         controller: _shareCtrl,
                       ),
                       const Divider(height: 1, indent: 52),
@@ -299,6 +319,8 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
                     ? l10n.nasConnected
                     : _connectionStatus == 'host_empty'
                     ? l10n.nasEnterHost
+                    : _connectionStatus == 'share_failed'
+                    ? l10n.nasShareInvalid
                     : l10n.nasConnectionFailed,
                 style: TextStyle(
                   color: _connectionStatus == 'connected'

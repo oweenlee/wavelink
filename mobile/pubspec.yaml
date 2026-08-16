@@ -7,13 +7,13 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # The following defines the version and build number for your application.
 version: 1.0.0+1
 
-# 启动图：近黑底 + 白色 wordmark（黑白单色，与 app 调性一致）
+# 启动图：近黑底 + app logo（原生层只放图标，字标由 App 内动画带出，全程连续）
 flutter_native_splash:
   color: "#0A0A0A"
-  image: "assets/splash/wordmark.png"
+  image: "assets/splash/logo.png"
   android_12:
     color: "#0A0A0A"
-    image: "assets/splash/wordmark.png"
+    image: "assets/splash/logo.png"
   ios: true
   android: true
   web: false

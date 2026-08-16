@@ -146,6 +146,7 @@
   "nasTitle": "NAS (SMB)",
   "nasEnable": "启用 NAS",
   "nasEnterHost": "请输入主机地址",
+  "nasShareInvalid": "服务器连接成功，但共享名不正确：请确认共享名存在，且不含多余空格（如 Music 而非 musi c）",
   "nasConnectionFailed": "连接失败",
   "nasConnectionFailedTitle": "NAS 连接失败",
   "nasCheckHint": "请确认手机和电脑连接的是同一个 Wi-Fi，且 NAS 地址填写正确。",

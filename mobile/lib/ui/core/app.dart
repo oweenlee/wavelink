@@ -426,10 +426,10 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
             _SourceRow(
               icon: LucideIcons.hardDrive,
               label: l10n.sourceNas,
-              subtitle: SmbService.isConnected
+              subtitle: SmbService.mountedShare != null
                   ? l10n.sourceNasConnected
                   : l10n.sourceNasHint,
-              connected: SmbService.isConnected,
+              connected: SmbService.mountedShare != null,
               onTap: _handleNas,
               trailing: SmbService.isConnected
                   ? _NasSyncButton(
@@ -473,12 +473,20 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
                   : null,
             ),
             const Spacer(),
-            // 底部版本号
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 0, 20, 20),
-              child: Text(
-                'v1.0.0-rc.1',
-                style: TextStyle(fontSize: 11, color: AppTheme.textTertiary),
+            // 底部：App logo（替代版本号）
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: Align(
+                alignment: Alignment.center,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(9),
+                  child: Image.asset(
+                    'assets/splash/logo.png',
+                    width: 32,
+                    height: 32,
+                    fit: BoxFit.cover,
+                  ),
+                ),
               ),
             ),
           ],

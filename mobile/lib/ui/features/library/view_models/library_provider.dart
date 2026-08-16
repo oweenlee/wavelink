@@ -499,8 +499,15 @@ class LibraryNotifier extends Notifier<LibraryState> {
           return;
         }
       }
-      await scanSmb(sharePath);
-      state = state.copyWith(nasImporting: false);
+      final ok = await scanSmb(sharePath);
+      state = state.copyWith(
+        nasImporting: false,
+        // 扫描完成但 0 首：明确提示（连接成功 ≠ 共享可读/含音频）
+        nasImportError: ok
+            ? state.nasImportError
+            : SmbService.lastError ??
+                  '共享中没有找到音频文件，请检查共享路径是否正确',
+      );
     } on NASImportCancelled {
       // 用户主动取消，静默结束
     } catch (e) {

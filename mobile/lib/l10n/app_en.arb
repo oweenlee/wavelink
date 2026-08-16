@@ -146,6 +146,7 @@
   "nasTitle": "NAS (SMB)",
   "nasEnable": "Enable NAS",
   "nasEnterHost": "Enter host address",
+  "nasShareInvalid": "Server connected, but the share name is invalid. Make sure the share name exists and has no extra spaces (e.g. \"Music\", not \"musi c\").",
   "nasConnectionFailed": "Connection failed",
   "nasConnectionFailedTitle": "NAS connection failed",
   "nasCheckHint": "Make sure your phone and computer are on the same Wi-Fi, and the NAS address is correct.",

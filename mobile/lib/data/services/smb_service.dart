@@ -118,6 +118,10 @@ class SmbService {
 
   static bool get isConnected => _connected;
 
+  /// 当前已挂载的共享名（connectShare 成功时记录；会话重建/断开时清空）。
+  /// 共享级状态：仅服务器连通不足以判断 NAS 可用，读文件需共享已挂载。
+  static String? get mountedShare => _mountedShare;
+
   /// 启动前台保活（幂等）：已有定时器则不重复创建。连接/重建
   /// 成功后由 [ensureReady] 链路调用。
   static void startKeepalive() {
@@ -302,7 +306,11 @@ class SmbService {
     }
     // 与 scanSmbLibrary 对齐：nasShare 可能填“共享名/子目录”，
     // connectShare 只接受共享名（第一段），否则挂载失败导致无法播放。
-    final parts = sharePath.split('/').where((s) => s.isNotEmpty).toList();
+    final parts = sharePath
+        .split('/')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
     if (parts.isEmpty) {
       Log.e('SMB', 'ensureReady 失败：共享路径无效 ($sharePath)');
       return false;
@@ -381,6 +389,7 @@ class SmbService {
 
     final parts = sharePath
         .split('/')
+        .map((s) => s.trim())
         .where((s) => s.isNotEmpty)
         .toList();
     if (parts.isEmpty) return [];

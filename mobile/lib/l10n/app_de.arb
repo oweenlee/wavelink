@@ -146,6 +146,7 @@
   "nasTitle": "NAS (SMB)",
   "nasEnable": "NAS aktivieren",
   "nasEnterHost": "Host-Adresse eingeben",
+  "nasShareInvalid": "Server verbunden, aber der Freigabename ist ungültig. Stellen Sie sicher, dass der Freigabename existiert und keine überflüssigen Leerzeichen enthält (z. B. \"Music\" statt \"musi c\").",
   "nasConnectionFailed": "Verbindung fehlgeschlagen",
   "nasConnectionFailedTitle": "NAS-Verbindung fehlgeschlagen",
   "nasCheckHint": "Stelle sicher, dass Telefon und Computer im selben Wi-Fi sind und die NAS-Adresse korrekt ist.",

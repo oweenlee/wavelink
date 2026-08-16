@@ -201,45 +201,39 @@ pub async fn smb_connect(
 pub async fn smb_keepalive() -> bool {
     let mut healthy = true;
 
-    // 主会话：取出后探测，避免跨 await 持 SESSION 锁（最长 5s）阻塞
-    // list_shares/connect_share 等控制操作。探测期间若发生重连（SESSION 被写回
-    // 新会话），则丢弃本次取出的旧会话，避免覆盖新会话。
-    let mut taken_session = match SESSION.try_lock() {
-        Ok(mut guard) => guard.take(),
-        Err(_) => None,
-    };
-    if let Some(sess) = taken_session.as_mut() {
-        match sess.tree.as_mut() {
-            Some(tree) => {
-                let probe = tokio::time::timeout(
-                    KEEPALIVE_PROBE_TIMEOUT,
-                    sess.client.fs_info(tree),
-                )
-                .await;
-                if matches!(probe, Err(_) | Ok(Err(_))) {
+    // 主会话：try_lock 成功则持锁探测（不取出）。
+    // 取出会让并发读取在窗口内看到 SESSION=None 而报 "not connected"
+    //（扫描/播放恰逢保活时静默失败，列表空白且无提示——实测回归）。
+    // 持锁探测最坏阻塞 5s，但只延迟不失败，可接受。
+    if let Ok(mut guard) = SESSION.try_lock() {
+        if let Some(sess) = guard.as_mut() {
+            match sess.tree.as_mut() {
+                Some(tree) => {
+                    let probe = tokio::time::timeout(
+                        KEEPALIVE_PROBE_TIMEOUT,
+                        sess.client.fs_info(tree),
+                    )
+                    .await;
+                    if matches!(probe, Err(_) | Ok(Err(_))) {
+                        healthy = false;
+                    }
+                }
+                None => {
+                    // 会话存在但共享未挂载：Dart 侧乐观缓存 _connected/_mountedShare
+                    // 与 Rust 实际状态脱节（重建中断/并发 force 竞争导致 tree 丢失，
+                    // 真实 IO 报 "no share connected"）。探活不覆盖此状态，
+                    // 判不健康让 Dart force 重建恢复挂载（历史事故：死会话
+                    // 因探活空转永远不重建，播放/封面连环超时）。
                     healthy = false;
                 }
             }
-            None => {
-                // 会话存在但共享未挂载：Dart 侧乐观缓存 _connected/_mountedShare
-                // 与 Rust 实际状态脱节（重建中断/并发 force 竞争导致 tree 丢失，
-                // 真实 IO 报 "no share connected"）。探活不覆盖此状态，
-                // 判不健康让 Dart force 重建恢复挂载（历史事故：死会话
-                // 因探活空转永远不重建，播放/封面连环超时）。
-                healthy = false;
-            }
-        }
-    }
-    if let Some(sess) = taken_session {
-        let mut guard = SESSION.lock().await;
-        if guard.is_none() {
-            *guard = Some(sess);
         }
     }
 
     // 读取池：整池取出后逐条探测，避免跨 await 持 POOL 锁（8 条死连接最坏 40s）
     // 阻塞所有并发读取取连接（播放喂流/分片下载/封面提取连环超时的同构根因）。
-    // 探测完成后用 extend 合并而非覆盖，保留探测期间其他任务归还/新建的连接。
+    // 池空对并发读取无害（读取会新建临时连接），且探测完成后 extend 合并
+    // 而非覆盖，保留探测期间其他任务归还/新建的连接。
     let mut taken_pool = match POOL.try_lock() {
         Ok(mut pool) => std::mem::take(&mut *pool),
         Err(_) => Vec::new(),
