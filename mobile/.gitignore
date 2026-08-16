@@ -54,6 +54,9 @@ rust_builder/cargokit/build_tool/.dart_tool/
 lib/l10n/app_localizations.dart
 lib/l10n/app_localizations_en.dart
 lib/l10n/app_localizations_zh.dart
+lib/l10n/app_localizations_ja.dart
+lib/l10n/app_localizations_de.dart
+lib/l10n/app_localizations_ko.dart
 
 # Agent / 工具本地目录
 .pi/

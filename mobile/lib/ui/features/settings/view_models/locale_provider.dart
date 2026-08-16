@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/services/preferences_service.dart';
 
 /// 管理当前界面语言。
-/// - 'system'：跟随系统语言（取 [WidgetsBinding] 的设备 locale，命中 zh/ja/en 才用，否则回退英文）
-/// - 'zh' / 'ja' / 'en'：手动锁定
+/// - 'system'：跟随系统语言（取 [WidgetsBinding] 的设备 locale，命中 zh/ja/ko/de/en 才用，否则回退英文）
+/// - 'zh' / 'ja' / 'ko' / 'de' / 'en'：手动锁定
 class LocaleNotifier extends Notifier<String> {
-  static const supported = [Locale('zh'), Locale('ja'), Locale('en')];
+  static const supported = [Locale('zh'), Locale('ja'), Locale('ko'), Locale('de'), Locale('en')];
 
   @override
   String build() => PreferencesService.instance.localePref;
@@ -19,6 +19,8 @@ class LocaleNotifier extends Notifier<String> {
       return switch (lang) {
         'zh' => const Locale('zh'),
         'ja' => const Locale('ja'),
+        'ko' => const Locale('ko'),
+        'de' => const Locale('de'),
         _ => const Locale('en'),
       };
     }

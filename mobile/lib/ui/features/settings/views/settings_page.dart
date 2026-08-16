@@ -235,7 +235,7 @@ class _BitPerfectRow extends ConsumerWidget {
       value: bitPerfect,
       onChanged: (_) =>
           ref.read(playbackControllerProvider).setBitPerfect(!bitPerfect),
-      subtitle: _bitPerfectStatus(bitPerfect, telemetry, dsp, replayGain),
+      subtitle: _bitPerfectStatus(l10n, bitPerfect, telemetry, dsp, replayGain),
     );
   }
 }
@@ -276,7 +276,7 @@ class _VersionRow extends ConsumerWidget {
 class _LanguageItem extends ConsumerWidget {
   const _LanguageItem();
 
-  static const _options = ['system', 'zh', 'ja', 'en'];
+  static const _options = ['system', 'zh', 'ja', 'ko', 'de', 'en'];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -290,6 +290,10 @@ class _LanguageItem extends ConsumerWidget {
           return '中文';
         case 'ja':
           return '日本語';
+        case 'ko':
+          return '한국어';
+        case 'de':
+          return 'Deutsch';
         case 'en':
           return 'English';
         default:
@@ -316,6 +320,10 @@ class _LanguageItem extends ConsumerWidget {
           return '中文';
         case 'ja':
           return '日本語';
+        case 'ko':
+          return '한국어';
+        case 'de':
+          return 'Deutsch';
         case 'en':
           return 'English';
         default:
@@ -323,8 +331,9 @@ class _LanguageItem extends ConsumerWidget {
       }
     }
 
-    return showModalBottomSheet<void>(
+    return showModalBottomSheet<String>(
       context: context,
+      useRootNavigator: true, // 覆盖整屏（含底部音乐条），避免被限制在分支 Navigator 内
       backgroundColor: Colors.transparent,
       builder: (_) => SheetShell(
         title: l10n.language,
@@ -348,28 +357,34 @@ class _LanguageItem extends ConsumerWidget {
                 ),
               ),
               dense: true,
-              onTap: () {
-                ref.read(localeProvider.notifier).setMode(mode);
-                Navigator.of(context).pop();
-              },
+              onTap: () => Navigator.of(context).pop(mode),
             );
           }).toList(),
         ),
       ),
-    );
+    ).then((mode) {
+      // 等 sheet 退场动画结束后再切语言，避免关闭过程中整棵 MaterialApp
+      // 以新语言重建导致跳变卡顿
+      if (mode != null) {
+        ref.read(localeProvider.notifier).setMode(mode);
+      }
+    });
   }
 }
 
-/// bit-perfect 开关副标题：如实反映「有效」状态（偏好 + 实际链路 + DSP）。
-/// 与 PlaybackController.effectiveBitPerfect/dspAffectingSignal 判定一致：
-/// ReplayGain 逐首叠加增益缩放，同属信号改动，开启时不算 bit-perfect。
+/// bit-perfect 开关副标题：如实反映链路状态（偏好 + 实际速率 + DSP）。
+/// 判定与 PlaybackController.effectiveBitPerfect 一致：速率匹配 + 无信号改动
+/// （Android 还需 Exclusive 独占直通）；ReplayGain 属信号改动，开启时不算。
+/// 用中性事实描述（带采样率数字）替代原「未生效/生效」的价值判断，
+/// 避免误导用户以为是操作问题——多数情况是设备/文件组合不支持直出。
 String _bitPerfectStatus(
+  AppLocalizations l10n,
   bool bitPerfect,
   EngineTelemetry t,
   DspSettings dsp,
   bool replayGain,
 ) {
-  if (!bitPerfect) return '未开启';
+  if (!bitPerfect) return l10n.bitPerfectHint;
   final dspTouching =
       dsp.enabled || dsp.crossfeed || dsp.widener || dsp.limiter;
   final effective =
@@ -379,25 +394,35 @@ String _bitPerfectStatus(
       !dspTouching &&
       !replayGain;
   if (effective) {
+    final rate = _fmtRate(t.outputRate);
     return Platform.isAndroid
-        ? 'Exclusive 直通生效中'
-        : 'bit-exact（速率匹配）生效中';
+        ? l10n.bitPerfectExclusiveActive(rate)
+        : l10n.bitPerfectBitExactActive(rate);
   }
   final reasons = <String>[];
   if (t.fileRate > 0 && t.fileRate != t.outputRate) {
-    reasons.add('重采样中');
+    reasons.add(
+      l10n.bitPerfectResampling(_fmtRate(t.fileRate), _fmtRate(t.outputRate)),
+    );
   }
   if (Platform.isAndroid && t.outputMode == 2) {
-    reasons.add('Shared 混音器路径');
+    reasons.add(l10n.bitPerfectShared);
   }
   if (dspTouching) {
-    reasons.add('DSP 未旁路');
+    reasons.add(l10n.bitPerfectDspActive);
   }
   if (replayGain) {
-    reasons.add('ReplayGain 开启');
+    reasons.add(l10n.bitPerfectReplayGainActive);
   }
-  if (reasons.isEmpty) reasons.add('等待播放');
-  return '未生效：${reasons.join(' / ')}';
+  if (reasons.isEmpty) return l10n.bitPerfectWaitPlay;
+  return reasons.join(' · ');
+}
+
+/// 采样率 Hz → 人类可读（44100 → 44.1kHz，48000 → 48kHz，96000 → 96kHz）。
+String _fmtRate(int hz) {
+  if (hz <= 0) return '?';
+  if (hz % 1000 == 0) return '${hz ~/ 1000}kHz';
+  return '${(hz / 1000).toStringAsFixed(1)}kHz';
 }
 
 /// 分组标题（独立 item，便于懒加载）
