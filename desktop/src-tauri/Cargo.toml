@@ -40,6 +40,13 @@ keyring = "3"
 uuid = { version = "1", features = ["v4"] }
 rusqlite = { version = "0.34", features = ["bundled"] }
 
+# 远程媒体源：Subsonic 音乐服务器 / WebDAV（blocking 适配同步 command）
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
+md-5 = "0.10"
+base64 = "0.22"
+once_cell = "1"
+quick-xml = "0.31"
+
 # ── 平台特定：系统媒体控制 ──
 [target.'cfg(target_os = "windows")'.dependencies]
 smtc-tokio = "0.1"

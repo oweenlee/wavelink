@@ -6,6 +6,9 @@
 	import EffectsView from '$lib/components/views/EffectsView.svelte';
 	import SettingsView from '$lib/components/views/SettingsView.svelte';
 	import NasView from '$lib/components/views/NasView.svelte';
+	import RoomCorrectionView from '$lib/components/views/RoomCorrectionView.svelte';
+	import SubsonicView from '$lib/components/views/SubsonicView.svelte';
+	import WebdavView from '$lib/components/views/WebdavView.svelte';
 	import NowPlayingView from '$lib/components/views/NowPlayingView.svelte';
 	import LyricsPanel from '$lib/components/panels/LyricsPanel.svelte';
 
@@ -60,6 +63,12 @@
 							<SettingsView />
 						{:else if ui.view === 'nas'}
 							<NasView />
+						{:else if ui.view === 'room'}
+							<RoomCorrectionView />
+						{:else if ui.view === 'subsonic'}
+							<SubsonicView />
+						{:else if ui.view === 'webdav'}
+							<WebdavView />
 						{/if}
 					</div>
 				{/key}

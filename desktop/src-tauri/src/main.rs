@@ -6,6 +6,7 @@ mod events;
 mod logging;
 mod media_bridge;
 mod nas;
+mod remote;
 mod settings;
 mod setup;
 mod state;
@@ -157,6 +158,9 @@ fn main() {
                 stream_handle: Mutex::new(None),
             });
 
+            // 启动时恢复房间校正 IR（对齐移动端 applyDsp：文件丢失则清理脏路径）
+            commands::room::restore_room_correction(app.handle());
+
             if let Some(window) = app.get_webview_window("main") {
                 setup::setup_window_appearance(&window);
 
@@ -266,6 +270,11 @@ fn main() {
             commands::probe::probe_bit_depth_cmd,
             commands::probe::read_replaygain_tags,
             commands::probe::decide_output_cmd,
+            commands::room::default_correction_config,
+            commands::room::parse_rew_text,
+            commands::room::generate_room_correction,
+            commands::room::clear_room_correction,
+            commands::room::get_room_correction_path,
             commands::utils::read_text_file,
             commands::utils::save_text_file,
             commands::nas_cmds::nas_list,
@@ -274,6 +283,20 @@ fn main() {
             commands::nas_cmds::nas_mount,
             commands::nas_cmds::nas_unmount,
             commands::nas_cmds::nas_is_mounted,
+            commands::subsonic_cmds::subsonic_get_config,
+            commands::subsonic_cmds::subsonic_save_config,
+            commands::subsonic_cmds::subsonic_test_connection,
+            commands::subsonic_cmds::subsonic_scan,
+            commands::subsonic_cmds::subsonic_search,
+            commands::subsonic_cmds::subsonic_download_to_cache,
+            commands::subsonic_cmds::subsonic_play,
+            commands::webdav_cmds::webdav_get_config,
+            commands::webdav_cmds::webdav_save_config,
+            commands::webdav_cmds::webdav_test_connection,
+            commands::webdav_cmds::webdav_list,
+            commands::webdav_cmds::webdav_scan,
+            commands::webdav_cmds::webdav_download_to_cache,
+            commands::webdav_cmds::webdav_play,
             settings::save_settings,
             settings::load_settings,
         ])

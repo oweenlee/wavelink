@@ -9,8 +9,11 @@ pub mod nas_cmds;
 pub mod playback;
 pub mod playlist_cmds;
 pub mod probe;
+pub mod room;
 pub mod stream_cmds;
+pub mod subsonic_cmds;
 pub mod utils;
+pub mod webdav_cmds;
 
 // 不 re-export，main.rs 通过 commands::playback::play 等路径引用
 

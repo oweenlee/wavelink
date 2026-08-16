@@ -42,6 +42,13 @@ pub mod exclusive {
 pub mod dsp {
     pub use audio_core::dsp::{default_peq_bands, preset_bands, PeqBand, PresetName};
     pub use audio_core::dsp::autoeq::{catalog as autoeq_catalog, find_profile as autoeq_find_profile, HeadphoneProfile};
+    /// 房间校正（REW 测量曲线 → 线性相位 FIR 校正滤波器）
+    pub mod room_correction {
+        pub use audio_core::dsp::room_correction::{
+            generate_correction, parse_rew_txt, export_ir_wav, resample_ir,
+            TargetCurve, CorrectionConfig, CorrectionReport, FreqPoint,
+        };
+    }
 }
 
 /// 流式播放（网络流媒体）

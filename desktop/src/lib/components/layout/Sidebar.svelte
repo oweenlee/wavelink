@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getUiState } from '$lib/stores/ui.svelte';
-	import { Music, AudioLines, Settings, HardDrive } from 'lucide-svelte';
+	import { Music, AudioLines, Settings, HardDrive, Waves, Radio, Globe } from 'lucide-svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
 
 	const ui = getUiState();
@@ -44,6 +44,18 @@
 		<button class="nav-item" class:active={ui.view === 'nas'} onclick={() => ui.navigateTo('nas')}>
 			<HardDrive size={16} stroke-width={1.5} />
 			<span>{t('sidebar.nas')}</span>
+		</button>
+		<button class="nav-item" class:active={ui.view === 'room'} onclick={() => ui.navigateTo('room')}>
+			<Waves size={16} stroke-width={1.5} />
+			<span>{t('sidebar.room')}</span>
+		</button>
+		<button class="nav-item" class:active={ui.view === 'subsonic'} onclick={() => ui.navigateTo('subsonic')}>
+			<Radio size={16} stroke-width={1.5} />
+			<span>{t('sidebar.subsonic')}</span>
+		</button>
+		<button class="nav-item" class:active={ui.view === 'webdav'} onclick={() => ui.navigateTo('webdav')}>
+			<Globe size={16} stroke-width={1.5} />
+			<span>{t('sidebar.webdav')}</span>
 		</button>
 	</nav>
 </aside>

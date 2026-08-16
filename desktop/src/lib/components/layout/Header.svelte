@@ -26,6 +26,9 @@
 		library: t('header.view_library'),
 		effects: t('header.view_effects'),
 		settings: t('header.view_settings'),
+		room: t('header.view_room'),
+		subsonic: t('header.view_subsonic'),
+		webdav: t('header.view_webdav'),
 	};
 
 	function openSearch() {

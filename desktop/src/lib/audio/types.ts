@@ -28,6 +28,33 @@ export interface PeqBand {
 	q: number;
 }
 
+// ── 房间校正（REW 测量 → FIR 校正 IR）──
+
+export interface FreqPoint {
+	freq: number;
+	level_db: number;
+}
+
+export interface CorrectionConfig {
+	target: 'flat' | 'harman_tilt';
+	taps: number;
+	max_cut_db: number;
+	null_limit_db: number;
+	freq_min: number;
+	freq_max: number;
+	psycho_weighting: boolean;
+	smoothing_octave: number;
+	headroom_db: number;
+}
+
+export interface RoomCorrectionReport {
+	sample_rate: number;
+	applied_gain_db: number;
+	points: number;
+	ir_len: number;
+	measured: FreqPoint[];
+}
+
 export interface AlbumBrief {
 	artist: string;
 	album: string;
