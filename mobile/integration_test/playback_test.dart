@@ -1,6 +1,8 @@
 /// 播放稳定性集成测试 — 在真机上跑
 /// flutter test integration_test/playback_test.dart
 library;
+// 稳定性集成测试有意用 print 直出诊断信息，关闭 avoid_print。
+// ignore_for_file: avoid_print
 
 import 'dart:io';
 import 'package:checks/checks.dart';

@@ -4,7 +4,7 @@ import 'package:wavelink_mobile/data/services/strm_resolver.dart';
 import 'package:wavelink_mobile/domain/models/song.dart';
 
 /// 测试用 Song：可变字段带初始值，便于验证回填。
-Song TestSong() => Song(
+Song testSong() => Song(
       id: 'test',
       title: '旧标题',
       artist: 'Unknown Artist',
@@ -133,7 +133,7 @@ void main() {
 
   group('applyExtInfToSong', () {
     test('标题按 Artist - Title 拆分回填，时长覆盖估算', () {
-      final song = TestSong();
+      final song = testSong();
       final changed = applyExtInfToSong(
         song,
         const StrmTarget(
@@ -151,7 +151,7 @@ void main() {
     });
 
     test('无信息行 → 无回填', () {
-      final song = TestSong();
+      final song = testSong();
       final changed = applyExtInfToSong(
         song,
         const StrmTarget(kind: 'http', path: 'http://x/1.flac'),

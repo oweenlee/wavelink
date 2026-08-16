@@ -67,7 +67,7 @@ class WlCover extends StatelessWidget {
               )
             else
               _fallback(),
-            if (overlay != null) overlay!,
+            ?overlay,
           ],
         ),
       ),

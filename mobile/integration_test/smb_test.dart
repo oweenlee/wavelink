@@ -1,6 +1,8 @@
 /// 临时 SMB 连接验证（跑完即删）
 /// flutter test integration_test/smb_test.dart -d macos
 library;
+// 连接验证测试有意用 print 直出诊断信息，关闭 avoid_print。
+// ignore_for_file: avoid_print
 
 import 'package:checks/checks.dart';
 import 'package:flutter_test/flutter_test.dart';

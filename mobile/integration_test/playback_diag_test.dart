@@ -1,6 +1,8 @@
 /// 播放诊断集成测试 — 在真机上跑，检测引擎 underrun
 /// flutter test integration_test/playback_diag_test.dart
 library;
+// 诊断测试有意用 print 直出真机诊断信息，关闭 avoid_print。
+// ignore_for_file: avoid_print
 
 import 'dart:io';
 import 'package:checks/checks.dart';

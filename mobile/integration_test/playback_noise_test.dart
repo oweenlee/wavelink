@@ -1,6 +1,8 @@
 /// 播放杂音排查测试
 /// 检测引擎播放连续性和 underrun
 library;
+// 杂音排查测试有意用 print 直出诊断信息，关闭 avoid_print。
+// ignore_for_file: avoid_print
 
 import 'dart:io';
 import 'package:checks/checks.dart';
