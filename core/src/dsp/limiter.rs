@@ -136,10 +136,14 @@ fn build_polyphase_filter() -> [[f32; 32]; 4] {
         h[i] *= w;
     }
 
-    // 归一化为单位增益
+    // 归一化：4x 插值滤波器原型 DC 增益须为 4（过采样倍数），
+    // 多相分解后每个相位 DC 增益 = 1，插值点才能正确重建原幅值。
+    // 旧实现把原型归一化到 Σ=1，导致每相位增益 0.25，插值峰被缩小 4 倍、
+    // 真峰值检测永不触发（见 test_polyphase_filter_gain）。
     let gain: f32 = h.iter().sum();
+    let scale = 4.0 / gain;
     for v in h.iter_mut() {
-        *v /= gain;
+        *v *= scale;
     }
 
     // 多相分解：4 相位 × 32 抽头
@@ -186,13 +190,38 @@ mod tests {
     #[test]
     fn test_polyphase_filter_gain() {
         let phases = build_polyphase_filter();
-        // 所有系数之和应接近 1.0
+        // 原型总增益 = 4（4x 过采样倍数）
         let sum: f32 = phases.iter().flat_map(|p| p.iter()).sum();
-        assert!((sum - 1.0).abs() < 0.05, "多相滤波器总增益偏差过大: {sum}");
-        // 每相位自身也应合理
+        assert!((sum - 4.0).abs() < 0.05, "多相滤波器总增益应为 4, 实际: {sum}");
+        // 每相位 DC 增益 = 1.0（插值保持幅值的关键，旧实现为 0.25 → 真峰值检测失效）
         for (p, phase) in phases.iter().enumerate() {
             let psum: f32 = phase.iter().sum();
-            assert!(psum > 0.0, "相位 {p} 系数和不正, 可能符号错误: {psum}");
+            assert!(
+                (psum - 1.0).abs() < 0.05,
+                "相位 {p} DC 增益应为 1.0, 实际: {psum}"
+            );
         }
+    }
+
+    #[test]
+    fn test_limiter_isp_bs1770_attenuated() {
+        // BS.1770 演示信号 [1,1,-1,-1] 循环：样本峰 1.0，真带限插值峰 ≈1.41。
+        // 限幅器应检测到 ISP 并施加增益衰减，输出样本峰低于 1.0。
+        let mut lim = TruePeakLimiter::new(1, 0.0);
+        let mut buf: Vec<f32> = (0..2000)
+            .map(|i| match (i / 2) % 2 {
+                0 => 1.0f32,
+                _ => -1.0f32,
+            })
+            .collect();
+        lim.process(&mut buf, 0);
+        // 跳过前 128 个样本（延迟线/增益预热期，此时 gain 仍为 1.0、输出满幅），
+        // 只验证稳态：真峰值 1.41 触发衰减后，稳态样本峰应显著低于 1.0。
+        let steady = &buf[128..];
+        let peak = steady.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+        assert!(
+            peak < 0.95,
+            "ISP 信号稳态应被真峰值限幅，样本峰应 < 0.95, 实际: {peak}"
+        );
     }
 }

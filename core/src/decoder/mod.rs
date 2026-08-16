@@ -382,6 +382,51 @@ fn resample_and_send(
     }
 }
 
+/// EOF 时冲刷重采样器：`SincFixedOut` 按固定块消费输入，残余不足一个块的
+/// 输入帧若不处理会在曲尾被静默丢弃（44.1k↔48k 时约 24ms）。补零到所需
+/// 长度做最后一次 `process`，把剩余有效音频连同滤波器尾部一起输出。
+fn flush_resampler(
+    resampler: &mut Option<SincFixedOut<f64>>,
+    rubato_buf: &mut [Vec<f64>],
+    out_ch: usize,
+    target_rate: u32,
+    target_ch: u32,
+    pts: f64,
+    tx: &Sender<DecodedFrame>,
+    stop_rx: &Receiver<()>,
+) {
+    let Some(ref mut resampler) = resampler else {
+        return;
+    };
+    if stop_rx.try_recv().is_ok() || rubato_buf.iter().all(|b| b.is_empty()) {
+        return;
+    }
+    let needed = resampler.nbr_frames_needed();
+    for buf in rubato_buf.iter_mut() {
+        buf.resize(needed, 0.0);
+    }
+    let waves_in: Vec<Vec<f64>> = rubato_buf.iter_mut().map(std::mem::take).collect();
+    if let Ok(waves_out) = resampler.process(&waves_in) {
+        let out_frames = waves_out[0].len();
+        let mut samples = Vec::with_capacity(out_frames * out_ch);
+        for f in 0..out_frames {
+            for c in 0..out_ch {
+                samples.push(waves_out[c][f] as f32);
+            }
+        }
+        try_send_or_stop(
+            tx,
+            DecodedFrame {
+                samples,
+                pts_secs: pts,
+                sample_rate: target_rate,
+                channels: target_ch,
+            },
+            stop_rx,
+        );
+    }
+}
+
 fn run(
     path: &Path,
     target_rate: u32,
@@ -590,6 +635,8 @@ fn run(
     let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
     let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
     let mut consecutive_errors = 0u32;
+    // 跟踪最后发送帧的 pts，EOF 冲刷重采样器残余时用
+    let mut last_pts = 0.0f64;
 
     loop {
         if stop_rx.try_recv().is_ok() {
@@ -664,7 +711,7 @@ fn run(
 
         // rubato 异步 SRC + 发送
         let pts = packet.pts.get() as f64 / src_rate as f64;
-        let _ = resample_and_send(
+        last_pts = resample_and_send(
             &mixed,
             &mut rubato_resampler,
             &mut rubato_buf,
@@ -676,6 +723,16 @@ fn run(
             &stop_rx,
         );
     }
+    flush_resampler(
+        &mut rubato_resampler,
+        &mut rubato_buf,
+        out_ch,
+        target_rate,
+        target_ch,
+        last_pts,
+        &tx,
+        &stop_rx,
+    );
     Ok(())
 }
 
@@ -762,6 +819,8 @@ fn run_from_stream(
     let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
     let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
     let mut consecutive_errors = 0u32;
+    // 跟踪最后发送帧的 pts，EOF 冲刷重采样器残余时用
+    let mut last_pts = 0.0f64;
 
     loop {
         if stop_rx.try_recv().is_ok() {
@@ -822,7 +881,7 @@ fn run_from_stream(
         let mixed = mix_channels(&interleaved, in_ch, out_ch);
 
         let pts = packet.pts.get() as f64 / src_rate as f64;
-        let _ = resample_and_send(
+        last_pts = resample_and_send(
             &mixed,
             &mut rubato_resampler,
             &mut rubato_buf,
@@ -834,6 +893,16 @@ fn run_from_stream(
             &stop_rx,
         );
     }
+    flush_resampler(
+        &mut rubato_resampler,
+        &mut rubato_buf,
+        out_ch,
+        target_rate,
+        target_ch,
+        last_pts,
+        &tx,
+        &stop_rx,
+    );
     Ok(())
 }
 
@@ -1017,7 +1086,7 @@ fn run_dsd(
     if !pcm.is_empty() && stop_rx.try_recv().is_err() {
         let mixed = mix_channels(&pcm, src_ch, out_ch);
         if !mixed.is_empty() {
-            let _ = resample_and_send(
+            pts = resample_and_send(
                 &mixed,
                 &mut resampler,
                 &mut rubato_buf,
@@ -1030,6 +1099,16 @@ fn run_dsd(
             );
         }
     }
+    flush_resampler(
+        &mut resampler,
+        &mut rubato_buf,
+        out_ch,
+        target_rate,
+        target_ch,
+        pts,
+        &tx,
+        &stop_rx,
+    );
     Ok(())
 }
 
@@ -1161,6 +1240,16 @@ fn run_ape(
         }
     }
 
+    flush_resampler(
+        &mut resampler,
+        &mut rubato_buf,
+        out_ch,
+        target_rate,
+        target_ch,
+        pts,
+        &tx,
+        &stop_rx,
+    );
     Ok(())
 }
 

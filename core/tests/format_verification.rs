@@ -78,10 +78,12 @@ fn test_m4a() {
 fn test_wav_48k() {
     let a = common::ensure_fixtures();
     let (cnt, _) = decode_count(&a.wav_48k).unwrap();
-    // 48kHz 2s stereo → 44.1kHz: 理论 176400 样本, 重采样器内部延时损失 ~272
+    // 48kHz 2s stereo → 44.1kHz: 理论 176400 样本。
+    // EOF 冲刷重采样器会补零输出最后一个块（1024 帧 = 2048 样本）的 sinc 尾部，
+    // 因此输出应 ≥ 理论值且 ≤ 理论值 + 一个块；旧实现会截断曲尾 ~272 样本（176128）。
     assert!(
-        (176000..=176500).contains(&cnt),
-        "48kHz WAV samples: {cnt} (expected ~176400)"
+        (176400..=178448).contains(&cnt),
+        "48kHz WAV samples: {cnt} (expected 176400..=178448)"
     );
 }
 
