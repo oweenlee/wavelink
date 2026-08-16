@@ -455,7 +455,7 @@ class _SongsTab extends ConsumerWidget {
 
     if (displayed.isEmpty) {
       return _EmptyLibrary(
-        message: query.isNotEmpty ? l10n.noSongs : l10n.noMusicHint,
+        message: query.isNotEmpty ? l10n.noResults : l10n.noMusicHint,
       );
     }
 
@@ -502,6 +502,7 @@ class _AlbumsTab extends ConsumerWidget {
     final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
     final queueState = ref.watch(queueProvider);
     final songs = ref.watch(libraryProvider).allSongs;
+    final query = ref.watch(libraryHeaderProvider).searchQuery;
 
     // 按专辑分组：单次 O(N) 遍历（保留首次出现顺序），
     // 避免原来每次 build 的 map/toSet + itemBuilder 内逐专辑 where 扫描。
@@ -511,9 +512,14 @@ class _AlbumsTab extends ConsumerWidget {
     for (final s in songs) {
       (albums['${s.artist}\u0000${s.album}'] ??= []).add(s);
     }
-    final albumNames = albums.keys.toList();
+    // 搜索：专辑/艺人名命中才显示（键 = 艺人\0专辑名，contains 即覆盖两者）
+    final albumNames = albums.keys
+        .where((k) => query.isEmpty || k.toLowerCase().contains(query))
+        .toList();
     if (albumNames.isEmpty) {
-      return _EmptyLibrary(message: l10n.noAlbumInfo);
+      return _EmptyLibrary(
+        message: query.isNotEmpty ? l10n.noResults : l10n.noAlbumInfo,
+      );
     }
 
     return GridView.builder(
@@ -626,21 +632,28 @@ class _ArtistsTab extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final player = ref.watch(playbackControllerProvider);
     final songs = ref.watch(libraryProvider).allSongs;
+    final query = ref.watch(libraryHeaderProvider).searchQuery;
 
     // 按艺人分组：单次 O(N) 遍历，避免 itemBuilder 内逐艺人 where 扫描
     final artists = <String, List<Song>>{};
     for (final s in songs) {
       (artists[s.artist] ??= []).add(s);
     }
-    final artistNames = artists.keys.toList();
+    // 搜索：艺人名命中才显示
+    final artistNames = artists.keys
+        .where((n) => query.isEmpty || n.toLowerCase().contains(query))
+        .toList();
     if (artistNames.isEmpty) {
-      return _EmptyLibrary(message: l10n.noArtistInfo);
+      return _EmptyLibrary(
+        message: query.isNotEmpty ? l10n.noResults : l10n.noArtistInfo,
+      );
     }
 
     return CustomScrollView(
       slivers: [
-        // 全部随机播放按钮
-        SliverToBoxAdapter(
+        // 全部随机播放按钮（搜索时隐藏：它随机的是全库而非搜索结果）
+        if (query.isEmpty)
+          SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: Row(
