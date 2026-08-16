@@ -246,7 +246,6 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
                         controller: _passCtrl,
                         obscure: true,
                         autofillHints: const [AutofillHints.password],
-                        textInputAction: TextInputAction.done,
                       ),
                     ],
                   ),

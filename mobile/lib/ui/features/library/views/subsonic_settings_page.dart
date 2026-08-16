@@ -176,7 +176,6 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
                         controller: _passCtrl,
                         obscure: true,
                         autofillHints: const [AutofillHints.password],
-                        textInputAction: TextInputAction.done,
                       ),
                     ],
                   ),

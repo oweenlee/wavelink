@@ -12,8 +12,9 @@ import '../theme/app_theme.dart';
 ///   其余字段保持关闭避免地址框弹无关建议；
 /// - [textCapitalization] 恒为 none：服务器地址/路径/用户名大小写敏感，
 ///   iOS 默认会把首字母大写，会造成"输对却连不上"；
-/// - 回车行为交给 Flutter 默认：非末字段 `textInputAction: next`
-///   自动跳转下一可聚焦组件，密码框 `done` 默认收键盘。
+/// - 回车行为统一 `TextInputAction.done`（默认）：按「完成」收键盘。
+///   不启用 next 字段间跳转——Flutter 默认 next 遍历在部分机型/表单
+///   布局下不可靠，done 收键盘行为最简单且各平台一致。
 class ConfigField extends StatefulWidget {
   final IconData icon;
   final String label;
@@ -32,7 +33,7 @@ class ConfigField extends StatefulWidget {
     this.hint,
     this.obscure = false,
     this.keyboardType,
-    this.textInputAction = TextInputAction.next,
+    this.textInputAction = TextInputAction.done,
     this.autofillHints,
   });
 

@@ -189,7 +189,6 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
                         controller: _passCtrl,
                         obscure: true,
                         autofillHints: const [AutofillHints.password],
-                        textInputAction: TextInputAction.done,
                       ),
                     ],
                   ),
