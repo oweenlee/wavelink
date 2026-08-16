@@ -612,12 +612,12 @@ mod tests {
         // 1. 同目录相对路径
         std::fs::write(dir.join("a.strm"), "real.flac\n").unwrap();
         let r = resolve_strm_target(&dir.join("a.strm"));
-        assert_eq!(r.as_ref().map(|s| s.target.clone()), Some(dir.join("real.flac")));
+        assert_eq!(r.as_ref().map(|s| s.target.clone()), Some(Some(dir.join("real.flac"))));
         assert!(r.unwrap().extinf_title.is_none());
         // 2. ../ 上溯 + BOM
         std::fs::write(dir.join("sub/b.strm"), "\u{feff}../real.flac").unwrap();
         let r = resolve_strm_target(&dir.join("sub/b.strm"));
-        assert_eq!(r.as_ref().map(|s| s.target.clone()), Some(dir.join("real.flac")));
+        assert_eq!(r.as_ref().map(|s| s.target.clone()), Some(Some(dir.join("real.flac"))));
         // 3. 绝对路径 + 前导空白行/注释
         std::fs::write(
             dir.join("c.strm"),
@@ -625,7 +625,7 @@ mod tests {
         )
         .unwrap();
         let r = resolve_strm_target(&dir.join("c.strm"));
-        assert_eq!(r.as_ref().map(|s| s.target.clone()), Some(dir.join("real.flac")));
+        assert_eq!(r.as_ref().map(|s| s.target.clone()), Some(Some(dir.join("real.flac"))));
         // 3b. #EXTINF 信息行：标题 + 时长（Kodi 风格 strm 库）
         std::fs::write(
             dir.join("h.strm"),
@@ -634,17 +634,21 @@ mod tests {
         .unwrap();
         let r = resolve_strm_target(&dir.join("h.strm"));
         let rs = r.expect("h.strm 应解析成功");
-        assert_eq!(rs.target, dir.join("real.flac"));
+        assert_eq!(rs.target, Some(dir.join("real.flac")));
         assert_eq!(rs.extinf_title.as_deref(), Some("周杰伦 - 晴天"));
         assert_eq!(rs.extinf_duration, Some(245.0));
         // 3c. #EXTINF 无标题/时长非法：忽略信息行不阻断目标解析
         std::fs::write(dir.join("i.strm"), "#EXTINF:0,\nreal.flac\n").unwrap();
         let r = resolve_strm_target(&dir.join("i.strm"));
-        assert_eq!(r.as_ref().map(|s| s.target.clone()), Some(dir.join("real.flac")));
+        assert_eq!(r.as_ref().map(|s| s.target.clone()), Some(Some(dir.join("real.flac"))));
         assert!(r.unwrap().extinf_title.is_none());
-        // 4. http(s) URL 目标 → 不支持，None
+        // 4. http(s) URL 目标 → 收录为 URL 轨道（target 为 None，url 有效）
         std::fs::write(dir.join("d.strm"), "http://nas/music/x.flac\n").unwrap();
-        assert!(resolve_strm_target(&dir.join("d.strm")).is_none());
+        let r = resolve_strm_target(&dir.join("d.strm"));
+        assert!(r.is_some(), "http(s) URL 目标应解析成功");
+        let rd = r.unwrap();
+        assert_eq!(rd.target, None);
+        assert_eq!(rd.url.as_deref(), Some("http://nas/music/x.flac"));
         // 5. 目标不存在 → None
         std::fs::write(dir.join("e.strm"), "missing.flac\n").unwrap();
         assert!(resolve_strm_target(&dir.join("e.strm")).is_none());

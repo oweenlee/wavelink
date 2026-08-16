@@ -55,6 +55,29 @@ const LIST_COLUMNS: &str = "id, path, title, artist, album, album_artist, \
     sample_rate, channels, format, file_size, file_modified, \
     date_added, play_count, last_played, rating, missing, track_gain";
 
+/// 是否含 CJK 字符（FTS5 unicode61 把连续汉字当单个 token，子串搜不到 → 回落 LIKE）
+fn contains_cjk(s: &str) -> bool {
+    s.chars().any(|c| matches!(c as u32,
+        0x3400..=0x4DBF   // CJK 扩展 A
+        | 0x4E00..=0x9FFF // CJK 统一表意
+        | 0xF900..=0xFAFF // CJK 兼容
+        | 0x3040..=0x30FF // 日文假名
+        | 0x31F0..=0x31FF // 片假名扩展
+        | 0xAC00..=0xD7AF | 0x1100..=0x11FF // 韩文
+    ))
+}
+
+/// 把关键词转成 FTS5 查询串：按空白拆词，逐词转义后加前缀匹配（`"word"*`），AND 组合。
+/// 引号内除 `"`（成对转义）外均为字面量，无需担心 `*`/`(` 等语法注入。
+fn fts_query(keyword: &str) -> String {
+    keyword
+        .split_whitespace()
+        .filter(|w| !w.is_empty())
+        .map(|w| format!("\"{}\"*", w.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(" AND ")
+}
+
 /// 完整列（含 cover），列序必须与 row_to_track 的位置映射一致
 const FULL_COLUMNS: &str = "id, path, title, artist, album, album_artist, \
     track_number, disc_number, year, genre, duration, \
@@ -114,8 +137,42 @@ impl LibraryDb {
                 id   INTEGER PRIMARY KEY AUTOINCREMENT,
                 path TEXT UNIQUE NOT NULL,
                 label TEXT
-            );",
+            );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
+                title, artist, album,
+                content='tracks', content_rowid='id'
+            );
+            CREATE TRIGGER IF NOT EXISTS tracks_ai AFTER INSERT ON tracks BEGIN
+                INSERT INTO tracks_fts(rowid, title, artist, album)
+                VALUES (new.id, new.title, new.artist, new.album);
+            END;
+            CREATE TRIGGER IF NOT EXISTS tracks_ad AFTER DELETE ON tracks BEGIN
+                INSERT INTO tracks_fts(tracks_fts, rowid, title, artist, album)
+                VALUES('delete', old.id, old.title, old.artist, old.album);
+            END;
+            CREATE TRIGGER IF NOT EXISTS tracks_au AFTER UPDATE ON tracks BEGIN
+                INSERT INTO tracks_fts(tracks_fts, rowid, title, artist, album)
+                VALUES('delete', old.id, old.title, old.artist, old.album);
+                INSERT INTO tracks_fts(rowid, title, artist, album)
+                VALUES (new.id, new.title, new.artist, new.album);
+            END;",
         )?;
+        // FTS 索引回填：仅当索引空而曲库有数据时 rebuild（首次建库/升级）
+        let has_rows: i64 = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM tracks_fts)",
+            [],
+            |r| r.get(0),
+        )?;
+        let track_count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM tracks",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_rows == 0 && track_count > 0 {
+            self.conn.execute_batch("INSERT INTO tracks_fts(tracks_fts) VALUES('rebuild');")?;
+            tracing::info!("FTS 索引回填完成：{} 行", track_count);
+        }
         // 旧的数据库可能缺少 cover 列
         self.conn.execute_batch(
             "ALTER TABLE tracks ADD COLUMN cover TEXT;",
@@ -131,7 +188,11 @@ impl LibraryDb {
         self.conn.execute_batch(
             "DROP TABLE IF EXISTS scan_folders;
              DROP TABLE IF EXISTS analysis_results;
-             DROP TABLE IF EXISTS tracks;",
+             DROP TABLE IF EXISTS tracks;
+             DROP TABLE IF EXISTS tracks_fts;
+             DROP TRIGGER IF EXISTS tracks_ai;
+             DROP TRIGGER IF EXISTS tracks_ad;
+             DROP TRIGGER IF EXISTS tracks_au;",
         )?;
         self.migrate()
     }
@@ -241,8 +302,39 @@ impl LibraryDb {
         rows.collect()
     }
 
-    /// 搜索曲目
+    /// 搜索曲目（FTS5 优先按 bm25 排序；中文/短词回落 LIKE 子串匹配）
     pub fn search(&self, keyword: &str, limit: i64, offset: i64) -> SqlResult<Vec<Track>> {
+        let keyword = keyword.trim();
+        if keyword.is_empty() {
+            return Ok(Vec::new());
+        }
+        // 含 CJK（unicode61 会把连续汉字当作一个 token，子串搜不到）或单字符：回落 LIKE
+        if contains_cjk(keyword) || keyword.chars().count() < 2 {
+            return self.search_like(keyword, limit, offset);
+        }
+        let query = fts_query(keyword);
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        // tracks_fts 与 tracks 同名列（title/artist/album）→ 显式加 t. 前缀消除歧义
+        let cols = LIST_COLUMNS
+            .split(", ")
+            .map(|c| format!("t.{c}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut stmt = self.conn.prepare(
+            &format!("SELECT {cols} FROM tracks_fts
+             JOIN tracks t ON t.id = tracks_fts.rowid
+             WHERE tracks_fts MATCH ?1 AND t.missing=0
+             ORDER BY bm25(tracks_fts)
+             LIMIT ?2 OFFSET ?3"),
+        )?;
+        let rows = stmt.query_map(params![query, limit, offset], Self::row_to_track_light)?;
+        rows.collect()
+    }
+
+    /// LIKE 子串搜索（中文/短词兜底）
+    fn search_like(&self, keyword: &str, limit: i64, offset: i64) -> SqlResult<Vec<Track>> {
         let pattern = format!("%{}%", keyword);
         let mut stmt = self.conn.prepare(
             &format!("SELECT {LIST_COLUMNS} FROM tracks
@@ -630,5 +722,57 @@ mod tests {
         assert_eq!(db.track_count().unwrap(), 1);
         db.remove_track(id).unwrap();
         assert_eq!(db.track_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_fts_search() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA journal_mode=WAL;").ok();
+        let db = LibraryDb { conn };
+        db.migrate().unwrap();
+
+        let make = |i: usize, title: &str, artist: &str| Track {
+            id: 0, path: format!("/fts/{i}.mp3"), title: Some(title.into()),
+            artist: Some(artist.into()), album: None, album_artist: None,
+            track_number: None, disc_number: None, year: None, genre: None,
+            duration: None, sample_rate: None, channels: None, format: None,
+            file_size: None, file_modified: None, date_added: i as i64, play_count: 0,
+            last_played: None, rating: 0, missing: false, cover_base64: None, track_gain: None,
+        };
+        db.upsert_track(&make(0, "Hey Jude", "The Beatles")).unwrap();
+        db.upsert_track(&make(1, "Stayin' Alive", "Bee Gees")).unwrap();
+        db.upsert_track(&make(2, "童年", "罗大佑")).unwrap();
+
+        // FTS5 前缀匹配（英文，大小写不敏感）
+        let r = db.search("Beat", 10, 0).unwrap();
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].title.as_deref(), Some("Hey Jude"));
+        let r = db.search("beatles", 10, 0).unwrap();
+        assert_eq!(r.len(), 1);
+        // 多词 AND
+        let r = db.search("beatles jude", 10, 0).unwrap();
+        assert_eq!(r.len(), 1);
+
+        // 中文 → LIKE 兜底（子串命中）
+        let r = db.search("童年", 10, 0).unwrap();
+        assert_eq!(r.len(), 1);
+        let r = db.search("大佑", 10, 0).unwrap();
+        assert_eq!(r.len(), 1);
+
+        // 无匹配
+        let r = db.search("Rolling", 10, 0).unwrap();
+        assert!(r.is_empty());
+
+        // FTS 语法字符转义后不抛错
+        let _ = db.search("\"*() OR - , :", 10, 0).unwrap();
+
+        // 更新触发 tracks_au：改标题后旧索引删除、新索引可搜
+        let mut t = db.get_track_by_path("/fts/0.mp3").unwrap().unwrap();
+        t.title = Some("Norwegian Wood".into());
+        db.upsert_track(&t).unwrap();
+        let r = db.search("jude", 10, 0).unwrap();
+        assert!(r.is_empty());
+        let r = db.search("norwegian", 10, 0).unwrap();
+        assert_eq!(r.len(), 1);
     }
 }

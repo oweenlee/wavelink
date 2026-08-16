@@ -1,5 +1,5 @@
 import { browser, lazyInvoke, lazyListen } from '$lib/tauri';
-import type { Track } from './types';
+import type { Track, PeqBand } from './types';
 
 /**
  * Tauri 音频引擎桥接层
@@ -276,6 +276,82 @@ export async function setBufferMs(ms: number) {
 }
 
 // ── AutoEQ / DSD / 限幅 / 抖动 / 输出采样率 ──
+
+// ── EQ / 效果器 ──
+
+export async function getEqBands(): Promise<PeqBand[]> {
+	try {
+		const invoke = await lazyInvoke();
+		return await invoke<PeqBand[]>('get_eq_bands');
+	} catch (err) {
+		console.error('Get EQ bands failed:', err);
+		return [];
+	}
+}
+
+export async function setPeqBand(index: number, freq: number, gainDb: number, q: number) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('set_peq_band', { index, freq, gainDb, q });
+	} catch (err) {
+		console.error('Set PEQ band failed:', err);
+	}
+}
+
+export async function setEqPreset(preset: string) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('set_eq_preset', { preset });
+	} catch (err) {
+		console.error('Set EQ preset failed:', err);
+	}
+}
+
+export async function resetEq() {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('reset_eq');
+	} catch (err) {
+		console.error('Reset EQ failed:', err);
+	}
+}
+
+export async function listAutoEqProfiles(): Promise<string[]> {
+	try {
+		const invoke = await lazyInvoke();
+		return await invoke<string[]>('list_auto_eq_profiles');
+	} catch (err) {
+		console.error('List AutoEQ profiles failed:', err);
+		return [];
+	}
+}
+
+export async function setStereoWidener(enabled: boolean, width: number) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('set_stereo_widener', { enabled, width });
+	} catch (err) {
+		console.error('Set stereo widener failed:', err);
+	}
+}
+
+export async function loadIr(path: string) {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('load_ir', { path });
+	} catch (err) {
+		console.error('Load IR failed:', err);
+	}
+}
+
+export async function clearIr() {
+	try {
+		const invoke = await lazyInvoke();
+		await invoke('clear_ir');
+	} catch (err) {
+		console.error('Clear IR failed:', err);
+	}
+}
 
 export async function setAutoEq(name: string | null) {
 	try {

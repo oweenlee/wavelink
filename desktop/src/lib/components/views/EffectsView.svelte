@@ -3,6 +3,19 @@
 	import { getSettingsState } from '$lib/stores/settings.svelte';
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
 	import type { PeqBand } from '$lib/audio/types';
+	import {
+		getEqBands,
+		setPeqBand,
+		setEqPreset as engineSetEqPreset,
+		resetEq as engineResetEq,
+		listAutoEqProfiles,
+		setCrossfeed,
+		setNoiseShaping,
+		setAutoEq,
+		setStereoWidener,
+		loadIr,
+		clearIr,
+	} from '$lib/audio/engine.svelte';
 	import { Upload } from 'lucide-svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
 
@@ -17,67 +30,69 @@
 	let noiseShapingEnabled = $state(false);
 	let autoEqProfiles = $state<string[]>([]);
 	let _autoEq = $state('');
-	let _invoke: ((cmd: string, args?: any) => Promise<any>) | null = null;
 
 	// ── Load settings ──
 	$effect(() => {
 		if (!browser) return;
-		import('@tauri-apps/api/core').then(async (mod) => {
-			_invoke = mod.invoke;
-
+		(async () => {
 			// 1. 先从引擎加载默认 EQ 波段（31 段）
 			try {
-				const bands: any = await mod.invoke('get_eq_bands');
-				eqBands = bands as PeqBand[];
-			} catch { console.warn('[Effects] EQ 加载失败, 使用默认');
+				eqBands = await getEqBands();
+			} catch {
+				console.warn('[Effects] EQ 加载失败, 使用默认');
 				// 引擎无 EQ 数据时使用默认
 			}
 
 			// 2. 再从保存的设置覆盖
 			try {
-				const saved: Record<string, any> = await mod.invoke('load_settings');
-				if (typeof saved.irLoaded === 'boolean') irLoaded = saved.irLoaded;
-				if (typeof saved.stereoWidener === 'boolean') stereoWidener = saved.stereoWidener;
-				if (typeof saved.stereoWidth === 'number') stereoWidth = saved.stereoWidth;
-				if (typeof saved.crossfeedEnabled === 'boolean') crossfeedEnabled = saved.crossfeedEnabled;
-				if (typeof saved.noiseShapingEnabled === 'boolean') noiseShapingEnabled = saved.noiseShapingEnabled;
-				if (Array.isArray(saved.eqBands) && (saved.eqBands.length === 31 || saved.eqBands.length === 10)) {
-					eqBands = saved.eqBands;
-					for (let i = 0; i < saved.eqBands.length; i++) {
-						const b = saved.eqBands[i];
-						await mod.invoke('set_peq_band', { index: i, freq: b.freq, gainDb: b.gain_db, q: b.q });
+				const saved = await settings.load();
+				if (saved) {
+					if (typeof saved.irLoaded === 'boolean') irLoaded = saved.irLoaded;
+					if (typeof saved.stereoWidener === 'boolean') stereoWidener = saved.stereoWidener;
+					if (typeof saved.stereoWidth === 'number') stereoWidth = saved.stereoWidth;
+					if (typeof saved.crossfeedEnabled === 'boolean') crossfeedEnabled = saved.crossfeedEnabled;
+					if (typeof saved.noiseShapingEnabled === 'boolean') noiseShapingEnabled = saved.noiseShapingEnabled;
+					if (Array.isArray(saved.eqBands) && (saved.eqBands.length === 31 || saved.eqBands.length === 10)) {
+						eqBands = saved.eqBands;
+						for (let i = 0; i < saved.eqBands.length; i++) {
+							const b = saved.eqBands[i];
+							await setPeqBand(i, b.freq, b.gain_db, b.q);
+						}
+					}
+					if (typeof saved.eqPreset === 'string' && saved.eqPreset && eqPresets.includes(saved.eqPreset)) {
+						_activePreset = saved.eqPreset;
+					}
+					if (typeof saved.autoEq === 'string' && saved.autoEq) {
+						_autoEq = saved.autoEq;
+						await setAutoEq(saved.autoEq).catch(() => console.warn('[Effects] AutoEQ 恢复失败'));
 					}
 				}
-				if (typeof saved.eqPreset === 'string' && saved.eqPreset && eqPresets.includes(saved.eqPreset)) {
-					_activePreset = saved.eqPreset;
-				}
-				if (typeof saved.autoEq === 'string' && saved.autoEq) {
-					_autoEq = saved.autoEq;
-					await mod.invoke('set_auto_eq', { name: saved.autoEq }).catch(() => console.warn('[Effects] AutoEQ 恢复失败'));
-				}
-			} catch { console.warn('[Effects] 设置加载/同步失败'); }
+			} catch {
+				console.warn('[Effects] 设置加载/同步失败');
+			}
 
 			// AutoEQ 档案列表
 			try {
-				const profiles: any = await mod.invoke('list_auto_eq_profiles');
-				autoEqProfiles = profiles as string[];
-			} catch { console.warn('[Effects] AutoEQ 档案加载失败'); }
-
-		});
+				autoEqProfiles = await listAutoEqProfiles();
+			} catch {
+				console.warn('[Effects] AutoEQ 档案加载失败');
+			}
+		})();
 	});
 
 	async function toggleCrossfeed() {
 		crossfeedEnabled = !crossfeedEnabled;
-		if (_invoke) { await _invoke('set_crossfeed', { enabled: crossfeedEnabled }); saveAll(); }
+		await setCrossfeed(crossfeedEnabled);
+		saveAll();
 	}
 
 	async function toggleNoiseShaping() {
 		noiseShapingEnabled = !noiseShapingEnabled;
-		if (_invoke) { await _invoke('set_noise_shaping', { enabled: noiseShapingEnabled }); saveAll(); }
+		await setNoiseShaping(noiseShapingEnabled);
+		saveAll();
 	}
 
 	async function saveAll() {
-		if (!_invoke) return;
 		// 统一走 settings store 的串行保存队列，避免和 settings/NowPlayingBar 的保存互相覆盖
 		await settings.save({
 			volume: playback.volume,
@@ -120,32 +135,30 @@
 
 	// ── IR ──
 	async function handleLoadIr() {
-		if (!_invoke) return;
 		const { open } = await import('@tauri-apps/plugin-dialog');
 		const path = await open({ filters: [{ name: t('ir_filter_name'), extensions: ['wav'] }], title: t('ir_select_title') });
-		if (path) { await _invoke('load_ir', { path }); irLoaded = true; saveAll(); }
+		if (path) { await loadIr(path); irLoaded = true; saveAll(); }
 	}
-	async function handleClearIr() { if (!_invoke) return; await _invoke('clear_ir'); irLoaded = false; saveAll(); }
+	async function handleClearIr() { await clearIr(); irLoaded = false; saveAll(); }
 
 	// ── Stereo widener ──
 	async function toggleStereoWidener() {
 		stereoWidener = !stereoWidener;
-		if (_invoke) { await _invoke('set_stereo_widener', { enabled: stereoWidener, width: stereoWidth }); saveAll(); }
+		await setStereoWidener(stereoWidener, stereoWidth);
+		saveAll();
 	}
-	async function updateStereoWidth() { if (_invoke && stereoWidener) { await _invoke('set_stereo_widener', { enabled: true, width: stereoWidth }); saveAll(); } }
+	async function updateStereoWidth() { if (stereoWidener) { await setStereoWidener(true, stereoWidth); saveAll(); } }
 
 	const eqPresets = ['flat', 'rock', 'pop', 'dance', 'classical', 'soft', 'full_bass', 'full_treble', 'techno', 'vocals'];
 	let _activePreset = $state('');
 
 	// ── AutoEQ（耳机校正，本质是整组 PEQ 预设）──
 	async function applyAutoEq(name: string) {
-		if (!_invoke) return;
 		_autoEq = name;
 		try {
-			await _invoke('set_auto_eq', { name: name || null });
+			await setAutoEq(name || null);
 			// 同步回显引擎实际频段，让曲线反映校正结果
-			const bands: any = await _invoke('get_eq_bands');
-			eqBands = bands as PeqBand[];
+			eqBands = await getEqBands();
 			saveAll();
 		} catch (err) {
 			console.warn('[Effects] AutoEQ 应用失败', err);
@@ -244,7 +257,7 @@
 	}
 
 	function onCanvasMouseDown(e: MouseEvent) {
-		if (!_dragEnabled || !_invoke || !canvasEl) return;
+		if (!_dragEnabled || !canvasEl) return;
 		_dragIndex = -1;
 		_hoverIndex = -1;
 		const { x, y } = getCanvasCoords(e);
@@ -307,39 +320,34 @@
 	}
 
 	async function setEqFromCanvas(index: number, val: number) {
-		if (!_invoke) return;
 		if (eqBands.length === 31) {
 			// 31 段模式：通过 EQ_RANGES 映射到实际波段
 			const [lo, hi] = EQ_RANGES[index];
 			eqBands = eqBands.map((b, i) => (i >= lo && i <= hi) ? { ...b, gain_db: val } : b);
 			for (let i = lo; i <= hi && i < eqBands.length; i++) {
-				await _invoke('set_peq_band', { index: i, freq: eqBands[i].freq, gainDb: val, q: eqBands[i].q });
+				await setPeqBand(i, eqBands[i].freq, val, eqBands[i].q);
 			}
 		} else {
 			// 10 段模式：直接映射
 			eqBands = eqBands.map((b, i) => i === index ? { ...b, gain_db: val } : b);
-			await _invoke('set_peq_band', { index, freq: eqBands[index].freq, gainDb: val, q: eqBands[index].q });
+			await setPeqBand(index, eqBands[index].freq, val, eqBands[index].q);
 		}
 		// eq10 会通过 $effect 自动更新并重绘
 	}
 
 	async function updateEqFromEngine() {
-		if (!_invoke) return;
-		const bands: any = await _invoke('get_eq_bands');
-		eqBands = bands as PeqBand[];
+		eqBands = await getEqBands();
 		saveAll();
 	}
 
 	async function setEqPreset(preset: string) {
-		if (!_invoke) return;
-
 		// 取消正在进行的动画
 		if (_animId !== undefined) cancelAnimationFrame(_animId);
 
 		// 记录动画起始值（当前曲线）
 		const fromVals = [...eq10];
 
-		await _invoke('set_eq_preset', { preset });
+		await engineSetEqPreset(preset);
 		await updateEqFromEngine();
 
 		// 记录目标值（预设曲线）
@@ -368,11 +376,10 @@
 	}
 
 	async function resetEq() {
-		if (!_invoke) return;
 		if (_animId !== undefined) cancelAnimationFrame(_animId);
 
 		const fromVals = [...eq10];
-		await _invoke('reset_eq');
+		await engineResetEq();
 		await updateEqFromEngine();
 		const toVals = [...eq10];
 
