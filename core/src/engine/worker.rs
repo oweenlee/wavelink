@@ -88,6 +88,7 @@ pub(crate) fn run_engine(
                             state.play_stream(format_hint, content_length, ack, stream_handle_out);
                         }
                         Ok(EngineCommand::PlayQueue(paths)) => state.set_queue(paths),
+                        Ok(EngineCommand::PlayQueueAt(paths, start)) => state.set_queue_at(paths, start),
                         Ok(EngineCommand::NextTrack) => state.next_track(),
                         Ok(EngineCommand::PrevTrack) => state.prev_track(),
                         Ok(EngineCommand::Pause) => state.pause(),

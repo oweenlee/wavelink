@@ -2,6 +2,7 @@ import {
 	getEngineRef,
 	setOnEnded,
 	setOnTrackChanged,
+	setOnQueueChanged,
 	playQueue as enginePlayQueue,
 	pause,
 	resume,
@@ -29,6 +30,10 @@ export type PlayMode = 'normal' | 'repeat_one' | 'repeat_all' | 'shuffle';
 let _playMode = $state<PlayMode>('normal');
 const _engine = getEngineRef();
 
+// CUE 虚轨快照登记：playCueTracks 设置，playFromQueue 命中时走 CUE 跳轨播放
+// （快照 path 是 `${cuePath}#${i}` 镜像键，不能直接交给引擎解析）
+let _cueSnapshot: { cuePath: string; snapshot: Track[] } | null = null;
+
 // 引擎自带队列并自行切歌（audio-core advance_queue 按 play_mode 推进），
 // player:stopped 只在队列真正播完时发出，此时无需前端再自动切歌。
 // 切歌 / 循环 / 随机全权由引擎负责，前端仅通过 track_changed 镜像索引。
@@ -43,6 +48,26 @@ setOnTrackChanged((path: string) => {
 	const idx = pl.queue.findIndex(t => t.path === path);
 	if (idx !== -1 && idx !== pl.currentIndex) {
 		pl.setIndex(idx);
+	} else if (idx === -1 && pl.currentIndex !== -1) {
+		// 引擎在播前端队列里不存在的条目（CUE 虚轨等）：重置索引，
+		// 避免底部栏继续显示上一首曲目（display 是 "文件 - 曲名"，无法可靠还原 path）
+		pl.setIndex(-1);
+	}
+});
+
+// 引擎队列是唯一真源：queue_changed 携带 original_queue 的 display 列表，
+// 前端只做投影（path 与 display 一致时镜像顺序；不认识的条目不强行重建，
+// 否则会丢掉 Track 元数据）。CUE 虚轨 display（"文件 - 曲名"）匹配不到时保持现状。
+setOnQueueChanged((paths: string[], current: string) => {
+	const pl = getPlaylistState();
+	if (pl.queue.length === paths.length && paths.every((p, i) => pl.queue[i]?.path === p)) {
+		// 与 playAllAsQueue 同步语义一致：队列顺序完全相同 → 直接镜像索引
+		const idx = paths.indexOf(current);
+		if (idx !== pl.currentIndex) pl.setIndex(idx);
+	} else {
+		// 引擎队列含前端没有的条目（CUE 虚轨展开等）：只同步能匹配到的当前曲目
+		const i = pl.queue.findIndex(t => t.path === current);
+		if (i >= 0 && i !== pl.currentIndex) pl.setIndex(i);
 	}
 });
 
@@ -136,11 +161,35 @@ export function getPlaybackState() {
 		},
 
 		// 在当前队列内跳转：以该索引重新轮转队列后整体交给引擎。
+		// CUE 虚轨快照队列（path 为 `${cuePath}#${i}` 镜像键）不轮转，
+		// 改为 play_queue_at 让引擎从指定虚轨开始播（快照 path 无法被引擎解析）。
 		async playFromQueue(index: number) {
 			const pl = getPlaylistState();
-			if (index >= 0 && index < pl.queue.length) {
-				await this.playAllAsQueue(pl.queue, index);
+			if (index < 0 || index >= pl.queue.length) return;
+			const cue = _cueSnapshot;
+			if (
+				cue !== null &&
+				pl.queue.length === cue.snapshot.length &&
+				pl.queue.every((t, i) => t === cue.snapshot[i])
+			) {
+				await this.playCueTracks(cue.cuePath, cue.snapshot, index);
+				return;
 			}
+			await this.playAllAsQueue(pl.queue, index);
+		},
+
+		// CUE 整碟虚拟队列：引擎按 cuePath 展开虚轨并从 startIndex 轨开始播
+		// （core play_queue_at；普通队列轮转无法跳过 CUE 虚轨）。
+		// 前端同步放一份虚轨快照（Track.path = `${cuePath}#${i}` 镜像键），
+		// 供底部栏/队列展示与索引投影；快照 path 不会传给引擎。
+		async playCueTracks(cuePath: string, snapshot: Track[], startIndex: number) {
+			if (!cuePath || snapshot.length === 0) return;
+			_cueSnapshot = { cuePath, snapshot };
+			const pl = getPlaylistState();
+			pl.setQueue(snapshot);
+			pl.setIndex(Math.min(Math.max(startIndex, 0), snapshot.length - 1));
+			const { invoke } = await import('@tauri-apps/api/core');
+			await invoke('play_queue_at', { paths: [cuePath], startIndex });
 		},
 
 		// 队列播放：把【完整队列轮转】后整体交给引擎，startIndex 置顶。

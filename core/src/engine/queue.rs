@@ -201,6 +201,24 @@ impl EngineState {
         self.play_entry(&first);
     }
 
+    /// 设置播放队列并从指定索引开始播放（0-based；越界时回落到 0）。
+    /// original_queue 保持完整队列，保证 RepeatAll/Shuffle 可覆盖全碟；
+    /// QueueChanged 事件携带完整 display 列表，前端据此投影。
+    pub(crate) fn set_queue_at(&mut self, paths: Vec<String>, start_index: usize) {
+        let entries = resolve_entries(paths);
+        if entries.is_empty() {
+            self.stop_full();
+            self.queue.clear();
+            self.original_queue.clear();
+            return;
+        }
+        let start = start_index.min(entries.len() - 1);
+        let first = entries[start].clone();
+        self.queue = entries[start + 1..].to_vec();
+        self.original_queue = entries;
+        self.play_entry(&first);
+    }
+
     pub(crate) fn next_track(&mut self) {
         self.stop_playback();
         self.advance_queue();

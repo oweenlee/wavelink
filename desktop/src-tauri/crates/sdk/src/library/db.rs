@@ -309,10 +309,17 @@ impl LibraryDb {
         rows.collect()
     }
 
-    /// 所有曲目（不含 missing）
-    pub fn all_tracks(&self, limit: i64, offset: i64) -> SqlResult<Vec<Track>> {
+    /// 所有曲目（不含 missing），支持按列排序（白名单防 SQL 注入）
+    pub fn all_tracks(&self, limit: i64, offset: i64, sort_by: Option<&str>) -> SqlResult<Vec<Track>> {
+        let order = match sort_by {
+            Some("title") => "title COLLATE NOCASE, artist COLLATE NOCASE, album COLLATE NOCASE",
+            Some("album") => "album COLLATE NOCASE, disc_number, track_number",
+            Some("duration") => "duration, artist COLLATE NOCASE, album COLLATE NOCASE",
+            // 默认按艺术家/专辑/音轨序
+            _ => "artist COLLATE NOCASE, album COLLATE NOCASE, track_number",
+        };
         let mut stmt = self.conn.prepare(
-            &format!("SELECT {LIST_COLUMNS} FROM tracks WHERE missing=0 ORDER BY artist, album, track_number LIMIT ?1 OFFSET ?2"),
+            &format!("SELECT {LIST_COLUMNS} FROM tracks WHERE missing=0 ORDER BY {order} LIMIT ?1 OFFSET ?2"),
         )?;
         let rows = stmt.query_map(params![limit, offset], Self::row_to_track_light)?;
         rows.collect()

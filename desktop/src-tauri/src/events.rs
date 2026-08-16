@@ -24,6 +24,17 @@ pub fn forward_engine_events(app_handle: tauri::AppHandle, event_rx: Receiver<En
                                     .unwrap_or(0);
                                 state.media_bridge.update_metadata(title, artist, album, duration_ms);
                                 state.media_bridge.update_playback_state(true);
+                            } else {
+                                // Subsonic/WebDAV/STRM 缓存路径与 CUE 虚轨不在曲库：
+                                // 用文件名/display 兜底，保证系统媒体控制（macOS/Windows）
+                                // 至少显示标题而不是残留上一首。
+                                let name = std::path::Path::new(&path)
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .map(|n| n.trim_end_matches(".part"))
+                                    .unwrap_or("未知曲目");
+                                state.media_bridge.update_metadata(name, "", "", 0);
+                                state.media_bridge.update_playback_state(true);
                             }
                         }
                     }

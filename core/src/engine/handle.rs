@@ -175,6 +175,10 @@ impl EngineHandle {
     pub fn play_queue(&self, paths: Vec<String>) {
         let _ = self.tx.send(EngineCommand::PlayQueue(paths));
     }
+    /// 设置播放队列并从指定索引开始播放（CUE 分轨等场景，0-based）
+    pub fn play_queue_at(&self, paths: Vec<String>, start_index: usize) {
+        let _ = self.tx.send(EngineCommand::PlayQueueAt(paths, start_index));
+    }
     /// 下一首
     pub fn next_track(&self) {
         let _ = self.tx.send(EngineCommand::NextTrack);

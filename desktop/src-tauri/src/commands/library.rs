@@ -50,9 +50,9 @@ pub fn search_tracks(
 }
 
 #[tauri::command]
-pub fn get_tracks(limit: i64, offset: i64, state: State<AppState>) -> Result<Vec<Track>, String> {
+pub fn get_tracks(limit: i64, offset: i64, sort_by: Option<String>, state: State<AppState>) -> Result<Vec<Track>, String> {
     let db = state.library.lock().map_err(|e| format!("lock failed: {e}"))?;
-    db.all_tracks(limit, offset).map_err(|e| e.to_string())
+    db.all_tracks(limit, offset, sort_by.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

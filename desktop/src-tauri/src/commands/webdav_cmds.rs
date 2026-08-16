@@ -48,7 +48,7 @@ pub struct WebdavEntry {
 /// 读取持久化的 WebDAV 配置
 #[tauri::command]
 pub fn webdav_get_config() -> WebdavConfig {
-    let saved = settings::load_settings().unwrap_or_default();
+    let saved = settings::load_settings_impl().unwrap_or_default();
     WebdavConfig {
         base_url: get_str(&saved, KEY_BASE_URL),
         path: get_str(&saved, KEY_PATH),
@@ -60,12 +60,12 @@ pub fn webdav_get_config() -> WebdavConfig {
 /// 保存 WebDAV 配置（合并写入，避免覆盖其他字段）
 #[tauri::command]
 pub fn webdav_save_config(config: WebdavConfig) -> Result<(), String> {
-    let mut saved = settings::load_settings().unwrap_or_default();
+    let mut saved = settings::load_settings_impl().unwrap_or_default();
     saved.insert(KEY_BASE_URL.into(), serde_json::Value::String(config.base_url));
     saved.insert(KEY_PATH.into(), serde_json::Value::String(config.path));
     saved.insert(KEY_USERNAME.into(), serde_json::Value::String(config.username));
     saved.insert(KEY_PASSWORD.into(), serde_json::Value::String(config.password));
-    settings::save_settings(saved)
+    settings::save_settings_impl(saved)
 }
 
 fn get_str(m: &HashMap<String, serde_json::Value>, key: &str) -> String {

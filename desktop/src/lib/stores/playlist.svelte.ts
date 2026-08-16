@@ -1,17 +1,17 @@
-import {
-	getEngineRef,
-	playTrack as enginePlay,
-} from '$lib/audio/engine.svelte';
 import type { Track } from '$lib/audio/types';
 
 /**
- * Playlist store — manages the play queue and current index.
- * Calls enginePlay directly when playing from the queue.
+ * Playlist store — 前端队列镜像。
+ * 队列的唯一真源是引擎队列（core）：前端通过 setQueue 写入镜像，
+ * 索引由 track_changed / queue_changed 事件驱动。
+ * 本地增删改（addToQueue/removeFromQueue/reorderQueue/clearQueue）已移除——
+ * 之前只改前端副本、不同步引擎，是队列双状态漂移的源头之一。
+ * 如将来需要 UI 级队列编辑，应新增引擎命令（按唯一键移除 + emit_queue）
+ * 并让前端只做投影，而不是恢复本地增删改。
  */
 
 let _queue = $state<Track[]>([]);
 let _currentIndex = $state(-1);
-const _engine = getEngineRef();
 
 export function getPlaylistState() {
 	return {
@@ -25,7 +25,7 @@ export function getPlaylistState() {
 		},
 		get hasTracks() { return _queue.length > 0; },
 
-		// ── Queue management ──
+		// ── Queue mirror ──
 		setQueue(tracks: Track[]) {
 			_queue = [...tracks];
 			_currentIndex = -1;
@@ -33,49 +33,6 @@ export function getPlaylistState() {
 
 		setIndex(index: number) {
 			_currentIndex = index;
-		},
-
-		addToQueue(track: Track) {
-			_queue = [..._queue, track];
-		},
-
-		removeFromQueue(index: number) {
-			if (index < 0 || index >= _queue.length) return;
-			const wasCurrent = index === _currentIndex;
-			_queue = _queue.filter((_, i) => i !== index);
-			if (wasCurrent) {
-				_currentIndex = -1;
-			} else if (index < _currentIndex) {
-				_currentIndex--;
-			}
-		},
-
-		reorderQueue(from: number, to: number) {
-			if (from < 0 || from >= _queue.length || to < 0 || to >= _queue.length) return;
-			const newQueue = [..._queue];
-			const [moved] = newQueue.splice(from, 1);
-			newQueue.splice(to, 0, moved);
-			_queue = newQueue;
-			if (from === _currentIndex) {
-				_currentIndex = to;
-			} else if (from < _currentIndex && to >= _currentIndex) {
-				_currentIndex--;
-			} else if (from > _currentIndex && to <= _currentIndex) {
-				_currentIndex++;
-			}
-		},
-
-		clearQueue() {
-			_queue = [];
-			_currentIndex = -1;
-		},
-
-		// ── Play from queue ──
-		async playFromIndex(index: number) {
-			if (index >= 0 && index < _queue.length) {
-				_currentIndex = index;
-				await enginePlay(_queue[index]);
-			}
 		},
 	};
 }

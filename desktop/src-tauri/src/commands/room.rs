@@ -139,7 +139,7 @@ fn room_ir_path(app: &AppHandle) -> Result<String, String> {
 
 /// 读取现有设置并合并（避免覆盖其他字段）
 fn load_merged_settings() -> HashMap<String, serde_json::Value> {
-    settings::load_settings().unwrap_or_default()
+    settings::load_settings_impl().unwrap_or_default()
 }
 
 /// 默认校正配置（与 core 对齐）
@@ -187,7 +187,7 @@ pub async fn generate_room_correction(
     // 持久化路径（对齐移动端：重启后由 restore_room_correction 恢复）
     let mut saved = load_merged_settings();
     saved.insert(ROOM_IR_PATH_KEY.into(), serde_json::Value::String(ir_path));
-    settings::save_settings(saved)?;
+    settings::save_settings_impl(saved)?;
 
     Ok(RoomCorrectionReportDto {
         sample_rate: report.sample_rate,
@@ -209,13 +209,13 @@ pub fn clear_room_correction(state: State<AppState>) -> Result<(), String> {
             std::fs::remove_file(&path).ok();
         }
     }
-    settings::save_settings(saved)
+    settings::save_settings_impl(saved)
 }
 
 /// 查询当前持久化的房间校正 IR 路径（None = 未启用，前端初始化状态用）
 #[tauri::command]
 pub fn get_room_correction_path() -> Option<String> {
-    let saved = settings::load_settings().ok()?;
+    let saved = settings::load_settings_impl().ok()?;
     saved
         .get(ROOM_IR_PATH_KEY)
         .and_then(|v| v.as_str().map(String::from))
@@ -224,7 +224,7 @@ pub fn get_room_correction_path() -> Option<String> {
 /// 启动时恢复房间校正：读取持久化路径并载入卷积级。
 /// 文件被外部删除（清缓存/重装）时加载会失败，清理脏路径避免每次启动反复尝试。
 pub(crate) fn restore_room_correction(app: &AppHandle) {
-    let Ok(saved) = settings::load_settings() else {
+    let Ok(saved) = settings::load_settings_impl() else {
         return;
     };
     let path = match saved.get(ROOM_IR_PATH_KEY) {
@@ -238,7 +238,7 @@ pub(crate) fn restore_room_correction(app: &AppHandle) {
     } else {
         let mut clean = saved;
         clean.remove(ROOM_IR_PATH_KEY);
-        let _ = settings::save_settings(clean);
+        let _ = settings::save_settings_impl(clean);
         tracing::warn!("房间校正 IR 文件丢失，已清理持久化路径: {path}");
     }
 }

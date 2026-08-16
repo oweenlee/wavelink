@@ -8,6 +8,9 @@ let _viewMode = $state<'list' | 'grid'>('list');
 let _sortBy = $state<'title' | 'artist' | 'album' | 'duration'>('title');
 let _loading = $state(false);
 
+// 排序由 SQL 端完成（get_tracks sortBy，NOCASE）；切换排序时重新拉取。
+// 注意：排序变化是异步的（重新查询），LibraryView 直接使用 tracks 即可。
+
 // 浏览数据缓存：艺术家 / 专辑列表 / 专辑曲目，避免每次切换视图都重新查库
 const _artistsCache = new SvelteMap<string, string[]>();
 const _albumsByArtistCache = new SvelteMap<string, string[]>();
@@ -16,25 +19,8 @@ let _allAlbumsCache: AlbumBrief[] | null = null;
 // 专辑封面缓存（key = first_track_id）：避免每次进入专辑网格都重新从磁盘读封面
 const _albumCoverCache = new SvelteMap<number, string>();
 
-/** Sorted tracks — recomputed only when _tracks or _sortBy change */
-const _sortedTracks = $derived.by(() => {
-	const result = [..._tracks];
-	switch (_sortBy) {
-		case 'title':
-			result.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-			break;
-		case 'artist':
-			result.sort((a, b) => (a.artist || '').localeCompare(b.artist || ''));
-			break;
-		case 'album':
-			result.sort((a, b) => (a.album || '').localeCompare(b.album || ''));
-			break;
-		case 'duration':
-			result.sort((a, b) => (a.duration || 0) - (b.duration || 0));
-			break;
-	}
-	return result;
-});
+/** 曲目列表（SQL 端排序结果，无需前端再排） */
+const _sortedTracks = $derived(_tracks);
 
 export function getLibraryState() {
 	return {
@@ -47,7 +33,12 @@ export function getLibraryState() {
 		get viewMode() { return _viewMode; },
 		set viewMode(v: 'list' | 'grid') { _viewMode = v; },
 		get sortBy() { return _sortBy; },
-		set sortBy(v: typeof _sortBy) { _sortBy = v; },
+		set sortBy(v: typeof _sortBy) {
+			if (v === _sortBy) return;
+			_sortBy = v;
+			// 已在浏览列表时切换排序 → 重新从 SQL 拉取（异步刷新）
+			if (_tracks.length > 0) void this.loadTracks();
+		},
 		get loading() { return _loading; },
 
 		// ── Library loading ──
@@ -56,7 +47,7 @@ export function getLibraryState() {
 			_loading = true;
 			try {
 				const invoke = await lazyInvoke();
-				const tracks: Track[] = await invoke('get_tracks', { limit, offset });
+				const tracks: Track[] = await invoke('get_tracks', { limit, offset, sortBy: _sortBy });
 				_tracks = tracks;
 				return tracks;
 			} catch (err) {

@@ -64,7 +64,7 @@ pub fn analyze_all_replaygain(app: tauri::AppHandle, state: State<AppState>) {
         .library
         .lock()
         .ok()
-        .and_then(|db| db.all_tracks(i64::MAX, 0).ok())
+        .and_then(|db| db.all_tracks(i64::MAX, 0, None).ok())
         .unwrap_or_default()
         .into_iter()
         .map(|t| (t.path, t.track_gain))
@@ -126,7 +126,7 @@ pub fn analyze_all_tracks(app: tauri::AppHandle, state: State<AppState>) {
         .library
         .lock()
         .ok()
-        .and_then(|db| db.all_tracks(i64::MAX, 0).ok())
+        .and_then(|db| db.all_tracks(i64::MAX, 0, None).ok())
         .unwrap_or_default()
         .into_iter()
         .map(|t| (t.id, t.path))

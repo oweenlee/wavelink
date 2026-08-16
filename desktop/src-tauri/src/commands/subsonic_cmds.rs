@@ -51,7 +51,7 @@ pub struct SubsonicSong {
 /// 读取持久化的 Subsonic 配置
 #[tauri::command]
 pub fn subsonic_get_config() -> SubsonicConfig {
-    let saved = settings::load_settings().unwrap_or_default();
+    let saved = settings::load_settings_impl().unwrap_or_default();
     SubsonicConfig {
         base_url: get_str(&saved, KEY_BASE_URL),
         username: get_str(&saved, KEY_USERNAME),
@@ -62,11 +62,11 @@ pub fn subsonic_get_config() -> SubsonicConfig {
 /// 保存 Subsonic 配置（合并写入）
 #[tauri::command]
 pub fn subsonic_save_config(config: SubsonicConfig) -> Result<(), String> {
-    let mut saved = settings::load_settings().unwrap_or_default();
+    let mut saved = settings::load_settings_impl().unwrap_or_default();
     saved.insert(KEY_BASE_URL.into(), serde_json::Value::String(config.base_url));
     saved.insert(KEY_USERNAME.into(), serde_json::Value::String(config.username));
     saved.insert(KEY_PASSWORD.into(), serde_json::Value::String(config.password));
-    settings::save_settings(saved)
+    settings::save_settings_impl(saved)
 }
 
 fn get_str(m: &HashMap<String, serde_json::Value>, key: &str) -> String {

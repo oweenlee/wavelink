@@ -20,6 +20,16 @@ pub fn play_queue(paths: Vec<String>, state: State<AppState>) {
     state.engine.play_queue(paths);
 }
 
+/// 播放队列并从指定索引开始（CUE 整碟分轨等场景；0-based）
+#[tauri::command]
+pub fn play_queue_at(start_index: usize, paths: Vec<String>, state: State<AppState>) {
+    if let Some(first) = paths.first() {
+        *lock_or_die(&state.current_track) = Some(first.clone());
+    }
+    apply_track_settings(&state);
+    state.engine.play_queue_at(paths, start_index);
+}
+
 #[tauri::command]
 pub fn next_track(state: State<AppState>) { state.engine.next_track(); }
 

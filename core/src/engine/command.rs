@@ -44,6 +44,8 @@ pub enum EngineCommand {
     },
     /// 设置播放队列并从第一首开始播放
     PlayQueue(Vec<String>),
+    /// 设置播放队列并从指定索引开始播放（CUE 分轨等场景，0-based）
+    PlayQueueAt(Vec<String>, usize),
     /// 下一首
     NextTrack,
     /// 上一首（播放超过 3 秒则回到开头，否则切回上一曲）

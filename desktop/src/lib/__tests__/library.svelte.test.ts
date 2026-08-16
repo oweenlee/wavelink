@@ -46,6 +46,7 @@ describe('getLibraryState', () => {
 		state = mod.getLibraryState();
 		state.clearTracks();
 		state.searchQuery = '';
+		state.sortBy = 'title'; // 重置模块级排序状态（空列表时不触发 reload）
 	});
 
 	it('starts with empty tracks', () => {
@@ -69,50 +70,30 @@ describe('getLibraryState', () => {
 		expect(state.sortBy).toBe('artist');
 	});
 
-	it('sorts tracks by title', async () => {
+	it('loadTracks passes sortBy to SQL and keeps returned order', async () => {
 		mockInvoke.mockResolvedValueOnce([mockTrack2, mockTrack, mockTrack3]);
 		state.sortBy = 'title';
 		await state.loadTracks();
-		const sorted = state.tracks;
-		expect(sorted[0].title).toBe('Alpha');
-		expect(sorted[1].title).toBe('Beta');
-		expect(sorted[2].title).toBe('Gamma');
+		// 排序由 SQL 端完成（get_tracks sortBy），前端不再自行重排
+		expect(mockInvoke).toHaveBeenCalledWith('get_tracks', { limit: 50000, offset: 0, sortBy: 'title' });
+		expect(state.tracks.map(t => t.title)).toEqual(['Beta', 'Alpha', 'Gamma']);
 	});
 
-	it('sorts tracks by artist', async () => {
-		mockInvoke.mockResolvedValueOnce([mockTrack, mockTrack2, mockTrack3]);
+	it('changing sortBy on a loaded list reloads from SQL', async () => {
+		mockInvoke.mockResolvedValueOnce([mockTrack2]);
+		await state.loadTracks();
+		mockInvoke.mockResolvedValueOnce([mockTrack, mockTrack3]);
 		state.sortBy = 'artist';
-		await state.loadTracks();
-		const sorted = state.tracks;
-		expect(sorted[0].artist).toBe('Alice');
-		expect(sorted[1].artist).toBe('Bob');
-		expect(sorted[2].artist).toBe('Zed');
-	});
-
-	it('sorts tracks by album', async () => {
-		mockInvoke.mockResolvedValueOnce([mockTrack2, mockTrack, mockTrack3]);
-		state.sortBy = 'album';
-		await state.loadTracks();
-		const sorted = state.tracks;
-		expect(sorted[0].album).toBe('First');
-		expect(sorted[1].album).toBe('First');
-		expect(sorted[2].album).toBe('Second');
-	});
-
-	it('sorts tracks by duration', async () => {
-		mockInvoke.mockResolvedValueOnce([mockTrack, mockTrack3, mockTrack2]);
-		state.sortBy = 'duration';
-		await state.loadTracks();
-		const sorted = state.tracks;
-		expect(sorted[0].duration).toBe(100);
-		expect(sorted[1].duration).toBe(200);
-		expect(sorted[2].duration).toBe(300);
+		// setter 触发的 reload 是 fire-and-forget 异步，等一轮微任务+宏任务
+		await new Promise((r) => setTimeout(r, 10));
+		expect(mockInvoke).toHaveBeenLastCalledWith('get_tracks', { limit: 50000, offset: 0, sortBy: 'artist' });
+		expect(state.trackCount).toBe(2);
 	});
 
 	it('loadTracks calls invoke get_tracks and updates state', async () => {
 		mockInvoke.mockResolvedValueOnce([mockTrack, mockTrack2, mockTrack3]);
 		const tracks = await state.loadTracks(100, 0);
-		expect(mockInvoke).toHaveBeenCalledWith('get_tracks', { limit: 100, offset: 0 });
+		expect(mockInvoke).toHaveBeenCalledWith('get_tracks', { limit: 100, offset: 0, sortBy: 'title' });
 		expect(tracks).toHaveLength(3);
 		expect(state.trackCount).toBe(3);
 	});
@@ -182,7 +163,7 @@ describe('getLibraryState', () => {
 		mockLoader.scanDirectory.mockResolvedValueOnce(undefined);
 		await state.scanDirectory();
 		expect(mockLoader.scanDirectory).toHaveBeenCalledOnce();
-		expect(mockInvoke).toHaveBeenCalledWith('get_tracks', { limit: 50000, offset: 0 });
+		expect(mockInvoke).toHaveBeenCalledWith('get_tracks', { limit: 50000, offset: 0, sortBy: 'title' });
 	});
 
 	it('importPlaylist delegates to loader', async () => {

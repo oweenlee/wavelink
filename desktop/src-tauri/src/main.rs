@@ -38,7 +38,9 @@ fn main() {
         .setup(|app| {
             let data_dir = app.path().app_data_dir().expect("get app data dir failed");
             std::fs::create_dir_all(&data_dir).ok();
+            settings::init(&data_dir);
             setup::cleanup_part_files(&data_dir);
+            setup::cleanup_cache_oversize(&data_dir);
             let db_path = data_dir.join("library.db");
             tracing::info!("db path: {}", db_path.display());
 
@@ -188,6 +190,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::playback::play,
             commands::playback::play_queue,
+            commands::playback::play_queue_at,
             commands::playback::next_track,
             commands::playback::prev_track,
             commands::playback::pause,

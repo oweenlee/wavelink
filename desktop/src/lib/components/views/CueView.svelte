@@ -3,7 +3,8 @@
 	import { browser } from '$app/environment';
 	import { ListMusic, Upload, Play, RefreshCw, FileText } from 'lucide-svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
-	import type { CueSheet } from '$lib/audio/types';
+	import type { CueSheet, Track } from '$lib/audio/types';
+	import { getPlaybackState } from '$lib/stores/playback.svelte';
 
 	// 全部虚轨（展平后的可播列表）
 	interface FlatTrack {
@@ -82,16 +83,46 @@
 		}
 	}
 
-	// 播放指定分轨：整碟交给引擎（自动展开虚轨），再移除前面 N-1 轨
+	// 虚轨 → 前端快照 Track：path 用 `${cuePath}#${i}` 镜像键（仅展示/索引同步，
+	// 不参与引擎解析；引擎播放走 play_queue_at 展开 cuePath）
+	function toQueueTrack(tr: FlatTrack, cuePath: string, i: number): Track {
+		return {
+			id: -(i + 1),
+			path: `${cuePath}#${i}`,
+			title: tr.title,
+			artist: tr.performer ?? null,
+			album: null,
+			album_artist: null,
+			track_number: parseInt(tr.num, 10) || null,
+			disc_number: null,
+			year: null,
+			genre: null,
+			format: 'cue',
+			duration: null,
+			sample_rate: null,
+			channels: null,
+			file_size: null,
+			file_modified: null,
+			date_added: 0,
+			play_count: 0,
+			last_played: null,
+			rating: 0,
+			missing: false,
+		};
+	}
+
+	// 播放指定分轨：整碟交给引擎（自动展开虚轨），从第 n 轨开始播
 	async function playTrackN(n: number) {
 		if (!cuePath || tracks.length === 0) return;
 		playing = true;
 		error = '';
 		try {
-			await invoke('play_queue', { paths: [cuePath] });
-			for (let i = 0; i < n; i++) {
-				await invoke('remove_from_queue', { index: 1 });
-			}
+			const playback = getPlaybackState();
+			await playback.playCueTracks(
+				cuePath,
+				tracks.map((tr, i) => toQueueTrack(tr, cuePath, i)),
+				n
+			);
 		} catch (e) {
 			error = String(e);
 		} finally {

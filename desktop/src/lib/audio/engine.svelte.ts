@@ -22,6 +22,7 @@ let _capturing = $state(false);
 // 事件回调
 let _onEnded: (() => void) | null = null;
 let _onTrackChanged: ((path: string) => void) | null = null;
+let _onQueueChanged: ((paths: string[], current: string) => void) | null = null;
 
 // 延迟初始化标志
 let _initialized = false;
@@ -60,6 +61,9 @@ async function ensureListeners() {
 			_isPlaying = false;
 			_loading = false;
 		}),
+		listen<{ paths: string[]; current: string }>('player:queue_changed', (event) => {
+			if (_onQueueChanged) _onQueueChanged(event.payload.paths, event.payload.current);
+		}),
 		listen<{ rms: number; peak: number; clip: boolean }>('player:levels', (event) => {
 			_levels = event.payload;
 		}),
@@ -94,6 +98,10 @@ export function setOnEnded(cb: () => void) {
 
 export function setOnTrackChanged(cb: (path: string) => void) {
 	_onTrackChanged = cb;
+}
+
+export function setOnQueueChanged(cb: (paths: string[], current: string) => void) {
+	_onQueueChanged = cb;
 }
 
 export async function playTrack(track: Track) {
