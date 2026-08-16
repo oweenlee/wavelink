@@ -223,6 +223,8 @@ class AudioEngineRepository {
         bpm: (data['bpm'] as num?)?.toDouble(),
         key: data['key'] as String?,
         energy: (data['energy'] as num?)?.toDouble(),
+        bpmConfidence: (data['bpmConfidence'] as num?)?.toDouble(),
+        keyConfidence: (data['keyConfidence'] as num?)?.toDouble(),
       );
     } catch (_) {
       return null;
@@ -241,6 +243,8 @@ class AudioEngineRepository {
           'bpm': result.bpm,
           'key': result.key,
           'energy': result.energy,
+          'bpmConfidence': result.bpmConfidence,
+          'keyConfidence': result.keyConfidence,
         }),
       );
     } catch (_) {

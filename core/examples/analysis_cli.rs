@@ -47,7 +47,7 @@ fn main() {
     match result {
         Ok(r) => {
             println!(
-                "{}\tmax_secs={:?}\tbpm={:?}\tkey={:?}\tenergy={:.3}\t{:.2}s",
+                "{}\tmax_secs={:?}\tbpm={:?}\tkey={:?}\tenergy={:.3}\tbpm_conf={:?}\tkey_conf={:?}\t{:.2}s",
                 Path::new(&path)
                     .file_name()
                     .unwrap_or_default()
@@ -56,6 +56,8 @@ fn main() {
                 r.bpm,
                 r.key,
                 r.energy.unwrap_or(0.0),
+                r.bpm_confidence,
+                r.key_confidence,
                 t.elapsed().as_secs_f32()
             );
             if dump_chroma {

@@ -3247,12 +3247,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   AnalyzeResult dco_decode_analyze_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return AnalyzeResult(
       bpm: dco_decode_opt_box_autoadd_f_32(arr[0]),
       key: dco_decode_opt_String(arr[1]),
       energy: dco_decode_opt_box_autoadd_f_32(arr[2]),
+      bpmConfidence: dco_decode_opt_box_autoadd_f_32(arr[3]),
+      keyConfidence: dco_decode_opt_box_autoadd_f_32(arr[4]),
     );
   }
 
@@ -3735,7 +3737,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_bpm = sse_decode_opt_box_autoadd_f_32(deserializer);
     var var_key = sse_decode_opt_String(deserializer);
     var var_energy = sse_decode_opt_box_autoadd_f_32(deserializer);
-    return AnalyzeResult(bpm: var_bpm, key: var_key, energy: var_energy);
+    var var_bpmConfidence = sse_decode_opt_box_autoadd_f_32(deserializer);
+    var var_keyConfidence = sse_decode_opt_box_autoadd_f_32(deserializer);
+    return AnalyzeResult(
+      bpm: var_bpm,
+      key: var_key,
+      energy: var_energy,
+      bpmConfidence: var_bpmConfidence,
+      keyConfidence: var_keyConfidence,
+    );
   }
 
   @protected
@@ -4329,6 +4339,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_f_32(self.bpm, serializer);
     sse_encode_opt_String(self.key, serializer);
     sse_encode_opt_box_autoadd_f_32(self.energy, serializer);
+    sse_encode_opt_box_autoadd_f_32(self.bpmConfidence, serializer);
+    sse_encode_opt_box_autoadd_f_32(self.keyConfidence, serializer);
   }
 
   @protected

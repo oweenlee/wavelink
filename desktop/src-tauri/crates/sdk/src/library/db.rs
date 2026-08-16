@@ -427,6 +427,8 @@ impl LibraryDb {
                 bpm: row.get(0)?,
                 key: row.get(1)?,
                 energy: row.get(2)?,
+                bpm_confidence: None,
+                key_confidence: None,
             })
         })?;
         match rows.next() {
@@ -456,6 +458,8 @@ impl LibraryDb {
                 bpm: row.get(1)?,
                 key: row.get(2)?,
                 energy: row.get(3)?,
+                bpm_confidence: None,
+                key_confidence: None,
             };
             Ok((track_id, result))
         })?;

@@ -5,6 +5,10 @@ pub struct AnalyzeResult {
     pub bpm: Option<f32>,
     pub key: Option<String>,
     pub energy: Option<f32>,
+    /// BPM 置信度（0~1）
+    pub bpm_confidence: Option<f32>,
+    /// 调性置信度（0~1）
+    pub key_confidence: Option<f32>,
 }
 
 /// 分析音频文件（BPM + 调性 + 能量）
@@ -16,6 +20,8 @@ pub fn analyze_file(path: String) -> Result<AnalyzeResult, String> {
         bpm: result.bpm,
         key: result.key,
         energy: result.energy,
+        bpm_confidence: result.bpm_confidence,
+        key_confidence: result.key_confidence,
     })
 }
 
@@ -32,5 +38,7 @@ pub fn analyze_pcm_samples(
         bpm: result.bpm,
         key: result.key,
         energy: result.energy,
+        bpm_confidence: result.bpm_confidence,
+        key_confidence: result.key_confidence,
     }
 }

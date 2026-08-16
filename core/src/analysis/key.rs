@@ -176,9 +176,23 @@ pub fn debug_chromagram(mono: &[f32], sample_rate: u32) -> Option<[f32; 12]> {
 /// 检测调性（major/minor + 根音）
 /// 返回 (key_name, energy)
 pub fn detect_key(mono: &[f32], sample_rate: u32) -> (Option<String>, Option<f32>) {
+    let (key, energy, _conf) = detect_key_with_confidence(mono, sample_rate);
+    (key, energy)
+}
+
+/// 检测调性及其置信度（0~1），返回 (key_name, energy, confidence)。
+///
+/// 置信度 = 最优模板的 Pearson 相关系数（best_corr），衡量 chromagram 与
+/// 调性模板的匹配强度——这是 chroma 调性检测的标准把握度。
+/// 注：不惩罚相对调歧义（C 大调 vs A 小调共享几乎全部音符），
+/// 该歧义属于独立维度，可后续暴露次优调性。
+pub fn detect_key_with_confidence(
+    mono: &[f32],
+    sample_rate: u32,
+) -> (Option<String>, Option<f32>, Option<f32>) {
     let chroma = match compute_chromagram(mono, sample_rate) {
         Some(c) => c,
-        None => return (None, None),
+        None => return (None, None, None),
     };
 
     let mut best_corr = -2.0f32;
@@ -203,7 +217,7 @@ pub fn detect_key(mono: &[f32], sample_rate: u32) -> (Option<String>, Option<f32
     // 置信度门槛：相关性过低（如纯打击乐/噪声）不展示调性，
     // 避免给出误导性结果
     if best_corr < 0.35 {
-        return (None, Some(energy_of(mono)));
+        return (None, Some(energy_of(mono)), None);
     }
 
     let key = format!(
@@ -212,7 +226,7 @@ pub fn detect_key(mono: &[f32], sample_rate: u32) -> (Option<String>, Option<f32
         if best_is_major { "" } else { "m" }
     );
 
-    (Some(key), Some(energy_of(mono)))
+    (Some(key), Some(energy_of(mono)), Some(best_corr.clamp(0.0, 1.0)))
 }
 
 /// RMS → 0~1 归一化能量

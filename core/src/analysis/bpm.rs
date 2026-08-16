@@ -53,20 +53,45 @@ fn onset_envelope(samples: &[f32]) -> Vec<f32> {
     onset
 }
 
+/// 对数正态速度先验（以 120 BPM 为中心），倍频歧义时偏向中段速度。
+fn tempo_prior(bpm: f32) -> f32 {
+    (-0.5 * ((bpm / 120.0).ln() / 0.35).powi(2)).exp()
+}
+
+/// 候选 lag 的最终得分：梳状滤波 × 速度先验。
+fn score_at(corr: &[f32], lag: usize, corr_hi: usize, frame_rate: f32) -> f32 {
+    let bpm = frame_rate * 60.0 / lag as f32;
+    comb_at(corr, lag, corr_hi) * tempo_prior(bpm)
+}
+
 /// 检测 BPM：谱通量 onset + 自相关梳状滤波 + 速度先验。
 /// 返回 None 表示静音或无稳定节拍。
 pub fn detect_bpm(samples: &[f32], sample_rate: u32) -> Option<f32> {
+    detect_bpm_with_confidence(samples, sample_rate).0
+}
+
+/// 检测 BPM 及其置信度（0~1）。
+///
+/// 置信度 = 周期强度 × 峰独占度：
+/// - 周期强度：`best_raw / corr0`，衡量 onset 包络的自相关峰有多强；
+/// - 峰独占度：`1 - second/best`，次优峰越接近（如倍频/半频歧义）越低。
+///
+/// 这是「规律度 + 无歧义」的把握度，不是与人工标注对拍的正确率。
+pub fn detect_bpm_with_confidence(
+    samples: &[f32],
+    sample_rate: u32,
+) -> (Option<f32>, Option<f32>) {
     let frame_size = ONSET_FRAME;
     let hop_size = ONSET_HOP;
 
     if samples.len() < frame_size {
-        return None;
+        return (None, None);
     }
 
     let onset = onset_envelope(samples);
 
     if onset.len() < 20 {
-        return None;
+        return (None, None);
     }
 
     let n = onset.len();
@@ -79,7 +104,7 @@ pub fn detect_bpm(samples: &[f32], sample_rate: u32) -> Option<f32> {
                                                                             // 自相关需要算到 3 倍候选周期（梳状滤波用），但不超过信号一半
     let corr_hi = (cand_hi * 3).min(n / 2);
     if cand_lo >= cand_hi || corr_hi <= cand_lo {
-        return None;
+        return (None, None);
     }
 
     // 中心削波：抑制弱拍噪声
@@ -89,6 +114,12 @@ pub fn detect_bpm(samples: &[f32], sample_rate: u32) -> Option<f32> {
         .iter()
         .map(|&x| if x > threshold { x - threshold } else { 0.0 })
         .collect();
+
+    // 零滞后自相关 = 削波信号能量，用于归一化周期强度
+    let corr0 = clipped.iter().map(|x| x * x).sum::<f32>() / n as f32;
+    if corr0 < 1e-12 {
+        return (None, None);
+    }
 
     // 自相关（归一化到帧数，跨 lag 可比）
     let mut corr = vec![0.0f32; corr_hi + 1];
@@ -101,21 +132,11 @@ pub fn detect_bpm(samples: &[f32], sample_rate: u32) -> Option<f32> {
     }
 
     // 梳状得分 × 速度先验
-    const COMB_WEIGHTS: [f32; 3] = [1.0, 0.8, 0.64];
     let mut best_score = 0.0f32;
     let mut best_lag = cand_lo;
     let mut best_raw = 0.0f32;
     for lag in cand_lo..=cand_hi {
-        let mut s = 0.0f32;
-        for (k, w) in COMB_WEIGHTS.iter().enumerate() {
-            let l = lag * (k + 1);
-            if l <= corr_hi {
-                s += w * corr[l];
-            }
-        }
-        let bpm = frame_rate * 60.0 / lag as f32;
-        let prior = (-0.5 * ((bpm / 120.0).ln() / 0.35).powi(2)).exp();
-        let score = s * prior;
+        let score = score_at(&corr, lag, corr_hi, frame_rate);
         if score > best_score {
             best_score = score;
             best_lag = lag;
@@ -125,7 +146,21 @@ pub fn detect_bpm(samples: &[f32], sample_rate: u32) -> Option<f32> {
 
     // 静音/无节拍：自相关本身接近零
     if best_raw < 1e-6 {
-        return None;
+        return (None, None);
+    }
+
+    // 次优峰：排除最优 lag 邻域（±12.5%）后再取最大，捕捉倍频/半频竞争峰
+    // 而非同一峰旁的相邻 lag（相邻 lag 得分几乎相同，会稀释 margin）。
+    let mut second_score = 0.0f32;
+    let sep = (best_lag as f32 / 8.0).max(1.0);
+    for lag in cand_lo..=cand_hi {
+        if (lag as f32 - best_lag as f32).abs() < sep {
+            continue;
+        }
+        let score = score_at(&corr, lag, corr_hi, frame_rate);
+        if score > second_score {
+            second_score = score;
+        }
     }
 
     // 抛物线插值细化峰值位置
@@ -144,7 +179,16 @@ pub fn detect_bpm(samples: &[f32], sample_rate: u32) -> Option<f32> {
     };
 
     let bpm = frame_rate * 60.0 / lag_f.max(1.0);
-    Some((bpm * 10.0).round() / 10.0)
+
+    let salience = (best_raw / corr0).clamp(0.0, 1.0);
+    let margin = if best_score > 1e-12 {
+        (1.0 - second_score / best_score).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let confidence = (salience * margin).clamp(0.0, 1.0);
+
+    (Some((bpm * 10.0).round() / 10.0), Some(confidence))
 }
 
 fn comb_at(corr: &[f32], lag: usize, corr_hi: usize) -> f32 {

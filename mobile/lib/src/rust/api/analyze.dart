@@ -27,10 +27,27 @@ class AnalyzeResult {
   final String? key;
   final double? energy;
 
-  const AnalyzeResult({this.bpm, this.key, this.energy});
+  /// BPM 置信度（0~1）
+  final double? bpmConfidence;
+
+  /// 调性置信度（0~1）
+  final double? keyConfidence;
+
+  const AnalyzeResult({
+    this.bpm,
+    this.key,
+    this.energy,
+    this.bpmConfidence,
+    this.keyConfidence,
+  });
 
   @override
-  int get hashCode => bpm.hashCode ^ key.hashCode ^ energy.hashCode;
+  int get hashCode =>
+      bpm.hashCode ^
+      key.hashCode ^
+      energy.hashCode ^
+      bpmConfidence.hashCode ^
+      keyConfidence.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -39,5 +56,7 @@ class AnalyzeResult {
           runtimeType == other.runtimeType &&
           bpm == other.bpm &&
           key == other.key &&
-          energy == other.energy;
+          energy == other.energy &&
+          bpmConfidence == other.bpmConfidence &&
+          keyConfidence == other.keyConfidence;
 }

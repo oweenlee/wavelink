@@ -3374,10 +3374,14 @@ impl SseDecode for crate::api::analyze::AnalyzeResult {
         let mut var_bpm = <Option<f32>>::sse_decode(deserializer);
         let mut var_key = <Option<String>>::sse_decode(deserializer);
         let mut var_energy = <Option<f32>>::sse_decode(deserializer);
+        let mut var_bpmConfidence = <Option<f32>>::sse_decode(deserializer);
+        let mut var_keyConfidence = <Option<f32>>::sse_decode(deserializer);
         return crate::api::analyze::AnalyzeResult {
             bpm: var_bpm,
             key: var_key,
             energy: var_energy,
+            bpm_confidence: var_bpmConfidence,
+            key_confidence: var_keyConfidence,
         };
     }
 }
@@ -4147,6 +4151,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::analyze::AnalyzeResult {
             self.bpm.into_into_dart().into_dart(),
             self.key.into_into_dart().into_dart(),
             self.energy.into_into_dart().into_dart(),
+            self.bpm_confidence.into_into_dart().into_dart(),
+            self.key_confidence.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -4565,6 +4571,8 @@ impl SseEncode for crate::api::analyze::AnalyzeResult {
         <Option<f32>>::sse_encode(self.bpm, serializer);
         <Option<String>>::sse_encode(self.key, serializer);
         <Option<f32>>::sse_encode(self.energy, serializer);
+        <Option<f32>>::sse_encode(self.bpm_confidence, serializer);
+        <Option<f32>>::sse_encode(self.key_confidence, serializer);
     }
 }
 

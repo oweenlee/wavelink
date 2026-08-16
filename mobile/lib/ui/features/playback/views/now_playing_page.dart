@@ -689,9 +689,18 @@ class _Tags extends StatelessWidget {
       spacing: 8,
       children: [
           // key 带 song.id：切歌后倍速选择随新歌重置，不残留上一首的状态
-          if (bpm != null) _BpmTag(key: ValueKey('bpm_${song.id}'), bpm: bpm),
+          if (bpm != null)
+            _BpmTag(
+              key: ValueKey('bpm_${song.id}'),
+              bpm: bpm,
+              confidence: analysis?.bpmConfidence,
+            ),
           if (key != null)
-            _TechTag(icon: LucideIcons.music, label: key),
+            _TechTag(
+              icon: LucideIcons.music,
+              label: key,
+              confidence: analysis?.keyConfidence,
+            ),
         ],
     );
   }
@@ -702,7 +711,8 @@ class _Tags extends StatelessWidget {
 /// 算法无法自动消解；与 DJ 软件（rekordbox/Serato）同款交互：一键切到感知拍。
 class _BpmTag extends StatefulWidget {
   final double bpm;
-  const _BpmTag({super.key, required this.bpm});
+  final double? confidence;
+  const _BpmTag({super.key, required this.bpm, this.confidence});
 
   @override
   State<_BpmTag> createState() => _BpmTagState();
@@ -739,6 +749,7 @@ class _BpmTagState extends State<_BpmTag> {
         child: _TechTag(
           icon: LucideIcons.gauge,
           label: '${scaled.round()} BPM$suffix',
+          confidence: widget.confidence,
         ),
       ),
     );
@@ -748,7 +759,8 @@ class _BpmTagState extends State<_BpmTag> {
 class _TechTag extends StatelessWidget {
   final IconData icon;
   final String label;
-  const _TechTag({required this.icon, required this.label});
+  final double? confidence;
+  const _TechTag({required this.icon, required this.label, this.confidence});
 
   @override
   Widget build(BuildContext context) {
@@ -774,10 +786,31 @@ class _TechTag extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
+          if (confidence != null) ...[
+            const SizedBox(width: 6),
+            Tooltip(
+              message: '置信度 ${(confidence! * 100).round()}%',
+              child: Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: _confColor(confidence!),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
+}
+
+/// 置信度（0~1）→ 状态点颜色：高=绿，中=琥珀，低=红。
+Color _confColor(double conf) {
+  if (conf >= 0.6) return const Color(0xFF34D399);
+  if (conf >= 0.35) return const Color(0xFFFBBF24);
+  return const Color(0xFFF87171);
 }
 
 // ── Progress Row ──

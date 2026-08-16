@@ -11,7 +11,7 @@ use crate::decoder;
 use crate::TARGET_CHANNELS;
 use crate::TARGET_SAMPLE_RATE;
 
-/// 音频分析结果（BPM / 调性 / 能量）
+/// 音频分析结果（BPM / 调性 / 能量 / 置信度）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AnalysisResult {
     /// 每分钟拍数，None 表示未检测到稳定节拍
@@ -20,6 +20,10 @@ pub struct AnalysisResult {
     pub key: Option<String>,
     /// 能量值（0~1 左右），基于 RMS 计算
     pub energy: Option<f32>,
+    /// BPM 置信度（0~1）：周期强度 × 峰独占度，见 bpm::detect_bpm_with_confidence
+    pub bpm_confidence: Option<f32>,
+    /// 调性置信度（0~1）：最优模板的 Pearson 相关系数，见 key::detect_key_with_confidence
+    pub key_confidence: Option<f32>,
 }
 
 /// 将交织立体声样本下混为单声道
@@ -69,10 +73,16 @@ pub fn analyze_file(path: &Path) -> Result<AnalysisResult, String> {
 pub fn analyze_from_samples(samples: &[f32], sample_rate: u32, channels: u32) -> AnalysisResult {
     let mono = mix_to_mono(samples, channels);
 
-    let bpm = bpm::detect_bpm(&mono, sample_rate);
-    let (key, energy) = key::detect_key(&mono, sample_rate);
+    let (bpm, bpm_confidence) = bpm::detect_bpm_with_confidence(&mono, sample_rate);
+    let (key, energy, key_confidence) = key::detect_key_with_confidence(&mono, sample_rate);
 
-    AnalysisResult { bpm, key, energy }
+    AnalysisResult {
+        bpm,
+        key,
+        energy,
+        bpm_confidence,
+        key_confidence,
+    }
 }
 
 #[cfg(test)]

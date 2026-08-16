@@ -112,11 +112,14 @@ Future<void> engineSetStereoWidener({
 Future<void> engineSetSpeed({required double speed}) =>
     RustLib.instance.api.crateApiEngineEngineSetSpeed(speed: speed);
 
-/// 设置引擎输出采样率（下次播放生效）。
+/// 设置引擎输出采样率（重建输出流，bit-perfect 协调用）。
 ///
-/// iOS bit-perfect 协调：Swift 先把 `AVAudioSession` 设到目标速率并读回实际速率，
-/// Dart 再调用本方法使引擎输出速率与设备一致。命令走 FIFO 通道，
-/// 在同一首播放之前发送即可保证先于 play 生效。若速率 == 文件速率则不重采样（bit-perfect）。
+/// - iOS：Swift 先把 `AVAudioSession` 设到目标速率并读回实际速率，Dart 再调用
+///   本方法使引擎输出速率与设备一致
+/// - Android：无会话协商，Dart 直接以文件速率调用；Oboe 内部先试
+///   Exclusive（设备允许即真 bit-perfect），失败回退 Shared
+/// 命令走 FIFO 通道，在同一首播放之前发送即可保证先于 play 生效。
+/// 若速率 == 文件速率则不重采样（bit-perfect）。
 Future<void> engineSetOutputSampleRate({required int rate}) =>
     RustLib.instance.api.crateApiEngineEngineSetOutputSampleRate(rate: rate);
 
