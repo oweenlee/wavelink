@@ -42,3 +42,4 @@ cd mobile && flutter run                # Rust 层自动编译 audio-core
   （`desktop/src-tauri`、`core/fuzz`）各自声明同款 patch，否则双版本编译冲突。
 - `core/vendor/oboe` 是根 workspace 隐式成员（经 path 依赖自动加入），
   有意保留以继承 `[profile]` 优化配置。
+- **DSP 参数语义**：以 `core/src/engine` 的定义为准，两端只透传不改写。

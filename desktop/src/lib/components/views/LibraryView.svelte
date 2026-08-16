@@ -568,7 +568,7 @@
 		transition: all 0.1s; position: relative; z-index: 1;
 	}
 	.td-action:hover { color: var(--fg-secondary); background: var(--bg-hover); }
-	.td-action-del:hover { color: rgba(255, 80, 80, 0.6); background: rgba(255, 80, 80, 0.08); }
+	.td-action-del:hover { color: rgba(232, 93, 93, 0.6); background: rgba(232, 93, 93, 0.08); }
 	.track-row.active .td-title-text { color: var(--accent); }
 
 	/* ── Album grid ── */
@@ -603,7 +603,7 @@
 		width: 100%;
 		aspect-ratio: 1;
 		border-radius: var(--radius-md);
-		background: linear-gradient(135deg, #1a1a1a, #242420);
+		background: linear-gradient(135deg, #16191b, #1f2427);
 		background-size: cover;
 		background-position: center;
 		display: flex;
@@ -667,7 +667,7 @@
 	.confirm-dialog {
 		position: fixed; top: 50%; left: 50%; z-index: 201;
 		transform: translate(-50%, -50%);
-		background: rgba(18,18,18,0.97);
+		background: rgba(22, 25, 27, 0.97);
 		border: 1px solid var(--separator); border-radius: var(--radius-xl);
 		padding: 24px; max-width: 360px; width: 90vw;
 	}
@@ -675,8 +675,8 @@
 	.confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
 	.btn-cancel { padding: 8px 18px; border-radius: var(--radius-md); border: 1px solid var(--separator); background: transparent; color: var(--fg-secondary); font-size: 13px; font-family: inherit; cursor: pointer; }
 	.btn-cancel:hover { background: var(--bg-hover); }
-	.btn-danger { padding: 8px 18px; border-radius: var(--radius-md); border: none; background: rgba(255, 80, 80, 0.15); color: rgba(255, 80, 80, 0.8); font-size: 13px; font-family: inherit; cursor: pointer; }
-	.btn-danger:hover { background: rgba(255, 80, 80, 0.25); }
+	.btn-danger { padding: 8px 18px; border-radius: var(--radius-md); border: none; background: rgba(232, 93, 93, 0.15); color: rgba(232, 93, 93, 0.8); font-size: 13px; font-family: inherit; cursor: pointer; }
+	.btn-danger:hover { background: rgba(232, 93, 93, 0.25); }
 
 	.import-msg { font-size: 11px; color: var(--accent); margin-left: var(--space-2); white-space: nowrap; }
 	.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--fg-tertiary); border-top-color: var(--fg-primary); border-radius: 50%; animation: spin 0.6s linear infinite; }
@@ -689,6 +689,6 @@
 	.folder-list { display: flex; flex-direction: column; gap: 4px; }
 	.folder-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 	.folder-path { font-size: 12px; color: var(--fg-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
-	.folder-remove { font-size: 11px; padding: 2px 8px; border: none; border-radius: var(--radius-sm); background: rgba(255,80,80,0.1); color: rgba(255,80,80,0.7); font-family: inherit; cursor: pointer; flex-shrink: 0; }
-	.folder-remove:hover { background: rgba(255,80,80,0.2); }
+	.folder-remove { font-size: 11px; padding: 2px 8px; border: none; border-radius: var(--radius-sm); background: rgba(232,93,93,0.1); color: rgba(232,93,93,0.7); font-family: inherit; cursor: pointer; flex-shrink: 0; }
+	.folder-remove:hover { background: rgba(232,93,93,0.2); }
 </style>

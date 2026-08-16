@@ -121,7 +121,7 @@
 
 	.panel-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--separator); }
 	.track-info { display: flex; align-items: center; gap: 14px; }
-	.mini-cover { width: 44px; height: 44px; border-radius: var(--radius-md); background-image: linear-gradient(135deg, #2a2a4e, #1a1a3e); background-size: cover; background-position: center; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--fg-quaternary); }
+	.mini-cover { width: 44px; height: 44px; border-radius: var(--radius-md); background-image: linear-gradient(135deg, #1f2427, #16191b); background-size: cover; background-position: center; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--fg-quaternary); }
 	.track-name { font-size: 15px; font-weight: 600; color: var(--fg-primary); }
 	.track-artist { font-size: 12px; color: var(--fg-tertiary); margin-top: 2px; }
 	.close-btn { width: 36px; height: 36px; border-radius: var(--radius-md); border: none; background: var(--bg-hover); color: var(--fg-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
@@ -141,5 +141,5 @@
 	.status p { font-size: 14px; }
 
 	.progress-bar { height: 2px; background: var(--bg-active); flex-shrink: 0; }
-	.progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #cc88cc)); border-radius: 1px; transition: width 0.3s linear; }
+	.progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 70%, var(--fg-secondary))); border-radius: 1px; transition: width 0.3s linear; }
 </style>

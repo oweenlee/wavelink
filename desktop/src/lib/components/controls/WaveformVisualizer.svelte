@@ -41,9 +41,9 @@
           ctx!.lineTo(x, centerY + s * half);
         }
 
-        ctx!.strokeStyle = 'rgba(226, 166, 61, 0.7)';
+        ctx!.strokeStyle = 'rgba(232, 85, 63, 0.7)';
         ctx!.lineWidth = 1.5;
-        ctx!.shadowColor = 'rgba(226, 166, 61, 0.1)';
+        ctx!.shadowColor = 'rgba(232, 85, 63, 0.1)';
         ctx!.shadowBlur = 4;
         ctx!.stroke();
         ctx!.shadowBlur = 0;

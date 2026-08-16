@@ -9,7 +9,7 @@
 
 .glass-l1 { background: var(--bg-surface); }
 .glass-l2 { background: var(--bg-elevated); }
-.glass-l3 { background: #222222; }
+.glass-l3 { background: var(--bg-elevated); }
 
 /* ── Scrollbar ── */
 * { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.08) transparent; }
@@ -88,7 +88,7 @@
   gap: var(--space-2);
   padding: var(--space-1);
   border: none;
-  background: #2a2a2a;
+  background: #1f2427;
   border-radius: var(--space-5);
   cursor: pointer;
   transition: background 0.2s;
@@ -115,7 +115,7 @@
   appearance: none;
   height: 3px;
   border-radius: 2px;
-  background: #2a2a2a;
+  background: #1f2427;
   outline: none;
   cursor: pointer;
 }

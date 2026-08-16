@@ -34,7 +34,7 @@
     transition: background 0.08s, transform 0.08s;
   }
   .seg.active { background: var(--accent); }
-  .seg-ok.active { background: #4ade80; }
-  .seg-warn.active { background: #facc15; }
-  .seg-clip.active { background: #ef4444; }
+  .seg-ok.active { background: #4ec9a0; }
+  .seg-warn.active { background: #e8b33d; }
+  .seg-clip.active { background: #e85d5d; }
 </style>

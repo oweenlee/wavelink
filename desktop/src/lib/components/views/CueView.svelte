@@ -169,7 +169,7 @@
 	.btn:hover { background: var(--bg-hover); }
 	.btn:disabled { opacity: 0.5; cursor: default; }
 
-	.error-banner { padding: 10px 12px; border-radius: 8px; background: rgba(255, 80, 80, 0.08); border: 1px solid rgba(255, 80, 80, 0.25); font-size: 12px; color: rgba(255, 110, 110, 0.9); }
+	.error-banner { padding: 10px 12px; border-radius: 8px; background: rgba(232, 93, 93, 0.08); border: 1px solid rgba(232, 93, 93, 0.25); font-size: 12px; color: rgba(232, 93, 93, 0.9); }
 
 	.empty { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 60px 0; color: var(--fg-tertiary); font-size: 13px; }
 	.empty :global(svg) { opacity: 0.35; }

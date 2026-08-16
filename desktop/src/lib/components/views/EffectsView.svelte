@@ -515,8 +515,8 @@
 			grad.addColorStop(0.5, `rgba(${accentRgba.r},${accentRgba.g},${accentRgba.b},0.07)`);
 			grad.addColorStop(1, `rgba(${accentRgba.r},${accentRgba.g},${accentRgba.b},0.02)`);
 		} else {
-			grad.addColorStop(0, 'rgba(226,166,61,0.20)');
-			grad.addColorStop(1, 'rgba(226,166,61,0.02)');
+			grad.addColorStop(0, 'rgba(232,85,63,0.20)');
+			grad.addColorStop(1, 'rgba(232,85,63,0.02)');
 		}
 		ctx.fillStyle = grad;
 		ctx.fill();
@@ -691,8 +691,8 @@
 	.btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--separator); background: var(--bg-surface); color: var(--fg-secondary); font-size: 12px; font-family: inherit; cursor: pointer; transition: all 0.15s; }
 	.btn:hover { background: var(--bg-hover); color: var(--fg-primary); }
 	.btn-sm { padding: 5px 10px; font-size: 11px; }
-	.btn.danger { border-color: rgba(255, 80, 80, 0.15); color: rgba(255, 80, 80, 0.5); }
-	.btn.danger:hover { background: rgba(255, 80, 80, 0.08); }
+	.btn.danger { border-color: rgba(232, 93, 93, 0.15); color: rgba(232, 93, 93, 0.5); }
+	.btn.danger:hover { background: rgba(232, 93, 93, 0.08); }
 
 	.preset-select { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--separator); background: var(--bg-surface); color: var(--fg-secondary); font-size: 12px; font-family: inherit; outline: none; cursor: pointer; }
 
@@ -728,7 +728,7 @@
 	.toggle-label { position: absolute; left: 56px; font-size: 12px; color: var(--fg-secondary); white-space: nowrap; }
 
 	.status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-quaternary); }
-	.status-dot.active { background: #44cc88; box-shadow: 0 0 6px rgba(68, 204, 136, 0.4); }
+	.status-dot.active { background: #4ec9a0; box-shadow: 0 0 6px rgba(78, 201, 160, 0.4); }
 	.status-text { font-size: 11px; color: var(--fg-tertiary); }
 
 	.slider-row { display: flex; align-items: center; gap: 10px; }

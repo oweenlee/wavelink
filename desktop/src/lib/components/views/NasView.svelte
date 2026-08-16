@@ -185,7 +185,7 @@
 	.header h1 { font-size: 20px; font-weight: 600; color: var(--fg-primary); margin: 0; }
 
 	.loading { display: flex; align-items: center; gap: var(--space-2); color: var(--fg-tertiary); font-size: 13px; padding: var(--space-8) 0; justify-content: center; }
-	.error { color: #ef4444; font-size: 13px; padding: var(--space-3); background: rgba(239,68,68,0.1); border-radius: var(--radius-md); margin-bottom: var(--space-4); }
+	.error { color: #e85d5d; font-size: 13px; padding: var(--space-3); background: rgba(232,93,93,0.1); border-radius: var(--radius-md); margin-bottom: var(--space-4); }
 
 	.empty { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); padding: var(--space-12) 0; color: var(--fg-tertiary); }
 	.empty p { margin: 0; font-size: 14px; }
@@ -213,7 +213,7 @@
 	.card-name { font-size: 14px; font-weight: 500; color: var(--fg-primary); }
 	.card-detail { font-size: 12px; color: var(--fg-tertiary); font-family: var(--font-mono, monospace); }
 	.card-status { font-size: 11px; color: var(--fg-quaternary); margin-top: 2px; }
-	.card-status.connected { color: #22c55e; }
+	.card-status.connected { color: #4ec9a0; }
 
 	.card-actions { display: flex; gap: var(--space-1); flex-shrink: 0; }
 
@@ -225,9 +225,9 @@
 	}
 	.btn-icon:hover { background: var(--bg-hover); color: var(--fg-primary); }
 	.btn-icon:disabled { opacity: 0.4; cursor: not-allowed; }
-	.btn-mount:hover { color: #22c55e; }
-	.btn-unmount:hover { color: #f59e0b; }
-	.btn-danger:hover { color: #ef4444; background: rgba(239,68,68,0.1); }
+	.btn-mount:hover { color: #4ec9a0; }
+	.btn-unmount:hover { color: #e8b33d; }
+	.btn-danger:hover { color: #e85d5d; background: rgba(232,93,93,0.1); }
 
 	.btn-primary {
 		display: inline-flex; align-items: center; gap: var(--space-1);

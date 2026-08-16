@@ -495,26 +495,26 @@
 	.btn-add { padding: 4px 12px; border: none; border-radius: 6px; background: var(--accent); color: #fff; font-size: 12px; cursor: pointer; transition: all 0.15s; }
 	.btn-add:hover { filter: brightness(1.15); }
 	.btn-remove { width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: var(--fg-tertiary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; }
-	.btn-remove:hover { background: rgba(239,68,68,0.15); color: #ef4444; }
+	.btn-remove:hover { background: rgba(232,93,93,0.15); color: #e85d5d; }
 	.empty-hint { font-size: 12px; color: var(--fg-tertiary); text-align: center; padding: 8px 0; }
 
 	.events-list { display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow-y: auto; background: rgba(0,0,0,0.1); border-radius: 8px; padding: 6px 8px; }
 	.event-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 4px; font-size: 11px; }
-	.event-row.event-added { color: #44cc88; }
-	.event-row.event-removed { color: #ef4444; }
+	.event-row.event-added { color: #4ec9a0; }
+	.event-row.event-removed { color: #e85d5d; }
 	.event-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-	.dot-added { background: #44cc88; }
-	.dot-removed { background: #ef4444; }
+	.dot-added { background: #4ec9a0; }
+	.dot-removed { background: #e85d5d; }
 	.event-type { font-variant-numeric: tabular-nums; min-width: 12px; font-weight: 600; }
 	.event-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.event-time { color: var(--fg-quaternary); flex-shrink: 0; }
 	.badge { padding: 2px 10px; border-radius: 10px; font-size: 12px; font-variant-numeric: tabular-nums; background: rgba(255,255,255,0.06); color: var(--fg-secondary); }
-	.badge.badge-warn { background: rgba(239,68,68,0.15); color: #ef4444; }
+	.badge.badge-warn { background: rgba(232,93,93,0.15); color: #e85d5d; }
 	.btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--separator); background: var(--bg-surface); color: var(--fg-secondary); font-size: 12px; font-family: inherit; cursor: pointer; transition: all 0.15s; }
 	.btn:hover { background: var(--bg-hover); color: var(--fg-primary); }
 	.btn:disabled { opacity: 0.4; cursor: default; }
 	.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
-	.btn-add.active { background: rgba(239,68,68,0.15); color: #ef4444; border-color: rgba(239,68,68,0.2); }
+	.btn-add.active { background: rgba(232,93,93,0.15); color: #e85d5d; border-color: rgba(232,93,93,0.2); }
 
 	.advanced-toggle {
 		display: flex; align-items: center; gap: 6px; padding: 6px 0; border: none;

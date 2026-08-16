@@ -70,7 +70,7 @@
 	.tooltip {
 		position: absolute; top: -28px; transform: translateX(-50%);
 		font-family: var(--font-mono); font-size: 10px; color: var(--fg-secondary);
-		background: rgba(10,10,20,0.9); padding: 2px 6px;
+		background: rgba(14, 16, 17, 0.9); padding: 2px 6px;
 		border-radius: 4px; border: 1px solid var(--separator);
 		pointer-events: none; white-space: nowrap;
 	}

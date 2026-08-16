@@ -230,7 +230,7 @@
 	.header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-6); }
 	.header h1 { font-size: 20px; font-weight: 600; color: var(--fg-primary); margin: 0; }
 
-	.error { color: #ef4444; font-size: 13px; padding: var(--space-3); background: rgba(239,68,68,0.1); border-radius: var(--radius-md); margin-bottom: var(--space-4); }
+	.error { color: #e85d5d; font-size: 13px; padding: var(--space-3); background: rgba(232,93,93,0.1); border-radius: var(--radius-md); margin-bottom: var(--space-4); }
 
 	.empty { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); padding: var(--space-12) 0; color: var(--fg-tertiary); }
 	.empty p { margin: 0; font-size: 14px; }
@@ -242,7 +242,7 @@
 		padding: var(--space-2) var(--space-3); background: var(--glass-bg);
 		border-radius: var(--radius-md); margin-bottom: var(--space-3);
 	}
-	.conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
+	.conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ec9a0; flex-shrink: 0; }
 	.conn-url { flex: 1; font-size: 12px; color: var(--fg-secondary); font-family: var(--font-mono, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 	.search-row { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }

@@ -54,7 +54,7 @@
 		width: 200px; min-width: 200px; height: 100%;
 		display: flex; flex-direction: column;
 		padding: var(--space-6) var(--space-3);
-		background: #0a0a0c;
+		background: #08090a;
 		border-right: 0.5px solid rgba(255, 255, 255, 0.04);
 	}
 

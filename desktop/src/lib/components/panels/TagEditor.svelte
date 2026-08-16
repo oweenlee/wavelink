@@ -144,7 +144,7 @@
 	.field.half { flex: 1; }
 
 	.msg { padding: 8px 12px; border-radius: var(--radius-sm); font-size: 13px; }
-	.msg.error { background: rgba(255,80,80,0.1); color: rgba(255,80,80,0.7); }
+	.msg.error { background: rgba(232,93,93,0.1); color: rgba(232,93,93,0.7); }
 	.msg.success { background: rgba(68,204,136,0.1); color: rgba(68,204,136,0.7); text-align: center; }
 
 	.editor-footer { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px 18px; }

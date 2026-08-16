@@ -80,7 +80,7 @@
 
 	let coverStyle = $derived.by(() => {
 		if (coverDataUrl) return `background-image: url(${coverDataUrl})`;
-		return 'background: linear-gradient(135deg, #1a1a1a, #242420)'
+		return 'background: linear-gradient(135deg, #16191b, #1f2427)'
 	});
 </script>
 
@@ -193,7 +193,7 @@
 
 	.ctrl-play {
 		width: 36px; height: 36px; border-radius: 50%; border: none; outline: none;
-		background: linear-gradient(135deg, var(--accent-dim) 0%, rgba(226, 166, 61, 0.18) 100%);
+		background: linear-gradient(135deg, var(--accent-dim) 0%, rgba(232, 85, 63, 0.18) 100%);
 		color: var(--accent);
 		cursor: pointer; display: flex; align-items: center; justify-content: center;
 		transition: all 0.15s var(--ease-spring);

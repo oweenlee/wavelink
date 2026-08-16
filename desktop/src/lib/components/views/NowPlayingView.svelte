@@ -389,7 +389,7 @@
 	.np {
 		position: fixed; inset: 0; z-index: 999;
 		overflow: hidden;
-		background: #080808;
+		background: #08090a;
 		display: flex; align-items: center; justify-content: center;
 		animation: npFadeIn 0.25s ease-out;
 		transition: --np-glow 1.6s ease;
@@ -459,13 +459,13 @@
 				rgba(0,0,0,0.15) 2px,
 				rgba(0,0,0,0.15) 3px
 			),
-			linear-gradient(135deg, #1a1a1a, #242420);
+			linear-gradient(135deg, #16191b, #1f2427);
 		box-shadow: 0 16px 48px rgba(0,0,0,0.5), inset 0 0 60px rgba(0,0,0,0.3);
 	}
 	.np-art {
 		position: relative;
 		width: 180px; height: 180px; border-radius: 50%;
-		background: linear-gradient(135deg, #1a1a1a, #242420);
+		background: linear-gradient(135deg, #16191b, #1f2427);
 		background-size: cover; background-position: center;
 		box-shadow: 0 0 0 4px rgba(0,0,0,0.3), 0 4px 20px rgba(0,0,0,0.4);
 		display: flex; align-items: center; justify-content: center;
@@ -529,7 +529,7 @@
 	}
 	.lamp-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.12); transition: background 0.3s, box-shadow 0.3s; }
 	.lamp-text { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.4px; color: var(--fg-tertiary); transition: color 0.3s; }
-	.spec-lamp.on { border-color: rgba(226,166,61,0.35); background: var(--accent-dim); }
+	.spec-lamp.on { border-color: rgba(232,85,63,0.35); background: var(--accent-dim); }
 	.spec-lamp.on .lamp-dot { background: var(--accent); animation: lampPulse 2.4s ease-in-out infinite; }
 	.spec-lamp.on .lamp-text { color: var(--accent); }
 	@keyframes lampPulse {
@@ -580,7 +580,7 @@
 	.np-queue-panel {
 		position: absolute; top: 0; right: 0; bottom: 0; z-index: 20;
 		width: 320px;
-		background: rgba(12, 12, 12, 0.97);
+		background: rgba(14, 16, 17, 0.97);
 		border-left: 1px solid rgba(255,255,255,0.06);
 		display: flex; flex-direction: column;
 	}
@@ -640,7 +640,7 @@
 	.np-btn-play {
 		width: 52px; height: 52px;
 		background: var(--accent); color: #fff; border-radius: 50%;
-		box-shadow: 0 4px 20px rgba(var(--accent-rgb, 226, 166, 61), 0.3);
+		box-shadow: 0 4px 20px rgba(var(--accent-rgb, 232, 85, 63), 0.3);
 	}
 	.np-btn-play:hover { transform: scale(1.06); color: #fff; }
 	.np-btn-play:active { transform: scale(0.95); }

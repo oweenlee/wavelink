@@ -93,7 +93,8 @@ describe('getSettingsState', () => {
 		});
 		await state.load();
 		expect(mockInvoke).toHaveBeenCalledWith('load_settings');
-		expect(state.accentColor).toBe('#ff0000');
+		// 非白名单 accentColor 回退默认色
+		expect(state.accentColor).toBe('#e8553f');
 		expect(state.theme).toBe('light');
 		expect(state.sampleRate).toBe(48000);
 		expect(state.bufferMs).toBe(100);
@@ -149,10 +150,17 @@ describe('getSettingsState', () => {
 		expect(mockInvoke).toHaveBeenCalledWith('set_replaygain', { enabled: true });
 	});
 
-	it('setAccentColor updates and saves', async () => {
+	it('setAccentColor with palette color updates and saves', async () => {
+		mockInvoke.mockResolvedValueOnce(undefined);
+		await state.setAccentColor('#5b9bd5');
+		expect(state.accentColor).toBe('#5b9bd5');
+		expect(mockInvoke).toHaveBeenCalledWith('save_settings', expect.any(Object));
+	});
+
+	it('setAccentColor with non-palette color falls back to default', async () => {
 		mockInvoke.mockResolvedValueOnce(undefined);
 		await state.setAccentColor('#00ff00');
-		expect(state.accentColor).toBe('#00ff00');
+		expect(state.accentColor).toBe('#e8553f');
 		expect(mockInvoke).toHaveBeenCalledWith('save_settings', expect.any(Object));
 	});
 

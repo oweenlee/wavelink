@@ -200,7 +200,7 @@
 
 	function hexToRgba(hex: string, alpha: number): string {
 		const m = /^#?([a-f0-9]{2})([a-f0-9]{2})([a-f0-9]{2})$/i.exec(hex);
-		if (!m) return `rgba(226,166,61,${alpha})`;
+		if (!m) return `rgba(232,85,63,${alpha})`;
 		const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
 		return `rgba(${r},${g},${b},${alpha})`;
 	}
@@ -212,8 +212,8 @@
 			<h3 class="card-title">{t('room.title')}</h3>
 			<div class="status">
 				{#if _active}
-					<CheckCircle2 size={14} style="color: #44cc88;" />
-					<span class="status-text" style="color: #44cc88;">{t('room.active')}</span>
+					<CheckCircle2 size={14} style="color: #4ec9a0;" />
+					<span class="status-text" style="color: #4ec9a0;">{t('room.active')}</span>
 				{:else}
 					<Circle size={14} />
 					<span class="status-text">{t('room.off')}</span>
@@ -422,18 +422,18 @@
 	.status-text { font-size: 11px; }
 	.ir-len { font-size: 11px; color: var(--fg-tertiary); opacity: 0.8; }
 
-	.warn-banner { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 8px; background: rgba(255, 170, 0, 0.08); border: 1px solid rgba(255, 170, 0, 0.25); font-size: 11px; color: #ffab2e; margin-bottom: 12px; }
-	.error-banner { padding: 10px 12px; border-radius: 8px; background: rgba(255, 80, 80, 0.08); border: 1px solid rgba(255, 80, 80, 0.25); font-size: 12px; color: rgba(255, 110, 110, 0.9); margin-bottom: 12px; }
+	.warn-banner { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 8px; background: rgba(232, 179, 61, 0.08); border: 1px solid rgba(232, 179, 61, 0.25); font-size: 11px; color: #e8b33d; margin-bottom: 12px; }
+	.error-banner { padding: 10px 12px; border-radius: 8px; background: rgba(232, 93, 93, 0.08); border: 1px solid rgba(232, 93, 93, 0.25); font-size: 12px; color: rgba(232, 93, 93, 0.9); margin-bottom: 12px; }
 
 	.import-row { display: flex; gap: 8px; }
 
 	.btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--separator); background: var(--bg-surface); color: var(--fg-secondary); font-size: 12px; font-family: inherit; cursor: pointer; transition: all 0.15s; }
 	.btn:hover { background: var(--bg-hover); color: var(--fg-primary); }
 	.btn:disabled { opacity: 0.45; cursor: default; }
-	.btn.primary { background: var(--accent, #e8553f); border-color: transparent; color: #0a0a0c; font-weight: 600; }
+	.btn.primary { background: var(--accent, #e8553f); border-color: transparent; color: #0e1011; font-weight: 600; }
 	.btn.primary:hover { filter: brightness(1.08); }
-	.btn.danger { border-color: rgba(255, 80, 80, 0.15); color: rgba(255, 80, 80, 0.5); }
-	.btn.danger:hover { background: rgba(255, 80, 80, 0.08); color: rgba(255, 80, 80, 0.8); }
+	.btn.danger { border-color: rgba(232, 93, 93, 0.15); color: rgba(232, 93, 93, 0.5); }
+	.btn.danger:hover { background: rgba(232, 93, 93, 0.08); color: rgba(232, 93, 93, 0.8); }
 
 	.paste-box { margin-top: 10px; }
 	.paste-box textarea { width: 100%; box-sizing: border-box; resize: vertical; background: rgba(0, 0, 0, 0.15); border: 1px solid var(--separator); border-radius: 8px; color: var(--fg-primary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; padding: 10px; outline: none; }
@@ -479,7 +479,7 @@
 	.toggle.active .toggle-knob { transform: translateX(18px); }
 
 	.actions { display: flex; align-items: center; gap: 8px; }
-	.spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(10, 10, 12, 0.3); border-top-color: #0a0a0c; animation: spin 0.8s linear infinite; }
+	.spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(14, 16, 17, 0.3); border-top-color: #0e1011; animation: spin 0.8s linear infinite; }
 	@keyframes spin { to { transform: rotate(360deg); } }
 
 	.gain-hint { font-size: 12px; color: var(--fg-tertiary); margin: 0; }

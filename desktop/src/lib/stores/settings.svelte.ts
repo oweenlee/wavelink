@@ -1,7 +1,11 @@
 import { browser, lazyInvoke } from '$lib/tauri';
 
+// 主题色白名单：仅接受设置页色板内的 6 个色值，防止旧版本琥珀色等残留值生效
+export const ACCENT_PALETTE = ['#e8553f', '#5b9bd5', '#4ec9a0', '#c8956c', '#d4728a', '#a0aab4'];
+const DEFAULT_ACCENT = '#e8553f';
+
 let _theme = $state<'dark' | 'light'>('dark');
-let _accentColor = $state('#e8553f');
+let _accentColor = $state(DEFAULT_ACCENT);
 let _sampleRate = $state(44100);
 let _bufferMs = $state(280);
 let _crossfadeMs = $state(0);
@@ -65,7 +69,8 @@ export function getSettingsState() {
 			try {
 				const invoke = await lazyInvoke();
 				const saved: Record<string, any> = await invoke('load_settings');
-				if (typeof saved.accentColor === 'string') _accentColor = saved.accentColor;
+				if (typeof saved.accentColor === 'string' && ACCENT_PALETTE.includes(saved.accentColor)) _accentColor = saved.accentColor;
+				else _accentColor = DEFAULT_ACCENT;
 				if (typeof saved.theme === 'string') _theme = saved.theme as 'dark' | 'light';
 				if (typeof saved.sampleRate === 'number') _sampleRate = saved.sampleRate;
 				if (typeof saved.bufferMs === 'number') _bufferMs = saved.bufferMs;
@@ -193,7 +198,7 @@ export function getSettingsState() {
 		},
 
 		async setAccentColor(color: string) {
-			_accentColor = color;
+			_accentColor = ACCENT_PALETTE.includes(color) ? color : DEFAULT_ACCENT;
 			await this.save();
 		},
 	};
