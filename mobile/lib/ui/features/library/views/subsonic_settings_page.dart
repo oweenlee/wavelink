@@ -22,10 +22,6 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
   final _urlCtrl = TextEditingController();
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
-  // 回车焦点链：url → user → pass（next 跳转，pass 的 done 触发测试）
-  final _urlFocus = FocusNode();
-  final _userFocus = FocusNode();
-  final _passFocus = FocusNode();
   bool _testing = false;
   bool _saving = false;
   String _status = ''; // '' | 'ok' | 'fail' | 'empty' | 'invalid'
@@ -44,9 +40,6 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
     _urlCtrl.dispose();
     _userCtrl.dispose();
     _passCtrl.dispose();
-    _urlFocus.dispose();
-    _userFocus.dispose();
-    _passFocus.dispose();
     super.dispose();
   }
 
@@ -168,8 +161,6 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
                         hint: 'http://192.168.1.100:4533',
                         controller: _urlCtrl,
                         keyboardType: TextInputType.url,
-                        textInputAction: TextInputAction.next,
-                        onSubmitted: (_) => _userFocus.requestFocus(),
                       ),
                       const Divider(height: 1, indent: 52),
                       ConfigField(
@@ -177,8 +168,6 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
                         label: l10n.subsonicUsername,
                         controller: _userCtrl,
                         autofillHints: const [AutofillHints.username],
-                        textInputAction: TextInputAction.next,
-                        onSubmitted: (_) => _passFocus.requestFocus(),
                       ),
                       const Divider(height: 1, indent: 52),
                       ConfigField(
@@ -188,7 +177,6 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
                         obscure: true,
                         autofillHints: const [AutofillHints.password],
                         textInputAction: TextInputAction.done,
-                        onSubmitted: (_) => _test(),
                       ),
                     ],
                   ),

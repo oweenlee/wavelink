@@ -24,11 +24,6 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
   final _pathCtrl = TextEditingController();
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
-  // 回车焦点链：url → path → user → pass（next 跳转，pass 的 done 触发测试）
-  final _urlFocus = FocusNode();
-  final _pathFocus = FocusNode();
-  final _userFocus = FocusNode();
-  final _passFocus = FocusNode();
   bool _testing = false;
   bool _saving = false;
   String _status = ''; // '' | 'ok' | 'fail' | 'empty' | 'invalid'
@@ -49,10 +44,6 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
     _pathCtrl.dispose();
     _userCtrl.dispose();
     _passCtrl.dispose();
-    _urlFocus.dispose();
-    _pathFocus.dispose();
-    _userFocus.dispose();
-    _passFocus.dispose();
     super.dispose();
   }
 
@@ -176,8 +167,6 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
                         hint: 'http://192.168.1.100:5005',
                         controller: _urlCtrl,
                         keyboardType: TextInputType.url,
-                        textInputAction: TextInputAction.next,
-                        onSubmitted: (_) => _pathFocus.requestFocus(),
                       ),
                       const Divider(height: 1, indent: 52),
                       ConfigField(
@@ -185,8 +174,6 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
                         label: l10n.webdavPath,
                         hint: '/music',
                         controller: _pathCtrl,
-                        textInputAction: TextInputAction.next,
-                        onSubmitted: (_) => _userFocus.requestFocus(),
                       ),
                       const Divider(height: 1, indent: 52),
                       ConfigField(
@@ -194,8 +181,6 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
                         label: l10n.webdavUsername,
                         controller: _userCtrl,
                         autofillHints: const [AutofillHints.username],
-                        textInputAction: TextInputAction.next,
-                        onSubmitted: (_) => _passFocus.requestFocus(),
                       ),
                       const Divider(height: 1, indent: 52),
                       ConfigField(
@@ -205,7 +190,6 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
                         obscure: true,
                         autofillHints: const [AutofillHints.password],
                         textInputAction: TextInputAction.done,
-                        onSubmitted: (_) => _test(),
                       ),
                     ],
                   ),

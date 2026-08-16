@@ -26,11 +26,6 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
   final _shareCtrl = TextEditingController();
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
-  // 回车焦点链：host → share → user → pass（next 跳转，pass 的 done 触发测试）
-  final _hostFocus = FocusNode();
-  final _shareFocus = FocusNode();
-  final _userFocus = FocusNode();
-  final _passFocus = FocusNode();
   String? _nasType;
   bool _connecting = false;
   String _connectionStatus = '';
@@ -52,10 +47,6 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     _shareCtrl.dispose();
     _userCtrl.dispose();
     _passCtrl.dispose();
-    _hostFocus.dispose();
-    _shareFocus.dispose();
-    _userFocus.dispose();
-    _passFocus.dispose();
     super.dispose();
   }
 
@@ -233,8 +224,6 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
                         hint: '192.168.110.27 or nas.local',
                         controller: _hostCtrl,
                         keyboardType: TextInputType.url,
-                        textInputAction: TextInputAction.next,
-                        onSubmitted: (_) => _shareFocus.requestFocus(),
                       ),
                       const Divider(height: 1, indent: 52),
                       ConfigField(
@@ -242,8 +231,6 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
                         label: l10n.nasShare,
                         hint: '/Music or /public/music',
                         controller: _shareCtrl,
-                        textInputAction: TextInputAction.next,
-                        onSubmitted: (_) => _userFocus.requestFocus(),
                       ),
                       const Divider(height: 1, indent: 52),
                       ConfigField(
@@ -251,8 +238,6 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
                         label: l10n.nasUsername,
                         controller: _userCtrl,
                         autofillHints: const [AutofillHints.username],
-                        textInputAction: TextInputAction.next,
-                        onSubmitted: (_) => _passFocus.requestFocus(),
                       ),
                       const Divider(height: 1, indent: 52),
                       ConfigField(
@@ -262,7 +247,6 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
                         obscure: true,
                         autofillHints: const [AutofillHints.password],
                         textInputAction: TextInputAction.done,
-                        onSubmitted: (_) => _testConnection(),
                       ),
                     ],
                   ),

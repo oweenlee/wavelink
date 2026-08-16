@@ -12,7 +12,8 @@ import '../theme/app_theme.dart';
 ///   其余字段保持关闭避免地址框弹无关建议；
 /// - [textCapitalization] 恒为 none：服务器地址/路径/用户名大小写敏感，
 ///   iOS 默认会把首字母大写，会造成"输对却连不上"；
-/// - [onSubmitted] 用于回车焦点链（next 跳下一字段 / done 触发主操作）。
+/// - 回车行为交给 Flutter 默认：非末字段 `textInputAction: next`
+///   自动跳转下一可聚焦组件，密码框 `done` 默认收键盘。
 class ConfigField extends StatefulWidget {
   final IconData icon;
   final String label;
@@ -22,7 +23,6 @@ class ConfigField extends StatefulWidget {
   final TextInputType? keyboardType;
   final TextInputAction textInputAction;
   final Iterable<String>? autofillHints;
-  final ValueChanged<String>? onSubmitted;
 
   const ConfigField({
     super.key,
@@ -34,7 +34,6 @@ class ConfigField extends StatefulWidget {
     this.keyboardType,
     this.textInputAction = TextInputAction.next,
     this.autofillHints,
-    this.onSubmitted,
   });
 
   @override
@@ -95,7 +94,6 @@ class _ConfigFieldState extends State<ConfigField> {
         autofillHints: widget.autofillHints,
         keyboardType: widget.keyboardType,
         textInputAction: widget.textInputAction,
-        onSubmitted: widget.onSubmitted,
         style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
         decoration: InputDecoration(
           hintText: widget.hint,
