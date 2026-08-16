@@ -16,6 +16,8 @@
   "addToQueue": "Zur Warteschlange hinzufügen",
   "addToQueueHint": "Zur Warteschlange hinzugefügt",
   "addToPlaylist": "Zur Playlist hinzufügen",
+  "goToArtist": "Zum Künstler",
+  "goToAlbum": "Zum Album",
   "unfavorite": "Aus Favoriten entfernen",
   "favorite": "Favorit",
   "noSongs": "Keine Lieder",

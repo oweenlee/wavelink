@@ -16,6 +16,8 @@
   "addToQueue": "Add to Queue",
   "addToQueueHint": "Added to queue",
   "addToPlaylist": "Add to Playlist",
+  "goToArtist": "Go to Artist",
+  "goToAlbum": "Go to Album",
   "unfavorite": "Remove from Favorites",
   "favorite": "Favorite",
   "noSongs": "No songs",

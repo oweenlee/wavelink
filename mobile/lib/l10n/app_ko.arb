@@ -16,6 +16,8 @@
   "addToQueue": "큐에 추가",
   "addToQueueHint": "큐에 추가되었습니다",
   "addToPlaylist": "플레이리스트에 추가",
+  "goToArtist": "아티스트로 이동",
+  "goToAlbum": "앨범으로 이동",
   "unfavorite": "즐겨찾기에서 제거",
   "favorite": "즐겨찾기",
   "noSongs": "곡이 없습니다",

@@ -16,6 +16,8 @@
   "addToQueue": "加入队列",
   "addToQueueHint": "已加入播放队列",
   "addToPlaylist": "添加到播放列表",
+  "goToArtist": "转到歌手",
+  "goToAlbum": "转到专辑",
   "unfavorite": "取消收藏",
   "favorite": "收藏",
   "noSongs": "暂无歌曲",

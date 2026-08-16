@@ -487,7 +487,7 @@ class _SongsTab extends ConsumerWidget {
                 player.togglePlay();
               }
             },
-            onMore: () => _showContextMenu(context, song, player),
+            onMore: () => _showContextMenu(context, song, player, allSongs),
             // 收藏爱心仅作展示（收藏动作走三点菜单）
             trailing: player.isSongFavorite(song.id)
                 ? const Icon(Icons.favorite, size: 16, color: AppTheme.danger)
@@ -1199,6 +1199,7 @@ void _showContextMenu(
   BuildContext context,
   Song song,
   PlaybackController player,
+  List<Song> allSongs,
 ) {
   final l10n = AppLocalizations.of(context);
   showModalBottomSheet(
@@ -1255,6 +1256,49 @@ void _showContextMenu(
                 ),
               ),
               const Divider(height: 1),
+              // 转到歌手/专辑：导航动作（元数据缺失时隐藏）
+              if (song.artist.isNotEmpty)
+                _MenuItem(
+                  icon: LucideIcons.micVocal,
+                  label: l10n.goToArtist,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    context.push(
+                      '/artist',
+                      extra: {
+                        'name': song.artist,
+                        'color': song.dominantColor,
+                      },
+                    );
+                  },
+                ),
+              if (song.album.isNotEmpty)
+                _MenuItem(
+                  icon: LucideIcons.disc3,
+                  label: l10n.goToAlbum,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    // 复用曲库专辑分组：同 artist+album 的歌曲组成 Album
+                    final albumSongs = allSongs
+                        .where(
+                          (s) =>
+                              s.artist == song.artist &&
+                              s.album == song.album,
+                        )
+                        .toList();
+                    context.push(
+                      '/album',
+                      extra: Album(
+                        id: '${song.artist}\u0000${song.album}',
+                        title: song.album,
+                        artist: song.artist,
+                        year: 0,
+                        songs: albumSongs,
+                        dominantColor: song.dominantColor,
+                      ),
+                    );
+                  },
+                ),
               _MenuItem(
                 icon: LucideIcons.listPlus,
                 label: l10n.addToPlaylist,

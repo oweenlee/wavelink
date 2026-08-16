@@ -16,6 +16,8 @@
   "addToQueue": "キューに追加",
   "addToQueueHint": "キューに追加しました",
   "addToPlaylist": "プレイリストに追加",
+  "goToArtist": "アーティストへ移動",
+  "goToAlbum": "アルバムへ移動",
   "unfavorite": "お気に入りから削除",
   "favorite": "お気に入り",
   "noSongs": "曲がありません",
