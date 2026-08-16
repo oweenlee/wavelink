@@ -522,8 +522,6 @@ class _TopBar extends StatelessWidget {
                   queueCount: queueCount,
                   onQueue: onQueue,
                   onEffects: onEffects,
-                  song: song,
-                  player: player,
                 ),
                 splashRadius: 20,
               ),
@@ -1136,11 +1134,8 @@ Future<void> _openMoreMenu(
   int queueCount = 0,
   VoidCallback? onQueue,
   VoidCallback? onEffects,
-  Song? song,
-  PlaybackController? player,
 }) {
   final l10n = AppLocalizations.of(context);
-  final hasSong = song != null && player != null;
   return showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
@@ -1192,21 +1187,6 @@ Future<void> _openMoreMenu(
                 onTap: () {
                   Navigator.of(ctx).pop();
                   onEffects();
-                },
-              ),
-            // —— 当前歌曲操作（主流 App：播放页提供队列/歌单管理）——
-            if (hasSong) const Divider(height: 1),
-            if (hasSong)
-              _ArrowMenuItem(
-                icon: player.isSongFavorite(song.id)
-                    ? Icons.favorite
-                    : Icons.favorite_border,
-                label: player.isSongFavorite(song.id)
-                    ? l10n.unfavorite
-                    : l10n.favorite,
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  player.setFavorite(song.id, !player.isSongFavorite(song.id));
                 },
               ),
           ],
