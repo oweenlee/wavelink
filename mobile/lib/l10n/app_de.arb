@@ -234,5 +234,16 @@
   "sourceWebdavConnected": "Verbunden — tippen zum Verwalten",
   "settingsMusicSources": "Musikquellen",
   "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS",
-  "createPlaylistHint": "Erstellt eine leere Playlist. Füge Lieder über das Liedmenü → „Zur Playlist hinzufügen“ hinzu"
+  "createPlaylistHint": "Erstellt eine leere Playlist. Füge Lieder über das Liedmenü → „Zur Playlist hinzufügen“ hinzu",
+  "paywallTitle": "Alle Musikquellen freischalten",
+  "paywallSubtitle": "WaveLink lokale Wiedergabe ist dauerhaft kostenlos. Mit dem Abo verbindest du NAS, WebDAV und Musikserver und aktivierst professionelle Audiofunktionen.",
+  "paywallFeatureNas": "NAS-Freigaben (SMB): Zugriff auf deine Musikbibliothek im LAN",
+  "paywallFeatureWebdav": "WebDAV-Cloud: Nextcloud / Synology / Seafile usw.",
+  "paywallFeatureServer": "Musikserver: Subsonic / Navidrome usw.",
+  "paywallFeatureDsp": "Professionelles Audio: AutoEQ / Raumkorrektur / Bit-Perfect",
+  "paywallRestore": "Kauf wiederherstellen",
+  "paywallPurchaseFailed": "Kauf nicht abgeschlossen. Bitte erneut versuchen",
+  "paywallActive": "Abo aktiv",
+  "paywallSubscribe": "Abonnieren · {price}",
+  "paywallTerms": "Das Abo verlängert sich automatisch und kann jederzeit in den Store-Einstellungen gekündigt werden. Die Zahlung wird nach Bestätigung über dein App-Store-/Google-Play-Konto abgerechnet."
 }

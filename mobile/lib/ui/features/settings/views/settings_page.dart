@@ -10,6 +10,8 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/wl_toggle.dart';
 import '../../playback/view_models/playback_controller.dart';
 import '../../playback/view_models/audio_player_provider.dart';
+import '../../subscription/view_models/subscription_guard.dart';
+import '../../subscription/view_models/subscription_provider.dart';
 import '../view_models/dsp_provider.dart';
 import '../view_models/locale_provider.dart';
 import '../view_models/package_info_provider.dart';
@@ -172,11 +174,16 @@ class _AutoEqRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final model = ref.watch(dspProvider.select((s) => s.autoEqModel));
+    final locked = !ref.watch(subscriptionProvider).isSubscribed;
     return _SettingItem(
       icon: LucideIcons.headphones,
       label: l10n.autoEq,
       trailing: model ?? l10n.autoEqOff,
-      onTap: () => context.push('/autoeq'),
+      locked: locked,
+      onTap: () {
+        if (!ensureSubscribed(context, ref)) return; // 未订阅 → 付费墙
+        context.push('/autoeq');
+      },
     );
   }
 }
@@ -188,13 +195,18 @@ class _RoomCorrectionRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final irPath = ref.watch(dspProvider.select((s) => s.roomIrPath));
+    final locked = !ref.watch(subscriptionProvider).isSubscribed;
     return _SettingItem(
       icon: LucideIcons.building2,
       label: l10n.roomCorrection,
       trailing: irPath != null
           ? l10n.roomCorrectionActive
           : l10n.roomCorrectionOff,
-      onTap: () => context.push('/room-correction'),
+      locked: locked,
+      onTap: () {
+        if (!ensureSubscribed(context, ref)) return; // 未订阅 → 付费墙
+        context.push('/room-correction');
+      },
     );
   }
 }
@@ -228,12 +240,16 @@ class _BitPerfectRow extends ConsumerWidget {
     final telemetry = ref.watch(playerProvider.select((s) => s.telemetry));
     final dsp = ref.watch(dspProvider.select((s) => s.dspSettings));
     final replayGain = ref.watch(playerProvider.select((s) => s.replayGain));
+    final locked = !ref.watch(subscriptionProvider).isSubscribed;
     return _SwitchItem(
       icon: LucideIcons.badgeCheck,
       label: l10n.bitPerfect,
       value: bitPerfect,
-      onChanged: (_) =>
-          ref.read(playbackControllerProvider).setBitPerfect(!bitPerfect),
+      locked: locked,
+      onChanged: (_) {
+        if (!ensureSubscribed(context, ref)) return; // 未订阅 → 付费墙
+        ref.read(playbackControllerProvider).setBitPerfect(!bitPerfect);
+      },
       subtitle: _bitPerfectStatus(l10n, bitPerfect, telemetry, dsp, replayGain),
     );
   }
@@ -543,11 +559,15 @@ class _SettingItem extends StatelessWidget {
   final String? trailing;
   final VoidCallback? onTap;
 
+  /// 订阅锁定：行尾显示锁图标；[onTap] 仍触发（由调用方守卫跳付费墙）。
+  final bool locked;
+
   const _SettingItem({
     required this.icon,
     required this.label,
     this.trailing,
     this.onTap,
+    this.locked = false,
   });
 
   @override
@@ -579,7 +599,17 @@ class _SettingItem extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (trailing != null) ...[
+                // 订阅锁定优先展示锁图标（隐藏 trailing/chevron）
+                if (locked)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: Icon(
+                      LucideIcons.lock,
+                      color: AppTheme.textTertiary,
+                      size: 18,
+                    ),
+                  )
+                else if (trailing != null) ...[
                   const SizedBox(width: 8),
                   ConstrainedBox(
                     // 长文案（如 AutoEQ 型号名）限宽单行截断，避免换行挤压标题
@@ -620,12 +650,16 @@ class _SwitchItem extends StatelessWidget {
   final ValueChanged<bool> onChanged;
   final String? subtitle;
 
+  /// 订阅锁定：开关替换为锁图标，点击仍触发 onChanged（由调用方守卫）。
+  final bool locked;
+
   const _SwitchItem({
     required this.icon,
     required this.label,
     required this.value,
     required this.onChanged,
     this.subtitle,
+    this.locked = false,
   });
 
   @override
@@ -683,11 +717,22 @@ class _SwitchItem extends StatelessWidget {
                         ),
                 ),
                 const SizedBox(width: 8),
-                WlToggle(
-                  value: value,
-                  // 与音效面板同一组件，开关视觉全局一致
-                  onChanged: () => onChanged(!value),
-                ),
+                // 订阅锁定：开关替换为锁图标（视觉提示 + 点击仍触发守卫）
+                if (locked)
+                  const Padding(
+                    padding: EdgeInsets.all(6),
+                    child: Icon(
+                      LucideIcons.lock,
+                      color: AppTheme.textTertiary,
+                      size: 18,
+                    ),
+                  )
+                else
+                  WlToggle(
+                    value: value,
+                    // 与音效面板同一组件，开关视觉全局一致
+                    onChanged: () => onChanged(!value),
+                  ),
               ],
             ),
           ),

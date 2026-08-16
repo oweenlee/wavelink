@@ -234,5 +234,16 @@
   "sourceWebdavConnected": "已连接 — 点击管理",
   "settingsMusicSources": "音乐源",
   "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS",
-  "createPlaylistHint": "新建的是空播放列表，在歌曲菜单可「添加到播放列表」"
+  "createPlaylistHint": "新建的是空播放列表，在歌曲菜单可「添加到播放列表」",
+  "paywallTitle": "解锁全部音源",
+  "paywallSubtitle": "WaveLink 本地播放永久免费。订阅后可接入 NAS、WebDAV 与音乐服务器，并启用专业音频功能。",
+  "paywallFeatureNas": "NAS 共享（SMB）：局域网访问你的音乐库",
+  "paywallFeatureWebdav": "WebDAV 云盘：Nextcloud / 群晖 / Seafile 等",
+  "paywallFeatureServer": "音乐服务器：Subsonic / Navidrome 等",
+  "paywallFeatureDsp": "专业音频：AutoEQ / 房间校正 / Bit-Perfect",
+  "paywallRestore": "恢复购买",
+  "paywallPurchaseFailed": "购买未完成，请重试",
+  "paywallActive": "订阅已激活",
+  "paywallSubscribe": "订阅 · {price}",
+  "paywallTerms": "订阅为自动续订，可随时在商店设置中取消。付款将在确认购买时通过你的 App Store / Google Play 账户收取。"
 }

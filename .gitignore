@@ -3,3 +3,6 @@
 
 # macOS
 .DS_Store
+
+# 沙盒受限环境下的本地 pub cache（PUB_CACHE 指向工作区内）
+/.pub-cache-local/

@@ -234,5 +234,16 @@
   "sourceWebdavConnected": "연결됨 — 눌러서 관리",
   "settingsMusicSources": "음악 소스",
   "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS",
-  "createPlaylistHint": "빈 플레이리스트를 만듭니다. 곡 메뉴 → \"플레이리스트에 추가\"로 곡을 추가하세요"
+  "createPlaylistHint": "빈 플레이리스트를 만듭니다. 곡 메뉴 → \"플레이리스트에 추가\"로 곡을 추가하세요",
+  "paywallTitle": "모든 음원 소스 잠금 해제",
+  "paywallSubtitle": "WaveLink 로컬 재생은 영구 무료입니다. 구독하면 NAS, WebDAV, 음악 서버에 연결하고 프로 오디오 기능을 사용할 수 있습니다.",
+  "paywallFeatureNas": "NAS 공유(SMB): LAN에서 음악 라이브러리 접근",
+  "paywallFeatureWebdav": "WebDAV 클라우드: Nextcloud / Synology / Seafile 등",
+  "paywallFeatureServer": "음악 서버: Subsonic / Navidrome 등",
+  "paywallFeatureDsp": "프로 오디오: AutoEQ / 룸 보정 / Bit-Perfect",
+  "paywallRestore": "구매 복원",
+  "paywallPurchaseFailed": "구매가 완료되지 않았습니다. 다시 시도해 주세요",
+  "paywallActive": "구독 활성화됨",
+  "paywallSubscribe": "구독 · {price}",
+  "paywallTerms": "구독은 자동 갱신되며 스토어 설정에서 언제든 취소할 수 있습니다. 결제는 확인 시 App Store / Google Play 계정으로 청구됩니다."
 }

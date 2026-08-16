@@ -12,6 +12,7 @@ import 'data/services/preferences_service.dart';
 import 'data/services/subsonic_service.dart';
 import 'ui/features/library/view_models/library_provider.dart';
 import 'ui/features/playback/view_models/playback_controller.dart';
+import 'ui/features/subscription/view_models/subscription_provider.dart';
 import 'ui/core/app.dart';
 import 'ui/core/widgets/brand_splash.dart';
 
@@ -46,6 +47,10 @@ Future<void> main() async {
   await PreferencesService.init();
   // Subsonic 服务器配置恢复（不发起网络请求，无权限弹窗）
   SubsonicService.loadFromPrefs();
+
+  // 订阅服务初始化（mock 立即就绪；revenuecat 拉起配置/恢复状态，
+  // 不阻塞首帧——状态流就绪后 UI 自动刷新锁定/解锁）
+  container.read(subscriptionProvider.notifier);
 
   // 尝试加载 Rust native 库（设备/模拟器上有效，纯 Dart 环境忽略）
   await initRust();
