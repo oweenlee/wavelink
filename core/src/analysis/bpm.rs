@@ -131,11 +131,18 @@ pub fn detect_bpm_with_confidence(
         corr[lag] = c / (n - lag) as f32;
     }
 
-    // 梳状得分 × 速度先验
+    // 梳状得分 × 速度先验。
+    // 候选 lag 的基频自相关必须为正：否则只是梳状滤波的谐波鬼影——
+    // 如 60 BPM 信号（真周期 lag≈86）的半周期 lag=43，corr[43]=0 但
+    // corr[86]>0 会通过 2L 项给它加分，叠加 120 BPM 先验后被误选为最优，
+    // 导致慢速曲目 best_raw=0 → 整体误判为无节拍（None）。
     let mut best_score = 0.0f32;
     let mut best_lag = cand_lo;
     let mut best_raw = 0.0f32;
     for lag in cand_lo..=cand_hi {
+        if corr[lag] < corr0 * 1e-3 {
+            continue;
+        }
         let score = score_at(&corr, lag, corr_hi, frame_rate);
         if score > best_score {
             best_score = score;
@@ -155,6 +162,9 @@ pub fn detect_bpm_with_confidence(
     let sep = (best_lag as f32 / 8.0).max(1.0);
     for lag in cand_lo..=cand_hi {
         if (lag as f32 - best_lag as f32).abs() < sep {
+            continue;
+        }
+        if corr[lag] < corr0 * 1e-3 {
             continue;
         }
         let score = score_at(&corr, lag, corr_hi, frame_rate);
@@ -180,9 +190,27 @@ pub fn detect_bpm_with_confidence(
 
     let bpm = frame_rate * 60.0 / lag_f.max(1.0);
 
+    // 倍频/半频竞争：显式比较 L/2 与 2L 的得分，捕捉 octave 歧义
+    // （自相关类方法的通病：信号同时以 L 和 2L 为周期）。仅考虑有真实
+    // 基频自相关的 lag（corr[hlag] 为正，跳过谐波鬼影）。
+    let mut octave_competitor = 0.0f32;
+    for &hlag in &[best_lag / 2, best_lag * 2] {
+        if hlag < cand_lo || hlag > cand_hi {
+            continue;
+        }
+        if corr[hlag] < corr0 * 1e-3 {
+            continue;
+        }
+        let s = score_at(&corr, hlag, corr_hi, frame_rate);
+        if s > octave_competitor {
+            octave_competitor = s;
+        }
+    }
+
     let salience = (best_raw / corr0).clamp(0.0, 1.0);
+    let competitor = second_score.max(octave_competitor);
     let margin = if best_score > 1e-12 {
-        (1.0 - second_score / best_score).clamp(0.0, 1.0)
+        (1.0 - competitor / best_score).clamp(0.0, 1.0)
     } else {
         0.0
     };
@@ -246,5 +274,20 @@ mod tests {
         let samples = vec![0.0f32; 44100 * 5];
         let bpm = detect_bpm(&samples, 44100);
         assert!(bpm.is_none(), "静音应无 BPM");
+    }
+
+    #[test]
+    fn test_detect_bpm_60_very_slow() {
+        // 60 BPM 慢速回归：此前被半周期谐波鬼影（lag=43, corr=0）误判为 None
+        let samples = impulse_train(60.0, 30, 44100);
+        let bpm = detect_bpm(&samples, 44100).expect("60 BPM 应检出");
+        assert!((bpm - 60.0).abs() < 2.0, "60 BPM 应接近 60，实际 {bpm}");
+    }
+
+    #[test]
+    fn test_detect_bpm_80_slow() {
+        let samples = impulse_train(80.0, 30, 44100);
+        let bpm = detect_bpm(&samples, 44100).expect("80 BPM 应检出");
+        assert!((bpm - 80.0).abs() < 2.0, "80 BPM 应接近 80，实际 {bpm}");
     }
 }
