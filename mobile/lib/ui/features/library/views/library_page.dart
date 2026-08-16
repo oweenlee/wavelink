@@ -272,37 +272,49 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
             child: Container(
               height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
                 color: AppTheme.s2,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: TextField(
-                controller: _searchController,
-                focusNode: _searchFocusNode,
-                autofocus: true,
-                onChanged: (v) => headerNotifier.setQuery(v.toLowerCase()),
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: AppTheme.textPrimary,
-                  fontFamily: 'Inter',
-                ),
-                // 外层 Container 固定 40 高度，文字默认 baseline 对齐会偏上；
-                // 用 contentPadding 归零 + 垂直居中，保证 hint 与输入文字居中
-                textAlignVertical: TextAlignVertical.center,
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(
+              // Row 布局替代 InputDecoration.prefixIcon：prefixIcon 插槽默认
+              // 最小高度约束(≈48px)超出 40px 容器会把文字/光标挤偏。Row 默认
+              // crossAxisAlignment.center 保证图标垂直居中，TextField 用
+              // isDense + textAlignVertical.center 让 hint/光标与文字同中线。
+              child: Row(
+                children: [
+                  const Icon(
                     LucideIcons.search,
                     size: 16,
                     color: AppTheme.textTertiary,
                   ),
-                  hintText: l10n.searchLibrary,
-                  hintStyle: const TextStyle(
-                    fontSize: 14,
-                    color: AppTheme.textTertiary,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      focusNode: _searchFocusNode,
+                      autofocus: true,
+                      onChanged: (v) =>
+                          headerNotifier.setQuery(v.toLowerCase()),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppTheme.textPrimary,
+                        fontFamily: 'Inter',
+                      ),
+                      textAlignVertical: TextAlignVertical.center,
+                      decoration: InputDecoration(
+                        hintText: l10n.searchLibrary,
+                        hintStyle: const TextStyle(
+                          fontSize: 14,
+                          color: AppTheme.textTertiary,
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
                   ),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.zero,
-                ),
+                ],
               ),
             ),
           ),
