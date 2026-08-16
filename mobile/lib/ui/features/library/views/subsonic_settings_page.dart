@@ -50,10 +50,20 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
     super.dispose();
   }
 
-  /// URL 校验：需含 http(s):// 前缀，否则 Uri 解析后 host 为空、请求全异常。
+  /// URL 校验：无 http(s):// 前缀时自动补 http:// 并写回输入框。
+  /// 局域网/自部署服务器多数为 http，免去手动补前缀（所见即所得，可改 https）；
+  /// 补前缀后仍解析不出 host 才算格式错误。
   String? _validate() {
-    final url = _urlCtrl.text.trim();
+    var url = _urlCtrl.text.trim();
     if (url.isEmpty || _userCtrl.text.trim().isEmpty) return 'empty';
+    if (!url.contains('://')) {
+      final fixed = 'http://$url';
+      _urlCtrl.value = TextEditingValue(
+        text: fixed,
+        selection: TextSelection.collapsed(offset: fixed.length),
+      );
+      url = fixed;
+    }
     final uri = Uri.tryParse(url);
     if (uri == null || uri.host.isEmpty) return 'invalid';
     return null;

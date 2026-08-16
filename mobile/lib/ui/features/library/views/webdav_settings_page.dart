@@ -57,10 +57,19 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
   }
 
   String? _validate() {
-    final url = _urlCtrl.text.trim();
-    // 校验 URL 格式：需含 http(s):// 前缀，否则 Uri 解析后 host 为空，
-    // 请求会全部异常。WebDAV 用户名/密码/路径均可选（支持匿名访问）。
+    var url = _urlCtrl.text.trim();
+    // 无 http(s):// 前缀时自动补 http:// 并写回输入框（局域网 WebDAV
+    // 服务器多数为 http，免去手动补前缀；https-only 服务器用户改前缀即可）。
+    // 补前缀后仍解析不出 host 才算格式错误。
     if (url.isEmpty) return 'empty';
+    if (!url.contains('://')) {
+      final fixed = 'http://$url';
+      _urlCtrl.value = TextEditingValue(
+        text: fixed,
+        selection: TextSelection.collapsed(offset: fixed.length),
+      );
+      url = fixed;
+    }
     final uri = Uri.tryParse(url);
     if (uri == null || uri.host.isEmpty) return 'invalid';
     return null;
