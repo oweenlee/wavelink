@@ -6,6 +6,7 @@ import '../../../../data/services/preferences_service.dart';
 import '../../../../data/services/subsonic_service.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/config_field.dart';
 import '../view_models/library_provider.dart';
 
 /// Subsonic / Navidrome / Jellyfin 音乐服务器配置页
@@ -21,9 +22,13 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
   final _urlCtrl = TextEditingController();
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
+  // 回车焦点链：url → user → pass（next 跳转，pass 的 done 触发测试）
+  final _urlFocus = FocusNode();
+  final _userFocus = FocusNode();
+  final _passFocus = FocusNode();
   bool _testing = false;
   bool _saving = false;
-  String _status = ''; // '' | 'ok' | 'fail' | 'empty'
+  String _status = ''; // '' | 'ok' | 'fail' | 'empty' | 'invalid'
 
   @override
   void initState() {
@@ -39,17 +44,32 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
     _urlCtrl.dispose();
     _userCtrl.dispose();
     _passCtrl.dispose();
+    _urlFocus.dispose();
+    _userFocus.dispose();
+    _passFocus.dispose();
     super.dispose();
   }
 
+  /// URL 校验：需含 http(s):// 前缀，否则 Uri 解析后 host 为空、请求全异常。
+  String? _validate() {
+    final url = _urlCtrl.text.trim();
+    if (url.isEmpty || _userCtrl.text.trim().isEmpty) return 'empty';
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.host.isEmpty) return 'invalid';
+    return null;
+  }
+
   Future<void> _test() async {
+    // 先收键盘，让按钮区恢复全高、测试结果可见
+    FocusScope.of(context).unfocus();
+    final validation = _validate();
+    if (validation != null) {
+      setState(() => _status = validation);
+      return;
+    }
     final url = _urlCtrl.text.trim();
     final user = _userCtrl.text.trim();
     final pass = _passCtrl.text;
-    if (url.isEmpty || user.isEmpty) {
-      setState(() => _status = 'empty');
-      return;
-    }
     setState(() {
       _testing = true;
       _status = '';
@@ -67,13 +87,15 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
   }
 
   Future<void> _save() async {
+    FocusScope.of(context).unfocus();
+    final validation = _validate();
+    if (validation != null) {
+      setState(() => _status = validation);
+      return;
+    }
     final url = _urlCtrl.text.trim();
     final user = _userCtrl.text.trim();
     final pass = _passCtrl.text;
-    if (url.isEmpty || user.isEmpty) {
-      setState(() => _status = 'empty');
-      return;
-    }
     setState(() => _saving = true);
     await PreferencesService.instance.setSubsonicConfig(
       baseUrl: url,
@@ -127,30 +149,39 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
               ),
               child: Material(
                 type: MaterialType.transparency,
-                child: Column(
-                  children: [
-                    _Field(
-                      icon: LucideIcons.cloud,
-                      label: l10n.subsonicUrl,
-                      hint: 'http://192.168.1.100:4533',
-                      controller: _urlCtrl,
-                      keyboardType: TextInputType.url,
-                    ),
-                    const Divider(height: 1, indent: 52),
-                    _Field(
-                      icon: LucideIcons.user,
-                      label: l10n.subsonicUsername,
-                      controller: _userCtrl,
-                    ),
-                    const Divider(height: 1, indent: 52),
-                    _Field(
-                      icon: LucideIcons.lock,
-                      label: l10n.subsonicPassword,
-                      controller: _passCtrl,
-                      obscure: true,
-                      textInputAction: TextInputAction.done,
-                    ),
-                  ],
+                child: AutofillGroup(
+                  child: Column(
+                    children: [
+                      ConfigField(
+                        icon: LucideIcons.cloud,
+                        label: l10n.subsonicUrl,
+                        hint: 'http://192.168.1.100:4533',
+                        controller: _urlCtrl,
+                        keyboardType: TextInputType.url,
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => _userFocus.requestFocus(),
+                      ),
+                      const Divider(height: 1, indent: 52),
+                      ConfigField(
+                        icon: LucideIcons.user,
+                        label: l10n.subsonicUsername,
+                        controller: _userCtrl,
+                        autofillHints: const [AutofillHints.username],
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => _passFocus.requestFocus(),
+                      ),
+                      const Divider(height: 1, indent: 52),
+                      ConfigField(
+                        icon: LucideIcons.lock,
+                        label: l10n.subsonicPassword,
+                        controller: _passCtrl,
+                        obscure: true,
+                        autofillHints: const [AutofillHints.password],
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _test(),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -209,6 +240,8 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
                     ? l10n.subsonicConnected
                     : _status == 'empty'
                     ? l10n.subsonicEnterUrl
+                    : _status == 'invalid'
+                    ? l10n.webdavInvalidUrl
                     : l10n.subsonicFailed,
                 style: TextStyle(
                   color: _status == 'ok' ? AppTheme.success : AppTheme.danger,
@@ -223,130 +256,5 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
   }
 }
 
-/// 与 NAS 设置页同款列表项风格的表单字段。
-/// 整行可点聚焦；[textInputAction] 控制回车行为（默认 next 依次跳转）。
-class _Field extends StatefulWidget {
-  final IconData icon;
-  final String label;
-  final String? hint;
-  final TextEditingController controller;
-  final bool obscure;
-  final TextInputType? keyboardType;
-  final TextInputAction textInputAction;
-
-  const _Field({
-    required this.icon,
-    required this.label,
-    this.hint,
-    required this.controller,
-    this.obscure = false,
-    this.keyboardType,
-    this.textInputAction = TextInputAction.next,
-  });
-
-  @override
-  State<_Field> createState() => _FieldState();
-}
-
-class _FieldState extends State<_Field> {
-  final _focusNode = FocusNode();
-  bool _show = false;
-  bool _hasText = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _hasText = widget.controller.text.isNotEmpty;
-    widget.controller.addListener(_onCtrlChanged);
-    // 聚焦状态变化时刷新 × 显隐（仅在焦点内显示清除按钮）
-    _focusNode.addListener(_onFocusChanged);
-  }
-
-  void _onCtrlChanged() {
-    final has = widget.controller.text.isNotEmpty;
-    if (has != _hasText) setState(() => _hasText = has);
-  }
-
-  void _onFocusChanged() {
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    _focusNode.removeListener(_onFocusChanged);
-    widget.controller.removeListener(_onCtrlChanged);
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final icon = widget.icon;
-    final label = widget.label;
-    final hint = widget.hint;
-    final controller = widget.controller;
-    final obscure = widget.obscure;
-    final keyboardType = widget.keyboardType;
-    final textInputAction = widget.textInputAction;
-    return ListTile(
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-      leading: Icon(icon, color: AppTheme.textTertiary, size: 20),
-      title: Text(
-        label,
-        style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
-      ),
-      // 整行可点：聚焦到该输入框，避免精确点中才能聚焦
-      onTap: () => FocusScope.of(context).requestFocus(_focusNode),
-      subtitle: TextField(
-        controller: controller,
-        focusNode: _focusNode,
-        obscureText: obscure && !_show,
-        autocorrect: false,
-        enableSuggestions: false,
-        keyboardType: keyboardType,
-        textInputAction: textInputAction,
-        style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: const TextStyle(
-            fontSize: 14,
-            color: AppTheme.textTertiary,
-          ),
-          isDense: true,
-          border: InputBorder.none,
-          // 限定眼图标区域 24×24：不设的话默认 48×48（Material 最小
-          // 交互尺寸），密码框会被撑得比其他输入框高、文本不再对齐
-          suffixIconConstraints:
-              const BoxConstraints.tightFor(width: 24, height: 24),
-          suffixIcon: obscure
-              ? IconButton(
-                  icon: Icon(
-                    _show ? LucideIcons.eyeOff : LucideIcons.eye,
-                    size: 18,
-                    color: AppTheme.textSecondary,
-                  ),
-                  // 缩掉 48×48 默认点击热区：否则密码框比
-                  // 普通输入框高出一截（IconButton tap target 撑高）
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: () => setState(() => _show = !_show),
-                )
-              : _hasText && _focusNode.hasFocus
-                  ? IconButton(
-                      icon: const Icon(
-                        LucideIcons.x,
-                        size: 18,
-                        color: AppTheme.textSecondary,
-                      ),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      tooltip: '清除',
-                      onPressed: () => controller.clear(),
-                    )
-                  : null,
-        ),
-      ),
-    );
-  }
-}
+/// 表单字段已抽为共享组件 ConfigField（lib/ui/core/widgets/config_field.dart），
+/// NAS/Subsonic/WebDAV 三页共用，此处不再保留私有实现。

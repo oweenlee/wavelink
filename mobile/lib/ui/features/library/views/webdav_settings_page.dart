@@ -8,6 +8,7 @@ import '../../../../data/services/preferences_service.dart';
 import '../../../../data/services/webdav_service.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/config_field.dart';
 import '../view_models/library_provider.dart';
 
 /// WebDAV 音乐服务器配置页（Nextcloud / Seafile / 群晖 WebDAV / 阿里云盘等）
@@ -23,9 +24,14 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
   final _pathCtrl = TextEditingController();
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
+  // 回车焦点链：url → path → user → pass（next 跳转，pass 的 done 触发测试）
+  final _urlFocus = FocusNode();
+  final _pathFocus = FocusNode();
+  final _userFocus = FocusNode();
+  final _passFocus = FocusNode();
   bool _testing = false;
   bool _saving = false;
-  String _status = ''; // '' | 'ok' | 'fail' | 'empty'
+  String _status = ''; // '' | 'ok' | 'fail' | 'empty' | 'invalid'
 
   @override
   void initState() {
@@ -43,6 +49,10 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
     _pathCtrl.dispose();
     _userCtrl.dispose();
     _passCtrl.dispose();
+    _urlFocus.dispose();
+    _pathFocus.dispose();
+    _userFocus.dispose();
+    _passFocus.dispose();
     super.dispose();
   }
 
@@ -57,6 +67,8 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
   }
 
   Future<void> _test() async {
+    // 先收键盘，让按钮区恢复全高、测试结果可见
+    FocusScope.of(context).unfocus();
     final validation = _validate();
     if (validation != null) {
       setState(() => _status = validation);
@@ -82,6 +94,7 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
   Future<void> _save() async {
     // 防重复点击：保存触发后台扫描（fire-and-forget），快速双击会并发
     // 起两个扫描共享同一 LibraryNotifier，onBatch 回调可能交叉写入。
+    FocusScope.of(context).unfocus();
     if (_saving) return;
     _saving = true;
     try {
@@ -145,37 +158,48 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
               ),
               child: Material(
                 type: MaterialType.transparency,
-                child: Column(
-                  children: [
-                    _Field(
-                      icon: LucideIcons.cloud,
-                      label: l10n.webdavUrl,
-                      hint: 'http://192.168.1.100:5005',
-                      controller: _urlCtrl,
-                      keyboardType: TextInputType.url,
-                    ),
-                    const Divider(height: 1, indent: 52),
-                    _Field(
-                      icon: LucideIcons.folderOpen,
-                      label: l10n.webdavPath,
-                      hint: '/music',
-                      controller: _pathCtrl,
-                    ),
-                    const Divider(height: 1, indent: 52),
-                    _Field(
-                      icon: LucideIcons.user,
-                      label: l10n.webdavUsername,
-                      controller: _userCtrl,
-                    ),
-                    const Divider(height: 1, indent: 52),
-                    _Field(
-                      icon: LucideIcons.lock,
-                      label: l10n.webdavPassword,
-                      controller: _passCtrl,
-                      obscure: true,
-                      textInputAction: TextInputAction.done,
-                    ),
-                  ],
+                child: AutofillGroup(
+                  child: Column(
+                    children: [
+                      ConfigField(
+                        icon: LucideIcons.cloud,
+                        label: l10n.webdavUrl,
+                        hint: 'http://192.168.1.100:5005',
+                        controller: _urlCtrl,
+                        keyboardType: TextInputType.url,
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => _pathFocus.requestFocus(),
+                      ),
+                      const Divider(height: 1, indent: 52),
+                      ConfigField(
+                        icon: LucideIcons.folderOpen,
+                        label: l10n.webdavPath,
+                        hint: '/music',
+                        controller: _pathCtrl,
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => _userFocus.requestFocus(),
+                      ),
+                      const Divider(height: 1, indent: 52),
+                      ConfigField(
+                        icon: LucideIcons.user,
+                        label: l10n.webdavUsername,
+                        controller: _userCtrl,
+                        autofillHints: const [AutofillHints.username],
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => _passFocus.requestFocus(),
+                      ),
+                      const Divider(height: 1, indent: 52),
+                      ConfigField(
+                        icon: LucideIcons.lock,
+                        label: l10n.webdavPassword,
+                        controller: _passCtrl,
+                        obscure: true,
+                        autofillHints: const [AutofillHints.password],
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _test(),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -250,124 +274,5 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
   }
 }
 
-/// 与 NAS/Subsonic 设置页同款列表项风格的表单字段。
-/// [obscure] 为 true（密码框）时内置小眼睛，可切换明文显示。
-/// 整行可点聚焦；[textInputAction] 控制回车行为（默认 next 依次跳转）。
-class _Field extends StatefulWidget {
-  final IconData icon;
-  final String label;
-  final String? hint;
-  final TextEditingController controller;
-  final bool obscure;
-  final TextInputType? keyboardType;
-  final TextInputAction textInputAction;
-
-  const _Field({
-    required this.icon,
-    required this.label,
-    this.hint,
-    required this.controller,
-    this.obscure = false,
-    this.keyboardType,
-    this.textInputAction = TextInputAction.next,
-  });
-
-  @override
-  State<_Field> createState() => _FieldState();
-}
-
-class _FieldState extends State<_Field> {
-  bool _show = false;
-  bool _hasText = false;
-  final _focusNode = FocusNode();
-
-  @override
-  void initState() {
-    super.initState();
-    _hasText = widget.controller.text.isNotEmpty;
-    widget.controller.addListener(_onCtrlChanged);
-    // 聚焦状态变化时刷新 × 显隐（仅在焦点内显示清除按钮）
-    _focusNode.addListener(_onFocusChanged);
-  }
-
-  void _onCtrlChanged() {
-    final has = widget.controller.text.isNotEmpty;
-    if (has != _hasText) setState(() => _hasText = has);
-  }
-
-  void _onFocusChanged() {
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    _focusNode.removeListener(_onFocusChanged);
-    widget.controller.removeListener(_onCtrlChanged);
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-      leading: Icon(widget.icon, color: AppTheme.textTertiary, size: 20),
-      title: Text(
-        widget.label,
-        style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
-      ),
-      // 整行可点：聚焦到该输入框，避免精确点中才能聚焦
-      onTap: () => FocusScope.of(context).requestFocus(_focusNode),
-      subtitle: TextField(
-        controller: widget.controller,
-        focusNode: _focusNode,
-        obscureText: widget.obscure && !_show,
-        autocorrect: false,
-        enableSuggestions: false,
-        keyboardType: widget.keyboardType,
-        textInputAction: widget.textInputAction,
-        style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
-        decoration: InputDecoration(
-          hintText: widget.hint,
-          hintStyle: const TextStyle(
-            fontSize: 14,
-            color: AppTheme.textTertiary,
-          ),
-          isDense: true,
-          border: InputBorder.none,
-          // 限定眼图标区域 24×24：不设的话默认 48×48（Material 最小
-          // 交互尺寸），密码框会被撑得比其他输入框高、文本不再对齐
-          suffixIconConstraints:
-              const BoxConstraints.tightFor(width: 24, height: 24),
-          suffixIcon: widget.obscure
-              ? IconButton(
-                  icon: Icon(
-                    _show ? LucideIcons.eyeOff : LucideIcons.eye,
-                    size: 18,
-                    color: AppTheme.textSecondary,
-                  ),
-                  // 缩掉 48×48 默认点击热区：否则密码框比
-                  // 普通输入框高出一截（IconButton tap target 撑高）
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: () => setState(() => _show = !_show),
-                )
-              : _hasText && _focusNode.hasFocus
-                  ? IconButton(
-                      icon: const Icon(
-                        LucideIcons.x,
-                        size: 18,
-                        color: AppTheme.textSecondary,
-                      ),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      tooltip: '清除',
-                      onPressed: () => widget.controller.clear(),
-                    )
-                  : null,
-        ),
-      ),
-    );
-  }
-}
+/// 表单字段已抽为共享组件 ConfigField（lib/ui/core/widgets/config_field.dart），
+/// NAS/Subsonic/WebDAV 三页共用，此处不再保留私有实现。
