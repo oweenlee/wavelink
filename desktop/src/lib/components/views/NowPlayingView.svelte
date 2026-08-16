@@ -12,6 +12,7 @@
 	import SpectrumAnalyzer from '$lib/components/controls/SpectrumAnalyzer.svelte';
 	import WaveformVisualizer from '$lib/components/controls/WaveformVisualizer.svelte';
 	import { extractColorFromDataUrl } from '$lib/utils/colorExtractor';
+	import type { AnalysisResult } from '$lib/audio/types';
 
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { X, Disc3, Shuffle, Repeat1, Repeat, List, SkipBack, SkipForward, Play, Pause, ChevronDown, Waves } from 'lucide-svelte';
@@ -28,6 +29,36 @@
 	let showQueue = $state(false);
 	let showWaveform = $state(false);
 	let lyricsScrollEl: HTMLDivElement | undefined = $state();
+
+	// 音频分析（BPM/调性/能量），随当前曲目变化查询
+	let analysis = $state<AnalysisResult | null>(null);
+	let analyzing = $state(false);
+
+	$effect(() => {
+		const id = playback.currentTrack?.id;
+		if (!id) { analysis = null; analyzing = false; return; }
+		analysis = null;
+		let cancelled = false;
+		(async () => {
+			try {
+				const { invoke } = await import('@tauri-apps/api/core');
+				const res = (await invoke('get_track_analyses', { trackIds: [id] })) as Record<number, AnalysisResult>;
+				if (!cancelled) analysis = res[id] ?? null;
+			} catch { if (!cancelled) analysis = null; }
+		})();
+		return () => { cancelled = true; };
+	});
+
+	async function analyzeCurrent() {
+		const tr = playback.currentTrack;
+		if (!tr?.path || analyzing) return;
+		analyzing = true;
+		try {
+			const { invoke } = await import('@tauri-apps/api/core');
+			analysis = (await invoke('analyze_track', { path: tr.path })) as AnalysisResult;
+		} catch { analysis = null; }
+		analyzing = false;
+	}
 
 	// ── Derived ──
 	let fileSize = $derived.by(() => {
@@ -125,7 +156,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="np" class:np-playing={playback.isPlaying} style={`--np-glow: ${coverColor || '#e2a63d'};${coverDataUrl ? ` --cover: url(${coverDataUrl})` : ''}`} onkeydown={handleKeydown} onclick={(e) => { if (e.target === e.currentTarget) close(); }}>
+<div class="np" class:np-playing={playback.isPlaying} style={`--np-glow: ${coverColor || '#e8553f'};${coverDataUrl ? ` --cover: url(${coverDataUrl})` : ''}`} onkeydown={handleKeydown} onclick={(e) => { if (e.target === e.currentTarget) close(); }}>
 	<!-- Close button -->
 	<button class="np-close" onclick={close} aria-label={t('nowplaying.close')}>
 		<X size={16} stroke-width={2.5} />
@@ -187,6 +218,27 @@
 						<span class="spec-v">{bitrate ? `${bitrate} kbps` : '—'}</span>
 						<span class="spec-k">{t('nowplaying.bitrate')}</span>
 					</div>
+					{#if analysis?.bpm}
+						<div class="spec-sep"></div>
+						<div class="spec-item">
+							<span class="spec-v">{analysis.bpm.toFixed(1)}</span>
+							<span class="spec-k">BPM</span>
+						</div>
+					{/if}
+					{#if analysis?.key}
+						<div class="spec-sep"></div>
+						<div class="spec-item">
+							<span class="spec-v">{analysis.key}</span>
+							<span class="spec-k">{t('nowplaying.key')}</span>
+						</div>
+					{/if}
+					{#if analysis?.energy != null}
+						<div class="spec-sep"></div>
+						<div class="spec-item">
+							<span class="spec-v">{(analysis.energy * 100).toFixed(0)}</span>
+							<span class="spec-k">{t('nowplaying.energy')}</span>
+						</div>
+					{/if}
 					<div class="spec-lamp" class:on={settings.bitPerfect}>
 						<span class="lamp-dot"></span>
 						<span class="lamp-text">BIT-PERFECT</span>
@@ -253,6 +305,11 @@
 
 			<!-- Info toggle / panel -->
 			<div class="np-info-section">
+				{#if playback.currentTrack?.id && !analysis}
+					<button class="np-info-toggle np-analyze" onclick={analyzeCurrent} disabled={analyzing}>
+						<span>{analyzing ? t('nowplaying.analyzing') : t('nowplaying.analyze')}</span>
+					</button>
+				{/if}
 				<button class="np-info-toggle" onclick={() => showInfo = !showInfo} aria-expanded={showInfo}>
 					<span>{showInfo ? t('nowplaying.collapse_info') : t('nowplaying.expand_info')}</span>
 					<ChevronDown size={12} class={showInfo ? 'rotated' : ''} />
@@ -326,7 +383,7 @@
 	@property --np-glow {
 		syntax: '<color>';
 		inherits: true;
-		initial-value: #e2a63d;
+		initial-value: #e8553f;
 	}
 
 	.np {
@@ -603,6 +660,8 @@
 	.np-info-toggle:hover { color: var(--fg-secondary); }
 	.np-info-toggle :global(svg) { transition: transform 0.2s; }
 	.np-info-toggle :global(svg.rotated) { transform: rotate(180deg); }
+	.np-info-toggle.np-analyze { margin-right: 14px; color: var(--accent); }
+	.np-info-toggle.np-analyze:disabled { opacity: 0.4; cursor: default; }
 
 	.np-info-panel {
 		margin-top: 8px; padding: 12px 14px;

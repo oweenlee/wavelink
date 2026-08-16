@@ -1,7 +1,7 @@
 import { browser, lazyInvoke } from '$lib/tauri';
 
 let _theme = $state<'dark' | 'light'>('dark');
-let _accentColor = $state('#e2a63d');
+let _accentColor = $state('#e8553f');
 let _sampleRate = $state(44100);
 let _bufferMs = $state(280);
 let _crossfadeMs = $state(0);

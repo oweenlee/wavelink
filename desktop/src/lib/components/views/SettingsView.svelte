@@ -16,6 +16,40 @@
 	let devices = $state<string[]>([]);
 	let showAdvanced = $state(false);
 
+	// ReplayGain 批量扫描进度
+	let rgScanning = $state(false);
+	let rgProgress = $state(0);
+	let rgTotal = $state(0);
+	let _rgUnlisten: (() => void) | undefined;
+
+	async function scanReplayGain() {
+		if (!browser || rgScanning) return;
+		rgScanning = true;
+		rgProgress = 0;
+		rgTotal = 0;
+		try {
+			const mod = await import('@tauri-apps/api/event');
+			_rgUnlisten?.();
+			_rgUnlisten = await mod.listen<{ completed: number; total: number }>('replaygain:progress', (e) => {
+				rgProgress = e.payload.completed;
+				rgTotal = e.payload.total;
+			});
+			const core = await import('@tauri-apps/api/core');
+			await core.invoke('analyze_all_replaygain');
+		} catch {
+			rgScanning = false;
+		}
+	}
+
+	$effect(() => {
+		if (!rgScanning && rgProgress > 0 && rgTotal > 0 && rgProgress >= rgTotal) {
+			_rgUnlisten?.();
+			_rgUnlisten = undefined;
+			rgScanning = false;
+			settings.load();
+		}
+	});
+
 	// 设备热插拔
 	let monitorActive = $state(false);
 	let deviceEvents = $state<{ type: string; name: string; time: number }[]>([]);
@@ -31,8 +65,9 @@
 				folders = await mod.invoke('get_scan_folders');
 				const mode = await mod.invoke('get_play_mode');
 				playback.playMode = mode as PlayMode;
-				devices = await mod.invoke('list_audio_devices');
-			} catch { console.warn('同步失败'); }
+			devices = await mod.invoke('list_audio_devices');
+		} catch { console.warn('同步失败'); }
+		loadTrackCount();
 		});
 	});
 
@@ -42,8 +77,8 @@
 	}
 
 	const accentColors = [
-		{ name: t('settings.amber'), color: '#e2a63d' }, { name: t('settings.blue'), color: '#5b9bd5' },
-		{ name: t('settings.green'), color: '#5daa72' }, { name: t('settings.copper'), color: '#c8956c' },
+		{ name: t('settings.ember'), color: '#e8553f' }, { name: t('settings.blue'), color: '#5b9bd5' },
+		{ name: t('settings.green'), color: '#4ec9a0' }, { name: t('settings.copper'), color: '#c8956c' },
 		{ name: t('settings.rose'), color: '#d4728a' }, { name: t('settings.silver'), color: '#a0aab4' },
 	];
 
@@ -76,6 +111,29 @@
 			folders = folders.filter(f => f !== path);
 			console.log(`已删除 ${count} 首曲目`);
 		} catch (e) { console.error('删除失败:', e); }
+	}
+
+	// ── 数据库管理 ──
+	let trackCount = $state<number | null>(null);
+	let showResetConfirm = $state(false);
+	let resetting = $state(false);
+
+	async function loadTrackCount() {
+		if (!_invoke) return;
+		try { trackCount = await _invoke('get_track_count'); } catch { /* 忽略 */ }
+	}
+
+	async function confirmReset() {
+		if (!_invoke || resetting) return;
+		resetting = true;
+		try {
+			await _invoke('reset_database');
+			showResetConfirm = false;
+			trackCount = 0;
+			await settings.load();
+		} catch { /* 忽略 */ } finally {
+			resetting = false;
+		}
 	}
 
 	// ── 设备热插拔 ──
@@ -159,6 +217,15 @@
 				</div>
 				<button class="toggle" class:active={settings.replaygainEnabled} onclick={toggleReplaygain} aria-label={t('settings.toggle_replaygain')}>
 					<span class="toggle-knob"></span>
+				</button>
+			</div>
+			<div class="setting-row">
+				<div class="setting-label">
+					<span class="label-text">{t('settings.scan_replaygain')}</span>
+					<span class="label-desc">{t('settings.scan_replaygain_desc')}</span>
+				</div>
+				<button class="btn" onclick={scanReplayGain} disabled={rgScanning}>
+					{rgScanning ? `${t('settings.scanning_replaygain')} ${rgTotal ? `${rgProgress}/${rgTotal}` : ''}` : t('settings.scan_replaygain_btn')}
 				</button>
 			</div>
 			<div class="setting-row">
@@ -340,6 +407,40 @@
 		</div>
 	</div>
 
+	<!-- ── 数据库管理 ── -->
+	<div class="card">
+		<div class="card-header">
+			<h3 class="card-title"><Trash2 size={14} style="margin-right: 6px;" /> {t('settings.database')}</h3>
+		</div>
+		<div class="card-body">
+			<div class="setting-row">
+				<div class="setting-label">
+					<span class="label-text">{t('settings.track_count', { count: trackCount ?? '—' })}</span>
+					<span class="label-desc">{t('settings.track_count_desc')}</span>
+				</div>
+			</div>
+			<div class="setting-row">
+				<div class="setting-label">
+					<span class="label-text">{t('settings.reset_database')}</span>
+					<span class="label-desc">{t('settings.reset_database_desc')}</span>
+				</div>
+				<button class="btn" onclick={() => showResetConfirm = true}>{t('settings.reset_database_btn')}</button>
+			</div>
+		</div>
+	</div>
+
+	{#if showResetConfirm}
+		<div class="backdrop" onclick={() => { if (!resetting) showResetConfirm = false; }}></div>
+		<div class="reset-dialog">
+			<h4 class="reset-title">{t('settings.reset_confirm_title')}</h4>
+			<p class="reset-desc">{t('settings.reset_confirm_desc')}</p>
+			<div class="reset-actions">
+				<button class="btn" onclick={() => showResetConfirm = false} disabled={resetting}>{t('settings.cancel')}</button>
+				<button class="btn btn-danger" onclick={confirmReset} disabled={resetting}>{resetting ? t('settings.resetting') : t('settings.confirm_reset')}</button>
+			</div>
+		</div>
+	{/if}
+
 	<!-- ── 关于 ── -->
 	<div class="card about">
 		<div class="card-header">
@@ -372,12 +473,12 @@
 
 	.slider-row { display: flex; align-items: center; gap: 10px; }
 	.slider { -webkit-appearance: none; appearance: none; width: 140px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); outline: none; cursor: pointer; }
-	.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--accent, #e2a63d); cursor: pointer; }
+	.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--accent, #e8553f); cursor: pointer; }
 	.slider-val { font-size: 11px; color: var(--fg-tertiary); min-width: 50px; text-align: right; }
 
 
 	.toggle { display: inline-flex; align-items: center; padding: 4px; border: none; background: var(--bg-hover); border-radius: 20px; cursor: pointer; transition: all 0.2s; width: 52px; height: 26px; position: relative; }
-	.toggle.active { background: var(--accent, #e2a63d); }
+	.toggle.active { background: var(--accent, #e8553f); }
 	.toggle-knob { width: 18px; height: 18px; border-radius: 50%; background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.2); transition: transform 0.2s; }
 	.toggle.active .toggle-knob { transform: translateX(26px); }
 
@@ -427,4 +528,21 @@
 		padding: 12px 0 0; border-top: 1px solid var(--separator);
 		display: flex; flex-direction: column; gap: 16px;
 	}
+
+	.backdrop { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,0.35); animation: fade 0.2s; }
+	@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+	.reset-dialog {
+		position: fixed; top: 50%; left: 50%; z-index: 201;
+		transform: translate(-50%, -50%);
+		width: min(360px, 90vw);
+		background: var(--bg-surface); border: 1px solid var(--separator);
+		border-radius: var(--radius-xl); box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+		padding: 20px 22px;
+	}
+	.reset-title { font-size: 15px; font-weight: 600; color: var(--fg-primary); margin: 0 0 8px; }
+	.reset-desc { font-size: 12px; color: var(--fg-tertiary); margin: 0 0 18px; line-height: 1.5; }
+	.reset-actions { display: flex; justify-content: flex-end; gap: 8px; }
+	.btn-danger { background: var(--danger); border-color: transparent; color: #fff; }
+	.btn-danger:hover:not(:disabled) { filter: brightness(1.1); color: #fff; }
 </style>

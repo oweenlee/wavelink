@@ -22,7 +22,7 @@ describe('getSettingsState', () => {
 		state = mod.getSettingsState();
 		// 手动重置 $state 到默认值
 		state.theme = 'dark';
-		state.accentColor = '#e2a63d';
+		state.accentColor = '#e8553f';
 		state.sampleRate = 44100;
 		state.bufferMs = 280;
 		state.crossfadeMs = 0;
@@ -34,7 +34,7 @@ describe('getSettingsState', () => {
 
 	it('has default values', () => {
 		expect(state.theme).toBe('dark');
-		expect(state.accentColor).toBe('#e2a63d');
+		expect(state.accentColor).toBe('#e8553f');
 		expect(state.sampleRate).toBe(44100);
 		expect(state.bufferMs).toBe(280);
 		expect(state.crossfadeMs).toBe(0);

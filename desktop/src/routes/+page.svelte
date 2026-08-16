@@ -9,6 +9,7 @@
 	import RoomCorrectionView from '$lib/components/views/RoomCorrectionView.svelte';
 	import SubsonicView from '$lib/components/views/SubsonicView.svelte';
 	import WebdavView from '$lib/components/views/WebdavView.svelte';
+	import CueView from '$lib/components/views/CueView.svelte';
 	import NowPlayingView from '$lib/components/views/NowPlayingView.svelte';
 	import LyricsPanel from '$lib/components/panels/LyricsPanel.svelte';
 
@@ -69,6 +70,8 @@
 							<SubsonicView />
 						{:else if ui.view === 'webdav'}
 							<WebdavView />
+						{:else if ui.view === 'cue'}
+							<CueView />
 						{/if}
 					</div>
 				{/key}

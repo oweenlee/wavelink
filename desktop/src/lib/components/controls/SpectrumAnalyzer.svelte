@@ -81,10 +81,10 @@
 
       ctx.lineWidth = 2;
       const grad = ctx.createLinearGradient(0, 0, width, 0);
-      grad.addColorStop(0, '#b4781e');
-      grad.addColorStop(0.4, '#e2a63d');
-      grad.addColorStop(0.7, '#f0c860');
-      grad.addColorStop(1, '#faf0d8');
+      grad.addColorStop(0, '#b5492f');
+      grad.addColorStop(0.4, '#e8553f');
+      grad.addColorStop(0.7, '#f57a6b');
+      grad.addColorStop(1, '#fbd0c8');
       ctx.strokeStyle = grad;
       ctx.stroke();
 

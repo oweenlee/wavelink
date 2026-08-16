@@ -6,14 +6,17 @@
 	import { X } from 'lucide-svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
 
-	let { track, onclose }: { track: Track; onclose: () => void } = $props();
+	// 单曲模式传 track；批量模式传 tracks（>=2）走 batch_edit_tags
+	let { track, tracks, onclose }: { track?: Track; tracks?: Track[]; onclose: () => void } = $props();
+	const isBatch = tracks !== undefined && tracks.length > 0;
 
-	let title = $state(track.title || '');
-	let artist = $state(track.artist || '');
-	let album = $state(track.album || '');
-	let genre = $state(track.genre || '');
-	let trackNumber = $state(track.track_number?.toString() || '');
-	let year = $state(track.year?.toString() || '');
+	const titleTrack = track || tracks?.[0] || ({} as Track);
+	let title = $state(titleTrack.title || '');
+	let artist = $state(titleTrack.artist || '');
+	let album = $state(titleTrack.album || '');
+	let genre = $state(titleTrack.genre || '');
+	let trackNumber = $state(titleTrack.track_number?.toString() || '');
+	let year = $state(titleTrack.year?.toString() || '');
 	let saving = $state(false);
 	let error = $state('');
 	let success = $state(false);
@@ -25,20 +28,26 @@
 		success = false;
 
 		const update: Record<string, any> = {};
-		if (title !== (track.title || '')) update.title = title || null;
-		if (artist !== (track.artist || '')) update.artist = artist || null;
-		if (album !== (track.album || '')) update.album = album || null;
-		if (genre !== (track.genre || '')) update.genre = genre || null;
+		if (title !== (titleTrack.title || '')) update.title = title || null;
+		if (artist !== (titleTrack.artist || '')) update.artist = artist || null;
+		if (album !== (titleTrack.album || '')) update.album = album || null;
+		if (genre !== (titleTrack.genre || '')) update.genre = genre || null;
 		const tn = trackNumber ? parseInt(trackNumber) : null;
-		if (tn !== track.track_number && (tn !== null || track.track_number !== null)) update.track_number = tn;
+		if (tn !== titleTrack.track_number && (tn !== null || titleTrack.track_number !== null)) update.track_number = tn;
 		const yr = year ? parseInt(year) : null;
-		if (yr !== track.year && (yr !== null || track.year !== null)) update.year = yr;
+		if (yr !== titleTrack.year && (yr !== null || titleTrack.year !== null)) update.year = yr;
 
 		if (Object.keys(update).length === 0) { saving = false; success = true; return; }
 
 		try {
 			const { invoke } = await import('@tauri-apps/api/core');
-			await invoke('edit_tags', { path: track.path, update });
+			if (isBatch) {
+				await invoke('batch_edit_tags', { paths: tracks!.map((tr) => tr.path), update });
+			} else if (track) {
+				await invoke('edit_tags', { path: track.path, update });
+			} else {
+				return;
+			}
 			success = true;
 			setTimeout(onclose, 800);
 		} catch (e: any) {

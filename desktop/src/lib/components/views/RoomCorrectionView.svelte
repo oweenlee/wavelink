@@ -430,7 +430,7 @@
 	.btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--separator); background: var(--bg-surface); color: var(--fg-secondary); font-size: 12px; font-family: inherit; cursor: pointer; transition: all 0.15s; }
 	.btn:hover { background: var(--bg-hover); color: var(--fg-primary); }
 	.btn:disabled { opacity: 0.45; cursor: default; }
-	.btn.primary { background: var(--accent, #e2a63d); border-color: transparent; color: #0a0a0c; font-weight: 600; }
+	.btn.primary { background: var(--accent, #e8553f); border-color: transparent; color: #0a0a0c; font-weight: 600; }
 	.btn.primary:hover { filter: brightness(1.08); }
 	.btn.danger { border-color: rgba(255, 80, 80, 0.15); color: rgba(255, 80, 80, 0.5); }
 	.btn.danger:hover { background: rgba(255, 80, 80, 0.08); color: rgba(255, 80, 80, 0.8); }
@@ -440,7 +440,7 @@
 	.paste-box textarea:focus { border-color: var(--accent); }
 	.paste-actions { display: flex; gap: 8px; margin-top: 8px; }
 
-	.data-badge { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 5px 10px; border-radius: 8px; background: color-mix(in srgb, var(--accent, #e2a63d) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent, #e2a63d) 35%, transparent); font-size: 12px; color: var(--accent, #e2a63d); }
+	.data-badge { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 5px 10px; border-radius: 8px; background: color-mix(in srgb, var(--accent, #e8553f) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent, #e8553f) 35%, transparent); font-size: 12px; color: var(--accent, #e8553f); }
 	.dot { opacity: 0.5; }
 
 	.section-title { font-size: 13px; font-weight: 600; color: var(--fg-secondary); margin: 16px 0 10px; }
@@ -464,7 +464,7 @@
 	.param-val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 600; }
 
 	.slider { flex: 1; width: 100%; -webkit-appearance: none; appearance: none; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); outline: none; cursor: pointer; }
-	.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--accent, #e2a63d); cursor: pointer; }
+	.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--accent, #e8553f); cursor: pointer; }
 
 	.range-duo { display: flex; align-items: center; gap: 8px; }
 	.range-duo input[type="range"] { flex: 1; }
@@ -474,7 +474,7 @@
 	.switch-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--fg-primary); }
 
 	.toggle { display: inline-flex; align-items: center; padding: 4px; border: none; background: var(--bg-hover); border-radius: 20px; cursor: pointer; transition: all 0.2s; width: 44px; position: relative; }
-	.toggle.active { background: var(--accent, #e2a63d); }
+	.toggle.active { background: var(--accent, #e8553f); }
 	.toggle-knob { width: 18px; height: 18px; border-radius: 50%; background: white; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); transition: transform 0.2s; }
 	.toggle.active .toggle-knob { transform: translateX(18px); }
 

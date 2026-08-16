@@ -240,6 +240,7 @@ fn main() {
             commands::stream_cmds::play_stream,
             commands::stream_cmds::stream_write,
             commands::stream_cmds::stream_eof,
+            commands::stream_cmds::strm_play,
             commands::library::scan_dir,
             commands::library::get_scan_folders,
             commands::library::remove_scan_folder,

@@ -62,3 +62,34 @@ export interface AlbumBrief {
 	first_track_path: string;
 	year: number | null;
 }
+
+// ── CUE 分轨 ──
+
+export interface CueTrack {
+	num: string;
+	title: string | null;
+	performer: string | null;
+	start_secs: number;
+	pregap_secs: number;
+}
+
+export interface CueFile {
+	path: string;
+	tracks: CueTrack[];
+}
+
+export interface CueSheet {
+	title: string | null;
+	performer: string | null;
+	files: CueFile[];
+}
+
+// ── 音频分析 ──
+
+export interface AnalysisResult {
+	bpm: number | null;
+	key: string | null;
+	energy: number | null;
+	bpm_confidence: number | null;
+	key_confidence: number | null;
+}

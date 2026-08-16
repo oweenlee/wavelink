@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getUiState } from '$lib/stores/ui.svelte';
-	import { Music, AudioLines, Settings, HardDrive, Waves, Radio, Globe } from 'lucide-svelte';
+	import { Music, AudioLines, Settings, HardDrive, Waves, Radio, Globe, ListMusic } from 'lucide-svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
 
 	const ui = getUiState();
@@ -8,22 +8,7 @@
 
 <aside class="sidebar">
 	<div class="logo">
-		<svg class="logo-svg" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-			<defs>
-				<linearGradient id="sw1" x1="0" y1="0" x2="24" y2="0">
-					<stop offset="0" stop-color="#e2a63d"/>
-					<stop offset="100" stop-color="#f0c860"/>
-				</linearGradient>
-				<linearGradient id="sw2" x1="0" y1="0" x2="24" y2="0">
-					<stop offset="0" stop-color="#c8956c"/>
-					<stop offset="100" stop-color="#e2a63d"/>
-				</linearGradient>
-			</defs>
-			<path d="M2 8C7 7 7 17 12 17C17 17 17 7 22 8" fill="none" stroke="url(#sw1)" stroke-width="2.5" stroke-linecap="round"/>
-			<path d="M2 16C7 17 7 7 12 7C17 7 17 17 22 16" fill="none" stroke="url(#sw2)" stroke-width="2" stroke-linecap="round"/>
-			<circle cx="7" cy="12" r="1.3" fill="#f0c860"/>
-			<circle cx="17" cy="12" r="1.3" fill="#c8956c"/>
-		</svg>
+		<img class="logo-img" src="/wavelink-logo.png" alt="WaveLink" width="22" height="22" />
 		<span class="logo-text">WaveLink</span>
 	</div>
 
@@ -57,6 +42,10 @@
 			<Globe size={16} stroke-width={1.5} />
 			<span>{t('sidebar.webdav')}</span>
 		</button>
+		<button class="nav-item" class:active={ui.view === 'cue'} onclick={() => ui.navigateTo('cue')}>
+			<ListMusic size={16} stroke-width={1.5} />
+			<span>{t('sidebar.cue')}</span>
+		</button>
 	</nav>
 </aside>
 
@@ -75,7 +64,7 @@
 		margin-bottom: var(--space-8);
 	}
 
-	.logo-svg { flex-shrink: 0; }
+	.logo-svg, .logo-img { flex-shrink: 0; }
 	.logo-text { font-family: var(--font-display); font-size: 16px; font-weight: 600; color: var(--fg-primary); letter-spacing: 0.5px; }
 
 	.nav { display: flex; flex-direction: column; gap: 1px; }

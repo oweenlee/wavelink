@@ -1,41 +1,41 @@
 /* ══════════════════════════════════════════════
-   Design Tokens — Obsidian & Amber
-   Pure black · Warm amber accent · Analog HiFi soul
+   Design Tokens — Graphite & Neutral
+   Neutral gray structure · Content-driven accent (mobile 同款色调)
    ══════════════════════════════════════════════ */
 
 :root {
-  /* ── Background — near-black with subtle layering ── */
-  --bg: #0f0f11;
+  /* ── Background — 对齐 mobile 灰阶：s1 主背景 / s2 卡片 / s3 高亮 ── */
+  --bg: #0e1011;
   --bg-gradient: none;
-  --bg-surface: #111113;
-  --bg-elevated: #141417;
-  --bg-hover: rgba(255, 255, 255, 0.05);
-  --bg-active: rgba(255, 255, 255, 0.08);
+  --bg-surface: #16191b;
+  --bg-elevated: #1f2427;
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-active: rgba(255, 255, 255, 0.12);
 
   /* ── Panels — solid, not glass ── */
-  --glass-bg: #111111;
+  --glass-bg: #16191b;
   --glass-blur: none;
-  --glass-border: 1px solid rgba(255, 255, 255, 0.06);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.08);
 
-  /* ── Foreground ── */
-  --fg-primary: #f5f5f3;
-  --fg-secondary: #9a9a96;
-  --fg-tertiary: #5c5c58;
+  /* ── Foreground — 对齐 mobile 文字层级 ── */
+  --fg-primary: #f0f1f3;
+  --fg-secondary: #9a9fa6;
+  --fg-tertiary: #5c6166;
   --fg-quaternary: rgba(255, 255, 255, 0.10);
 
-  /* ── Separator ── */
-  --separator: rgba(255, 255, 255, 0.06);
+  /* ── Separator — mobile divider 8% ── */
+  --separator: rgba(255, 255, 255, 0.08);
 
-  /* ── Accent — Amber (VU meter / tube glow) ── */
-  --accent: #e2a63d;
-  --accent-dim: rgba(226, 166, 61, 0.15);
-  --accent-glow: rgba(226, 166, 61, 0.10);
+  /* ── Accent — mobile accentFallback（无封面时播放域用色） ── */
+  --accent: #e8553f;
+  --accent-dim: rgba(232, 85, 63, 0.15);
+  --accent-glow: rgba(232, 85, 63, 0.10);
 
-  /* ── Semantic ── */
-  --danger: #d94f4f;
-  --danger-dim: rgba(217, 79, 79, 0.12);
-  --success: #5daa72;
-  --success-dim: rgba(93, 170, 114, 0.12);
+  /* ── Semantic — 对齐 mobile ok/warn/danger ── */
+  --danger: #e85d5d;
+  --danger-dim: rgba(232, 93, 93, 0.12);
+  --success: #4ec9a0;
+  --success-dim: rgba(78, 201, 160, 0.12);
 
   /* ── Radius — tighter, hardware-like ── */
   --radius-sm: 4px;

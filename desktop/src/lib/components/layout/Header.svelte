@@ -29,6 +29,7 @@
 		room: t('header.view_room'),
 		subsonic: t('header.view_subsonic'),
 		webdav: t('header.view_webdav'),
+		cue: t('header.view_cue'),
 	};
 
 	function openSearch() {

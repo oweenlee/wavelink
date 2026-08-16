@@ -26,6 +26,8 @@
 
 	let editTrack = $state<Track | null>(null);
 	let deleteTarget = $state<Track | null>(null);
+	let batchTracks = $state<Track[] | null>(null);
+	let selectedIds = $state<Set<number>>(new Set());
 
 	// ── Scan folder management ──
 	let scanFolders = $state<string[]>([]);
@@ -133,7 +135,21 @@
 
 	function closeTagEditor() {
 		editTrack = null;
+		batchTracks = null;
 		library.loadTracks();
+	}
+
+	function toggleSelect(id: number) {
+		const next = new Set(selectedIds);
+		if (next.has(id)) next.delete(id); else next.add(id);
+		selectedIds = next;
+	}
+
+	function openBatchEditor() {
+		const sel = library.tracks.filter((tr) => selectedIds.has(tr.id));
+		if (sel.length === 0) return;
+		batchTracks = sel;
+		selectedIds = new Set();
 	}
 
 	async function executeDelete() {
@@ -280,6 +296,12 @@
 					<Play size={14} fill="currentColor" />
 					<span>{t('library.play_all')}</span>
 				</button>
+				{#if selectedIds.size > 0}
+					<button class="action-btn" onclick={openBatchEditor}>
+						<Pencil size={14} />
+						<span>{t('library.batch_edit', { count: selectedIds.size })}</span>
+					</button>
+				{/if}
 			{/if}
 			{#if importMsg}
 				<span class="import-msg">{importMsg}</span>
@@ -332,6 +354,16 @@
 	{:else if mode === 'tracks'}
 		<div class="track-table" bind:this={trackTableEl} onscroll={onTableScroll}>
 			<div class="track-header">
+				<span class="th-check">
+					<input type="checkbox" class="row-check"
+						checked={selectedIds.size === visTracks.length && visTracks.length > 0}
+						onchange={(e) => {
+							const on = (e.target as HTMLInputElement).checked;
+							const next = new Set(selectedIds);
+							if (on) visTracks.forEach((tr) => next.add(tr.id)); else visTracks.forEach((tr) => next.delete(tr.id));
+							selectedIds = next;
+						}} />
+				</span>
 				<span class="th-num">#</span>
 				<span class="th-title">{t('library.header_title')}</span>
 				<span class="th-artist">{t('library.header_artist')}</span>
@@ -342,7 +374,10 @@
 				<div style="height: {topSpacerH}px;"></div>
 				{#each visTracks as track, vi (track.id)}
 					{@const i = visStart + vi}
-					<div class="track-row" role="button" tabindex="0" class:active={playback.currentTrack?.id === track.id && playback.isPlaying} onclick={(e) => { if ((e.target as HTMLElement).closest('.td-actions')) return; playTrack(track, i); }} onkeydown={(e) => e.key === 'Enter' && playTrack(track, i)}>
+					<div class="track-row" role="button" tabindex="0" class:active={playback.currentTrack?.id === track.id && playback.isPlaying} onclick={(e) => { if ((e.target as HTMLElement).closest('.td-actions') || (e.target as HTMLElement).closest('.td-check')) return; playTrack(track, i); }} onkeydown={(e) => e.key === 'Enter' && playTrack(track, i)}>
+					<span class="td-check" onclick={(e) => e.stopPropagation()}>
+						<input type="checkbox" class="row-check" checked={selectedIds.has(track.id)} onchange={() => toggleSelect(track.id)} />
+					</span>
 						<span class="td-num">{i + 1}</span>
 						<span class="td-title">
 							<span class="td-title-text">{track.title || track.path.split(/[/\\]/).pop()}</span>
@@ -453,6 +488,10 @@
 		<TagEditor track={editTrack} onclose={closeTagEditor} />
 	{/if}
 
+	{#if batchTracks}
+		<TagEditor tracks={batchTracks} onclose={closeTagEditor} />
+	{/if}
+
 	{#if deleteTarget}
 		<div class="backdrop" onclick={() => deleteTarget = null} role="button" tabindex="0" onkeydown={(e) => e.key === 'Escape' && (deleteTarget = null)}></div>
 		<div class="confirm-dialog">
@@ -474,6 +513,9 @@
 	.back-btn:hover { background: var(--bg-active); color: var(--fg-primary); }
 	.action-btn { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-3); border-radius: var(--radius-sm); border: none; background: var(--bg-hover); color: var(--fg-secondary); font-size: 12px; font-family: inherit; cursor: pointer; transition: all 0.12s; }
 	.action-btn:hover { background: var(--bg-active); color: var(--fg-primary); }
+	.th-check { width: 28px; display: flex; align-items: center; }
+	.td-check { width: 28px; display: flex; align-items: center; }
+	.row-check { width: 13px; height: 13px; accent-color: var(--accent); cursor: pointer; }
 	.browse-tabs { display: flex; gap: 1px; margin-bottom: var(--space-4); flex-shrink: 0; background: var(--bg-hover); border-radius: var(--radius-sm); padding: 2px; width: fit-content; }
 	.browse-tab { padding: var(--space-1) var(--space-4); border: none; border-radius: var(--radius-sm); background: transparent; color: var(--fg-tertiary); font-size: 12px; font-weight: 500; font-family: inherit; cursor: pointer; transition: all 0.12s; }
 	.browse-tab.active { background: var(--bg); color: var(--fg-primary); }

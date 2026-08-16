@@ -198,31 +198,85 @@ fn scan_directory_inner(db: &LibraryDb, dir: &Path) -> Result<ScannerResult, Str
                     // 按真实音频收录——元数据/封面/时长齐全，播放无感。
                     // 目标不存在或为 http(s) URL 时跳过（桌面端暂不支持）。
                     match resolve_strm_target(path) {
-                        Some(rs) => match scan_file(&rs.target) {
-                            Ok(Some(mut track)) => {
-                                // Kodi strm 库的 #EXTINF 行携带展示标题/时长：
-                                // 真实文件无标签时以它为兑底展示名（与 Kodi 一致）
-                                if let Some(t) = rs.extinf_title {
-                                    track.title = Some(t);
-                                }
-                                if track.duration.is_none() {
-                                    track.duration = rs.extinf_duration;
-                                }
+                        Some(rs) => {
+                            if let Some(url) = rs.url {
+                                // STRM 指向 http(s) URL：收录为 URL 轨道。
+                                // 无本地文件，元数据从 `#EXTINF` 兜底；
+                                // 播放时由前端走「下载缓存再 play」链路。
+                                let format = url
+                                    .split('?')
+                                    .next()
+                                    .and_then(|p| p.rsplit('.').next())
+                                    .map(|e| e.to_lowercase());
+                                let file_stem = url
+                                    .split('?')
+                                    .next()
+                                    .and_then(|p| p.rsplit('/').next())
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_else(|| "?".into());
+                                let stem = file_stem.rsplit('.').next_back().unwrap_or(&file_stem).to_string();
+                                let track = Track {
+                                    id: 0,
+                                    path: url.clone(),
+                                    title: rs.extinf_title.clone().or(Some(stem)),
+                                    artist: Some("未知艺术家".into()),
+                                    album: Some("未知专辑".into()),
+                                    album_artist: None,
+                                    track_number: None,
+                                    disc_number: None,
+                                    year: None,
+                                    genre: None,
+                                    duration: rs.extinf_duration,
+                                    sample_rate: None,
+                                    channels: None,
+                                    format,
+                                    file_size: None,
+                                    file_modified: None,
+                                    date_added: SystemTime::now()
+                                        .duration_since(UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs() as i64,
+                                    play_count: 0,
+                                    last_played: None,
+                                    rating: 0,
+                                    missing: false,
+                                    cover_base64: None,
+                                    track_gain: None,
+                                };
                                 if let Err(e) = db.upsert_track(&track) {
-                                    warn!("写入数据库失败 {}: {e}", rs.target.display());
+                                    warn!("写入数据库失败 {}: {e}", url);
                                     errors += 1;
                                 } else {
                                     scanned += 1;
                                 }
-                            }
-                            Ok(None) => {} // 跳过（目标非音频）
-                            Err(e) => {
-                                warn!("读取标签失败 {}: {e}", rs.target.display());
-                                errors += 1;
+                            } else if let Some(target) = rs.target {
+                                match scan_file(&target) {
+                                    Ok(Some(mut track)) => {
+                                        // Kodi strm 库的 #EXTINF 行携带展示标题/时长：
+                                        // 真实文件无标签时以它为兑底展示名（与 Kodi 一致）
+                                        if let Some(t) = rs.extinf_title {
+                                            track.title = Some(t);
+                                        }
+                                        if track.duration.is_none() {
+                                            track.duration = rs.extinf_duration;
+                                        }
+                                        if let Err(e) = db.upsert_track(&track) {
+                                            warn!("写入数据库失败 {}: {e}", target.display());
+                                            errors += 1;
+                                        } else {
+                                            scanned += 1;
+                                        }
+                                    }
+                                    Ok(None) => {} // 跳过（目标非音频）
+                                    Err(e) => {
+                                        warn!("读取标签失败 {}: {e}", target.display());
+                                        errors += 1;
+                                    }
+                                }
                             }
                         },
                         None => {
-                            warn!("STRM 目标不可用（不存在或 URL），跳过: {}", path.display());
+                            warn!("STRM 目标不可用，跳过: {}", path.display());
                         }
                     }
                 } else if AUDIO_EXTENSIONS.contains(&ext.as_str()) {
@@ -265,11 +319,13 @@ pub struct ScannerResult {
 /// strm 是纯文本，内容为一行指向真实媒体的路径：绝对路径直接用，
 /// 相对路径相对 strm 文件所在目录解析（兼容 ./ 与 ../）。
 /// 目标必须是本地音频文件（扩展名在 [AUDIO_EXTENSIONS] 内）且存在；
-/// http(s) URL 目标桌面端暂不支持，返回 None 跳过。
+/// http(s) URL 目标同样收录为 URL 轨道（播放时由前端走下载缓存链路）。
 /// STRM 解析结果：目标媒体路径 + Kodi 风格 `#EXTINF` 信息行携带的
 /// 展示标题/时长（真实文件无标签时的兜底展示名）。
 struct ResolvedStrm {
-    target: PathBuf,
+    target: Option<PathBuf>,
+    /// http(s) URL 目标（target 为 None 时有效）
+    url: Option<String>,
     extinf_title: Option<String>,
     extinf_duration: Option<f64>,
 }
@@ -278,7 +334,7 @@ struct ResolvedStrm {
 /// strm 是纯文本，内容为一行指向真实媒体的路径：绝对路径直接用，
 /// 相对路径相对 strm 文件所在目录解析（兼容 ./ 与 ../）。
 /// 目标必须是本地音频文件（扩展名在 [AUDIO_EXTENSIONS] 内）且存在；
-/// http(s) URL 目标桌面端暂不支持，返回 None 跳过。
+/// http(s) URL 目标同样收录为 URL 轨道（播放时由前端走下载缓存链路）。
 /// 顺带解析 `#EXTINF:秒数,标题` 信息行（Kodi strm 库惯例）。
 fn resolve_strm_target(strm_path: &Path) -> Option<ResolvedStrm> {
     let content = fs::read_to_string(strm_path).ok()?;
@@ -313,7 +369,23 @@ fn resolve_strm_target(strm_path: &Path) -> Option<ResolvedStrm> {
     }
     let line = line?;
     if line.starts_with("http://") || line.starts_with("https://") {
-        warn!("STRM 指向 http(s) URL，桌面端暂不支持: {line}");
+        // http(s) URL 目标：收录为 URL 轨道（target 为 None），
+        // 播放侧由前端走「下载缓存再 play」链路（引擎只吃本地路径）。
+        let ext = line
+            .split('?')
+            .next()
+            .and_then(|p| p.rsplit('.').next())
+            .map(|e| e.to_lowercase());
+        let valid = ext.map(|e| AUDIO_EXTENSIONS.contains(&e.as_str())).unwrap_or(false);
+        if valid || extinf_duration.is_some() {
+            return Some(ResolvedStrm {
+                target: None,
+                url: Some(line.to_string()),
+                extinf_title,
+                extinf_duration,
+            });
+        }
+        warn!("STRM 指向不可识别扩展名的 URL，跳过: {line}");
         return None;
     }
     let raw = Path::new(line);
@@ -334,7 +406,8 @@ fn resolve_strm_target(strm_path: &Path) -> Option<ResolvedStrm> {
     match ext {
         Some(e) if AUDIO_EXTENSIONS.contains(&e.as_str()) && normalized.is_file() => {
             Some(ResolvedStrm {
-                target: normalized,
+                target: Some(normalized),
+                url: None,
                 extinf_title,
                 extinf_duration,
             })

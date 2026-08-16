@@ -43,6 +43,30 @@ setOnTrackChanged((path: string) => {
 	}
 });
 
+// 曲库里的 STRM http(s) URL 轨道：引擎只接受本地路径，播放前先把远端
+// 下载到缓存（Rust 侧 strm_play 命令）并替换为本地路径。下载失败的单条
+// 从队列剔除（保持剩余曲目可正常播放）。
+async function resolveRemoteTracks(tracks: Track[]): Promise<Track[]> {
+	let hasRemote = false;
+	for (const t of tracks) {
+		if (t.path.startsWith('http://') || t.path.startsWith('https://')) { hasRemote = true; break; }
+	}
+	if (!hasRemote) return tracks;
+	const { invoke } = await import('@tauri-apps/api/core');
+	const out: Track[] = [];
+	for (const t of tracks) {
+		const isUrl = t.path.startsWith('http://') || t.path.startsWith('https://');
+		if (!isUrl) { out.push(t); continue; }
+		try {
+			const local = await invoke<string>('strm_play', { url: t.path, name: t.title || t.path });
+			out.push({ ...t, path: local });
+		} catch (e) {
+			console.warn('[playback] STRM URL 下载失败，跳过:', t.path, e);
+		}
+	}
+	return out;
+}
+
 export function getPlaybackState() {
 	return {
 		// ── Reactive getters ──
@@ -103,9 +127,17 @@ export function getPlaybackState() {
 			if (tracks.length === 0) return;
 			const idx = Math.min(Math.max(startIndex, 0), tracks.length - 1);
 			const rotated = [...tracks.slice(idx), ...tracks.slice(0, idx)];
+			// 保持原有同步语义：先置位队列/索引（无 URL 时不额外异步下载，
+			// 避免 togglePlay 等同步入口读到过期索引）
 			pl.setQueue(rotated);
 			pl.setIndex(0);
-			await enginePlayQueue(rotated);
+			if (rotated.some((t) => t.path.startsWith('http://') || t.path.startsWith('https://'))) {
+				const resolved = await resolveRemoteTracks(rotated);
+				pl.setQueue(resolved);
+				await enginePlayQueue(resolved);
+			} else {
+				await enginePlayQueue(rotated);
+			}
 		},
 
 		// 下一首 / 上一首委托引擎：引擎按 play_mode 推进并维护播放历史
