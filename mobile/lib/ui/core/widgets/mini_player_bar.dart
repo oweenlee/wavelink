@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/playback/view_models/playback_controller.dart';
 import '../../features/playback/view_models/audio_player_provider.dart';
 import '../../features/playback/view_models/queue_provider.dart';
+import '../../features/library/view_models/library_provider.dart';
 import '../animations/app_animations.dart';
 import '../theme/app_theme.dart';
 import 'album_cover.dart';
@@ -20,6 +21,7 @@ class MiniPlayerBar extends ConsumerWidget {
     final player = ref.watch(playbackControllerProvider);
     final playerState = ref.watch(playerProvider);
     final queueState = ref.watch(queueProvider);
+    ref.watch(libraryProvider); // 收藏状态变化时刷新迷你条爱心
     final song = queueState.currentSong;
     if (song == null) return const SizedBox.shrink();
 
@@ -161,6 +163,32 @@ class MiniPlayerBar extends ConsumerWidget {
                                   ? Icons.pause
                                   : Icons.play_arrow,
                               color: Colors.white,
+                              size: 22,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      // 收藏 — 播放按钮右侧，点击收藏/取消（与下一曲同款圆形按钮）
+                      GestureDetector(
+                        onTap: () => player.setFavorite(
+                          song.id,
+                          !player.isSongFavorite(song.id),
+                        ),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Icon(
+                              player.isSongFavorite(song.id)
+                                  ? Icons.favorite
+                                  : Icons.favorite_border,
+                              color: player.isSongFavorite(song.id)
+                                  ? AppTheme.danger
+                                  : AppTheme.textSecondary,
                               size: 22,
                             ),
                           ),

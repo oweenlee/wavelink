@@ -1304,18 +1304,6 @@ void _showContextMenu(
                 label: l10n.addToPlaylist,
                 onTap: () => _showAddToPlaylist(ctx, song, player),
               ),
-              _MenuItem(
-                icon: player.isSongFavorite(song.id)
-                    ? Icons.favorite
-                    : Icons.favorite_border,
-                label: player.isSongFavorite(song.id)
-                    ? l10n.unfavorite
-                    : l10n.favorite,
-                onTap: () {
-                  player.setFavorite(song.id, !player.isSongFavorite(song.id));
-                  Navigator.pop(ctx);
-                },
-              ),
               const Divider(height: 1),
               _MenuItem(
                 icon: LucideIcons.trash2,
