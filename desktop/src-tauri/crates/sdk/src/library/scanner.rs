@@ -194,9 +194,9 @@ fn scan_directory_inner(db: &LibraryDb, dir: &Path) -> Result<ScannerResult, Str
                 .map(|e| e.to_lowercase());
             if let Some(ref ext) = ext {
                 if ext == "strm" {
-                    // STRM 指针文件：解析内容指向的真实媒体（仅本地路径），
-                    // 按真实音频收录——元数据/封面/时长齐全，播放无感。
-                    // 目标不存在或为 http(s) URL 时跳过（桌面端暂不支持）。
+                    // STRM 指针文件：解析内容指向的真实媒体，按真实音频收录
+                    // ——本地路径元数据/封面/时长齐全，播放无感；http(s) URL
+                    // 则收录为 URL 轨道，播放时由前端走「下载缓存再 play」链路。
                     match resolve_strm_target(path) {
                         Some(rs) => {
                             if let Some(url) = rs.url {
@@ -207,7 +207,8 @@ fn scan_directory_inner(db: &LibraryDb, dir: &Path) -> Result<ScannerResult, Str
                                     .split('?')
                                     .next()
                                     .and_then(|p| p.rsplit('.').next())
-                                    .map(|e| e.to_lowercase());
+                                    .map(|e| e.to_lowercase())
+                                    .filter(|e| AUDIO_EXTENSIONS.contains(&e.as_str()));
                                 let file_stem = url
                                     .split('?')
                                     .next()

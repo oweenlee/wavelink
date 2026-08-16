@@ -215,50 +215,54 @@ fn parse_propfind(xml: &str) -> Result<Vec<WebdavEntry>, String> {
 
 /// 列出 WebDAV 目录（PROPFIND depth=1，不递归）
 #[tauri::command]
-pub fn webdav_list(
+pub async fn webdav_list(
     base_url: String,
     path: String,
     username: String,
     password: String,
 ) -> Result<Vec<WebdavEntry>, String> {
-    let client = crate::remote::http_client()?;
-    let url = full_url_for(&base_url, &path);
-    let url = if url.ends_with('/') {
-        url
-    } else {
-        format!("{url}/")
-    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let client = crate::remote::http_client()?;
+        let url = full_url_for(&base_url, &path);
+        let url = if url.ends_with('/') {
+            url
+        } else {
+            format!("{url}/")
+        };
 
-    let method = Method::from_bytes(b"PROPFIND").map_err(|e| e.to_string())?;
-    let extra = [("depth", "1".to_string())];
-    let resp = crate::remote::auth_request(
-        &client,
-        &method,
-        &url,
-        &username,
-        &password,
-        &extra,
-        Some(PROPFIND_BODY.as_bytes().to_vec()),
-    )?;
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}: {url}", resp.status()));
-    }
-    let xml = resp.text().map_err(|e| e.to_string())?;
-    let mut entries = parse_propfind(&xml)?;
-    // 过滤掉自身目录（href 解析出的 name 为空已跳过）；标注扩展名
-    for e in &mut entries {
-        if !e.is_dir {
-            e.ext = e
-                .url
-                .rsplit('.')
-                .next()
-                .unwrap_or("")
-                .to_lowercase();
+        let method = Method::from_bytes(b"PROPFIND").map_err(|e| e.to_string())?;
+        let extra = [("depth", "1".to_string())];
+        let resp = crate::remote::auth_request(
+            &client,
+            &method,
+            &url,
+            &username,
+            &password,
+            &extra,
+            Some(PROPFIND_BODY.as_bytes().to_vec()),
+        )?;
+        if !resp.status().is_success() {
+            return Err(format!("HTTP {}: {url}", resp.status()));
         }
-    }
-    // 目录在前，文件在后
-    entries.sort_by_key(|e| std::cmp::Reverse(e.is_dir));
-    Ok(entries)
+        let xml = resp.text().map_err(|e| e.to_string())?;
+        let mut entries = parse_propfind(&xml)?;
+        // 过滤掉自身目录（href 解析出的 name 为空已跳过）；标注扩展名
+        for e in &mut entries {
+            if !e.is_dir {
+                e.ext = e
+                    .url
+                    .rsplit('.')
+                    .next()
+                    .unwrap_or("")
+                    .to_lowercase();
+            }
+        }
+        // 目录在前，文件在后
+        entries.sort_by_key(|e| std::cmp::Reverse(e.is_dir));
+        Ok(entries)
+    })
+    .await
+    .map_err(|e| format!("webdav task failed: {e}"))?
 }
 
 /// 递归扫描 WebDAV 树，收集全部音频文件（单目录失败隔离，深度上限 20）
@@ -315,23 +319,27 @@ fn scan_recursive(
 
 /// 递归扫描 WebDAV 音乐库（对齐移动端 scanWebdav：单目录失败隔离）
 #[tauri::command]
-pub fn webdav_scan(
+pub async fn webdav_scan(
     base_url: String,
     path: String,
     username: String,
     password: String,
 ) -> Result<Vec<WebdavEntry>, String> {
-    let client = crate::remote::http_client()?;
-    let root = full_url_for(&base_url, &path);
-    let mut out = Vec::new();
-    scan_recursive(&client, &base_url, &username, &password, &root, 0, &mut out);
-    Ok(out)
+    tauri::async_runtime::spawn_blocking(move || {
+        let client = crate::remote::http_client()?;
+        let root = full_url_for(&base_url, &path);
+        let mut out = Vec::new();
+        scan_recursive(&client, &base_url, &username, &password, &root, 0, &mut out);
+        Ok(out)
+    })
+    .await
+    .map_err(|e| format!("webdav task failed: {e}"))?
 }
 
 /// 下载 WebDAV 远端文件到本地缓存（`.cache/webdav/{hash}_{name}`），返回本地路径。
 /// 已存在非空缓存则直接复用。写入先落 `.part` 临时文件再原子 rename。
 #[tauri::command]
-pub fn webdav_download_to_cache(
+pub async fn webdav_download_to_cache(
     url: String,
     name: String,
     username: String,
@@ -344,16 +352,29 @@ pub fn webdav_download_to_cache(
         .map_err(|e| e.to_string())?
         .join(".cache")
         .join("webdav");
-    std::fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        webdav_download_to_cache_blocking(&url, &name, &username, &password, &cache_dir)
+    })
+    .await
+    .map_err(|e| format!("webdav task failed: {e}"))?
+}
+
+fn webdav_download_to_cache_blocking(
+    url: &str,
+    name: &str,
+    username: &str,
+    password: &str,
+    cache_dir: &Path,
+) -> Result<String, String> {
+    std::fs::create_dir_all(cache_dir).map_err(|e| e.to_string())?;
 
     let hash = {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut h = DefaultHasher::new();
-        url.hash(&mut h);
-        format!("{:016x}", h.finish())
+        use md5::{Digest, Md5};
+        let mut h = Md5::new();
+        h.update(url.as_bytes());
+        hex_encode(&h.finalize())
     };
-    let safe_name = sanitize_filename(&name);
+    let safe_name = sanitize_filename(name);
     let final_path = cache_dir.join(format!("{hash}_{safe_name}"));
     let final_str = final_path.to_string_lossy().to_string();
 
@@ -368,9 +389,9 @@ pub fn webdav_download_to_cache(
     let resp = crate::remote::auth_request(
         &client,
         &Method::GET,
-        &url,
-        &username,
-        &password,
+        url,
+        username,
+        password,
         &[],
         None,
     )?;
@@ -396,6 +417,15 @@ pub fn webdav_download_to_cache(
     Ok(final_str)
 }
 
+fn hex_encode(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(out, "{b:02x}");
+    }
+    out
+}
+
 fn sanitize_filename(name: &str) -> String {
     let name = name.trim();
     let cleaned: String = name
@@ -418,15 +448,15 @@ fn sanitize_filename(name: &str) -> String {
 
 /// 播放 WebDAV 音乐：下载到本地缓存后交给引擎播放（全量下载方案）
 #[tauri::command]
-pub fn webdav_play(
+pub async fn webdav_play(
     url: String,
     name: String,
     username: String,
     password: String,
-    state: State<AppState>,
+    state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<String, String> {
-    let local = webdav_download_to_cache(url, name, username, password, app)?;
+    let local = webdav_download_to_cache(url, name, username, password, app).await?;
     *crate::commands::lock_or_die(&state.current_track) = Some(local.clone());
     crate::commands::apply_track_settings(&state);
     state.engine.play(local.clone());
@@ -435,50 +465,54 @@ pub fn webdav_play(
 
 /// 测试 WebDAV 连接：OPTIONS ping + 列根目录
 #[tauri::command]
-pub fn webdav_test_connection(
+pub async fn webdav_test_connection(
     base_url: String,
     path: String,
     username: String,
     password: String,
 ) -> Result<(), String> {
-    let client = crate::remote::http_client()?;
-    let url = full_url_for(&base_url, &path);
-    let url = if url.ends_with('/') {
-        url
-    } else {
-        format!("{url}/")
-    };
-    // OPTIONS 探活
-    let resp = crate::remote::auth_request(
-        &client,
-        &Method::OPTIONS,
-        &url,
-        &username,
-        &password,
-        &[],
-        None,
-    )?;
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}: {url}", resp.status()));
-    }
-    // PROPFIND 验证可列目录
-    let method = Method::from_bytes(b"PROPFIND").map_err(|e| e.to_string())?;
-    let extra = [("depth", "0".to_string())];
-    let resp = crate::remote::auth_request(
-        &client,
-        &method,
-        &url,
-        &username,
-        &password,
-        &extra,
-        Some(PROPFIND_BODY.as_bytes().to_vec()),
-    )?;
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}: {url}", resp.status()));
-    }
-    // 顺手读掉 body 归还连接
-    let _ = resp.text();
-    Ok(())
+    tauri::async_runtime::spawn_blocking(move || {
+        let client = crate::remote::http_client()?;
+        let url = full_url_for(&base_url, &path);
+        let url = if url.ends_with('/') {
+            url
+        } else {
+            format!("{url}/")
+        };
+        // OPTIONS 探活
+        let resp = crate::remote::auth_request(
+            &client,
+            &Method::OPTIONS,
+            &url,
+            &username,
+            &password,
+            &[],
+            None,
+        )?;
+        if !resp.status().is_success() {
+            return Err(format!("HTTP {}: {url}", resp.status()));
+        }
+        // PROPFIND 验证可列目录
+        let method = Method::from_bytes(b"PROPFIND").map_err(|e| e.to_string())?;
+        let extra = [("depth", "0".to_string())];
+        let resp = crate::remote::auth_request(
+            &client,
+            &method,
+            &url,
+            &username,
+            &password,
+            &extra,
+            Some(PROPFIND_BODY.as_bytes().to_vec()),
+        )?;
+        if !resp.status().is_success() {
+            return Err(format!("HTTP {}: {url}", resp.status()));
+        }
+        // 顺手读掉 body 归还连接
+        let _ = resp.text();
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("webdav task failed: {e}"))?
 }
 
 /// 供其它模块复用（如 STRM 解析，暂未用）

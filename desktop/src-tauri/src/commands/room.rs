@@ -70,10 +70,15 @@ impl CorrectionConfigDto {
         if !(64..=65536).contains(&self.taps) || self.taps % 2 != 0 {
             return Err(format!("taps 需为 64..=65536 的偶数，当前 {}", self.taps));
         }
-        if !self.freq_min.is_finite() || !self.freq_max.is_finite()
-            || self.freq_min <= 0.0 || self.freq_max <= self.freq_min
+        if !self.freq_min.is_finite()
+            || !self.freq_max.is_finite()
+            || self.freq_min <= 0.0
+            || self.freq_max <= self.freq_min
         {
-            return Err(format!("无效频率范围: {}..{} Hz", self.freq_min, self.freq_max));
+            return Err(format!(
+                "无效频率范围: {}..{} Hz",
+                self.freq_min, self.freq_max
+            ));
         }
         Ok(rc::CorrectionConfig {
             target,
@@ -82,7 +87,11 @@ impl CorrectionConfigDto {
             null_limit_db: self.null_limit_db,
             freq_range: (self.freq_min, self.freq_max),
             psycho_weighting: self.psycho_weighting,
-            smoothing_octave: if self.smoothing_octave > 0.0 { self.smoothing_octave } else { 1.0 / 6.0 },
+            smoothing_octave: if self.smoothing_octave > 0.0 {
+                self.smoothing_octave
+            } else {
+                1.0 / 6.0
+            },
             headroom_db: self.headroom_db,
         })
     }
@@ -97,7 +106,10 @@ pub struct FreqPointDto {
 
 impl From<rc::FreqPoint> for FreqPointDto {
     fn from(p: rc::FreqPoint) -> Self {
-        FreqPointDto { freq: p.freq, level_db: p.level_db }
+        FreqPointDto {
+            freq: p.freq,
+            level_db: p.level_db,
+        }
     }
 }
 
@@ -119,7 +131,10 @@ pub struct RoomCorrectionReportDto {
 /// 房间校正 IR 的固定文件名（存 app data 目录，与 library.db 同目录）
 fn room_ir_path(app: &AppHandle) -> Result<String, String> {
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    Ok(data_dir.join("room_correction_ir.wav").to_string_lossy().to_string())
+    Ok(data_dir
+        .join("room_correction_ir.wav")
+        .to_string_lossy()
+        .to_string())
 }
 
 /// 读取现有设置并合并（避免覆盖其他字段）
@@ -136,26 +151,37 @@ pub fn default_correction_config() -> CorrectionConfigDto {
 /// 解析 REW 频响导出文本（不生成 IR，供校验/预览）。
 #[tauri::command]
 pub fn parse_rew_text(text: String) -> Result<Vec<FreqPointDto>, String> {
-    rc::parse_rew_txt(&text)
-        .map(|pts| pts.into_iter().map(FreqPointDto::from).collect())
+    rc::parse_rew_txt(&text).map(|pts| pts.into_iter().map(FreqPointDto::from).collect())
 }
 
 /// 生成并应用房间校正：REW 测量文本 → 校正 FIR → 存 WAV → 载入卷积级 → 持久化路径。
 #[tauri::command]
-pub fn generate_room_correction(
+pub async fn generate_room_correction(
     rew_txt: String,
     config: CorrectionConfigDto,
-    state: State<AppState>,
+    state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<RoomCorrectionReportDto, String> {
-    let cfg = config.to_core()?;
-    // 预览用测量曲线
-    let measured = rc::parse_rew_txt(&rew_txt)?;
-    // 与 DSP 管线采样率一致生成 IR（卷积器加载时不一致也会自动重采样）
-    let report = rc::generate_correction(&rew_txt, &cfg, TARGET_SAMPLE_RATE)?;
-
     let ir_path = room_ir_path(&app)?;
-    rc::export_ir_wav(&report.ir, report.sample_rate, &ir_path)?;
+    let ir_path_for_task = ir_path.clone();
+    let (measured, report) = tauri::async_runtime::spawn_blocking(move || {
+        let cfg = config.to_core()?;
+        // 预览用测量曲线
+        let measured = rc::parse_rew_txt(&rew_txt)?;
+        // 与 DSP 管线采样率一致生成 IR（卷积器加载时不一致也会自动重采样）
+        let report = rc::generate_correction(&rew_txt, &cfg, TARGET_SAMPLE_RATE)?;
+        rc::export_ir_wav(&report.ir, report.sample_rate, &ir_path_for_task)?;
+        Ok::<_, String>((
+            measured
+                .into_iter()
+                .map(FreqPointDto::from)
+                .collect::<Vec<_>>(),
+            report,
+        ))
+    })
+    .await
+    .map_err(|e| format!("room correction task failed: {e}"))??;
+
     state.engine.load_ir(ir_path.clone());
 
     // 持久化路径（对齐移动端：重启后由 restore_room_correction 恢复）
@@ -168,7 +194,7 @@ pub fn generate_room_correction(
         applied_gain_db: report.applied_gain_db,
         points: report.points,
         ir_len: report.ir.len(),
-        measured: measured.into_iter().map(FreqPointDto::from).collect(),
+        measured,
     })
 }
 
@@ -190,13 +216,17 @@ pub fn clear_room_correction(state: State<AppState>) -> Result<(), String> {
 #[tauri::command]
 pub fn get_room_correction_path() -> Option<String> {
     let saved = settings::load_settings().ok()?;
-    saved.get(ROOM_IR_PATH_KEY).and_then(|v| v.as_str().map(String::from))
+    saved
+        .get(ROOM_IR_PATH_KEY)
+        .and_then(|v| v.as_str().map(String::from))
 }
 
 /// 启动时恢复房间校正：读取持久化路径并载入卷积级。
 /// 文件被外部删除（清缓存/重装）时加载会失败，清理脏路径避免每次启动反复尝试。
 pub(crate) fn restore_room_correction(app: &AppHandle) {
-    let Ok(saved) = settings::load_settings() else { return };
+    let Ok(saved) = settings::load_settings() else {
+        return;
+    };
     let path = match saved.get(ROOM_IR_PATH_KEY) {
         Some(serde_json::Value::String(p)) => p.clone(),
         _ => return,

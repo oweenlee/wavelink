@@ -78,24 +78,15 @@
 
 	async function saveAll() {
 		if (!_invoke) return;
-		try {
-			// 先读已有设置再合并，避免覆盖 settings store 持久化的其他字段
-			let existing: Record<string, any> = {};
-			try { existing = await _invoke('load_settings') ?? {}; } catch { /* 首次无文件 */ }
-			await _invoke('save_settings', {
-				settings: {
-					...existing,
-					accentColor: settings.accentColor,
-					volume: playback.volume,
-					eqBands: eqBands.map(b => ({ freq: b.freq, gain_db: b.gain_db, q: b.q })),
-					irLoaded, stereoWidener, stereoWidth,
-					crossfeedEnabled, noiseShapingEnabled,
-					replaygainEnabled: settings.replaygainEnabled,
-					eqPreset: _activePreset,
-					autoEq: _autoEq,
-				},
-			});
-		} catch { console.warn('[Effects] 保存设置失败'); }
+		// 统一走 settings store 的串行保存队列，避免和 settings/NowPlayingBar 的保存互相覆盖
+		await settings.save({
+			volume: playback.volume,
+			eqBands: eqBands.map(b => ({ freq: b.freq, gain_db: b.gain_db, q: b.q })),
+			irLoaded, stereoWidener, stereoWidth,
+			crossfeedEnabled, noiseShapingEnabled,
+			eqPreset: _activePreset,
+			autoEq: _autoEq,
+		});
 	}
 
 	// ── EQ ──

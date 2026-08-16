@@ -5,6 +5,7 @@
 //! 全量下载到本地缓存目录再交给本地引擎播放。
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
@@ -200,106 +201,118 @@ fn to_song(track: &serde_json::Value, fallback_artist: &str, fallback_album: &st
 
 /// 测试连接：GET /rest/ping
 #[tauri::command]
-pub fn subsonic_test_connection(
+pub async fn subsonic_test_connection(
     base_url: String,
     username: String,
     password: String,
 ) -> Result<(), String> {
-    let base_url = trim_base_url(base_url);
-    if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
-        return Err("URL 需以 http:// 或 https:// 开头".into());
-    }
-    let client = crate::remote::http_client()?;
-    subsonic_get_json(&client, &base_url, "/ping", &username, &password, &[])?;
-    Ok(())
+    tauri::async_runtime::spawn_blocking(move || {
+        let base_url = trim_base_url(base_url);
+        if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
+            return Err("URL 需以 http:// 或 https:// 开头".into());
+        }
+        let client = crate::remote::http_client()?;
+        subsonic_get_json(&client, &base_url, "/ping", &username, &password, &[])?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("subsonic task failed: {e}"))?
 }
 
 /// 扫描曲库：getAlbumList2 分页 + 每专辑 getAlbum（对齐移动端 scanLibrary）
 #[tauri::command]
-pub fn subsonic_scan(
+pub async fn subsonic_scan(
     base_url: String,
     username: String,
     password: String,
 ) -> Result<Vec<SubsonicSong>, String> {
-    let base_url = trim_base_url(base_url);
-    let client = crate::remote::http_client()?;
-    let mut songs: Vec<SubsonicSong> = Vec::new();
-    let mut offset: u32 = 0;
+    tauri::async_runtime::spawn_blocking(move || {
+        let base_url = trim_base_url(base_url);
+        let client = crate::remote::http_client()?;
+        let mut songs: Vec<SubsonicSong> = Vec::new();
+        let mut offset: u32 = 0;
 
-    loop {
-        let extra = vec![
-            ("type", "alphabeticalByName".to_string()),
-            ("size", PAGE_SIZE.to_string()),
-            ("offset", offset.to_string()),
-        ];
-        let json = subsonic_get_json(&client, &base_url, "/getAlbumList2", &username, &password, &extra)?;
-        let albums: Vec<serde_json::Value> = json
-            .get("subsonic-response")
-            .and_then(|r| r.get("albumList2"))
-            .and_then(|a| a.get("album"))
-            .and_then(|a| a.as_array())
-            .cloned()
-            .unwrap_or_default();
-        if albums.is_empty() {
-            break;
-        }
-        for album in &albums {
-            let album_id = get_str_field(album, "id");
-            let album_name = get_str_field(album, "name");
-            let artist = get_str_field(album, "artist");
-            if album_id.is_empty() {
-                continue;
+        loop {
+            let extra = vec![
+                ("type", "alphabeticalByName".to_string()),
+                ("size", PAGE_SIZE.to_string()),
+                ("offset", offset.to_string()),
+            ];
+            let json = subsonic_get_json(&client, &base_url, "/getAlbumList2", &username, &password, &extra)?;
+            let albums: Vec<serde_json::Value> = json
+                .get("subsonic-response")
+                .and_then(|r| r.get("albumList2"))
+                .and_then(|a| a.get("album"))
+                .and_then(|a| a.as_array())
+                .cloned()
+                .unwrap_or_default();
+            if albums.is_empty() {
+                break;
             }
-            let extra = vec![("id", album_id.clone())];
-            if let Ok(json) = subsonic_get_json(&client, &base_url, "/getAlbum", &username, &password, &extra) {
-                let tracks = json
-                    .get("subsonic-response")
-                    .and_then(|r| r.get("album"))
-                    .and_then(|a| a.get("song"))
-                    .and_then(|s| s.as_array())
-                    .cloned()
-                    .unwrap_or_default();
-                for t in &tracks {
-                    if let Some(song) = to_song(t, &artist, &album_name, &base_url, &username, &password) {
-                        songs.push(song);
+            for album in &albums {
+                let album_id = get_str_field(album, "id");
+                let album_name = get_str_field(album, "name");
+                let artist = get_str_field(album, "artist");
+                if album_id.is_empty() {
+                    continue;
+                }
+                let extra = vec![("id", album_id.clone())];
+                if let Ok(json) = subsonic_get_json(&client, &base_url, "/getAlbum", &username, &password, &extra) {
+                    let tracks = json
+                        .get("subsonic-response")
+                        .and_then(|r| r.get("album"))
+                        .and_then(|a| a.get("song"))
+                        .and_then(|s| s.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    for t in &tracks {
+                        if let Some(song) = to_song(t, &artist, &album_name, &base_url, &username, &password) {
+                            songs.push(song);
+                        }
                     }
                 }
             }
+            if albums.len() < PAGE_SIZE as usize {
+                break;
+            }
+            offset += PAGE_SIZE;
         }
-        if albums.len() < PAGE_SIZE as usize {
-            break;
-        }
-        offset += PAGE_SIZE;
-    }
-    Ok(songs)
+        Ok(songs)
+    })
+    .await
+    .map_err(|e| format!("subsonic task failed: {e}"))?
 }
 
 /// 搜索曲目：GET /rest/search3
 #[tauri::command]
-pub fn subsonic_search(
+pub async fn subsonic_search(
     base_url: String,
     username: String,
     password: String,
     query: String,
 ) -> Result<Vec<SubsonicSong>, String> {
-    let base_url = trim_base_url(base_url);
-    let client = crate::remote::http_client()?;
-    let extra = vec![
-        ("query", query),
-        ("songCount", "50".to_string()),
-    ];
-    let json = subsonic_get_json(&client, &base_url, "/search3", &username, &password, &extra)?;
-    let songs: Vec<serde_json::Value> = json
-        .get("subsonic-response")
-        .and_then(|r| r.get("searchResult3"))
-        .and_then(|s| s.get("song"))
-        .and_then(|s| s.as_array())
-        .cloned()
-        .unwrap_or_default();
-    Ok(songs
-        .iter()
-        .filter_map(|t| to_song(t, "", "", &base_url, &username, &password))
-        .collect())
+    tauri::async_runtime::spawn_blocking(move || {
+        let base_url = trim_base_url(base_url);
+        let client = crate::remote::http_client()?;
+        let extra = vec![
+            ("query", query),
+            ("songCount", "50".to_string()),
+        ];
+        let json = subsonic_get_json(&client, &base_url, "/search3", &username, &password, &extra)?;
+        let songs: Vec<serde_json::Value> = json
+            .get("subsonic-response")
+            .and_then(|r| r.get("searchResult3"))
+            .and_then(|s| s.get("song"))
+            .and_then(|s| s.as_array())
+            .cloned()
+            .unwrap_or_default();
+        Ok(songs
+            .iter()
+            .filter_map(|t| to_song(t, "", "", &base_url, &username, &password))
+            .collect())
+    })
+    .await
+    .map_err(|e| format!("subsonic task failed: {e}"))?
 }
 
 /// 从服务器路径推断扩展名（用于本地缓存文件名）
@@ -318,7 +331,7 @@ fn ext_from_path(path: &str, _stream_url: &str) -> String {
 
 /// 下载 Subsonic stream 到本地缓存（`.cache/subsonic/{id}.{ext}`），返回本地路径。
 #[tauri::command]
-pub fn subsonic_download_to_cache(
+pub async fn subsonic_download_to_cache(
     stream_url: String,
     song_id: String,
     path_hint: String,
@@ -330,9 +343,22 @@ pub fn subsonic_download_to_cache(
         .map_err(|e| e.to_string())?
         .join(".cache")
         .join("subsonic");
-    std::fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        subsonic_download_to_cache_blocking(&stream_url, &song_id, &path_hint, &cache_dir)
+    })
+    .await
+    .map_err(|e| format!("subsonic task failed: {e}"))?
+}
 
-    let ext = ext_from_path(&path_hint, &stream_url);
+fn subsonic_download_to_cache_blocking(
+    stream_url: &str,
+    song_id: &str,
+    path_hint: &str,
+    cache_dir: &Path,
+) -> Result<String, String> {
+    std::fs::create_dir_all(cache_dir).map_err(|e| e.to_string())?;
+
+    let ext = ext_from_path(path_hint, stream_url);
     let safe_id: String = song_id
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
@@ -349,7 +375,7 @@ pub fn subsonic_download_to_cache(
     // stream URL 已含认证 query 参数，直接 GET 无需认证协商
     let client = crate::remote::http_client()?;
     let resp = client
-        .request(Method::GET, &stream_url)
+        .request(Method::GET, stream_url)
         .header(reqwest::header::ACCEPT_ENCODING, "identity")
         .send()
         .map_err(|e| e.to_string())?;
@@ -375,14 +401,14 @@ pub fn subsonic_download_to_cache(
 
 /// 播放 Subsonic 曲目：下载到本地缓存后交给引擎播放（全量下载方案）
 #[tauri::command]
-pub fn subsonic_play(
+pub async fn subsonic_play(
     stream_url: String,
     song_id: String,
     path_hint: String,
-    state: State<AppState>,
+    state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<String, String> {
-    let local = subsonic_download_to_cache(stream_url, song_id, path_hint, app)?;
+    let local = subsonic_download_to_cache(stream_url, song_id, path_hint, app).await?;
     *crate::commands::lock_or_die(&state.current_track) = Some(local.clone());
     crate::commands::apply_track_settings(&state);
     state.engine.play(local.clone());

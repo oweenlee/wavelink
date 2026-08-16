@@ -18,6 +18,8 @@ let _limiterEnabled = $state(true);
 let _ditherEnabled = $state(true);
 let _dsdMode = $state<'to_pcm' | 'dop'>('to_pcm');
 let _loaded = $state(false);
+// 设置保存串行队列：多个组件可能同时触发 save()，避免「读-改-写」竞态导致字段互相覆盖
+let _saveChain: Promise<void> = Promise.resolve();
 
 export function getSettingsState() {
 	return {
@@ -94,33 +96,38 @@ export function getSettingsState() {
 
 		async save(extra?: Record<string, any>) {
 			if (!browser) return;
-			try {
-				const invoke = await lazyInvoke();
-				// 先读已有设置再合并，避免覆盖 Effects 页持久化的字段（eqBands/autoEq 等）
-				let existing: Record<string, any> = {};
-				try { existing = (await invoke('load_settings')) ?? {}; } catch { /* 首次无文件 */ }
-				await invoke('save_settings', {
-					settings: {
-						...existing,
-						accentColor: _accentColor,
-						theme: _theme,
-						sampleRate: _sampleRate,
-						bufferMs: _bufferMs,
-						crossfadeMs: _crossfadeMs,
-						replaygainEnabled: _replaygainEnabled,
-						audioDevice: _audioDevice,
-						autoSampleRate: _autoSampleRate,
-						exclusiveMode: _exclusiveMode,
-						bitPerfect: _bitPerfect,
-						limiterEnabled: _limiterEnabled,
-						ditherEnabled: _ditherEnabled,
-						dsdMode: _dsdMode,
-						...extra,
-					},
-				});
-			} catch (err) {
-				console.error('Failed to save settings:', err);
-			}
+			// 串行化读-改-写：所有 save 调用排队执行，避免并发写设置文件时互相覆盖
+			const doSave = async () => {
+				try {
+					const invoke = await lazyInvoke();
+					// 先读已有设置再合并，避免覆盖 Effects 页持久化的字段（eqBands/autoEq 等）
+					let existing: Record<string, any> = {};
+					try { existing = (await invoke('load_settings')) ?? {}; } catch { /* 首次无文件 */ }
+					await invoke('save_settings', {
+						settings: {
+							...existing,
+							accentColor: _accentColor,
+							theme: _theme,
+							sampleRate: _sampleRate,
+							bufferMs: _bufferMs,
+							crossfadeMs: _crossfadeMs,
+							replaygainEnabled: _replaygainEnabled,
+							audioDevice: _audioDevice,
+							autoSampleRate: _autoSampleRate,
+							exclusiveMode: _exclusiveMode,
+							bitPerfect: _bitPerfect,
+							limiterEnabled: _limiterEnabled,
+							ditherEnabled: _ditherEnabled,
+							dsdMode: _dsdMode,
+							...extra,
+						},
+					});
+				} catch (err) {
+					console.error('Failed to save settings:', err);
+				}
+			};
+			_saveChain = _saveChain.then(doSave, doSave);
+			return _saveChain;
 		},
 
 		async applyEngineConfig() {
