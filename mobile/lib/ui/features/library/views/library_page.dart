@@ -488,24 +488,10 @@ class _SongsTab extends ConsumerWidget {
               }
             },
             onMore: () => _showContextMenu(context, song, player),
-            // 收藏爱心常驻可点：收藏/取消一步完成（高频操作不进三点菜单）
-            trailing: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () =>
-                  player.setFavorite(song.id, !player.isSongFavorite(song.id)),
-              child: Padding(
-                padding: const EdgeInsets.all(6),
-                child: Icon(
-                  player.isSongFavorite(song.id)
-                      ? Icons.favorite
-                      : Icons.favorite_border,
-                  size: 16,
-                  color: player.isSongFavorite(song.id)
-                      ? AppTheme.danger
-                      : AppTheme.textTertiary,
-                ),
-              ),
-            ),
+            // 收藏爱心仅作展示（收藏动作走三点菜单）
+            trailing: player.isSongFavorite(song.id)
+                ? const Icon(Icons.favorite, size: 16, color: AppTheme.danger)
+                : null,
           ),
           index,
         );
@@ -1273,6 +1259,18 @@ void _showContextMenu(
                 icon: LucideIcons.listPlus,
                 label: l10n.addToPlaylist,
                 onTap: () => _showAddToPlaylist(ctx, song, player),
+              ),
+              _MenuItem(
+                icon: player.isSongFavorite(song.id)
+                    ? Icons.favorite
+                    : Icons.favorite_border,
+                label: player.isSongFavorite(song.id)
+                    ? l10n.unfavorite
+                    : l10n.favorite,
+                onTap: () {
+                  player.setFavorite(song.id, !player.isSongFavorite(song.id));
+                  Navigator.pop(ctx);
+                },
               ),
               const Divider(height: 1),
               _MenuItem(
