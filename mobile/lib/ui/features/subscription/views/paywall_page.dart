@@ -365,8 +365,14 @@ class _SubscribeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    // 有免费试用（如 14 天）：按钮突出「开始免费试用」，价格放副文案；
+    // 无试用：直接展示「订阅 · 价格」
+    final trial = plan.trialDays > 0;
+    final label = trial
+        ? l10n.paywallStartTrial(plan.trialDays)
+        : l10n.paywallSubscribe(plan.priceText);
     return SizedBox(
-      height: 50,
+      height: trial ? 60 : 50,
       child: FilledButton(
         onPressed: loading ? null : onPressed,
         style: FilledButton.styleFrom(
@@ -385,14 +391,36 @@ class _SubscribeButton extends StatelessWidget {
                   color: AppTheme.textPrimary,
                 ),
               )
-            : Text(
-                l10n.paywallSubscribe(plan.priceText),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
+            : trial
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        l10n.paywallTrialAfter(plan.priceText),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                    ],
+                  )
+                : Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
       ),
     );
   }

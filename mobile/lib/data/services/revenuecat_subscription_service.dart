@@ -100,6 +100,8 @@ class RevenueCatSubscriptionService implements SubscriptionService {
         title: pkg.storeProduct.title,
         priceText: storeProduct.priceString,
         periodDays: isAnnual ? 365 : 30,
+        // 免费试用（introductory price = 0）的天数；折扣价不算试用
+        trialDays: _introTrialDays(storeProduct.introductoryPrice),
         isAnnual: isAnnual,
       );
       plans.add(plan);
@@ -114,10 +116,17 @@ class RevenueCatSubscriptionService implements SubscriptionService {
     return plans;
   }
 
-  /// 判断 ISO8601 订阅周期是否 ≥1 年（处理 P1Y、P12M 等）。
-  static bool _isAnnualPeriod(String? period) {
-    if (period == null || period.isEmpty) return false;
-    // 匹配 P 后跟若干「数值+单位」段，如 P1Y / P12M / P1Y2M
+  /// 从 IntroductoryPrice 提取免费试用天数。
+  /// 仅当 introductory 价格为 0（真免费试用）时返回天数，否则返回 0。
+  static int _introTrialDays(rc.IntroductoryPrice? intro) {
+    if (intro == null || intro.price != 0) return 0;
+    return _iso8601Days(intro.period);
+  }
+
+  /// 解析 ISO8601 时长字符串为天数（P1Y / P2W / P14D 等）。
+  /// 解析失败或空串返回 0。
+  static int _iso8601Days(String? period) {
+    if (period == null || period.isEmpty) return 0;
     final matches = RegExp(r'(\d+)([YMWD])').allMatches(period);
     var totalDays = 0;
     for (final m in matches) {
@@ -134,8 +143,12 @@ class RevenueCatSubscriptionService implements SubscriptionService {
           totalDays += n;
       }
     }
-    // ≥11 个月视为年度档（P12M = 360 天），阈值留一点余量
-    return totalDays >= 330;
+    return totalDays;
+  }
+
+  /// 判断 ISO8601 订阅周期是否 ≥1 年（处理 P1Y、P12M 等）。
+  static bool _isAnnualPeriod(String? period) {
+    return _iso8601Days(period) >= 330;
   }
 
   @override

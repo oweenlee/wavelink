@@ -54,12 +54,14 @@ class MockSubscriptionService implements SubscriptionService {
   @override
   Future<List<SubscriptionPlan>> fetchPlans() async {
     // 与 RevenueCat 实现一致的排序：年度优先（付费墙默认推荐）
+    // trialDays=14：官方 14 天免费试用 + 自动续期（方案 A）
     return const [
       SubscriptionPlan(
         productId: 'wavelink_annual',
         title: '年度会员',
         priceText: '\$19.99/年',
         periodDays: 365,
+        trialDays: 14,
         isAnnual: true,
       ),
       SubscriptionPlan(
@@ -67,6 +69,7 @@ class MockSubscriptionService implements SubscriptionService {
         title: '月度会员',
         priceText: '\$2.99/月',
         periodDays: 30,
+        trialDays: 14,
       ),
     ];
   }

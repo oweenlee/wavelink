@@ -246,5 +246,7 @@
   "paywallRestoreFailed": "未找到可恢复的购买记录",
   "paywallActive": "订阅已激活",
   "paywallSubscribe": "订阅 · {price}",
+  "paywallStartTrial": "免费试用 {days} 天",
+  "paywallTrialAfter": "试用结束后 {price} 自动续订",
   "paywallTerms": "订阅为自动续订，可随时在商店设置中取消。付款将在确认购买时通过你的 App Store / Google Play 账户收取。"
 }

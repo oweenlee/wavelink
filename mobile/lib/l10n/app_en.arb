@@ -246,5 +246,7 @@
   "paywallRestoreFailed": "No previous purchase found to restore",
   "paywallActive": "Subscription active",
   "paywallSubscribe": "Subscribe · {price}",
+  "paywallStartTrial": "Free trial · {days} days",
+  "paywallTrialAfter": "Then {price} auto-renews after trial",
   "paywallTerms": "Subscription auto-renews and can be cancelled anytime in your store settings. Payment is charged to your App Store / Google Play account upon confirmation."
 }

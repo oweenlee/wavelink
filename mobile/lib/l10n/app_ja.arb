@@ -246,5 +246,7 @@
   "paywallRestoreFailed": "復元できる購入が見つかりませんでした",
   "paywallActive": "サブスクリプション有効",
   "paywallSubscribe": "登録する · {price}",
+  "paywallStartTrial": "{days}日間無料トライアル",
+  "paywallTrialAfter": "トライアル後は {price} で自動更新",
   "paywallTerms": "サブスクリプションは自動更新され、ストア設定でいつでも解約できます。支払いは確認時に App Store / Google Play アカウントに請求されます。"
 }

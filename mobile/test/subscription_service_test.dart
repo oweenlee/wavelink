@@ -27,6 +27,10 @@ void main() {
       expect(plans.length, greaterThanOrEqualTo(2));
       // 年度档标记 isAnnual，且年度排在首位（付费墙默认推荐）
       expect(plans.first.isAnnual, isTrue);
+      // 方案 A：官方 14 天免费试用，两档都有试用期
+      for (final p in plans) {
+        expect(p.trialDays, 14, reason: '${p.productId} 应有 14 天试用');
+      }
 
       final outcome = await svc.purchase(plans.first);
       expect(outcome, PurchaseOutcome.success);
