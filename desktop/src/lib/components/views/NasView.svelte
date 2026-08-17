@@ -2,14 +2,16 @@
 	import { nasStore, type NasConnection } from '$lib/stores/nas.svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { browser } from '$app/environment';
-	import { HardDrive, Plus, Trash2, Play, Square, Server, X, Loader, Upload } from 'lucide-svelte';
+	import { HardDrive, Plus, Trash2, Play, Square, Server, X, Loader } from 'lucide-svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
+	import PasswordInput from '$lib/components/controls/PasswordInput.svelte';
 
 	const nas = nasStore;
 
 	let showAddDialog = $state(false);
 	let mounting = $state<Set<string>>(new Set());
 	let scanning = $state(false);
+	let actionError = $state<string | null>(null);
 
 	let form = $state({
 		name: '',
@@ -29,6 +31,7 @@
 			await nas.unmountConnection(id);
 		} else {
 			mounting = new Set([...mounting, id]);
+			actionError = null;
 			try {
 				const path = await nas.mountConnection(id);
 				// 挂载后自动扫描
@@ -36,6 +39,7 @@
 				await invoke('scan_dir', { path });
 			} catch (e) {
 				console.error('挂载失败:', e);
+				actionError = String(e);
 			} finally {
 				mounting = new Set([...mounting].filter(x => x !== id));
 				scanning = false;
@@ -45,20 +49,31 @@
 
 	async function handleAdd() {
 		if (!form.name || !form.server || !form.share) return;
-		await nas.addConnection(
-			form.name,
-			form.server,
-			form.share,
-			form.username,
-			form.password,
-			form.autoMount
-		);
-		form = { name: '', server: '', share: '', username: '', password: '', autoMount: false };
-		showAddDialog = false;
+		actionError = null;
+		try {
+			await nas.addConnection(
+				form.name,
+				form.server,
+				form.share,
+				form.username,
+				form.password,
+				form.autoMount
+			);
+			form = { name: '', server: '', share: '', username: '', password: '', autoMount: false };
+			showAddDialog = false;
+		} catch (e) {
+			console.error('添加失败:', e);
+			actionError = String(e);
+		}
 	}
 
 	async function handleRemove(id: string) {
-		await nas.removeConnection(id);
+		try {
+			await nas.removeConnection(id);
+		} catch (e) {
+			console.error('删除失败:', e);
+			actionError = String(e);
+		}
 	}
 </script>
 
@@ -77,6 +92,13 @@
 
 	{#if nas.error}
 		<div class="error">{nas.error}</div>
+	{/if}
+
+	{#if actionError}
+		<div class="error action-error">
+			<span>{t('nas.action_error')}: {actionError}</span>
+			<button class="btn-icon btn-dismiss" onclick={() => (actionError = null)} title={t('nas.dismiss')}><X size={14} /></button>
+		</div>
 	{/if}
 
 	{#if nas.connections.length === 0 && !nas.loading}
@@ -160,7 +182,7 @@
 				</label>
 				<label class="field">
 					<span>{t('nas.password')}</span>
-					<input type="password" bind:value={form.password} placeholder={t('nas.password_placeholder')} />
+					<PasswordInput bind:value={form.password} placeholder={t('nas.password_placeholder')} />
 				</label>
 				<label class="checkbox">
 					<input type="checkbox" bind:checked={form.autoMount} />
@@ -186,6 +208,9 @@
 
 	.loading { display: flex; align-items: center; gap: var(--space-2); color: var(--fg-tertiary); font-size: 13px; padding: var(--space-8) 0; justify-content: center; }
 	.error { color: #e85d5d; font-size: 13px; padding: var(--space-3); background: rgba(232,93,93,0.1); border-radius: var(--radius-md); margin-bottom: var(--space-4); }
+	.action-error { display: flex; align-items: center; gap: var(--space-2); justify-content: space-between; word-break: break-all; }
+	.action-error span { flex: 1; min-width: 0; }
+	.btn-dismiss { flex-shrink: 0; color: #e85d5d; }
 
 	.empty { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); padding: var(--space-12) 0; color: var(--fg-tertiary); }
 	.empty p { margin: 0; font-size: 14px; }
@@ -279,7 +304,7 @@
 		color: var(--fg-primary); font-size: 13px; font-family: inherit;
 		outline: none; transition: border-color 0.12s;
 	}
-	.field input:focus { border-color: var(--accent); }
+	.field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
 
 	.checkbox { display: flex; align-items: center; gap: var(--space-2); font-size: 13px; color: var(--fg-secondary); cursor: pointer; }
 	.checkbox input { accent-color: var(--accent); }

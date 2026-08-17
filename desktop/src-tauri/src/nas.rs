@@ -126,13 +126,30 @@ impl NasManager {
             .map_err(|e| format!("keyring entry create failed: {e}"))?;
         entry
             .set_password(password)
-            .map_err(|e| format!("keyring set password failed: {e}"))
+            .map_err(|e| format!("keyring set password failed: {e}"))?;
+        // 写后读回校验：确保密码真正写入系统钥匙串，
+        // 防止出现"数据库有记录但钥匙串没有条目"导致挂载时取不到密码。
+        let stored = entry
+            .get_password()
+            .map_err(|e| format!("keyring verify failed: {e}"))?;
+        if stored != password {
+            return Err("keyring verify mismatch: password was not saved".to_string());
+        }
+        Ok(())
     }
 
     pub fn get_password(&self, id: &str) -> Result<String, String> {
         let entry =
             keyring::Entry::new("wavelink-nas", id).map_err(|_| "cannot access system keychain".to_string())?;
-        entry.get_password().map_err(|e| format!("get password failed: {e}"))
+        entry.get_password().map_err(|e| {
+            let msg = match &e {
+                keyring::Error::NoEntry => format!(
+                    "password not found in system keychain, please re-enter it (nas id: {id})"
+                ),
+                _ => format!("get password failed: {e}"),
+            };
+            msg
+        })
     }
 
     fn delete_password(&self, id: &str) {
