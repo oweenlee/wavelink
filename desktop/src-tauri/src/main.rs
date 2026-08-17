@@ -10,6 +10,7 @@ mod remote;
 mod settings;
 mod setup;
 mod state;
+mod streaming;
 mod tray;
 
 use std::collections::HashSet;
@@ -159,6 +160,7 @@ fn main() {
                 device_monitor: Mutex::new(None),
                 device_monitor_stop: Arc::new(AtomicBool::new(false)),
                 stream_handle: Mutex::new(None),
+                stream_source: Mutex::new(None),
             });
 
             // 启动时恢复房间校正 IR（对齐移动端 applyDsp：文件丢失则清理脏路径）
@@ -245,6 +247,7 @@ fn main() {
             commands::stream_cmds::stream_write,
             commands::stream_cmds::stream_eof,
             commands::stream_cmds::strm_fetch,
+            streaming::play_remote,
             commands::library::scan_dir,
             commands::library::get_scan_folders,
             commands::library::remove_scan_folder,

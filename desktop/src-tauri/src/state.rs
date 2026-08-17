@@ -30,4 +30,6 @@ pub struct AppState {
     pub device_monitor_stop: Arc<AtomicBool>,
     /// 流式播放写入句柄
     pub stream_handle: Mutex<Option<StreamHandle>>,
+    /// 当前流式播放源（url, name, format_hint）：seek 重启 / 系统媒体信息用
+    pub stream_source: Mutex<Option<(String, String, Option<String>)>>,
 }

@@ -15,6 +15,7 @@ pub fn play_stream(
         .engine
         .play_stream(format_hint, content_length)
         .map_err(|e| e.to_string())?;
+    crate::streaming::cancel_active_stream(&state);
     *lock_or_die(&state.stream_handle) = Some(handle);
     Ok(())
 }
@@ -59,43 +60,11 @@ pub async fn strm_fetch(url: String, name: String, app: AppHandle) -> Result<Str
 fn strm_fetch_blocking(url: &str, name: &str, cache_dir: &Path) -> Result<String, String> {
     std::fs::create_dir_all(cache_dir).map_err(|e| e.to_string())?;
 
-    // 使用 md5 而非 DefaultHasher：后者不保证跨 Rust 版本稳定，会导致旧缓存全部失效
-    let hash = {
-        use md5::{Digest, Md5};
-        let mut h = Md5::new();
-        h.update(url.as_bytes());
-        hex_encode(&h.finalize())
-    };
-    let safe_name: String = name
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ' ') {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let safe_name = safe_name.trim().trim_matches('.');
-    let safe_name = if safe_name.is_empty() {
-        "remote".to_string()
-    } else {
-        safe_name.to_string()
-    };
-
-    // 缓存文件带音频扩展名，给 Symphonia 更可靠的格式 hint。
-    // 旧版本缓存文件没有扩展名，仍兼容命中。
-    let ext = url
-        .split('?')
-        .next()
-        .and_then(|p| p.rsplit('.').next())
-        .map(|e| e.to_lowercase())
-        .filter(|e| STRM_CACHE_AUDIO_EXTENSIONS.contains(&e.as_str()));
-    let final_path = match &ext {
-        Some(ext) => cache_dir.join(format!("{hash}_{safe_name}.{ext}")),
-        None => cache_dir.join(format!("{hash}_{safe_name}")),
-    };
-    let legacy_path = cache_dir.join(format!("{hash}_{safe_name}"));
+    // 缓存路径规则与 streaming::play_remote 共用（md5(url) + safe_name + ext）
+    let (final_rel, part_rel, legacy_rel) = crate::streaming::cache_rel_paths(url, name)?;
+    let final_path = cache_dir.join(&final_rel);
+    let part_path = cache_dir.join(&part_rel);
+    let legacy_path = cache_dir.join(&legacy_rel);
 
     for path in [&final_path, &legacy_path] {
         if let Ok(meta) = std::fs::metadata(path) {
@@ -116,7 +85,6 @@ fn strm_fetch_blocking(url: &str, name: &str, cache_dir: &Path) -> Result<String
         return Err(format!("HTTP {}: {url}", resp.status()));
     }
 
-    let part_path = cache_dir.join(format!("{hash}_{safe_name}.part"));
     let mut file = std::fs::File::create(&part_path).map_err(|e| e.to_string())?;
     {
         use std::io::Write;
@@ -144,17 +112,3 @@ fn strm_fetch_blocking(url: &str, name: &str, cache_dir: &Path) -> Result<String
     Ok(final_path.to_string_lossy().to_string())
 }
 
-/// STRM URL 缓存文件可识别的音频扩展名（与 library scanner 保持一致）
-const STRM_CACHE_AUDIO_EXTENSIONS: &[&str] = &[
-    "mp3", "flac", "wav", "ogg", "aac", "m4a", "m4b", "mp4", "wma", "dsf", "dff", "ape", "opus",
-    "aiff", "aif", "wv",
-];
-
-fn hex_encode(bytes: &[u8]) -> String {
-    use std::fmt::Write;
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        let _ = write!(out, "{b:02x}");
-    }
-    out
-}

@@ -1,4 +1,4 @@
-use tauri::{Emitter, State};
+use tauri::{AppHandle, Emitter, State};
 use sdk::{DsdMode, Levels, PlayMode};
 use sdk::output::{DeviceEvent, OutputDeviceInfo};
 use crate::state::AppState;
@@ -6,6 +6,7 @@ use super::{apply_track_settings, lock_or_die};
 
 #[tauri::command]
 pub fn play(path: String, state: State<AppState>) {
+    crate::streaming::cancel_active_stream(&state);
     *lock_or_die(&state.current_track) = Some(path.clone());
     apply_track_settings(&state);
     state.engine.play(path);
@@ -13,6 +14,7 @@ pub fn play(path: String, state: State<AppState>) {
 
 #[tauri::command]
 pub fn play_queue(paths: Vec<String>, state: State<AppState>) {
+    crate::streaming::cancel_active_stream(&state);
     if let Some(first) = paths.first() {
         *lock_or_die(&state.current_track) = Some(first.clone());
     }
@@ -23,6 +25,7 @@ pub fn play_queue(paths: Vec<String>, state: State<AppState>) {
 /// 播放队列并从指定索引开始（CUE 整碟分轨等场景；0-based）
 #[tauri::command]
 pub fn play_queue_at(start_index: usize, paths: Vec<String>, state: State<AppState>) {
+    crate::streaming::cancel_active_stream(&state);
     if let Some(first) = paths.first() {
         *lock_or_die(&state.current_track) = Some(first.clone());
     }
@@ -43,10 +46,22 @@ pub fn pause(state: State<AppState>) { state.engine.pause(); }
 pub fn resume(state: State<AppState>) { state.engine.resume(); }
 
 #[tauri::command]
-pub fn stop(state: State<AppState>) { state.engine.stop(); }
+pub fn stop(state: State<AppState>) {
+    crate::streaming::cancel_active_stream(&state);
+    state.engine.stop();
+}
 
 #[tauri::command]
-pub fn seek(pos: f64, state: State<AppState>) { state.engine.seek(pos); }
+pub fn seek(pos: f64, state: State<AppState>, app: AppHandle) {
+    // 流式播放（STRM 边下边播）引擎流无 seek 能力（无 current_entry）：
+    // 重启流从头播（字节偏移无法从秒数可靠换算，精确 seek 留后续 Range 方案）。
+    // 缓存已完整的场景 restart 会自然走本地播放。
+    if lock_or_die(&state.stream_handle).is_some() {
+        crate::streaming::restart_stream(&app, &state);
+        return;
+    }
+    state.engine.seek(pos);
+}
 
 #[tauri::command]
 pub fn get_position(state: State<AppState>) -> f64 { state.engine.position_secs() }

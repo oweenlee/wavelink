@@ -28,12 +28,18 @@ pub fn forward_engine_events(app_handle: tauri::AppHandle, event_rx: Receiver<En
                                 // Subsonic/WebDAV/STRM 缓存路径与 CUE 虚轨不在曲库：
                                 // 用文件名/display 兜底，保证系统媒体控制（macOS/Windows）
                                 // 至少显示标题而不是残留上一首。
-                                let name = std::path::Path::new(&path)
-                                    .file_name()
-                                    .and_then(|n| n.to_str())
-                                    .map(|n| n.trim_end_matches(".part"))
-                                    .unwrap_or("未知曲目");
-                                state.media_bridge.update_metadata(name, "", "", 0);
+                                // 边下边播（path="stream"）用流源名称（STRM URL 的曲名）。
+                                let name = if path == "stream" {
+                                    crate::streaming::active_stream_name(&state).unwrap_or_else(|| "网络流".to_string())
+                                } else {
+                                    std::path::Path::new(&path)
+                                        .file_name()
+                                        .and_then(|n| n.to_str())
+                                        .map(|n| n.trim_end_matches(".part"))
+                                        .unwrap_or("未知曲目")
+                                        .to_string()
+                                };
+                                state.media_bridge.update_metadata(&name, "", "", 0);
                                 state.media_bridge.update_playback_state(true);
                             }
                         }

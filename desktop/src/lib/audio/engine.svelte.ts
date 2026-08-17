@@ -120,6 +120,33 @@ export async function playTrack(track: Track) {
 	}
 }
 
+/**
+ * 边下边播 STRM http(s) URL：Rust 侧负责缓存命中判定 / play_stream 流式启动 /
+ * 后台喂流线程（边下边写 .part 缓存）。返回实际担任「当前曲目标识」的路径
+ * （本地缓存路径或 "stream"——对应引擎 TrackChanged 事件的 path）。
+ */
+export async function playRemote(url: string, name: string, formatHint?: string | null) {
+	await ensureListeners();
+	_currentTrack = null;
+	_currentTime = 0;
+	_duration = 0;
+	_loading = true;
+	try {
+		const invoke = await lazyInvoke();
+		const played = await invoke<string>('play_remote', {
+			url,
+			name,
+			formatHint: formatHint ?? null,
+		});
+		_isPlaying = true;
+		return played;
+	} catch (err) {
+		console.error('Play remote failed:', err);
+		_loading = false;
+		throw err;
+	}
+}
+
 export async function playQueue(tracks: Track[]) {
 	await ensureListeners();
 	if (tracks.length === 0) return;

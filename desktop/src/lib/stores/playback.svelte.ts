@@ -4,6 +4,7 @@ import {
 	setOnTrackChanged,
 	setOnQueueChanged,
 	playQueue as enginePlayQueue,
+	playRemote as enginePlayRemote,
 	pause,
 	resume,
 	togglePlay as engineToggle,
@@ -45,6 +46,9 @@ setOnEnded(() => {
 // Wire up engine's track_changed → sync playlist index
 setOnTrackChanged((path: string) => {
 	const pl = getPlaylistState();
+	// 边下边播：core 恒定发 TrackChanged("stream")，前端索引由 playTrack 处显式设定，
+	// 不参与 path 匹配（避免误把当前索引置 -1 导致底部栏空白）
+	if (path === 'stream') return;
 	const idx = pl.queue.findIndex(t => t.path === path);
 	if (idx !== -1 && idx !== pl.currentIndex) {
 		pl.setIndex(idx);
@@ -150,9 +154,19 @@ export function getPlaybackState() {
 
 		// 单曲播放（搜索结果等独立上下文）：作为单条队列播放。
 		// 走 play_queue(set_queue) 路径会重置引擎队列，避免接上旧队列残留。
-		// URL 轨道先解析为本地缓存路径再交给引擎（引擎只吃本地路径）。
+		// http(s) URL 单曲走边下边播（play_remote，Rust 侧缓存命中→本地 / 否则流式）。
 		async playTrack(track: Track) {
 			const pl = getPlaylistState();
+			if (track.path.startsWith('http://') || track.path.startsWith('https://')) {
+				try {
+					await enginePlayRemote(track.path, track.title || track.path, track.format);
+					pl.setQueue([track]);
+					pl.setIndex(0);
+				} catch (e) {
+					console.warn('[playback] STRM URL 流式播放失败:', track.path, e);
+				}
+				return;
+			}
 			const resolved = await resolveRemoteTracks([track]);
 			if (resolved.length === 0) return;
 			pl.setQueue(resolved);
@@ -200,9 +214,21 @@ export function getPlaybackState() {
 			if (tracks.length === 0) return;
 			const idx = Math.min(Math.max(startIndex, 0), tracks.length - 1);
 			const rotated = [...tracks.slice(idx), ...tracks.slice(0, idx)];
-			if (rotated.some((t) => t.path.startsWith('http://') || t.path.startsWith('https://'))) {
-				// URL 队列：先解析为本地缓存再一次性交给引擎；解析失败的单条会被剔除，
-				// 全部失败则保持旧队列/旧播放状态不变，避免清空队列后引擎还在播旧曲目。
+			const isUrl = (t: Track) => t.path.startsWith('http://') || t.path.startsWith('https://');
+			// 单条 URL：边下边播（Rust 侧缓存命中→本地 / 否则流式），不做全量预下载
+			if (rotated.length === 1 && isUrl(rotated[0])) {
+				try {
+					await enginePlayRemote(rotated[0].path, rotated[0].title || rotated[0].path, rotated[0].format);
+					pl.setQueue(rotated);
+					pl.setIndex(0);
+				} catch (e) {
+					console.warn('[playback] STRM URL 流式播放失败:', rotated[0].path, e);
+				}
+				return;
+			}
+			if (rotated.some(isUrl)) {
+				// 多 URL / 混合队列：先解析为本地缓存再一次性交给引擎（引擎队列只接受本地路径）；
+				// 解析失败的单条会被剔除，全部失败则保持旧队列/旧播放状态不变，避免清空队列后引擎还在播旧曲目。
 				const resolved = await resolveRemoteTracks(rotated);
 				if (resolved.length === 0) return;
 				pl.setQueue(resolved);
