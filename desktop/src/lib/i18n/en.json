@@ -7,6 +7,9 @@
   "sidebar.room": "Room Correction",
   "sidebar.subsonic": "Music Server",
   "sidebar.webdav": "WebDAV",
+  "sidebar.group.sources": "Music Sources",
+  "sidebar.group.audio": "Audio",
+  "sidebar.group.system": "System",
 
   "header.default_title": "Music Library",
   "header.view_library": "Music Library",
@@ -248,6 +251,8 @@
   "nas.auto_mount": "Auto-mount on startup",
   "nas.cancel": "Cancel",
   "nas.add_btn": "Add",
+  "nas.action_error": "Action failed",
+  "nas.dismiss": "Dismiss",
 
   "splash.subtitle": "High Quality Music Player",
   "splash.skip": "Click to skip",

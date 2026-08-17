@@ -3,6 +3,7 @@
 	import { browser } from '$app/environment';
 	import { Folder, File, ChevronLeft, Plus, X, Loader, Play, RefreshCw, HardDrive } from 'lucide-svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
+	import PasswordInput from '$lib/components/controls/PasswordInput.svelte';
 	import { getPlaybackState } from '$lib/stores/playback.svelte';
 	import type { Track } from '$lib/audio/types';
 
@@ -235,7 +236,7 @@
 				</label>
 				<label class="field">
 					<span>{t('webdav.password')}</span>
-					<input type="password" bind:value={config.password} />
+					<PasswordInput bind:value={config.password} />
 				</label>
 			</div>
 			<div class="dialog-footer">
@@ -347,7 +348,7 @@
 		color: var(--fg-primary); font-size: 13px; font-family: inherit;
 		outline: none; transition: border-color 0.12s;
 	}
-	.field input:focus { border-color: var(--accent); }
+	.field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
 
 	:global(.spin) { animation: spin 1s linear infinite; }
 	@keyframes spin { to { transform: rotate(360deg); } }

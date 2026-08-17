@@ -7,6 +7,9 @@
   "sidebar.room": "房间校正",
   "sidebar.subsonic": "音乐服务器",
   "sidebar.webdav": "WebDAV",
+  "sidebar.group.sources": "音乐源",
+  "sidebar.group.audio": "音频处理",
+  "sidebar.group.system": "系统",
 
   "header.default_title": "本地音乐",
   "header.view_library": "本地音乐",
@@ -248,6 +251,8 @@
   "nas.auto_mount": "启动时自动挂载",
   "nas.cancel": "取消",
   "nas.add_btn": "添加",
+  "nas.action_error": "操作失败",
+  "nas.dismiss": "关闭",
 
   "splash.subtitle": "高音质音乐播放器",
   "splash.skip": "点击跳过",
