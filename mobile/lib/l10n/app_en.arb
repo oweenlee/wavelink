@@ -134,6 +134,7 @@
   "importSmbHint": "Browse and import files from SMB share",
   "nasSettings": "NAS Settings",
   "nasHost": "NAS Host",
+  "nasPort": "Port",
   "nasShare": "Share Path",
   "nasUsername": "Username",
   "nasPassword": "Password",

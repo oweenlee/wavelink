@@ -134,6 +134,7 @@
   "importSmbHint": "SMB 공유를 탐색하여 파일 가져오기",
   "nasSettings": "NAS 설정",
   "nasHost": "NAS 호스트",
+  "nasPort": "포트",
   "nasShare": "공유 경로",
   "nasUsername": "사용자 이름",
   "nasPassword": "비밀번호",

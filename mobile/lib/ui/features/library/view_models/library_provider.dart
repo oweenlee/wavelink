@@ -488,6 +488,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
         }
         final ok = await SmbService.connect(
           host: host,
+          port: prefs.nasPort,
           username: prefs.nasUsername ?? '',
           password: prefs.nasPassword,
         );

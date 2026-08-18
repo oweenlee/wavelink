@@ -294,6 +294,7 @@ class SmbService {
       }
       final ok = await _connectImpl(
         host: host,
+        port: prefs.nasPort,
         username: prefs.nasUsername ?? '',
         password: prefs.nasPassword,
       );

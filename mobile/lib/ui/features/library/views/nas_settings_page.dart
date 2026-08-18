@@ -23,6 +23,7 @@ class NasSettingsPage extends ConsumerStatefulWidget {
 
 class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
   final _hostCtrl = TextEditingController();
+  final _portCtrl = TextEditingController();
   final _shareCtrl = TextEditingController();
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
@@ -35,6 +36,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     super.initState();
     final prefs = PreferencesService.instance;
     _hostCtrl.text = prefs.nasHost ?? '';
+    _portCtrl.text = '${prefs.nasPort}';
     _shareCtrl.text = prefs.nasShare ?? '';
     _userCtrl.text = prefs.nasUsername ?? '';
     _passCtrl.text = prefs.nasPassword;
@@ -44,6 +46,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
   @override
   void dispose() {
     _hostCtrl.dispose();
+    _portCtrl.dispose();
     _shareCtrl.dispose();
     _userCtrl.dispose();
     _passCtrl.dispose();
@@ -59,6 +62,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     });
 
     final host = _hostCtrl.text.trim();
+    final port = int.tryParse(_portCtrl.text.trim()) ?? 445;
     final user = _userCtrl.text.trim();
     final pass = _passCtrl.text;
 
@@ -73,6 +77,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     // Try SMB connection
     final ok = await SmbService.connect(
       host: host,
+      port: port,
       username: user,
       password: pass,
     );
@@ -187,6 +192,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     await PreferencesService.instance.setNasConfig(
       type: _nasType,
       host: _hostCtrl.text.trim(),
+      port: int.tryParse(_portCtrl.text.trim()) ?? 445,
       share: _shareCtrl.text.trim(),
       username: _userCtrl.text.trim(),
       password: _passCtrl.text,
@@ -244,6 +250,14 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
                         hint: '192.168.110.27 or nas.local',
                         controller: _hostCtrl,
                         keyboardType: TextInputType.url,
+                      ),
+                      const Divider(height: 1, indent: 52),
+                      ConfigField(
+                        icon: LucideIcons.network,
+                        label: l10n.nasPort,
+                        hint: '445',
+                        controller: _portCtrl,
+                        keyboardType: TextInputType.number,
                       ),
                       const Divider(height: 1, indent: 52),
                       ConfigField(

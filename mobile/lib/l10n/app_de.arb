@@ -134,6 +134,7 @@
   "importSmbHint": "Dateien aus der SMB-Freigabe durchsuchen und importieren",
   "nasSettings": "NAS-Einstellungen",
   "nasHost": "NAS-Host",
+  "nasPort": "Port",
   "nasShare": "Freigabepfad",
   "nasUsername": "Benutzername",
   "nasPassword": "Passwort",

@@ -261,12 +261,14 @@ class PreferencesService {
 
   static const _kNasType = 'nas_type';
   static const _kNasHost = 'nas_host';
+  static const _kNasPort = 'nas_port';
   static const _kNasShare = 'nas_share';
   static const _kNasUsername = 'nas_username';
   static const _kNasPassword = 'nas_password';
 
   String? get nasType => _prefs.getString(_kNasType);
   String? get nasHost => _prefs.getString(_kNasHost);
+  int get nasPort => _prefs.getInt(_kNasPort) ?? 445;
   String? get nasShare => _prefs.getString(_kNasShare);
   String? get nasUsername => _prefs.getString(_kNasUsername);
   String get nasPassword => _prefs.getString(_kNasPassword) ?? '';
@@ -274,12 +276,14 @@ class PreferencesService {
   Future<void> setNasConfig({
     String? type,
     String? host,
+    int? port,
     String? share,
     String? username,
     String? password,
   }) async {
     if (type != null) await _prefs.setString(_kNasType, type);
     if (host != null) await _prefs.setString(_kNasHost, host);
+    if (port != null) await _prefs.setInt(_kNasPort, port);
     if (share != null) await _prefs.setString(_kNasShare, share);
     if (username != null) await _prefs.setString(_kNasUsername, username);
     if (password != null) await _prefs.setString(_kNasPassword, password);
@@ -288,6 +292,7 @@ class PreferencesService {
   Future<void> clearNasConfig() async {
     await _prefs.remove(_kNasType);
     await _prefs.remove(_kNasHost);
+    await _prefs.remove(_kNasPort);
     await _prefs.remove(_kNasShare);
     await _prefs.remove(_kNasUsername);
     await _prefs.remove(_kNasPassword);

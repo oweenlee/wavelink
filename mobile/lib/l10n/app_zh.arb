@@ -134,6 +134,7 @@
   "importSmbHint": "浏览并导入 SMB 共享中的文件",
   "nasSettings": "NAS 设置",
   "nasHost": "NAS 地址",
+  "nasPort": "端口",
   "nasShare": "共享路径",
   "nasUsername": "用户名",
   "nasPassword": "密码",
