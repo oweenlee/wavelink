@@ -8,10 +8,10 @@ pub use metadata::*;
 use std::fs::File;
 
 use std::path::Path;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::{bounded, unbounded, Receiver, SendTimeoutError, Sender};
 use symphonia::core::codecs::audio::AudioDecoderOptions;
@@ -25,6 +25,7 @@ use tracing::{debug, error, info, warn};
 use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedOut, WindowFunction};
 
 use crate::dsd;
+use crate::EngineEvent;
 use crate::error::EngineError;
 
 /// 解码器输出 channel 容量（帧数），利用 crossbeam 背压阻塞避免内存无限增长
@@ -227,6 +228,8 @@ impl Decoder {
         target_channels: u32,
         position: Arc<AtomicU64>,
         format_hint: Option<String>,
+        event_tx: Sender<EngineEvent>,
+        bytes_consumed: Arc<AtomicU64>,
     ) -> Result<(Receiver<DecodedFrame>, Self), EngineError> {
         let (tx, rx) = bounded(DECODE_CHANNEL_CAPACITY);
         let (stx, srx) = unbounded();
@@ -243,6 +246,8 @@ impl Decoder {
                     srx,
                     position,
                     format_hint,
+                    event_tx,
+                    bytes_consumed,
                 )
             }));
             match result {
@@ -745,7 +750,12 @@ fn run_from_stream(
     stop_rx: Receiver<()>,
     _position: Arc<AtomicU64>,
     format_hint: Option<String>,
+    event_tx: Sender<EngineEvent>,
+    bytes_consumed: Arc<AtomicU64>,
 ) -> Result<(), EngineError> {
+    // 在 source 被 move 进 MediaSourceStream 之前取出 content_length，
+    // 供后续时长估算使用。
+    let content_length = source.content_length();
     let mss = MediaSourceStream::new(Box::new(source), Default::default());
     let mut hint = Hint::new();
     if let Some(ref ext) = format_hint {
@@ -794,6 +804,13 @@ fn run_from_stream(
     let src_rate = audio_cp.sample_rate.unwrap_or(44100);
     let out_ch = target_ch as usize;
     info!("流式解码: {}Hz, hint={:?}", src_rate, format_hint);
+
+    // 流总时长采用「渐进式」估算（见解码循环内）：用「已消费字节 / 已解码秒数」
+    // 得到真实平均码率，再反推总时长 = content_length / 平均码率。
+    // 不在此处用固定公式上报——probe 阶段无法得知真实编码码率，固定公式对
+    // 压缩格式（FLAC/MP3/AAC…）只是粗略上界，反而会误导进度条。
+    let mut dur_est: Option<f64> = None;
+    let mut dur_est_sent = Instant::now();
 
     let mut decoder = match symphonia::default::get_codecs()
         .make_audio_decoder(&audio_cp, &AudioDecoderOptions::default())
@@ -892,6 +909,31 @@ fn run_from_stream(
             &tx,
             &stop_rx,
         );
+
+        // 渐进式时长估算：用「已消费字节 / 已解码秒数」得出真实平均码率，
+        // 再反推总时长 = content_length / 平均码率。随解码推进，consumed→
+        // content_length、last_pts→真实时长，估算自动收敛（CBR 很快、VBR 渐近）。
+        // 对 FLAC/MP3/AAC 等压缩格式远优于固定公式；content_length 缺失
+        // （如 chunked 无 Content-Length）时无法估算，跳过。
+        if let Some(total) = content_length {
+            if last_pts > 0.3 {
+                let consumed = bytes_consumed.load(Ordering::Relaxed);
+                if consumed > 0 {
+                    let avg_bps = consumed as f64 / last_pts;
+                    let est = total as f64 / avg_bps;
+                    let now = Instant::now();
+                    if est > 0.0
+                        && (dur_est.is_none()
+                            || now.duration_since(dur_est_sent) >= Duration::from_millis(300)
+                            || (est - dur_est.unwrap()).abs() / est > 0.02)
+                    {
+                        let _ = event_tx.send(EngineEvent::DurationSecs(est));
+                        dur_est = Some(est);
+                        dur_est_sent = now;
+                    }
+                }
+            }
+        }
     }
     flush_resampler(
         &mut rubato_resampler,

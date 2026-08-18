@@ -16,7 +16,7 @@
 //! ```
 
 use std::io::{self, Read, Seek, SeekFrom};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -37,6 +37,9 @@ pub struct StreamMediaSource {
     content_length: Option<u64>,
     /// 已读取的总字节数（用于 byte_len 估算和调试）
     total_read: u64,
+    /// 已消费字节数（与外部共享的原子计数）：解码线程据此结合已解码时长
+    /// 算出真实平均码率，进而估算流总时长。与 `total_read` 同步递增。
+    bytes_consumed: Arc<AtomicU64>,
 }
 
 /// 流写入端句柄（平台层持有，通过宿主层写入数据）
@@ -50,13 +53,18 @@ pub struct StreamHandle {
     content_length: Option<u64>,
 }
 
-/// 创建一对 (数据源, 写入句柄)。
+/// 创建一对 (数据源, 写入句柄, 共享字节计数)。
 ///
 /// - `content_length`: 可选的 Content-Length（字节），用于进度估算
-pub fn stream_pair(content_length: Option<u64>) -> (StreamMediaSource, StreamHandle) {
+/// - 返回的 `Arc<AtomicU64>` 由数据源在每次读取时累加，解码线程可随时读取
+///   已消费字节数，用于实时估算流总时长。
+pub fn stream_pair(
+    content_length: Option<u64>,
+) -> (StreamMediaSource, StreamHandle, Arc<AtomicU64>) {
     // 64 个 chunk 的背压缓冲（每个 chunk 通常 4~64KB）
     let (tx, rx) = bounded(64);
     let eof = Arc::new(AtomicBool::new(false));
+    let bytes_consumed = Arc::new(AtomicU64::new(0));
     (
         StreamMediaSource {
             rx,
@@ -65,12 +73,14 @@ pub fn stream_pair(content_length: Option<u64>) -> (StreamMediaSource, StreamHan
             eof: eof.clone(),
             content_length,
             total_read: 0,
+            bytes_consumed: bytes_consumed.clone(),
         },
         StreamHandle {
             tx,
             eof,
             content_length,
         },
+        bytes_consumed,
     )
 }
 
@@ -118,6 +128,7 @@ impl Read for StreamMediaSource {
             out[..n].copy_from_slice(&avail[..n]);
             self.pos += n;
             self.total_read += n as u64;
+            self.bytes_consumed.fetch_add(n as u64, Ordering::Relaxed);
             // 缓冲消费完毕，释放内存
             if self.pos >= self.buf.len() {
                 self.buf.clear();
@@ -138,6 +149,7 @@ impl Read for StreamMediaSource {
                     let n = chunk.len().min(out.len());
                     out[..n].copy_from_slice(&chunk[..n]);
                     self.total_read += n as u64;
+                    self.bytes_consumed.fetch_add(n as u64, Ordering::Relaxed);
                     // 未消费完的部分存入内部缓冲
                     if n < chunk.len() {
                         self.buf = chunk;
@@ -173,6 +185,14 @@ impl Seek for StreamMediaSource {
     }
 }
 
+impl StreamMediaSource {
+    /// 远端内容真实总字节数（扫描期已知，经 `stream_pair` 传入）。
+    /// 用于流式解码后估算总时长，使进度条总量准确。
+    pub fn content_length(&self) -> Option<u64> {
+        self.content_length
+    }
+}
+
 impl MediaSource for StreamMediaSource {
     fn is_seekable(&self) -> bool {
         false
@@ -189,7 +209,7 @@ mod tests {
 
     #[test]
     fn test_stream_basic_read() {
-        let (mut source, handle) = stream_pair(None);
+        let (mut source, handle, _consumed) = stream_pair(None);
 
         // 写入数据
         handle.write(b"hello ");
@@ -204,7 +224,7 @@ mod tests {
 
     #[test]
     fn test_stream_eof_empty() {
-        let (mut source, handle) = stream_pair(None);
+        let (mut source, handle, _consumed) = stream_pair(None);
         handle.signal_eof();
 
         let mut buf = [0u8; 16];
@@ -214,20 +234,20 @@ mod tests {
 
     #[test]
     fn test_stream_not_seekable() {
-        let (source, _handle) = stream_pair(None);
+        let (source, _handle, _consumed) = stream_pair(None);
         assert!(!source.is_seekable());
         assert_eq!(source.byte_len(), None);
     }
 
     #[test]
     fn test_stream_content_length() {
-        let (source, _handle) = stream_pair(Some(1024));
+        let (source, _handle, _consumed) = stream_pair(Some(1024));
         assert_eq!(source.byte_len(), Some(1024));
     }
 
     #[test]
     fn test_stream_cross_thread() {
-        let (mut source, handle) = stream_pair(None);
+        let (mut source, handle, _consumed) = stream_pair(None);
 
         let writer = std::thread::spawn(move || {
             for i in 0..100u8 {
@@ -251,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_stream_write_after_eof() {
-        let (_source, handle) = stream_pair(None);
+        let (_source, handle, _consumed) = stream_pair(None);
         handle.signal_eof();
         assert_eq!(handle.write(b"data"), 0);
     }

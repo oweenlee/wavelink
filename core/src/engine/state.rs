@@ -492,8 +492,9 @@ impl EngineState {
             }
         };
 
-        // 创建流式数据源对
-        let (source, handle) = crate::stream::stream_pair(content_length);
+        // 创建流式数据源对（第三个是共享的「已消费字节」计数，供解码线程
+        // 实时估算流总时长）
+        let (source, handle, bytes_consumed) = crate::stream::stream_pair(content_length);
 
         // 启动流式解码
         let (rx, mut decoder) = match Decoder::start_from_stream(
@@ -502,6 +503,8 @@ impl EngineState {
             actual_ch,
             self.position.clone(),
             format_hint,
+            self.external_tx.clone(),
+            bytes_consumed,
         ) {
             Ok(v) => v,
             Err(e) => {
