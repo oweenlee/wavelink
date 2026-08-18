@@ -21,6 +21,21 @@ import '../models/track.dart';
 class TrackRepository {
   TrackRepository._();
 
+  /// 数据库 schema 版本。**改表结构时必须 +1**，并在 [_onUpgrade] 里补
+  /// 对应迁移语句（onCreate 建的是最新结构，老库走 onUpgrade 逐级升级）。
+  /// 不加迁移直接改 onCreate = 老用户升级后曲库被当作损坏丢弃、静默清空。
+  static const int dbVersion = 1;
+
+  /// 逐级迁移：switch 不 break，保证跨多版本的老库（如 v1 → v3）依次
+  /// 应用每一步迁移，与 onCreate 的最终结构对齐。
+  static Future<void> _onUpgrade(
+      Database db, int oldVersion, int newVersion) async {
+    // 示例（未来 v2 加列时）：
+    // if (oldVersion < 2) {
+    //   await db.execute('ALTER TABLE tracks ADD COLUMN genre TEXT');
+    // }
+  }
+
   static Database? _db;
   static bool _initialized = false;
 
@@ -43,7 +58,8 @@ class TrackRepository {
     await dir.create(recursive: true);
     _db = await openDatabase(
       p.join(dir.path, 'wavelink_library.db'),
-      version: 1,
+      version: dbVersion,
+      onUpgrade: _onUpgrade,
       onCreate: (db, _) async {
         await db.execute('''
           CREATE TABLE tracks (
@@ -72,17 +88,13 @@ class TrackRepository {
     return _db!;
   }
 
-  /// 启动恢复：读回全部曲目（网络音源靠此跨重启存活）。失败返回空列表，
-  /// 不阻断主流程。
+  /// 启动恢复：读回全部曲目（网络音源靠此跨重启存活）。
+  /// 失败向上抛异常，由调用方（PlayerController.init）兜底为空库并上报——
+  /// 本层不再静默吞错（曾因 debugPrint 吞掉导致曲库静默清空且用户无感知）。
   static Future<List<Track>> getAll() async {
-    try {
-      final db = await _database;
-      final rows = await db.query('tracks');
-      return rows.map(Track.fromMap).toList();
-    } catch (e) {
-      debugPrint('TrackRepository.getAll error: $e');
-      return const [];
-    }
+    final db = await _database;
+    final rows = await db.query('tracks');
+    return rows.map(Track.fromMap).toList();
   }
 
   /// 增量同步一次扫描结果到曲库。
@@ -92,75 +104,63 @@ class TrackRepository {
   /// - [source] 非空（网络音源）：删除该来源不在 [scanned] 内的曲目，
   ///   清理服务器/共享上已移除的曲目。
   /// - 二者皆空则仅 upsert（兜底）。
-  /// 全部在单事务内完成（原子）。
+  /// 全部在单事务内完成（原子）。失败向上抛，由调用方决定如何提示用户。
   static Future<void> syncScan(
     List<Track> scanned, {
     TrackSource? source,
     String? localPrefix,
   }) async {
-    try {
-      final db = await _database;
-      await db.transaction((txn) async {
-        if (localPrefix != null) {
+    final db = await _database;
+    await db.transaction((txn) async {
+      if (localPrefix != null) {
+        await txn.delete(
+          'tracks',
+          where: 'source = ? AND filePath LIKE ?',
+          whereArgs: [TrackSource.local.name, '$localPrefix/%'],
+        );
+      } else if (source != null) {
+        final ids = scanned.map((t) => t.id).toList();
+        if (ids.isEmpty) {
           await txn.delete(
             'tracks',
-            where: 'source = ? AND filePath LIKE ?',
-            whereArgs: [TrackSource.local.name, '$localPrefix/%'],
+            where: 'source = ?',
+            whereArgs: [source.name],
           );
-        } else if (source != null) {
-          final ids = scanned.map((t) => t.id).toList();
-          if (ids.isEmpty) {
-            await txn.delete(
-              'tracks',
-              where: 'source = ?',
-              whereArgs: [source.name],
-            );
-          } else {
-            final ph = List.filled(ids.length, '?').join(',');
-            await txn.delete(
-              'tracks',
-              where: 'source = ? AND id NOT IN ($ph)',
-              whereArgs: [source.name, ...ids],
-            );
-          }
-        }
-        final batch = txn.batch();
-        for (final t in scanned) {
-          batch.insert(
+        } else {
+          final ph = List.filled(ids.length, '?').join(',');
+          await txn.delete(
             'tracks',
-            t.toMap(),
-            conflictAlgorithm: ConflictAlgorithm.replace,
+            where: 'source = ? AND id NOT IN ($ph)',
+            whereArgs: [source.name, ...ids],
           );
         }
-        await batch.commit(noResult: true);
-      });
-    } catch (e) {
-      debugPrint('TrackRepository.syncScan error: $e');
-    }
+      }
+      final batch = txn.batch();
+      for (final t in scanned) {
+        batch.insert(
+          'tracks',
+          t.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
-  /// 移除某本地文件夹下全部曲目（UI 移除文件夹时调用）。
+  /// 移除某本地文件夹下全部曲目（UI 移除文件夹时调用）。失败向上抛。
   static Future<void> deleteLocalUnder(String prefix) async {
-    try {
-      final db = await _database;
-      await db.delete(
-        'tracks',
-        where: 'source = ? AND filePath LIKE ?',
-        whereArgs: [TrackSource.local.name, '$prefix/%'],
-      );
-    } catch (e) {
-      debugPrint('TrackRepository.deleteLocalUnder error: $e');
-    }
+    final db = await _database;
+    await db.delete(
+      'tracks',
+      where: 'source = ? AND filePath LIKE ?',
+      whereArgs: [TrackSource.local.name, '$prefix/%'],
+    );
   }
 
-  /// 清空整库（侧栏「清空全部数据」时调用）。
+  /// 清空整库（侧栏「清空全部数据」时调用）。失败向上抛。
   static Future<void> clear() async {
-    try {
-      final db = await _database;
-      await db.delete('tracks');
-    } catch (e) {
-      debugPrint('TrackRepository.clear error: $e');
-    }
+    final db = await _database;
+    await db.delete('tracks');
   }
 
   /// 释放数据库连接（进程退出时调用，一般无需手动）。

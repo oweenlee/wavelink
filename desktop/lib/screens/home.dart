@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
@@ -38,11 +39,20 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   late final PlayerController player;
+  StreamSubscription<String>? _errorSub;
 
   @override
   void initState() {
     super.initState();
     player = ref.read(playerControllerProvider);
+    // 持久化/导入等失败统一走 errorStream → SnackBar（此前静默 debugPrint，
+    // 用户对「曲库写入失败」毫无感知）。mounted 守卫避免 dispose 后弹窗。
+    _errorSub = player.errorStream.listen((message) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    });
   }
 
   final _kbFocus = FocusNode();
@@ -55,6 +65,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   void dispose() {
+    _errorSub?.cancel();
     _kbFocus.dispose();
     _searchFocus.dispose();
     _searchCtrl.dispose();
@@ -314,9 +325,10 @@ class _Sidebar extends ConsumerWidget {
         color: _surface,
         border: Border(right: BorderSide(color: _border)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(20, 22, 20, 14),
             child: Text('本地音乐',
@@ -378,20 +390,22 @@ class _Sidebar extends ConsumerWidget {
             child: Text('播放列表',
                 style: TextStyle(color: _onSurfaceVariant, fontSize: 12)),
           ),
-          Expanded(
-            child: ListView(
-              children: player.playlists
-                  .map(
-                    (pl) => _NavItem(
-                      icon: LucideIcons.listMusic,
-                      label: pl.name,
-                      trailing: '${pl.trackIds.length}',
-                      active: viewMode == 'pl:${pl.id}',
-                      onTap: () => onSelect('pl:${pl.id}'),
-                    ),
-                  )
-                  .toList(),
-            ),
+          // 播放列表数量少，内联渲染即可（shrinkWrap）；整栏已在
+          // SingleChildScrollView 内，矮窗口时侧栏整体可滚动、不再溢出。
+          ListView(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: player.playlists
+                .map(
+                  (pl) => _NavItem(
+                    icon: LucideIcons.listMusic,
+                    label: pl.name,
+                    trailing: '${pl.trackIds.length}',
+                    active: viewMode == 'pl:${pl.id}',
+                    onTap: () => onSelect('pl:${pl.id}'),
+                  ),
+                )
+                .toList(),
           ),
           Padding(
             padding: const EdgeInsets.all(14),
@@ -427,7 +441,8 @@ class _Sidebar extends ConsumerWidget {
               ),
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }

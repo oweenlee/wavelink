@@ -44,22 +44,12 @@ Future<List<Track>> scanFolder(String folderPath) async {
 }
 
 Track? _parseTrack(File file) {
-  final name = p.basenameWithoutExtension(file.path);
+  final name = p.basename(file.path);
   if (name.isEmpty) return null;
 
-  String title = name;
-  String artist = '未知艺人';
-
-  if (name.contains(' - ')) {
-    final parts = name.split(' - ');
-    artist = parts.first.trim();
-    title = parts.sublist(1).join(' - ').trim();
-  } else if (name.contains('（') && name.contains('）')) {
-    final start = name.indexOf('（');
-    final end = name.lastIndexOf('）');
-    artist = name.substring(start + 1, end).trim();
-    title = (name.substring(0, start) + name.substring(end + 1)).trim();
-  }
+  // 文件名解析走 scan_helpers.parseArtistTitle（与网络音源共用同一实现，
+  // 保证「艺人 - 标题」/「（艺人）标题」规则与未知艺人占位跨来源一致）。
+  final (artist, title) = parseArtistTitle(name);
 
   // 查找同名 .lrc 歌词文件（同级目录，兼容大小写；都存在时优先小写）。
   String? lyricsPath;
@@ -73,8 +63,8 @@ Track? _parseTrack(File file) {
 
   return Track(
     id: file.path,
-    title: title.isEmpty ? name : title,
-    artist: artist.isEmpty ? '未知艺人' : artist,
+    title: title,
+    artist: artist,
     filePath: file.path,
     lyricsPath: lyricsPath,
   );

@@ -93,6 +93,10 @@ class PlayerController {
   final _modeSC = StreamController<void>.broadcast();
   final _librarySC = StreamController<void>.broadcast();
 
+  /// 用户可读错误（曲库写入失败等）。UI 订阅后以 SnackBar 呈现；
+  /// 详细异常走 debugPrint（仅 debug 构建），对用户只暴露一句人话。
+  final _errorSC = StreamController<String>.broadcast();
+
   Stream<Duration> get positionStream => _positionSC.stream;
   Stream<Duration> get durationStream => _durationSC.stream;
   Stream<bool> get playingStream => _playingSC.stream;
@@ -104,6 +108,16 @@ class PlayerController {
 
   /// 曲库内容变化（添加文件夹 / 启动重扫完成）。UI 订阅以替代 setState 刷新。
   Stream<void> get libraryStream => _librarySC.stream;
+
+  /// 用户可读错误事件（持久化失败等），UI 订阅后弹提示。
+  Stream<String> get errorStream => _errorSC.stream;
+
+  /// 统一错误上报：debugPrint 记录完整异常（诊断用），errorStream 只发
+  /// 一句用户能看懂的话（呈现用）。持久化/导入失败不得静默。
+  void _reportError(String message, Object e) {
+    debugPrint('PlayerController: $message ($e)');
+    if (!_errorSC.isClosed) _errorSC.add(message);
+  }
 
   List<Track> get library => _library;
   List<Playlist> get playlists => _playlists;
@@ -175,13 +189,17 @@ class PlayerController {
       final dbTracks = await TrackRepository.getAll();
       if (dbTracks.isNotEmpty) addLibraryFiles(dbTracks);
     } catch (e) {
-      debugPrint('library restore error: $e');
+      _reportError('曲库读取失败，本次启动以空库运行', e);
     }
     if (_folders.isNotEmpty) {
       for (final folder in _folders) {
         final scanned = await scanFolder(folder);
         addLibraryFiles(scanned);
-        await TrackRepository.syncScan(scanned, localPrefix: folder);
+        try {
+          await TrackRepository.syncScan(scanned, localPrefix: folder);
+        } catch (e) {
+          _reportError('曲库写入失败，扫描结果可能未保存', e);
+        }
         // 后台提取本地封面（不阻塞 init；完成后广播刷新）
         extractCoversFor(scanned);
       }
@@ -269,7 +287,11 @@ class PlayerController {
     }
     final tracks = await scanFolder(path);
     addLibraryFiles(tracks);
-    await TrackRepository.syncScan(tracks, localPrefix: path);
+    try {
+      await TrackRepository.syncScan(tracks, localPrefix: path);
+    } catch (e) {
+      _reportError('曲库保存失败，本次扫描结果未持久化', e);
+    }
     _librarySC.add(null);
     // 后台提取本地封面（不阻塞 UI）
     extractCoversFor(tracks);
@@ -286,7 +308,11 @@ class PlayerController {
     if (_queueIndex == null) {
       _queue = _shuffle ? _shuffled(_library, null) : _library;
     }
-    await TrackRepository.deleteLocalUnder(path);
+    try {
+      await TrackRepository.deleteLocalUnder(path);
+    } catch (e) {
+      _reportError('移除文件夹失败，曲库可能残留该目录曲目', e);
+    }
     _librarySC.add(null);
   }
 
@@ -310,7 +336,11 @@ class PlayerController {
     setLibrary([]);
 
     // 2.5 清空持久化曲库（SQLite 整表删除；只删索引，不碰真实音乐文件）
-    await TrackRepository.clear();
+    try {
+      await TrackRepository.clear();
+    } catch (e) {
+      _reportError('清空曲库失败，重启后旧曲库可能恢复', e);
+    }
 
     // 3. 清空本地文件夹配置（决定启动重扫）
     _folders = const [];
@@ -456,7 +486,11 @@ class PlayerController {
     final tracks = await WebdavService.scanWebdav();
     if (tracks.isNotEmpty) {
       addLibraryFiles(tracks);
-      await TrackRepository.syncScan(tracks, source: TrackSource.webdav);
+      try {
+        await TrackRepository.syncScan(tracks, source: TrackSource.webdav);
+      } catch (e) {
+        _reportError('WebDAV 曲库写入失败，导入结果未保存', e);
+      }
     }
     _librarySC.add(null);
     return tracks;
@@ -467,7 +501,11 @@ class PlayerController {
     final tracks = await NasService.scan();
     if (tracks.isNotEmpty) {
       addLibraryFiles(tracks);
-      await TrackRepository.syncScan(tracks, source: TrackSource.nas);
+      try {
+        await TrackRepository.syncScan(tracks, source: TrackSource.nas);
+      } catch (e) {
+        _reportError('NAS 曲库写入失败，导入结果未保存', e);
+      }
     }
     _librarySC.add(null);
     // 后台提取 NAS 封面（远程读头/尾字节解析，完成后增量广播刷新）
@@ -480,7 +518,11 @@ class PlayerController {
     final tracks = await SubsonicService.scanLibrary();
     if (tracks.isNotEmpty) {
       addLibraryFiles(tracks);
-      await TrackRepository.syncScan(tracks, source: TrackSource.subsonic);
+      try {
+        await TrackRepository.syncScan(tracks, source: TrackSource.subsonic);
+      } catch (e) {
+        _reportError('Subsonic 曲库写入失败，导入结果未保存', e);
+      }
     }
     _librarySC.add(null);
     return tracks;
@@ -1202,5 +1244,6 @@ class PlayerController {
     await _playlistsSC.close();
     await _modeSC.close();
     await _librarySC.close();
+    await _errorSC.close();
   }
 }

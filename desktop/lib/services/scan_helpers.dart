@@ -21,9 +21,13 @@ const List<String> audioExtensions = [
   '.aif',
 ];
 
+/// 未知艺人的统一占位符（本地/网络扫描共用，避免不同来源显示不一致）。
+const String unknownArtist = '未知艺人';
+
 /// 从文件名解析 艺人 / 标题。
 /// 规则：含 " - " 按 "艺人 - 标题"；含全角括号 "（艺人）" 视为艺人在前；
-/// 否则整名作标题，艺人回退 "Unknown Artist"。
+/// 否则整名作标题，艺人回退 [unknownArtist]。
+/// 入参可带扩展名（内部会剥掉最后一个 `.xxx` 后缀）。
 (String artist, String title) parseArtistTitle(String name) {
   final base = name.replaceAll(RegExp(r'\.[^.]+$'), '').trim();
   if (base.contains(' - ')) {
@@ -31,7 +35,7 @@ const List<String> audioExtensions = [
     final artist = parts.first.trim();
     final title = parts.sublist(1).join(' - ').trim();
     return (
-      artist.isEmpty ? 'Unknown Artist' : artist,
+      artist.isEmpty ? unknownArtist : artist,
       title.isEmpty ? base : title,
     );
   }
@@ -41,11 +45,11 @@ const List<String> audioExtensions = [
     final artist = base.substring(start + 1, end).trim();
     final title = (base.substring(0, start) + base.substring(end + 1)).trim();
     return (
-      artist.isEmpty ? 'Unknown Artist' : artist,
+      artist.isEmpty ? unknownArtist : artist,
       title.isEmpty ? base : title,
     );
   }
-  return ('Unknown Artist', base.isEmpty ? name : base);
+  return (unknownArtist, base.isEmpty ? name : base);
 }
 
 /// 按文件大小粗略估算时长（假设平均 1000 kbps）。
