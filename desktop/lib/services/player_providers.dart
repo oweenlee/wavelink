@@ -26,14 +26,19 @@ final currentIndexProvider = StreamProvider<int?>(
     (ref) => ref.watch(playerControllerProvider).indexStream);
 final lyricsProvider = StreamProvider<List<LyricLine>>(
     (ref) => ref.watch(playerControllerProvider).lyricsStream);
-final favoritesProvider = StreamProvider<void>(
-    (ref) => ref.watch(playerControllerProvider).favoritesStream);
-final playlistsProvider = StreamProvider<void>(
-    (ref) => ref.watch(playerControllerProvider).playlistsStream);
-final modeProvider = StreamProvider<void>(
-    (ref) => ref.watch(playerControllerProvider).modeStream);
-final libraryProvider = StreamProvider<void>(
-    (ref) => ref.watch(playerControllerProvider).libraryStream);
+/// 这些流只承担「通知刷新」职责，emit 值本身无意义（广播 null）。
+/// 若用 `StreamProvider<void>`，每次 emit 的 AsyncData(null) 相互相等，
+/// Riverpod 默认 updateShouldNotify（`previous != next`）判定「无变化」而跳过通知，
+/// 导致扫描完成 / 收藏切换后 UI 不刷新（需切 tab/重启才出现）。
+/// 因此 map 成每次新分配的 Object 实例，强制每次 emit 都触发 rebuild。
+final favoritesProvider = StreamProvider<Object>(
+    (ref) => ref.watch(playerControllerProvider).favoritesStream.map((_) => Object()));
+final playlistsProvider = StreamProvider<Object>(
+    (ref) => ref.watch(playerControllerProvider).playlistsStream.map((_) => Object()));
+final modeProvider = StreamProvider<Object>(
+    (ref) => ref.watch(playerControllerProvider).modeStream.map((_) => Object()));
+final libraryProvider = StreamProvider<Object>(
+    (ref) => ref.watch(playerControllerProvider).libraryStream.map((_) => Object()));
 
 /// 网络音源配置变化（保存凭据 / 切换展示开关时广播），供侧栏刷新状态。
 final networkConfigProvider = StreamProvider<void>(

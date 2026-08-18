@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0-beta.5";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 174667270;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1414623585;
 
 // Section: executor
 
@@ -305,6 +305,39 @@ fn wire__crate__api__cover__get_cover_bytes_impl(
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::cover::get_cover_bytes(api_path)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__cover__get_cover_bytes_from_memory_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_cover_bytes_from_memory",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_data = <Vec<u8>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::cover::get_cover_bytes_from_memory(api_data)?;
                     Ok(output_ok)
                 })())
             }
@@ -1742,68 +1775,74 @@ fn pde_ffi_dispatcher_primary_impl(
             data_len,
         ),
         6 => wire__crate__api__cover__get_cover_bytes_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__smb__smb_connect_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__smb__smb_connect_share_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__smb__smb_disconnect_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__smb__smb_file_size_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__smb__smb_keepalive_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__smb__smb_list_directory_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__smb__smb_list_shares_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__smb__smb_read_file_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__smb__smb_read_file_range_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__smb__smb_read_file_stream_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__smb__smb_read_head_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__smb__smb_read_tail_impl(port, ptr, rust_vec_len, data_len),
-        19 => {
+        7 => wire__crate__api__cover__get_cover_bytes_from_memory_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        8 => wire__crate__api__smb__smb_connect_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__smb__smb_connect_share_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__smb__smb_disconnect_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__smb__smb_file_size_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__smb__smb_keepalive_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__smb__smb_list_directory_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__smb__smb_list_shares_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__smb__smb_read_file_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__smb__smb_read_file_range_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__smb__smb_read_file_stream_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__smb__smb_read_head_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__smb__smb_read_tail_impl(port, ptr, rust_vec_len, data_len),
+        20 => {
             wire__crate__api__engine__wavelink_current_path_impl(port, ptr, rust_vec_len, data_len)
         }
-        20 => wire__crate__api__engine__wavelink_deinit_impl(port, ptr, rust_vec_len, data_len),
-        21 => {
+        21 => wire__crate__api__engine__wavelink_deinit_impl(port, ptr, rust_vec_len, data_len),
+        22 => {
             wire__crate__api__engine__wavelink_duration_secs_impl(port, ptr, rust_vec_len, data_len)
         }
-        22 => wire__crate__api__engine__wavelink_enumerate_devices_impl(
+        23 => wire__crate__api__engine__wavelink_enumerate_devices_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        23 => wire__crate__api__engine__wavelink_init_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__engine__wavelink_is_playing_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__engine__wavelink_last_error_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__engine__wavelink_next_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__engine__wavelink_pause_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__engine__wavelink_play_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__engine__wavelink_play_queue_at_json_impl(
+        24 => wire__crate__api__engine__wavelink_init_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__engine__wavelink_is_playing_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__engine__wavelink_last_error_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__engine__wavelink_next_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__engine__wavelink_pause_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__engine__wavelink_play_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__engine__wavelink_play_queue_at_json_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        30 => wire__crate__api__engine__wavelink_play_queue_json_impl(
+        31 => wire__crate__api__engine__wavelink_play_queue_json_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        31 => wire__crate__api__engine__wavelink_poll_event_impl(port, ptr, rust_vec_len, data_len),
-        32 => {
+        32 => wire__crate__api__engine__wavelink_poll_event_impl(port, ptr, rust_vec_len, data_len),
+        33 => {
             wire__crate__api__engine__wavelink_position_secs_impl(port, ptr, rust_vec_len, data_len)
         }
-        33 => wire__crate__api__engine__wavelink_prev_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__engine__wavelink_resume_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__engine__wavelink_seek_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__engine__wavelink_set_output_device_impl(
+        34 => wire__crate__api__engine__wavelink_prev_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__engine__wavelink_resume_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__engine__wavelink_seek_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__engine__wavelink_set_output_device_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        37 => {
+        38 => {
             wire__crate__api__engine__wavelink_set_play_mode_impl(port, ptr, rust_vec_len, data_len)
         }
-        38 => wire__crate__api__engine__wavelink_set_volume_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__engine__wavelink_stop_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__engine__wavelink_underrun_count_impl(
+        39 => wire__crate__api__engine__wavelink_set_volume_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__engine__wavelink_stop_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__engine__wavelink_underrun_count_impl(
             port,
             ptr,
             rust_vec_len,

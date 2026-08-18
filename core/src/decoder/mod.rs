@@ -922,14 +922,26 @@ fn run_from_stream(
                     let avg_bps = consumed as f64 / last_pts;
                     let est = total as f64 / avg_bps;
                     let now = Instant::now();
-                    if est > 0.0
-                        && (dur_est.is_none()
-                            || now.duration_since(dur_est_sent) >= Duration::from_millis(300)
-                            || (est - dur_est.unwrap()).abs() / est > 0.02)
-                    {
-                        let _ = event_tx.send(EngineEvent::DurationSecs(est));
-                        dur_est = Some(est);
-                        dur_est_sent = now;
+                    if est > 0.0 {
+                        // 估算与上次已收敛（相对变化 <1%）后停止发送，避免网络喂流速率
+                        // 波动导致 avg_bps 抖动 → duration 反复变化 → UI 进度条闪烁。
+                        let settled = dur_est
+                            .map(|d| d > 0.0 && (est - d).abs() / d < 0.01)
+                            .unwrap_or(false);
+                        // 未收敛时放宽更新间隔至 1s；仅相对变化 >5% 才立即更新（追赶）。
+                        let big_shift = dur_est
+                            .map(|d| (est - d).abs() / est > 0.05)
+                            .unwrap_or(false);
+                        if !settled
+                            && (dur_est.is_none()
+                                || big_shift
+                                || now.duration_since(dur_est_sent)
+                                    >= Duration::from_millis(1000))
+                        {
+                            let _ = event_tx.send(EngineEvent::DurationSecs(est));
+                            dur_est = Some(est);
+                            dur_est_sent = now;
+                        }
                     }
                 }
             }

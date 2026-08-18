@@ -182,32 +182,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               body: Column(
                 children: [
                   Expanded(
-                    child: Row(
-                      children: [
-                        _Sidebar(
-                          player: player,
-                          viewMode: _viewMode,
-                          onSelect: _selectView,
-                          onCreate: _createPlaylist,
-                          onAddFolder: _addFolder,
-                        ),
-                        Expanded(
-                          child: _LibraryView(
-                            player: player,
-                            tracks: visible,
-                            title: _viewTitle,
-                            query: _query,
-                            onQuery: (v) => setState(() => _query = v),
-                            sort: _sort,
-                            onSort: (v) => setState(() => _sort = v),
-                            searchFocus: _searchFocus,
-                            searchCtrl: _searchCtrl,
-                            onPlay: (i) => player.playFrom(visible, i),
-                            onAddFolder: _addFolder,
-                          ),
-                        ),
-                        _NowPlaying(player: player),
-                      ],
+                    child: LayoutBuilder(
+                      builder: (context, c) {
+                        // 侧栏 220 + 列表最小 340 + 播放面板 340：宽度不足时
+                        // 隐藏右侧播放面板（对齐 Spotify 窄窗口只留侧栏+列表）
+                        final showNowPlaying = c.maxWidth >= 900;
+                        return Row(
+                          children: [
+                            _Sidebar(
+                              player: player,
+                              viewMode: _viewMode,
+                              onSelect: _selectView,
+                              onCreate: _createPlaylist,
+                              onAddFolder: _addFolder,
+                            ),
+                            Expanded(
+                              child: _LibraryView(
+                                player: player,
+                                tracks: visible,
+                                title: _viewTitle,
+                                query: _query,
+                                onQuery: (v) => setState(() => _query = v),
+                                sort: _sort,
+                                onSort: (v) => setState(() => _sort = v),
+                                searchFocus: _searchFocus,
+                                searchCtrl: _searchCtrl,
+                                onPlay: (i) => player.playFrom(visible, i),
+                                onAddFolder: _addFolder,
+                              ),
+                            ),
+                            if (showNowPlaying) _NowPlaying(player: player),
+                          ],
+                        );
+                      },
                     ),
                   ),
                   _TransportBar(player: player),
@@ -894,9 +901,9 @@ class _FavoriteButton extends ConsumerWidget {
     final fav = player.isFavorite(track);
     return IconButton(
       icon: Icon(
-        fav ? LucideIcons.heart : LucideIcons.heartOff,
+        fav ? Icons.favorite : Icons.favorite_border,
         size: 17,
-        color: fav ? _onSurface : AppTheme.textTertiary,
+        color: fav ? AppTheme.danger : AppTheme.textSecondary,
       ),
       onPressed: () => player.toggleFavorite(track),
     );
@@ -1103,125 +1110,143 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
               },
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 18, 12),
-            child: Row(
-              children: [
-                // Left: mini now-playing
-                Row(
+          LayoutBuilder(
+            builder: (context, c) {
+              final w = c.maxWidth;
+              // 窄窗口逐级隐藏次要元素（对齐主流播放器做法：核心控制始终可见，
+              // 优先隐藏音量条 → 歌曲信息 → 迷你封面 → 随机/循环）
+              final showVolumeSlider = w >= 660;
+              final showLeftInfo = w >= 540;
+              final showCover = w >= 380;
+              final showMode = w >= 420;
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 18, 12),
+                child: Row(
                   children: [
-                    CoverArt(seed: t?.id ?? 'empty', coverUrl: t?.coverUrl, size: 40),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 200,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    // Left: mini now-playing
+                    if (showCover) ...[
+                      CoverArt(seed: t?.id ?? 'empty',
+                          coverUrl: t?.coverUrl,
+                          size: 40),
+                      const SizedBox(width: 12),
+                    ],
+                    if (showLeftInfo) ...[
+                      Flexible(
+                        child: SizedBox(
+                          width: 200,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(t?.title ?? '未在播放',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      color: _onSurface, fontSize: 13)),
+                              Text(t?.artist ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      color: _onSurfaceVariant, fontSize: 11.5)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    // Center: controls
+                    Expanded(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Text(t?.title ?? '未在播放',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  color: _onSurface, fontSize: 13)),
-                          Text(t?.artist ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  color: _onSurfaceVariant, fontSize: 11.5)),
+                          if (showMode)
+                            IconButton(
+                              icon: Icon(
+                                LucideIcons.shuffle,
+                                color: player.shuffle
+                                    ? _onSurface
+                                    : AppTheme.textTertiary,
+                              ),
+                              onPressed: player.toggleShuffle,
+                            ),
+                          IconButton(
+                            iconSize: 26,
+                            icon: const Icon(Icons.skip_previous,
+                                color: _onSurface),
+                            onPressed: player.previous,
+                          ),
+                          IconButton(
+                            iconSize: 34,
+                            icon: Icon(
+                              playing ? Icons.pause : Icons.play_arrow,
+                              color: _onSurface,
+                            ),
+                            onPressed: player.togglePlay,
+                          ),
+                          IconButton(
+                            iconSize: 26,
+                            icon: const Icon(Icons.skip_next,
+                                color: _onSurface),
+                            onPressed: player.next,
+                          ),
+                          if (showMode)
+                            IconButton(
+                              icon: Icon(
+                                player.repeatMode == RepeatMode.one
+                                    ? LucideIcons.repeat1
+                                    : LucideIcons.repeat,
+                                color: player.repeatMode == RepeatMode.off
+                                    ? AppTheme.textTertiary
+                                    : _onSurface,
+                              ),
+                              onPressed: player.cycleRepeat,
+                            ),
                         ],
                       ),
                     ),
+                    // Right: engine status + volume
+                    if (!player.engineReady)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: Tooltip(
+                          message: player.engineInitError ??
+                              '播放引擎未加载（动态库缺失或加载失败）',
+                          child: const Icon(LucideIcons.alertCircle,
+                              color: AppTheme.textTertiary, size: 18),
+                        ),
+                      ),
+                    const Icon(LucideIcons.volume2,
+                        color: AppTheme.textTertiary, size: 20),
+                    const SizedBox(width: 8),
+                    if (showVolumeSlider)
+                      SizedBox(
+                        width: 120,
+                        child: SliderTheme(
+                          data: SliderThemeData(
+                            thumbColor: _onSurface,
+                            activeTrackColor: _onSurface,
+                            inactiveTrackColor: _surface2,
+                            trackHeight: 3,
+                            thumbShape: const RoundSliderThumbShape(
+                                enabledThumbRadius: 6),
+                          ),
+                          child: Slider(
+                            // 拖动中实时下发引擎（听觉反馈），松手才持久化——
+                            // 避免拖动过程每帧写 SharedPreferences。
+                            value: _volDrag ?? player.volume,
+                            onChanged: (v) {
+                              setState(() => _volDrag = v);
+                              player.setVolume(v);
+                            },
+                            onChangeEnd: (_) {
+                              setState(() => _volDrag = null);
+                              player.persistVolume();
+                            },
+                          ),
+                        ),
+                      ),
                   ],
                 ),
-                // Center: controls
-                Expanded(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          LucideIcons.shuffle,
-                          color: player.shuffle
-                              ? _onSurface
-                              : AppTheme.textTertiary,
-                        ),
-                        onPressed: player.toggleShuffle,
-                      ),
-                      IconButton(
-                        iconSize: 26,
-                        icon: const Icon(LucideIcons.skipBack,
-                            color: _onSurface),
-                        onPressed: player.previous,
-                      ),
-                      IconButton(
-                        iconSize: 44,
-                        icon: Icon(
-                          playing ? LucideIcons.pauseCircle : LucideIcons.playCircle,
-                          color: _onSurface,
-                        ),
-                        onPressed: player.togglePlay,
-                      ),
-                      IconButton(
-                        iconSize: 26,
-                        icon: const Icon(LucideIcons.skipForward,
-                            color: _onSurface),
-                        onPressed: player.next,
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          player.repeatMode == RepeatMode.one
-                              ? LucideIcons.repeat1
-                              : LucideIcons.repeat,
-                          color: player.repeatMode == RepeatMode.off
-                              ? AppTheme.textTertiary
-                              : _onSurface,
-                        ),
-                        onPressed: player.cycleRepeat,
-                      ),
-                    ],
-                  ),
-                ),
-                // Right: engine status + volume
-                if (!player.engineReady)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 10),
-                    child: Tooltip(
-                      message: player.engineInitError ??
-                          '播放引擎未加载（动态库缺失或加载失败）',
-                      child: const Icon(LucideIcons.alertCircle,
-                          color: AppTheme.textTertiary, size: 18),
-                    ),
-                  ),
-                const Icon(LucideIcons.volume2,
-                    color: AppTheme.textTertiary, size: 20),
-                const SizedBox(width: 8),
-                SizedBox(
-                  width: 120,
-                  child: SliderTheme(
-                    data: SliderThemeData(
-                      thumbColor: _onSurface,
-                      activeTrackColor: _onSurface,
-                      inactiveTrackColor: _surface2,
-                      trackHeight: 3,
-                      thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 6),
-                    ),
-                    child: Slider(
-                      // 拖动中实时下发引擎（听觉反馈），松手才持久化——
-                      // 避免拖动过程每帧写 SharedPreferences。
-                      value: _volDrag ?? player.volume,
-                      onChanged: (v) {
-                        setState(() => _volDrag = v);
-                        player.setVolume(v);
-                      },
-                      onChangeEnd: (_) {
-                        setState(() => _volDrag = null);
-                        player.persistVolume();
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              );
+            },
           ),
         ],
       ),

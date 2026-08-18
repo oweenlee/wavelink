@@ -248,24 +248,22 @@ class PlayerController {
 
   // ---- 封面提取（本地文件）----
 
-  /// 为本地曲目批量提取封面（后台、限并发）。已缓存或已带 coverUrl 的跳过。
+  /// 为本地/NAS 曲目批量提取封面（后台、限并发）。已缓存或已带 coverUrl 的跳过。
   /// 不阻塞调用方；提取成功写回 [Track.coverUrl] 并广播 libraryStream 增量刷新。
   void extractCoversFor(List<Track> tracks) {
-    final local = tracks
+    final pending = tracks
         .where((t) =>
-            t.source == TrackSource.local &&
-            t.filePath != null &&
+            (t.source == TrackSource.local || t.source == TrackSource.nas) &&
             t.coverUrl == null)
         .toList();
-    if (local.isEmpty) return;
-    unawaited(_runCoverExtraction(local));
+    if (pending.isEmpty) return;
+    unawaited(_runCoverExtraction(pending));
   }
 
-  Future<void> _runCoverExtraction(List<Track> local) async {
+  Future<void> _runCoverExtraction(List<Track> pending) async {
     final cache = CoverCache.instance;
-    final pending = <Track>[];
     // 快速路径：已有缓存文件的直接写回，不占并发槽
-    for (final t in local) {
+    for (final t in pending) {
       final cached = await cache.cachedPathFor(t);
       if (cached != null) {
         _applyCoverUrl(t, cached);
@@ -281,7 +279,9 @@ class PlayerController {
     Future<void> worker() async {
       while (i < pending.length) {
         final t = pending[i++];
-        final path = await cache.extractLocal(t);
+        final path = t.source == TrackSource.nas
+            ? await cache.extractNas(t)
+            : await cache.extractLocal(t);
         if (path != null) _applyCoverUrl(t, path);
       }
     }
@@ -332,6 +332,8 @@ class PlayerController {
     final tracks = await NasService.scan();
     if (tracks.isNotEmpty) addLibraryFiles(tracks);
     _librarySC.add(null);
+    // 后台提取 NAS 封面（远程读头/尾字节解析，完成后增量广播刷新）
+    if (tracks.isNotEmpty) extractCoversFor(tracks);
     return tracks;
   }
 

@@ -19,12 +19,24 @@ pub fn get_cover_bytes(path: String) -> Result<Vec<u8>, String> {
     extract_cover_lofty(p)
 }
 
-/// 用 lofty 遍历所有标签图片兜底提取封面（read_cover 漏掉的非首图/次标签场景）。
-fn extract_cover_lofty(path: &Path) -> Result<Vec<u8>, String> {
-    use lofty::file::TaggedFileExt;
+/// 从内存字节解析内嵌封面（网络音源 NAS/WebDAV：拉取文件头/尾字节后走 lofty 内存解析）。
+/// 与 [`get_cover_bytes`] 互补——远程音源没有本地文件路径，无法用 `read_from_path`。
+#[frb]
+pub fn get_cover_bytes_from_memory(data: Vec<u8>) -> Result<Vec<u8>, String> {
+    let mut reader = std::io::Cursor::new(data);
+    let tagged_file = lofty::probe::Probe::new(&mut reader)
+        .guess_file_type()
+        .map_err(|e| format!("lofty 内存探测失败: {e}"))?
+        .read()
+        .map_err(|e| format!("lofty 内存解析失败: {e}"))?;
+    pick_cover_from_tagged(&tagged_file)
+}
 
-    let tagged_file = lofty::read_from_path(path)
-        .map_err(|e| format!("lofty 读取失败: {e}"))?;
+/// 从已解析的 [lofty::file::TaggedFile] 选取封面图：优先封面/媒体类图片，否则任意首图。
+fn pick_cover_from_tagged(
+    tagged_file: &lofty::file::TaggedFile,
+) -> Result<Vec<u8>, String> {
+    use lofty::file::TaggedFileExt;
 
     // 先取封面/媒体类图片（优先 CoverFront / Media）
     for tag in tagged_file.tags() {
@@ -52,4 +64,11 @@ fn extract_cover_lofty(path: &Path) -> Result<Vec<u8>, String> {
         }
     }
     Err("未找到封面".into())
+}
+
+/// 用 lofty 遍历所有标签图片兜底提取封面（read_cover 漏掉的非首图/次标签场景）。
+fn extract_cover_lofty(path: &Path) -> Result<Vec<u8>, String> {
+    let tagged_file = lofty::read_from_path(path)
+        .map_err(|e| format!("lofty 读取失败: {e}"))?;
+    pick_cover_from_tagged(&tagged_file)
 }

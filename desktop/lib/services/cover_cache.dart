@@ -1,10 +1,13 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/track.dart';
 import '../src/rust/api/cover.dart' as frb_cover;
+import '../src/rust/api/smb.dart' as frb_smb;
+import 'nas_service.dart';
 
 /// 本地封面缓存与提取。
 ///
@@ -58,6 +61,53 @@ class CoverCache {
       return out.path;
     } catch (_) {
       // 无封面 / 解析失败：静默降级为灰阶占位
+      return null;
+    }
+  }
+
+  /// 为 NAS (SMB) 曲目提取并缓存封面：远程拉取文件头/尾字节 → lofty 内存解析。
+  /// 已缓存则直接返回，避免重复网络拉取。成功返回本地路径，失败/无封面返回 null。
+  ///
+  /// 内嵌封面位置因容器而异：MP3(ID3v2)/FLAC(头 metadata)/OGG 在头部；
+  /// M4A 的 moov 可能在文件尾（mdat 在前）。因此先试头 4MB，失败再试尾 4MB。
+  static const int _remoteProbeBytes = 4 * 1024 * 1024;
+
+  Future<String?> extractNas(Track t) async {
+    if (t.remotePath == null) return null;
+    final out = File(await cacheFilePathFor(t));
+    if (await out.exists()) return out.path;
+    // 确保 SMB 会话可用（内部 keepalive 探测，不健康则重建）
+    if (await NasService.connect() != null) return null;
+    final maxLen = BigInt.from(_remoteProbeBytes);
+    try {
+      final head = await frb_smb.smbReadHead(
+          path: t.remotePath!, maxLen: maxLen);
+      final headCover = await _coverFromBytes(head);
+      if (headCover != null) {
+        await out.writeAsBytes(headCover);
+        return out.path;
+      }
+      final tail = await frb_smb.smbReadTail(
+          path: t.remotePath!, maxLen: maxLen);
+      final tailCover = await _coverFromBytes(tail);
+      if (tailCover != null) {
+        await out.writeAsBytes(tailCover);
+        return out.path;
+      }
+      return null;
+    } catch (_) {
+      // 拉取/解析失败：静默降级为灰阶占位
+      return null;
+    }
+  }
+
+  /// 尝试从字节解析内嵌封面；无封面或解析失败返回 null。
+  static Future<Uint8List?> _coverFromBytes(Uint8List bytes) async {
+    if (bytes.isEmpty) return null;
+    try {
+      final cover = await frb_cover.getCoverBytesFromMemory(data: bytes);
+      return cover.isEmpty ? null : cover;
+    } catch (_) {
       return null;
     }
   }

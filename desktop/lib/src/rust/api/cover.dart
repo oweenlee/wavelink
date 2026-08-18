@@ -6,8 +6,13 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `extract_cover_lofty`
+// These functions are ignored because they are not marked as `pub`: `extract_cover_lofty`, `pick_cover_from_tagged`
 
 /// 读取音频文件内嵌封面图（原始字节）。无封面返回 Err。
 Future<Uint8List> getCoverBytes({required String path}) =>
     RustLib.instance.api.crateApiCoverGetCoverBytes(path: path);
+
+/// 从内存字节解析内嵌封面（网络音源 NAS/WebDAV：拉取文件头/尾字节后走 lofty 内存解析）。
+/// 与 [`get_cover_bytes`] 互补——远程音源没有本地文件路径，无法用 `read_from_path`。
+Future<Uint8List> getCoverBytesFromMemory({required List<int> data}) =>
+    RustLib.instance.api.crateApiCoverGetCoverBytesFromMemory(data: data);
