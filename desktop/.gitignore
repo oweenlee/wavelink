@@ -1,45 +1,49 @@
-# Rust
-target/
-
-# Node
-node_modules/
-
-# SvelteKit
-/build
-/.svelte-kit
-
-# Tauri 生成文件
-src-tauri/gen/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# 系统
-**/.DS_Store
-.DS_Store
-Thumbs.db
-
-# 环境变量
-.env
-.env.local
-.env.*.local
-
-# 日志
+# Miscellaneous
+*.class
 *.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
 
-# 本地开发配置
-/.cargo
-/config.toml.local
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
 
-# 类型
-*.tsbuildinfo
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
 
-# Agent / 工具本地目录
-.pi/
-.opencode/
-.claude/
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# WorkBuddy agent state (local working memory / agent internals, not project source)
 .workbuddy/
 .agents/

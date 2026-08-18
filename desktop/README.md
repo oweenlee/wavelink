@@ -1,42 +1,108 @@
-# sv
+# WaveLink 桌面端（Flutter + Rust FFI）
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+本地音乐播放器，桌面端。UI 用 Flutter，音频引擎桥接项目共享的纯 Rust
+`core` 音频核心，继承 hi-res / DSP / bit-perfect 能力——**不走纯 Dart 播放器**。
 
-## Creating a project
+## 架构
 
-If you're seeing this, you've probably already done this step. Congrats!
-
-```sh
-# create a new project
-npx sv create my-app
+```
+Flutter UI  (lib/)
+   │  flutter_rust_bridge 生成的 Dart 绑定（RustLib.init 加载 dylib）
+   ▼
+libwavelink_desktop.{dylib,dll,so}   ← desktop/rust (crate wavelink_desktop)
+   │  path 依赖 → core/ (audio-core)
+   ▼
+桌面声卡：macOS AudioUnit · Windows WASAPI · Linux cpal/ALSA
 ```
 
-To recreate this project with the same configuration:
+- Rust 桥接层：`desktop/rust/`（cdylib + 由 `flutter_rust_bridge` 生成
+  `frb_generated.rs`），经 `#[frb]` 标注暴露 `wavelink*` 函数（init / play /
+  pause / seek / set_volume / 事件轮询等）。事件用 JSON **轮询模型**
+  （Dart 侧 40ms 定时 poll），命名与事件模型镜像 `mobile/rust`。
+- 解码：`core` 内的 symphonia；输出：`core` 的 cpal 后端（按平台分发到
+  AudioUnit / WASAPI / ALSA）。**已用 `flutter_rust_bridge` 2.13.0-beta.5
+  与 mobile 统一绑定层**，dylib 经 `RustLib.init(externalLibrary:)` 加载。
 
-```sh
-# recreate this project
-npx sv@0.16.2 create --template minimal --types ts --install npm my-svelte-app
+## 构建与运行
+
+前置：Rust 工具链（cargo）+ Flutter 3.x，且已 `flutter config --enable-macos-desktop`。
+
+```bash
+# 1) 编译 Rust 引擎（只需一次，改了 Rust 才需重编）
+cd /Users/qin/Desktop/wavelink
+cargo build -p wavelink_desktop
+#   产物：target/debug/libwavelink_desktop.dylib (mac) / .dll (win) / .so (linux)
+
+# 2) 运行（必须从本目录 desktop/ 启动，FFI 才能找到 ../target/... 的 dylib）
+cd /Users/qin/Desktop/wavelink/desktop
+flutter pub get
+flutter run -d macos
 ```
 
-## Developing
+首屏默认从 `/Users/qin/Public/music` 加载（不存在则空库）。点左侧
+**「添加音乐文件夹」**选本地目录即可扫描播放。
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+## 与 mobile 第三方库对齐（合并友好）
 
-```sh
-npm run dev
+为降低将来两端合并的阻力、统一排查口径，桌面端已主动对齐 mobile 的通用库选择：
 
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
+| 库 | 版本 | 作用 | 状态 |
+|---|---|---|---|
+| `shared_preferences` | ^2.3.0 | 本地 KV 持久化（音量/循环/收藏/播放列表） | ✅ 已对齐 |
+| `flutter_riverpod` | 3.4.2 | 状态管理（已接入：单例 Provider + 8 个状态 `StreamProvider`，UI 用 `ref.watch` 消费） | ✅ 已对齐 |
+| `lucide_icons_flutter` | ^3.1.15 | 图标语言（已替换全部 Material `Icons.*`，与 mobile 视觉一致） | ✅ 已对齐 |
+| `path_provider` | ^2.1.0 | 应用数据/缓存目录 | ✅ 已引入 |
+| `package_info_plus` | ^8.0.0 | app 版本/包名（关于页/日志用） | ✅ 已引入 |
+| `flutter_rust_bridge` | 2.13.0-beta.5 | Rust↔Dart 绑定生成（**与 mobile 同版本，绑定层已统一**） | ✅ 已统一 |
 
-## Building
+> 两端 Rust 绑定层已实现完全统一：均经 `flutter_rust_bridge` 2.13.0-beta.5
+> 生成，共享 `core` 音频引擎。差异仅剩桌面特有平台库（tray / window_manager /
+> file_selector）与 mobile 的云源/平台库（connectivity 等）。
 
-To create a production version of your app:
+## 网络音源（WebDAV / NAS(SMB) / Subsonic）
 
-```sh
-npm run build
-```
+桌面端已实现网络音频源，架构与 `mobile` 对齐，复用其扫描 / 下载 / 播放派发逻辑：
 
-You can preview the production build with `npm run preview`.
+- **`TrackSource` 枚举**（`local` / `webdav` / `nas` / `subsonic`）区分本地播放与网络流式播放。网络曲携带 `remotePath` / `streamUrl` / `coverUrl` / `durationHint` 字段，本地曲保留 `filePath`。
+- **配置中心 `NetworkSourceConfig`**（单例，SharedPreferences 持久化，配置变化经 `onChange` 广播给 `networkConfigProvider`）。合并了 mobile 拆分过细的 `PreferencesService`，统一持有三类来源的凭据与曲库展示开关。
+- **三类服务**（均在 `lib/services/`，端口自 mobile）：
+  - `WebdavService` — 目录扫描 + 并行 Range 分块下载（`engineWebdavFileSize` / `engineWebdavDownloadRange`），边下边播为主、整曲缓存兜底。
+  - `NasService` — 经 Rust `frb_smb` 做 SMB2/3 连接 / 共享枚举 / 目录扫描 / keepalive；连接状态经 `stateStream` 广播给 `nasStateProvider`（侧栏实时显示已连接/未连接）。
+  - `SubsonicService` — `ping` + `scanLibrary`（分页 `getAlbumList2`→`getAlbum`）拉取 Navidrome / Jellyfin 曲库；`streamUrl` 走 `/rest/stream`，下载到缓存后本地播放。
+- **播放派发**（`PlayerController`）：本地 → `engine.play(path)`；WebDAV / NAS → Rust 流式（`enginePlayWebdavStream` / `enginePlaySmbStream`，失败回退整曲缓存下载）；Subsonic → 下载 `streamUrl` 到缓存后本地播放。`playIndex` 先用 `durationHint` 预填进度条，避免网络曲时长未知导致进度条不动。
+- **侧栏「网络音源」区** + `NetworkConfigDialog`（`lib/screens/network_dialogs.dart`）：按来源填写凭据，`测试连接` → `保存` → `扫描并导入`（去重并入曲库）。导入入口 `importWebdav/importNas/importSubsonic`。
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+> 侧栏网络曲显示来源徽标（`DAV` / `NAS` / `SUB`），本地曲显示文件扩展名或「模拟」（纯 Dart 回退）。
+
+## 快捷键
+
+| 按键 | 功能 |
+|------|------|
+| Space | 播放 / 暂停 |
+| ← / → | 快退 / 快进 5 秒 |
+| ⌘F / Ctrl+F | 聚焦搜索 |
+
+## 当前状态（MVP）
+
+- ✅ Rust `core` 桌面后端编译 + FFI 桥接 + dylib 加载验证（23/23 符号匹配）
+- ✅ 真实播放（逐首）：play/pause/resume/stop/seek/next/prev + 进度/时长/结束事件
+- ✅ 曲库本地目录扫描（无强制 mock，空库引导）
+- ✅ 播放状态机：队列 / 随机 / 循环 / 收藏 / 播放列表 / 音量（shared_preferences 持久化）
+- ✅ PC 原生布局：侧栏 + 主区 + 常驻「正在播放」面板；`flutter analyze` 零 error
+- ✅ 状态管理迁移 Riverpod（单例 + 8 个状态 `StreamProvider`，UI 全面 `ref.watch`）
+- ✅ 图标统一 Lucide（替换全部 Material 图标，与 mobile 视觉一致）
+- ✅ 通用库对齐 mobile：`shared_preferences`/`riverpod`/`lucide`/`path_provider`/`package_info_plus`
+- ✅ **Rust 绑定层迁移到 FRB 2.13.0-beta.5**（与 mobile 同版本），dylib 经 `RustLib.init(externalLibrary:)` 加载；`cargo build` + `flutter analyze` 双端零错误
+- ✅ macOS 真机验证通过（出声 / dylib 加载 / 事件轮询 / UI 渲染全链路）
+- ✅ 代码 review 修复（2026-08-18）：事件泵按周期抽干（上限 64/次）；seek 毫秒精度；音量/进度拖动 `onChangeEnd` 提交（拖动不再每帧写盘/调引擎）；曲库文件夹持久化（重启恢复）；`playNext` shuffle 下基准队列插入位置修正；Rust 引擎 `Mutex<Option>` 化（deinit 后可重新 init）；非阻塞启动；主题色单源 `lib/core/theme.dart`
+- ✅ 单元测试：`flutter test` 28 用例全绿（PlayerController 状态机 / LRC 解析 / 目录扫描 / 空库 UI 冒烟 / 网络音源侧栏）；`analysis_options.yaml` 开启 `strict-casts / strict-inference / strict-raw-types`
+- ✅ **网络音源（WebDAV / NAS(SMB) / Subsonic）**：`TrackSource` 枚举 + `NetworkSourceConfig` 配置中心 + `WebdavService`/`NasService`/`SubsonicService` 扫描下载 + 播放派发（`PlayerController` 流式 vs 缓存兜底）+ 侧栏「网络音源」区与 `NetworkConfigDialog`；`cargo check` / `flutter analyze` 双端零错误
+
+### 未做（Phase 2+）
+- Windows/WASAPI、Linux 真机验证与打包（dmg/msi，把 dylib 拷入 app bundle）
+- DSP 控制 UI（EQ/AutoEQ/房间校正）、bit-perfect/独占开关 UI、输出设备选择 UI
+- 频谱可视化、gapless 无缝播放（当前逐文件，切歌有极短间隔；引擎侧整队列 API 已预留未接线）
+- 结构性重构（拆分 PlayerController 职责 / home.dart 按组件拆文件）——有意推迟，收益低于回归风险
+- 元数据 tag 读取（当前文件名 `Artist - Title` 约定解析；core 的 symphonia 可读 tag，待接）
+
+详见仓库根 `DESKTOP_FLUTTER_MVP_PLAN.md`。

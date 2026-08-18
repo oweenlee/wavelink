@@ -1,0 +1,36 @@
+[package]
+name = "wavelink_desktop"
+version = "0.1.0"
+edition = "2021"
+description = "WaveLink 桌面端 Rust FFI 桥接层（Flutter Rust Bridge，与 mobile 绑定层统一）"
+
+[lib]
+name = "wavelink_desktop"
+# cdylib 供 Flutter 经 RustLib.init(externalLibrary:) 加载；
+# staticlib/lib 供 codegen 内部模块与复用（与 mobile 同构）
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[dependencies]
+# 路径依赖共享音频核心（继承 hi-res / DSP / bit-perfect）
+audio-core = { path = "../../core" }
+# 设备枚举（桌面特有）：直接读 cpal 输出设备列表
+cpal = "0.15"
+crossbeam-channel = "0.5"
+serde_json = "1"
+# Flutter Rust Bridge（与 mobile 同版本 2.13.0-beta.5），统一绑定层
+flutter_rust_bridge = "=2.13.0-beta.5"
+# —— 网络音源（与 mobile 对齐）——
+# SMB 直挂：纯 Rust SMB2/3 客户端（支持 guest 匿名访问）
+smb2 = "0.17"
+# WebDAV 边下边播：HTTP 客户端（Digest/Basic 认证 + 流式读取）
+# default-features=false + rustls-tls：不依赖系统 OpenSSL，跨 mac/win/linux 编译
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+# Digest 认证计算（MD5 HA1/HA2/response）+ hex 输出 + Basic base64
+md-5 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "fs"] }
+
+[lints.rust]
+# FRB 宏会注入 cfg(frb_expand) 条件，需在清单中声明以免 unexpected_cfgs 告警
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(frb_expand)"] }
