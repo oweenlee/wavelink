@@ -1,3 +1,0 @@
-# 此文件已过时。
-# sdk 和 mobile 现都通过 Cargo.toml 内 path 依赖直接引用本地的
-# wavelink-audio-core，不再需要任何 patch 配置。
