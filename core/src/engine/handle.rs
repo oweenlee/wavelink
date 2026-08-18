@@ -137,22 +137,25 @@ impl EngineHandle {
         &self,
         format_hint: Option<String>,
         content_length: Option<u64>,
+        seek_secs: Option<f64>,
     ) -> Result<StreamHandle, EngineError> {
-        self.play_stream_impl(format_hint, content_length, Duration::from_secs(5))
+        self.play_stream_impl(format_hint, content_length, seek_secs, Duration::from_secs(5))
     }
     /// 同步流式播放（等待引擎确认启动成功），返回 StreamHandle
     pub fn play_stream_sync(
         &self,
         format_hint: Option<String>,
         content_length: Option<u64>,
+        seek_secs: Option<f64>,
     ) -> Result<StreamHandle, EngineError> {
-        self.play_stream_impl(format_hint, content_length, Duration::from_secs(15))
+        self.play_stream_impl(format_hint, content_length, seek_secs, Duration::from_secs(15))
     }
     /// 流式播放通用实现
     fn play_stream_impl(
         &self,
         format_hint: Option<String>,
         content_length: Option<u64>,
+        seek_secs: Option<f64>,
         timeout: Duration,
     ) -> Result<StreamHandle, EngineError> {
         let (ack_tx, ack_rx) = bounded(1);
@@ -161,6 +164,7 @@ impl EngineHandle {
         let _ = self.tx.send(EngineCommand::PlayStream {
             format_hint,
             content_length,
+            seek_secs,
             ack: Some(ack_tx),
             stream_handle_out: Some(shared_tx),
         });

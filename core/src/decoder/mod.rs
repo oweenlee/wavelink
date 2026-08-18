@@ -230,6 +230,7 @@ impl Decoder {
         format_hint: Option<String>,
         event_tx: Sender<EngineEvent>,
         bytes_consumed: Arc<AtomicU64>,
+        seek_secs: Option<f64>,
     ) -> Result<(Receiver<DecodedFrame>, Self), EngineError> {
         let (tx, rx) = bounded(DECODE_CHANNEL_CAPACITY);
         let (stx, srx) = unbounded();
@@ -248,6 +249,7 @@ impl Decoder {
                     format_hint,
                     event_tx,
                     bytes_consumed,
+                    seek_secs,
                 )
             }));
             match result {
@@ -752,6 +754,7 @@ fn run_from_stream(
     format_hint: Option<String>,
     event_tx: Sender<EngineEvent>,
     bytes_consumed: Arc<AtomicU64>,
+    seek_secs: Option<f64>,
 ) -> Result<(), EngineError> {
     // 在 source 被 move 进 MediaSourceStream 之前取出 content_length，
     // 供后续时长估算使用。
@@ -802,6 +805,7 @@ fn run_from_stream(
         (track.id, cp)
     };
     let src_rate = audio_cp.sample_rate.unwrap_or(44100);
+    let src_ch = audio_cp.channels.as_ref().map(|c| c.count()).unwrap_or(2) as u32;
     let out_ch = target_ch as usize;
     info!("流式解码: {}Hz, hint={:?}", src_rate, format_hint);
 
@@ -832,6 +836,43 @@ fn run_from_stream(
             }
         },
     };
+
+    // ── 流式 seek：拖进度条重启流后，解码线程需丢弃目标时间之前的数据包 ──
+    // 网络源（SMB/WebDAV）非 seekable（StreamMediaSource 仅允许 Start(0)），
+    // 因此不尝试 format.seek()，直接逐包解码丢弃到 target_total（允许目标
+    // 落在包中间时整体丢弃该包，位置偏早一个包 ~几十 ms，可接受）。
+    let mut pts_offset = 0.0f64; // 跳帧偏移，供时长估算扣除 seek 前的时间
+    if let Some(secs) = seek_secs {
+        let target_total = (secs * src_rate as f64) as u64 * src_ch as u64;
+        let mut consumed: u64 = 0;
+        while consumed < target_total {
+            if stop_rx.try_recv().is_ok() {
+                return Ok(());
+            }
+            let packet = match format.next_packet() {
+                Ok(Some(pkt)) => pkt,
+                _ => break, // EOF/错误：无更多数据可丢
+            };
+            if packet.track_id != track_id {
+                continue;
+            }
+            let pkt_start_abs = packet.pts.get() as u64 * src_ch as u64;
+            if pkt_start_abs > consumed {
+                consumed = pkt_start_abs;
+            }
+            let decoded = match decoder.decode(&packet) {
+                Ok(buf) => buf,
+                Err(_) => continue,
+            };
+            let n = (decoded.samples_interleaved() * decoded.spec().channels().count()) as u64;
+            if consumed + n > target_total {
+                break; // 目标落在本包内：丢弃整包，主循环从下一包正常输出
+            }
+            consumed += n;
+        }
+        pts_offset = secs;
+        info!("流式 seek 到 {secs}s，跳帧后位置约 {consumed} 样本");
+    }
 
     let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
     let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
@@ -916,10 +957,17 @@ fn run_from_stream(
         // 对 FLAC/MP3/AAC 等压缩格式远优于固定公式；content_length 缺失
         // （如 chunked 无 Content-Length）时无法估算，跳过。
         if let Some(total) = content_length {
-            if last_pts > 0.3 {
+            // seek 后 last_pts 是流内绝对时间，需扣除跳帧偏移才是「本次实际
+            // 拉取的播放时长」，否则 avg_bps 虚高 → 估算总时长偏短。
+            let played = last_pts - pts_offset;
+            // 首报门槛 5s（而非 0.3s）：开局 played 极小时，consumed（喂流线程
+            // 瞬时拉速）与播放消耗严重脱节——局域网高速拉取下 avg_bps 虚高
+            // 数倍，估算时长骤短 → 进度条 max 来回跳（闪烁）。5s 后分母
+            // 足够大，拉速波动占比小，首报偏差收敛到可接受范围。
+            if played > 5.0 {
                 let consumed = bytes_consumed.load(Ordering::Relaxed);
                 if consumed > 0 {
-                    let avg_bps = consumed as f64 / last_pts;
+                    let avg_bps = consumed as f64 / played;
                     let est = total as f64 / avg_bps;
                     let now = Instant::now();
                     if est > 0.0 {
@@ -928,7 +976,8 @@ fn run_from_stream(
                         let settled = dur_est
                             .map(|d| d > 0.0 && (est - d).abs() / d < 0.01)
                             .unwrap_or(false);
-                        // 未收敛时放宽更新间隔至 1s；仅相对变化 >5% 才立即更新（追赶）。
+                        // 未收敛时放宽更新间隔至 3s（原 1s：收敛前每秒都在跳，
+                        // 进度条持续抖动）；仅相对变化 >5% 才立即更新（追赶）。
                         let big_shift = dur_est
                             .map(|d| (est - d).abs() / est > 0.05)
                             .unwrap_or(false);
@@ -936,7 +985,7 @@ fn run_from_stream(
                             && (dur_est.is_none()
                                 || big_shift
                                 || now.duration_since(dur_est_sent)
-                                    >= Duration::from_millis(1000))
+                                    >= Duration::from_millis(3000))
                         {
                             let _ = event_tx.send(EngineEvent::DurationSecs(est));
                             dur_est = Some(est);

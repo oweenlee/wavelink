@@ -19,6 +19,7 @@ Future<void> enginePlayWebdavStream({
   String? formatHint,
   String? cacheFinalPath,
   BigInt? contentLength,
+  double? seekSecs,
 }) => RustLib.instance.api.crateApiWebdavEnginePlayWebdavStream(
   url: url,
   username: username,
@@ -26,6 +27,7 @@ Future<void> enginePlayWebdavStream({
   formatHint: formatHint,
   cacheFinalPath: cacheFinalPath,
   contentLength: contentLength,
+  seekSecs: seekSecs,
 );
 
 /// 获取远端文件大小（字节）：并发分片下载前置探大小，避免先整文件拉一遍。

@@ -63,6 +63,21 @@ class WebdavService {
     return '$l/$r';
   }
 
+  /// 读取远端小文件全文（歌词等），失败/不存在返回 null。
+  static Future<Uint8List?> readRemoteBytes(String davPath) async {
+    try {
+      final base = baseUrl;
+      if (base == null || base.isEmpty) return null;
+      final client = _buildClient(base, username, password);
+      if (client == null) return null;
+      final bytes = await client.read(davPath).timeout(const Duration(seconds: 30));
+      return bytes.isEmpty ? null : Uint8List.fromList(bytes);
+    } catch (_) {
+      // 文件不存在或读取失败（歌词为可选项，静默降级）
+      return null;
+    }
+  }
+
   static wd.Client? _buildClient(String base, String user, String pass) {
     final key = '$base|$user|$pass';
     if (_client == null || _clientKey != key) {

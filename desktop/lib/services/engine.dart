@@ -222,6 +222,7 @@ class Engine {
   ///
   /// [contentLength]：远端文件真实字节数（扫描期已知），作为流总长度传给
   /// 引擎，使 symphonia 算出真实时长 → 进度条准确。null 则引擎退化为粗估。
+  /// [seekSecs]：流式 seek（拖进度条）时从该时间点重启流，null=从头播。
   Future<String?> playWebdavStream({
     required String url,
     required String username,
@@ -229,6 +230,7 @@ class Engine {
     String? formatHint,
     String? cacheFinalPath,
     int? contentLength,
+    double? seekSecs,
   }) async {
     try {
       await frb_webdav.enginePlayWebdavStream(
@@ -238,6 +240,7 @@ class Engine {
         formatHint: formatHint,
         cacheFinalPath: cacheFinalPath,
         contentLength: contentLength == null ? null : BigInt.from(contentLength),
+        seekSecs: seekSecs,
       );
       return null;
     } catch (e) {
@@ -249,11 +252,13 @@ class Engine {
   /// 成功返回 null，失败返回错误字符串（由调用方回退全量下载）。
   ///
   /// [contentLength]：远端文件真实字节数（扫描期已知），同 WebDAV 用于进度准确。
+  /// [seekSecs]：流式 seek（拖进度条）时从该时间点重启流，null=从头播。
   Future<String?> playSmbStream({
     required String smbPath,
     String? formatHint,
     String? cacheFinalPath,
     int? contentLength,
+    double? seekSecs,
   }) async {
     try {
       await frb_smb.enginePlaySmbStream(
@@ -261,6 +266,7 @@ class Engine {
         formatHint: formatHint,
         cacheFinalPath: cacheFinalPath,
         contentLength: contentLength == null ? null : BigInt.from(contentLength),
+        seekSecs: seekSecs,
       );
       return null;
     } catch (e) {

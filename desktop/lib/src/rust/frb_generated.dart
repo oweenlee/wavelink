@@ -84,6 +84,7 @@ abstract class RustLibApi extends BaseApi {
     String? formatHint,
     String? cacheFinalPath,
     BigInt? contentLength,
+    double? seekSecs,
   });
 
   Future<void> crateApiWebdavEnginePlayWebdavStream({
@@ -93,6 +94,7 @@ abstract class RustLibApi extends BaseApi {
     String? formatHint,
     String? cacheFinalPath,
     BigInt? contentLength,
+    double? seekSecs,
   });
 
   Future<Uint8List> crateApiWebdavEngineReadWebdavRange({
@@ -232,6 +234,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     String? formatHint,
     String? cacheFinalPath,
     BigInt? contentLength,
+    double? seekSecs,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -241,6 +244,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_opt_String(formatHint, serializer);
           sse_encode_opt_String(cacheFinalPath, serializer);
           sse_encode_opt_box_autoadd_u_64(contentLength, serializer);
+          sse_encode_opt_box_autoadd_f_64(seekSecs, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -253,7 +257,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSmbEnginePlaySmbStreamConstMeta,
-        argValues: [smbPath, formatHint, cacheFinalPath, contentLength],
+        argValues: [
+          smbPath,
+          formatHint,
+          cacheFinalPath,
+          contentLength,
+          seekSecs,
+        ],
         apiImpl: this,
       ),
     );
@@ -262,7 +272,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSmbEnginePlaySmbStreamConstMeta =>
       const TaskConstMeta(
         debugName: "engine_play_smb_stream",
-        argNames: ["smbPath", "formatHint", "cacheFinalPath", "contentLength"],
+        argNames: [
+          "smbPath",
+          "formatHint",
+          "cacheFinalPath",
+          "contentLength",
+          "seekSecs",
+        ],
       );
 
   @override
@@ -273,6 +289,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     String? formatHint,
     String? cacheFinalPath,
     BigInt? contentLength,
+    double? seekSecs,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -284,6 +301,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_opt_String(formatHint, serializer);
           sse_encode_opt_String(cacheFinalPath, serializer);
           sse_encode_opt_box_autoadd_u_64(contentLength, serializer);
+          sse_encode_opt_box_autoadd_f_64(seekSecs, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -303,6 +321,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           formatHint,
           cacheFinalPath,
           contentLength,
+          seekSecs,
         ],
         apiImpl: this,
       ),
@@ -319,6 +338,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "formatHint",
           "cacheFinalPath",
           "contentLength",
+          "seekSecs",
         ],
       );
 
@@ -1556,6 +1576,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  double dco_decode_box_autoadd_f_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as double;
+  }
+
+  @protected
   BigInt dco_decode_box_autoadd_u_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_u_64(raw);
@@ -1613,6 +1639,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  double? dco_decode_opt_box_autoadd_f_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_f_64(raw);
   }
 
   @protected
@@ -1705,6 +1737,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  double sse_decode_box_autoadd_f_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_f_64(deserializer));
+  }
+
+  @protected
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_u_64(deserializer));
@@ -1788,6 +1826,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_f_64(deserializer));
     } else {
       return null;
     }
@@ -1889,6 +1938,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_f_64(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_64(self, serializer);
@@ -1974,6 +2029,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_f_64(self, serializer);
     }
   }
 

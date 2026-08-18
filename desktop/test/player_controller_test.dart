@@ -164,6 +164,29 @@ void main() {
     });
   });
 
+  group('isStreamDurationJitter', () {
+    test('accepts small convergent corrections', () {
+      // 渐进收敛每次修正步子小，不应被误判为噪声
+      expect(PlayerController.isStreamDurationJitter(300_000, 310_000), isFalse);
+      expect(PlayerController.isStreamDurationJitter(300_000, 350_000), isFalse);
+      expect(PlayerController.isStreamDurationJitter(300_000, 300_000), isFalse);
+      expect(PlayerController.isStreamDurationJitter(300_000, 290_000), isFalse);
+    });
+
+    test('rejects startup/seek instantaneous-rate jumps', () {
+      // 开播/seek 后用瞬时拉速估算的时长可能偏差数倍，必须拒掉
+      expect(PlayerController.isStreamDurationJitter(300_000, 60_000), isTrue);
+      expect(PlayerController.isStreamDurationJitter(300_000, 800_000), isTrue);
+      expect(PlayerController.isStreamDurationJitter(300_000, 100_000), isTrue);
+      expect(PlayerController.isStreamDurationJitter(300_000, 480_000), isTrue);
+    });
+
+    test('unknown duration (0) is never rejected', () {
+      expect(PlayerController.isStreamDurationJitter(0, 60_000), isFalse);
+      expect(PlayerController.isStreamDurationJitter(0, 300_000), isFalse);
+    });
+  });
+
   tearDown(() async {
     await c.dispose();
   });

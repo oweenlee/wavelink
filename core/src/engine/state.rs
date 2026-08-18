@@ -436,14 +436,25 @@ impl EngineState {
         &mut self,
         format_hint: Option<String>,
         content_length: Option<u64>,
+        seek_secs: Option<f64>,
         ack: CmdAck,
         stream_handle_out: Option<std::sync::Arc<crossbeam_channel::Sender<StreamHandle>>>,
     ) {
+        // 与 play_entry 一致：stop_playback 之前先 bump 播放代际。
+        // 否则旧消费者线程在解码通道断开（RecvTimeoutError::Disconnected）时
+        // 走 on_end_of_track 回调，发现 gen 未变会误发 TrackChanged("") →
+        // advance_queue → 队列空发 PlaybackStopped → Dart 侧误判自然结束
+        // 而 next() 切歌——流式 seek（拖进度条重启流）时必现。
+        self.playback_gen.fetch_add(1, Ordering::SeqCst);
         self.stop_playback();
         // 重置播放位置：play_entry 有 store(0)，此处此前遗漏 → 边下边播
         // （SMB 流式）的进度跨曲目累积，表现为切歌后进度条不从零开始，
         // 且预取/曲终判断按虚高位置误触发。
-        self.position.store(0, Ordering::SeqCst);
+        // 流式 seek 时则从 seek 目标位置起播（交错样本计数）。
+        let seek_samples = seek_secs
+            .map(|s| (s * self.config.sample_rate as f64) as u64 * self.config.channels as u64)
+            .unwrap_or(0);
+        self.position.store(seek_samples, Ordering::SeqCst);
         // 时长同样清零：避免 engine_duration_secs 返回旧曲时长
         self.duration_us.store(0, Ordering::Release);
         self.stream_handle = None;
@@ -505,6 +516,7 @@ impl EngineState {
             format_hint,
             self.external_tx.clone(),
             bytes_consumed,
+            seek_secs,
         ) {
             Ok(v) => v,
             Err(e) => {

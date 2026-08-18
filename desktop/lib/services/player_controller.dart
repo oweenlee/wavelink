@@ -63,6 +63,22 @@ class PlayerController {
   /// 用户主动停止标记：区分「自然结束」与「手动停止」，避免误触发切歌
   bool _stopRequested = false;
 
+  /// 当前曲目是否为「流式边下边播」（NAS/WebDAV）。流式源不可 seek，
+  /// seek 需重启流（见 [_restartStreamSeek]）；本地/下载回退则走引擎 seek。
+  bool _streaming = false;
+
+  /// 最近一次流式 seek（重启流）的时刻：重启流会替换旧流，若引擎因旧流
+  /// 被拆卸而发 stopped（core 已修 gen 竞态，此处双保险），窗口内收到的
+  /// stopped 视为预期、不切歌；窗口外仍是正常自然结束语义。
+  DateTime? _lastStreamSeekAt;
+
+  /// 流式时长跳变滤波：core 的渐进式时长估算在开播初期（前几秒）建立在
+  /// 喂流瞬时拉速上，与真实时长偏差可达数倍，若直接覆盖进度条 max 会
+  /// 来回跳（闪烁）。相对变化 >20% 的时长事件视为估算噪声忽略，保留
+  /// 扫描期真实 durationHint / 已收敛的估算值；渐进收敛路径每次修正
+  /// 步子小（<20%），不受影响。
+  static const _streamDurationJitterTolerance = 0.2;
+
   final _positionSC = StreamController<Duration>.broadcast();
   final _durationSC = StreamController<Duration>.broadcast();
   final _playingSC = StreamController<bool>.broadcast();
@@ -162,6 +178,16 @@ class PlayerController {
     }
   }
 
+  /// 流式时长跳变判定（纯函数，便于单测）：新时长与当前时长的相对变化
+  /// 超过 [tolerance] 视为估算噪声拒绝。渐进收敛每次修正步子小（<20%），
+  /// 不会被误伤；开局喂流瞬时拉速造成的数倍偏差会被拒掉。
+  @visibleForTesting
+  static bool isStreamDurationJitter(int prevMs, int newMs,
+      {double tolerance = _streamDurationJitterTolerance}) {
+    if (prevMs <= 0) return false;
+    return (newMs - prevMs).abs() / prevMs > tolerance;
+  }
+
   void _onEngineEvent(EngineEvent e) {
     switch (e.type) {
       case 'position':
@@ -171,13 +197,30 @@ class PlayerController {
         }
       case 'duration':
         if (e.value != null) {
-          _duration = Duration(milliseconds: (e.value! * 1000).round());
-          _durationSC.add(_duration);
+          final newDur = Duration(milliseconds: (e.value! * 1000).round());
+          // 流式估算噪声滤波（见 [isStreamDurationJitter]）
+          final jitter = _streaming &&
+              isStreamDurationJitter(_duration.inMilliseconds,
+                  newDur.inMilliseconds);
+          if (!jitter) {
+            _duration = newDur;
+            _durationSC.add(_duration);
+          } else {
+            debugPrint('[duration] 流式估算跳变 ${e.value}s 忽略 '
+                '(prev=${_duration.inSeconds}s)');
+          }
         }
       case 'stopped':
         _playing = false;
         _playingSC.add(false);
-        if (_stopRequested) {
+        // 流式 seek 重启流后短暂窗口内的 stopped 是旧流被替换的伪事件
+        // （core 侧已修，防御兜底），吞掉不切歌。
+        if (_lastStreamSeekAt != null &&
+            DateTime.now().difference(_lastStreamSeekAt!) <
+                const Duration(seconds: 2)) {
+          debugPrint('[stopped] 流式 seek 重启伪停止，忽略');
+          _lastStreamSeekAt = null;
+        } else if (_stopRequested) {
           _stopRequested = false;
         } else {
           // 自然结束 → 切下一首（遵循循环/随机模式）
@@ -263,22 +306,25 @@ class PlayerController {
   Future<void> _runCoverExtraction(List<Track> pending) async {
     final cache = CoverCache.instance;
     // 快速路径：已有缓存文件的直接写回，不占并发槽
+    // 注意：不能在遍历 pending 时向 pending 追加元素（会 ConcurrentModificationError），
+    // 未缓存项收集到独立 todo 列表。
+    final todo = <Track>[];
     for (final t in pending) {
       final cached = await cache.cachedPathFor(t);
       if (cached != null) {
         _applyCoverUrl(t, cached);
       } else {
-        pending.add(t);
+        todo.add(t);
       }
     }
-    if (pending.isEmpty) {
+    if (todo.isEmpty) {
       _librarySC.add(null);
       return;
     }
     var i = 0;
     Future<void> worker() async {
-      while (i < pending.length) {
-        final t = pending[i++];
+      while (i < todo.length) {
+        final t = todo[i++];
         final path = t.source == TrackSource.nas
             ? await cache.extractNas(t)
             : await cache.extractLocal(t);
@@ -402,6 +448,7 @@ class PlayerController {
         if (t.filePath != null) {
           try {
             await _engine!.play(t.filePath!);
+            _streaming = false;
             _setPlaying(true);
           } catch (e) {
             debugPrint('[_playTrack] engine.play failed: $e');
@@ -439,12 +486,14 @@ class PlayerController {
       contentLength: t.fileSize,
     );
     if (err == null) {
+      _streaming = true;
       _setPlaying(true);
       return;
     }
     debugPrint('webdav 流式播放失败，回退下载: $err');
     final local = await WebdavService.downloadToLocal(davPath);
     if (local != null) {
+      _streaming = false;
       await _engine!.play(local);
       _setPlaying(true);
     } else {
@@ -471,12 +520,14 @@ class PlayerController {
       contentLength: t.fileSize,
     );
     if (err == null) {
+      _streaming = true;
       _setPlaying(true);
       return;
     }
     debugPrint('nas 流式播放失败，回退下载: $err');
     final local = await NasService.downloadToLocal(t);
     if (local != null) {
+      _streaming = false;
       await _engine!.play(local);
       _setPlaying(true);
     } else {
@@ -487,6 +538,7 @@ class PlayerController {
   Future<void> _playSubsonic(Track t) async {
     final local = await SubsonicService.downloadStream(t);
     if (local != null) {
+      _streaming = false;
       await _engine!.play(local);
       _setPlaying(true);
     } else {
@@ -502,7 +554,7 @@ class PlayerController {
   }
 
   Future<void> _loadLyrics(Track t) async {
-    final lines = await loadLyrics(t.lyricsPath);
+    final lines = await loadLyricsFor(t);
     _lyricsSC.add(lines);
   }
 
@@ -565,8 +617,66 @@ class PlayerController {
   Future<void> seek(Duration d) async {
     _position = d;
     _positionSC.add(d);
+    final t = currentTrack;
+    if (_streaming &&
+        t != null &&
+        (t.source == TrackSource.nas || t.source == TrackSource.webdav)) {
+      // 流式源不可 seek（core 无 current_entry，网络流非 seekable）：
+      // 重启边下边播流，core 解码线程跳帧到目标位置后继续播放。
+      await _restartStreamSeek(t, d);
+      return;
+    }
     // 用毫秒换算，保留亚秒精度（inSeconds 会截断到整秒）。
     await _engine?.seek(d.inMilliseconds / 1000.0);
+  }
+
+  /// 流式 seek：以目标时间为起点重启 NAS/WebDAV 边下边播流。
+  /// core 的 play_stream 从 seek 位置起播（position 预置），解码线程跳帧
+  /// 丢弃目标前的数据包；Rust 喂流 task 从文件头重新拉取（局域网带宽足够，
+  /// 保持简单正确，后续可优化为从目标字节偏移拉取）。
+  Future<void> _restartStreamSeek(Track t, Duration d) async {
+    // 记录重启时刻：重启窗口内引擎的 stopped 事件为伪事件（见事件处理）
+    _lastStreamSeekAt = DateTime.now();
+    final secs = d.inMilliseconds / 1000.0;
+    String? err;
+    switch (t.source) {
+      case TrackSource.nas:
+        final smbPath = t.remotePath;
+        if (smbPath == null) return;
+        final cache = await NasService.cachePathFor(smbPath);
+        err = await _engine!.playSmbStream(
+          smbPath: smbPath,
+          formatHint: _formatHint(smbPath),
+          cacheFinalPath: cache,
+          contentLength: t.fileSize,
+          seekSecs: secs,
+        );
+        break;
+      case TrackSource.webdav:
+        final davPath = t.remotePath;
+        if (davPath == null) return;
+        final url = WebdavService.fullUrlFor(davPath);
+        if (url == null) return;
+        final cache = await WebdavService.cachePathFor(davPath);
+        err = await _engine!.playWebdavStream(
+          url: url,
+          username: WebdavService.username,
+          password: WebdavService.password,
+          formatHint: _formatHint(davPath),
+          cacheFinalPath: cache,
+          contentLength: t.fileSize,
+          seekSecs: secs,
+        );
+        break;
+      case TrackSource.local:
+      case TrackSource.subsonic:
+        return; // 非流式路径不在此处理
+    }
+    if (err == null) {
+      _setPlaying(true);
+    } else {
+      debugPrint('[seek] 流式重启失败: $err');
+    }
   }
 
   /// Queue a track to play immediately after the current one.

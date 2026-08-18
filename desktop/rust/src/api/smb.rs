@@ -673,9 +673,10 @@ pub async fn engine_play_smb_stream(
     format_hint: Option<String>,
     cache_final_path: Option<String>,
     content_length: Option<u64>,
+    seek_secs: Option<f64>,
 ) -> Result<(), String> {
     let handle =
-        crate::api::engine::engine_start_stream(format_hint, content_length)?;
+        crate::api::engine::engine_start_stream(format_hint, content_length, seek_secs)?;
     // 首块喂流成功信号：喂流 task 写入第一块后通知，主函数据此确认流已启动
     let (first_tx, first_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let first_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(first_tx)));

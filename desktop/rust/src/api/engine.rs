@@ -37,14 +37,16 @@ fn push_event(value: serde_json::Value) {
 /// 启动 core 流式播放并返回喂流句柄（镜像 mobile `api::engine::engine_start_stream`）。
 /// webdav.rs 的 `engine_play_webdav_stream` / smb.rs 的 `engine_play_smb_stream`
 /// 拿到 StreamHandle 后由后台 task 从远端拉字节喂入 core 解码。
+/// [seek_secs]：流式 seek（拖进度条）时从该时间点起播，None=从头播。
 pub(crate) fn engine_start_stream(
     format_hint: Option<String>,
     content_length: Option<u64>,
+    seek_secs: Option<f64>,
 ) -> Result<StreamHandle, String> {
     let engine = ENGINE.lock().unwrap();
     engine
         .as_ref()
-        .map(|(h, _)| h.play_stream_sync(format_hint, content_length))
+        .map(|(h, _)| h.play_stream_sync(format_hint, content_length, seek_secs))
         .ok_or_else(|| "引擎未初始化".to_string())?
         .map_err(|e| e.to_string())
 }

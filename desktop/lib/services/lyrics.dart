@@ -1,5 +1,13 @@
+import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
+
+import '../models/track.dart';
+import '../src/rust/api/smb.dart' as frb_smb;
+import 'nas_service.dart';
+import 'webdav_service.dart';
 
 class LyricLine {
   final Duration time;
@@ -52,6 +60,95 @@ Future<List<LyricLine>> loadLyrics(String? lyricsPath) async {
     debugPrint('loadLyrics error: $e');
     return const [];
   }
+}
+
+/// 按音源加载歌词（对齐 mobile）：
+/// - local：同级 .lrc 文件（[Track.lyricsPath]）
+/// - nas：SMB 远程同名 .lrc/.LRC（[Track.remotePath]）
+/// - webdav：WebDAV 远程同名 .lrc/.LRC（[Track.remotePath]）
+/// - subsonic：暂不支持（mobile 同样未实现）
+///
+/// 远程歌词缓存到 `<文档>/.lrc_cache/<hash>.lrc`，避免每次播放重复拉网络。
+Future<List<LyricLine>> loadLyricsFor(Track t) async {
+  switch (t.source) {
+    case TrackSource.local:
+      return loadLyrics(t.lyricsPath);
+    case TrackSource.nas:
+      if (t.remotePath == null) return const [];
+      return _loadCachedOrFetch(
+        t.remotePath!,
+        () => fetchNasLyrics(t.remotePath!),
+      );
+    case TrackSource.webdav:
+      if (t.remotePath == null) return const [];
+      return _loadCachedOrFetch(
+        t.remotePath!,
+        () => fetchWebdavLyrics(t.remotePath!),
+      );
+    case TrackSource.subsonic:
+      return const [];
+  }
+}
+
+/// NAS(SMB) 远端歌词：与音频同目录同名的 .lrc/.LRC，全部读取并解码。
+Future<String?> fetchNasLyrics(String smbPath) async {
+  // 确保 SMB 会话可用（内部 keepalive 探测，不健康则重建）
+  if (await NasService.connect() != null) return null;
+  final base = smbPath.replaceFirst(RegExp(r'\.[^.]+$'), '');
+  for (final ext in const ['.lrc', '.LRC']) {
+    try {
+      final bytes = await frb_smb.smbReadFile(path: '$base$ext');
+      if (bytes.isEmpty) continue;
+      return decodeLrcBytes(bytes);
+    } catch (_) {
+      // 文件不存在 / 读取失败：尝试下一个扩展名
+    }
+  }
+  return null;
+}
+
+/// WebDAV 远端歌词：与音频同目录同名的 .lrc/.LRC，全量读取并解码。
+Future<String?> fetchWebdavLyrics(String davPath) async {
+  final base = davPath.replaceFirst(RegExp(r'\.[^.]+$'), '');
+  for (final ext in const ['.lrc', '.LRC']) {
+    final bytes = await WebdavService.readRemoteBytes('$base$ext');
+    if (bytes == null || bytes.isEmpty) continue;
+    return decodeLrcBytes(bytes);
+  }
+  return null;
+}
+
+/// 远程歌词缓存读写：命中缓存直接解析，否则拉取并落盘。
+Future<List<LyricLine>> _loadCachedOrFetch(
+  String key,
+  Future<String?> Function() fetch,
+) async {
+  try {
+    final appDir = await getApplicationDocumentsDirectory();
+    final cacheFile = File('${appDir.path}/.lrc_cache/${key.hashCode}.lrc');
+    if (await cacheFile.exists()) {
+      final parsed = parseLrc(await cacheFile.readAsString());
+      if (parsed.isNotEmpty) return parsed;
+    }
+    final text = await fetch();
+    if (text == null || text.trim().isEmpty) return const [];
+    final parsed = parseLrc(text);
+    if (parsed.isNotEmpty) {
+      final dir = cacheFile.parent;
+      if (!await dir.exists()) await dir.create(recursive: true);
+      await cacheFile.writeAsString(text);
+    }
+    return parsed;
+  } catch (e) {
+    debugPrint('loadLyricsFor error: $e');
+    return const [];
+  }
+}
+
+/// 字节 → 文本：UTF-8 解码并去除 BOM（Windows 记事本保存的 .lrc 带 BOM）。
+String decodeLrcBytes(Uint8List bytes) {
+  final text = utf8.decode(bytes, allowMalformed: true);
+  return text.startsWith('\uFEFF') ? text.substring(1) : text;
 }
 
 /// Find the index of the lyric line active at [position].

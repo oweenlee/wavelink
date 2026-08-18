@@ -73,6 +73,7 @@ fn wire__crate__api__smb__engine_play_smb_stream_impl(
             let api_format_hint = <Option<String>>::sse_decode(&mut deserializer);
             let api_cache_final_path = <Option<String>>::sse_decode(&mut deserializer);
             let api_content_length = <Option<u64>>::sse_decode(&mut deserializer);
+            let api_seek_secs = <Option<f64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
@@ -82,6 +83,7 @@ fn wire__crate__api__smb__engine_play_smb_stream_impl(
                             api_format_hint,
                             api_cache_final_path,
                             api_content_length,
+                            api_seek_secs,
                         )
                         .await?;
                         Ok(output_ok)
@@ -120,6 +122,7 @@ fn wire__crate__api__webdav__engine_play_webdav_stream_impl(
             let api_format_hint = <Option<String>>::sse_decode(&mut deserializer);
             let api_cache_final_path = <Option<String>>::sse_decode(&mut deserializer);
             let api_content_length = <Option<u64>>::sse_decode(&mut deserializer);
+            let api_seek_secs = <Option<f64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
@@ -131,6 +134,7 @@ fn wire__crate__api__webdav__engine_play_webdav_stream_impl(
                             api_format_hint,
                             api_cache_final_path,
                             api_content_length,
+                            api_seek_secs,
                         )
                         .await?;
                         Ok(output_ok)
@@ -1670,6 +1674,17 @@ impl SseDecode for Option<String> {
     }
 }
 
+impl SseDecode for Option<f64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<f64>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<u64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1999,6 +2014,16 @@ impl SseEncode for Option<String> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <String>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<f64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <f64>::sse_encode(value, serializer);
         }
     }
 }

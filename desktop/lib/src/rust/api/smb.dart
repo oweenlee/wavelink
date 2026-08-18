@@ -128,11 +128,13 @@ Future<void> enginePlaySmbStream({
   String? formatHint,
   String? cacheFinalPath,
   BigInt? contentLength,
+  double? seekSecs,
 }) => RustLib.instance.api.crateApiSmbEnginePlaySmbStream(
   smbPath: smbPath,
   formatHint: formatHint,
   cacheFinalPath: cacheFinalPath,
   contentLength: contentLength,
+  seekSecs: seekSecs,
 );
 
 /// 目录条目（list_directory 用）

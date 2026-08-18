@@ -36,6 +36,8 @@ pub enum EngineCommand {
         format_hint: Option<String>,
         /// 内容长度（字节，可选）
         content_length: Option<u64>,
+        /// 起始播放位置（秒，流式 seek 用，None=从头播）
+        seek_secs: Option<f64>,
         /// 应答通道
         ack: CmdAck,
         /// 流句柄共享存储（宿主层持有 Arc，引擎线程写入）

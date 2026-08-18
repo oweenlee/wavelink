@@ -703,7 +703,9 @@ class _TrackRow extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
             child: Row(
               children: [
-                CoverArt(seed: track.id, coverUrl: track.coverUrl, size: 42),
+                CoverArt(
+                  key: ValueKey('row-${track.coverUrl ?? track.id}'),
+                  seed: track.id, coverUrl: track.coverUrl, size: 42),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -931,6 +933,7 @@ class _NowPlaying extends ConsumerWidget {
           children: [
             Center(
               child: CoverArt(
+                key: ValueKey('np-${track?.coverUrl ?? track?.id ?? 'empty'}'),
                 seed: track?.id ?? 'empty',
                 coverUrl: track?.coverUrl,
                 size: 220,
@@ -1125,9 +1128,11 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
                   children: [
                     // Left: mini now-playing
                     if (showCover) ...[
-                      CoverArt(seed: t?.id ?? 'empty',
-                          coverUrl: t?.coverUrl,
-                          size: 40),
+                      CoverArt(
+                        key: ValueKey('tpbar-${t?.coverUrl ?? t?.id ?? 'empty'}'),
+                        seed: t?.id ?? 'empty',
+                        coverUrl: t?.coverUrl,
+                        size: 40),
                       const SizedBox(width: 12),
                     ],
                     if (showLeftInfo) ...[
@@ -1298,17 +1303,20 @@ class CoverArt extends StatelessWidget {
     // 注意：cacheWidth 仅存在于 Image.file / Image.network 具名构造，
     // 默认 Image(image:) 构造不接受，故此处分别构造。
     final fallback = _gradientFallback(radius);
+    final cacheW = cacheWidth;
     return isRemote
         ? Image.network(
             url,
+            key: ValueKey(url),
             fit: BoxFit.cover,
-            cacheWidth: cacheWidth,
+            cacheWidth: cacheW,
             errorBuilder: (_, _, _) => fallback,
           )
         : Image.file(
             File(url),
+            key: ValueKey(url),
             fit: BoxFit.cover,
-            cacheWidth: cacheWidth,
+            cacheWidth: cacheW,
             errorBuilder: (_, _, _) => fallback,
           );
   }

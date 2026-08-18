@@ -22,8 +22,16 @@ final durationProvider = StreamProvider<Duration>(
     (ref) => ref.watch(playerControllerProvider).durationStream);
 final playingProvider = StreamProvider<bool>(
     (ref) => ref.watch(playerControllerProvider).playingStream);
-final currentIndexProvider = StreamProvider<int?>(
-    (ref) => ref.watch(playerControllerProvider).indexStream);
+/// 当前曲目变化通知。
+///
+/// 注意：不能直接桥接 `StreamProvider<int?>` 的 indexStream —— Riverpod 默认
+/// updateShouldNotify（`previous != next`）按值比较，切歌时若两次 index 相同
+/// （随机模式点歌恒为 0、playNext 插入后 index 不变、不同视图同位索引），
+/// 通知会被跳过，导致右侧封面 / 列表高亮不刷新。
+/// 因此与下方「纯通知」流一致：map 成每次新分配的 Object 强制每回都通知；
+/// UI 拿到信号后读 `player.currentTrack`（本 provider 的值无业务意义）。
+final currentIndexProvider = StreamProvider<Object>(
+    (ref) => ref.watch(playerControllerProvider).indexStream.map((_) => Object()));
 final lyricsProvider = StreamProvider<List<LyricLine>>(
     (ref) => ref.watch(playerControllerProvider).lyricsStream);
 /// 这些流只承担「通知刷新」职责，emit 值本身无意义（广播 null）。
