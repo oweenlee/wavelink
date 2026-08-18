@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -8,8 +9,10 @@ import 'package:webdav_client/webdav_client.dart' as wd;
 
 import '../models/track.dart';
 import '../src/rust/api/webdav.dart' as frb_webdav;
+import '../src/rust/api/duration.dart' as frb_duration;
 import 'network_source_config.dart';
 import 'scan_helpers.dart';
+import 'strm_resolver.dart';
 
 /// WebDAV 音乐服务器服务（桌面端）。
 ///
@@ -74,6 +77,17 @@ class WebdavService {
       return bytes.isEmpty ? null : Uint8List.fromList(bytes);
     } catch (_) {
       // 文件不存在或读取失败（歌词为可选项，静默降级）
+      return null;
+    }
+  }
+
+  /// 读取远端文本文件全文（STRM 指针等），失败/空返回 null。
+  static Future<String?> readRemoteText(String davPath) async {
+    final bytes = await readRemoteBytes(davPath);
+    if (bytes == null || bytes.isEmpty) return null;
+    try {
+      return utf8.decode(bytes, allowMalformed: true);
+    } catch (_) {
       return null;
     }
   }
@@ -159,7 +173,7 @@ class WebdavService {
     return tracks;
   }
 
-  /// 处理单个目录条目：音频直接建 [Track]，子目录并发递归。
+  /// 处理单个目录条目：音频并发拉真实时长建 [Track]，子目录并发递归。
   /// 同层子目录用 [Future.wait] 并发列举（HTTP 客户端串行度由服务端/连接池限制）。
   static Future<List<Track>> _scanEntries(
     wd.Client client,
@@ -167,16 +181,21 @@ class WebdavService {
     String path,
   ) async {
     final dirs = <String>[];
-    final tracks = <Track>[];
+    final fileFutures = <Future<Track?>>[];
     for (final entry in entries) {
       final entryPath = entry.path;
       if (entryPath == null || entryPath.isEmpty) continue;
       if (entry.isDir == true) {
         dirs.add(entryPath);
       } else {
-        final track = _toTrack(entry);
-        if (track != null) tracks.add(track);
+        fileFutures.add(_toTrack(entry));
       }
+    }
+    // 并发拉取真实时长（head 模式 Range 请求，轻量），失败/探不到回退粗估。
+    final resolved = await Future.wait(fileFutures);
+    final tracks = <Track>[];
+    for (final t in resolved) {
+      if (t != null) tracks.add(t);
     }
     if (dirs.isNotEmpty) {
       final subs = await Future.wait(dirs.map((d) => _scanSubtree(client, d)));
@@ -197,14 +216,44 @@ class WebdavService {
     return _scanEntries(client, entries, path);
   }
 
-  static Track? _toTrack(wd.File entry) {
+  static Future<Track?> _toTrack(wd.File entry) async {
     final name = entry.name ?? '';
     final path = entry.path ?? '';
     if (name.isEmpty || path.isEmpty) return null;
     final ext = name.split('.').last.toLowerCase();
+    // STRM 指针文件：按歌建索引（标题取 strm 文件名），播放时读内容解析
+    // 真实目标再走对应源（strm 是文本，无音频标签可读）。
+    if (ext == 'strm') {
+      return _toStrmTrack(entry);
+    }
     if (!audioExtensions.contains('.$ext')) return null;
 
     final (artist, title) = parseArtistTitle(name);
+
+    // 扫描期回填真实时长：读文件头（Range 请求）经 lofty 探测。
+    // 失败/探不到回退 1000kbps 粗估，并标 estimated。
+    final Duration durationHint;
+    final bool durationEstimated;
+    final url = fullUrlFor(path);
+    if (url != null) {
+      final realSecs = await frb_duration.getWebdavDuration(
+        url: url,
+        username: username,
+        password: password,
+        headLimit: BigInt.from(4 * 1024 * 1024),
+      );
+      if (realSecs != null && realSecs > 0) {
+        durationHint = Duration(milliseconds: (realSecs * 1000).round());
+        durationEstimated = false;
+      } else {
+        durationHint = estimateDuration(entry.size?.toInt() ?? 0);
+        durationEstimated = true;
+      }
+    } else {
+      durationHint = estimateDuration(entry.size?.toInt() ?? 0);
+      durationEstimated = true;
+    }
+
     return Track(
       id: 'dav_${path.hashCode}',
       title: title,
@@ -212,9 +261,52 @@ class WebdavService {
       album: _albumPlaceholder,
       source: TrackSource.webdav,
       remotePath: path,
-      durationHint: estimateDuration(entry.size?.toInt() ?? 0),
-      durationEstimated: true,
+      durationHint: durationHint,
+      durationEstimated: durationEstimated,
       fileSize: entry.size?.toInt(),
+    );
+  }
+
+  /// STRM 指针文件建索引：读文本解析真实目标（失败不阻断，仅落地不到目标，
+  /// 播放时再兜底重试）。标题取 strm 文件名；`#EXTINF` 可携带展示标题/时长。
+  static Future<Track?> _toStrmTrack(wd.File entry) async {
+    final name = entry.name ?? '';
+    final path = entry.path ?? '';
+    if (name.isEmpty || path.isEmpty) return null;
+    final (artist, title) = parseArtistTitle(name);
+
+    final text = await readRemoteText(path);
+    StrmTarget? target;
+    if (text != null) {
+      target = parseStrmContent(text, fromWebdav: true, strmPath: path);
+    }
+
+    var t = title;
+    var a = artist == 'Unknown Artist' ? _artistPlaceholder : artist;
+    Duration? dur;
+    if (target != null) {
+      if (target.extInfTitle != null) {
+        final (pa, pt) = parseArtistTitle(target.extInfTitle!);
+        t = pt;
+        a = pa;
+      }
+      if (target.extInfSecs != null) dur = Duration(seconds: target.extInfSecs!);
+    }
+
+    return Track(
+      id: 'dav_strm_${path.hashCode}',
+      title: t,
+      artist: a,
+      album: _albumPlaceholder,
+      source: TrackSource.webdav,
+      remotePath: path,
+      strmPath: path,
+      strmFromWebdav: true,
+      targetUri: target?.path,
+      targetKind: target?.kind,
+      durationHint: dur,
+      durationEstimated: dur == null,
+      fileSize: null,
     );
   }
 

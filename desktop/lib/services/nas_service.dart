@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -7,8 +8,10 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/track.dart';
 import '../src/rust/api/smb.dart' as frb_smb;
+import '../src/rust/api/duration.dart' as frb_duration;
 import 'network_source_config.dart';
 import 'scan_helpers.dart';
+import 'strm_resolver.dart';
 
 /// NAS 连接状态（侧栏展示 + 播放前保活判定用）。
 enum NasConnectionState { disconnected, connecting, connected, error }
@@ -215,21 +218,26 @@ class NasService {
     return tracks;
   }
 
-  /// 处理单个目录的条目：音频直接建 [Track]，子目录并发递归。
+  /// 处理单个目录的条目：音频并发拉真实时长建 [Track]，子目录并发递归。
   static Future<List<Track>> _scanEntries(
     List<frb_smb.SmbDirEntry> entries,
     String path,
   ) async {
     final dirs = <String>[];
-    final tracks = <Track>[];
+    final fileFutures = <Future<Track?>>[];
     for (final entry in entries) {
       if (entry.name == '.' || entry.name == '..') continue;
       if (entry.isDir) {
         dirs.add(path.isEmpty ? entry.name : p.join(path, entry.name));
       } else {
-        final track = _toTrack(path, entry);
-        if (track != null) tracks.add(track);
+        fileFutures.add(_toTrack(path, entry));
       }
+    }
+    // 并发拉取真实时长（SMB 连接池限流到 ~10 并发），失败/探不到回退粗估。
+    final resolved = await Future.wait(fileFutures);
+    final tracks = <Track>[];
+    for (final t in resolved) {
+      if (t != null) tracks.add(t);
     }
     // 同层子目录并发扫描（SMB 连接池限流到 ~10 并发）。
     if (dirs.isNotEmpty) {
@@ -262,14 +270,36 @@ class NasService {
     return const [];
   }
 
-  static Track? _toTrack(String dirPath, frb_smb.SmbDirEntry entry) {
+  static Future<Track?> _toTrack(String dirPath, frb_smb.SmbDirEntry entry) async {
     final name = entry.name;
     if (name.isEmpty) return null;
+    // STRM 指针文件：按歌建索引（标题取 strm 文件名），不读音频标签
+    // （strm 是文本无音频标签）。Resolver 落地真实目标，播放时再分发。
+    if (isStrmName(name)) {
+      return _toStrmTrack(dirPath, entry);
+    }
     final ext = name.split('.').last.toLowerCase();
     if (!audioExtensions.contains('.$ext')) return null;
     final smbPath = dirPath.isEmpty ? name : p.join(dirPath, name);
 
     final (artist, title) = parseArtistTitle(name);
+
+    // 扫描期回填真实时长：读文件头经 lofty 探测（SMB 连接池限流并发）。
+    // 失败/探不到（如 OGG 需尾部页）回退 1000kbps 粗估，并标 estimated。
+    final realSecs = await frb_duration.getNasDuration(
+      path: smbPath,
+      headLimit: BigInt.from(4 * 1024 * 1024),
+    );
+    final Duration durationHint;
+    final bool durationEstimated;
+    if (realSecs != null && realSecs > 0) {
+      durationHint = Duration(milliseconds: (realSecs * 1000).round());
+      durationEstimated = false;
+    } else {
+      durationHint = estimateDuration(entry.size.toInt());
+      durationEstimated = true;
+    }
+
     return Track(
       id: 'nas_${smbPath.hashCode}',
       title: title,
@@ -277,10 +307,67 @@ class NasService {
       album: 'NAS Music',
       source: TrackSource.nas,
       remotePath: smbPath,
-      durationHint: estimateDuration(entry.size.toInt()),
-      durationEstimated: true,
+      durationHint: durationHint,
+      durationEstimated: durationEstimated,
       fileSize: entry.size.toInt(),
     );
+  }
+
+  /// STRM 指针文件建索引：读文本解析真实目标（失败不阻断，仅落地不到目标，
+  /// 播放时再兜底重试）。标题取 strm 文件名；`#EXTINF` 可携带展示标题/时长。
+  static Future<Track?> _toStrmTrack(
+    String dirPath,
+    frb_smb.SmbDirEntry entry,
+  ) async {
+    final name = entry.name;
+    final smbPath = dirPath.isEmpty ? name : p.join(dirPath, name);
+    final (artist, title) = parseArtistTitle(name);
+
+    final text = await readStrmText(smbPath);
+    StrmTarget? target;
+    if (text != null) {
+      target = parseStrmContent(text, fromWebdav: false, strmPath: smbPath);
+    }
+
+    var t = title;
+    var a = artist == 'Unknown Artist' ? 'Unknown Artist' : artist;
+    Duration? dur;
+    if (target != null) {
+      if (target.extInfTitle != null) {
+        final (pa, pt) = parseArtistTitle(target.extInfTitle!);
+        t = pt;
+        a = pa;
+      }
+      if (target.extInfSecs != null) dur = Duration(seconds: target.extInfSecs!);
+    }
+
+    return Track(
+      id: 'nas_strm_${smbPath.hashCode}',
+      title: t,
+      artist: a,
+      album: 'NAS Music',
+      source: TrackSource.nas,
+      remotePath: smbPath,
+      strmPath: smbPath,
+      strmFromWebdav: false,
+      targetUri: target?.path,
+      targetKind: target?.kind,
+      durationHint: dur,
+      durationEstimated: dur == null,
+      fileSize: null,
+    );
+  }
+
+  /// 读取 STRM 文本文件全文（SMB 整文件读，strm 很小）。失败/空返回 null。
+  static Future<String?> readStrmText(String smbPath) async {
+    try {
+      final bytes = await frb_smb.smbReadFile(path: smbPath);
+      if (bytes.isEmpty) return null;
+      return utf8.decode(bytes, allowMalformed: true);
+    } catch (e) {
+      debugPrint('[NasService.readStrmText] $smbPath -> $e');
+      return null;
+    }
   }
 
   /// 缓存目标路径（供播放分发复用，边下边播与回退下载命中同一缓存）。
@@ -301,6 +388,26 @@ class NasService {
   static Future<String?> downloadToLocal(Track track) async {
     final smbPath = track.remotePath;
     if (smbPath == null) return null;
+    try {
+      final target = await cachePathFor(smbPath);
+      if (target == null) return null;
+      final localFile = File(target);
+      if (await localFile.exists() && await localFile.length() > 0) {
+        return localFile.path;
+      }
+      final bytes = await frb_smb.smbReadFile(path: smbPath);
+      if (bytes.isEmpty) return null;
+      await localFile.writeAsBytes(bytes, flush: true);
+      return localFile.path;
+    } catch (e) {
+      lastError = '$e';
+      return null;
+    }
+  }
+
+  /// 按 smb 路径回退下载（STRM 的 smb 目标无完整 [Track]，用路径版）。
+  /// 命中已有缓存则直接返回，逻辑与 [downloadToLocal] 一致。
+  static Future<String?> downloadToLocalPath(String smbPath) async {
     try {
       final target = await cachePathFor(smbPath);
       if (target == null) return null;

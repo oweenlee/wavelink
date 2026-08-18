@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/track.dart';
@@ -13,7 +15,9 @@ import 'lyrics.dart';
 import 'nas_service.dart';
 import 'subsonic_service.dart';
 import 'webdav_service.dart';
+import 'strm_resolver.dart';
 import 'cover_cache.dart';
+import 'network_source_config.dart';
 
 /// Playback loop behaviour.
 enum RepeatMode { off, all, one }
@@ -190,16 +194,19 @@ class PlayerController {
           _durationSC.add(_duration);
         }
       case 'stopped':
-        _playing = false;
-        _playingSC.add(false);
-        // 流式 seek 重启流后短暂窗口内的 stopped 是旧流被替换的伪事件
-        // （core 侧已修，防御兜底），吞掉不切歌。
+        // 流式 seek 重启流（拖进度条）时，core 的 play_stream 会先 stop_playback
+        // 拆掉旧流再起新流，必然发一次 stopped（core/state.rs 的流式 seek 历史坑）。
+        // 这个伪事件不能翻转 _playing —— 新流的状态才是权威，否则 UI 误显"暂停"
+        // 且播放按钮 resume 对已播/已停引擎无效（"拖一下就停、点了没反应"）。
         if (_lastStreamSeekAt != null &&
             DateTime.now().difference(_lastStreamSeekAt!) <
-                const Duration(seconds: 2)) {
-          debugPrint('[stopped] 流式 seek 重启伪停止，忽略');
-          _lastStreamSeekAt = null;
-        } else if (_stopRequested) {
+                const Duration(seconds: 3)) {
+          debugPrint('[stopped] 流式 seek 重启伪停止，忽略(不翻转播放态)');
+          return;
+        }
+        _playing = false;
+        _playingSC.add(false);
+        if (_stopRequested) {
           _stopRequested = false;
         } else {
           // 自然结束 → 切下一首（遵循循环/随机模式）
@@ -262,6 +269,70 @@ class PlayerController {
       _queue = _shuffle ? _shuffled(_library, null) : _library;
     }
     _librarySC.add(null);
+  }
+
+  /// 彻底清空所有应用内数据（**只删应用沙盒里的扫描配置与缓存副本，
+  /// 不碰用户 NAS / 电脑上的真实音乐文件**）：
+  /// 内存曲库 + 队列、本地文件夹配置、NAS/WebDAV/Subsonic 连接配置、
+  /// 收藏、播放列表、循环/随机设置、磁盘缓存目录（.covers/.nas_cache/.webdav_cache）。
+  /// 音量偏好保留。
+  Future<void> clearAllData() async {
+    // 1. 停止播放并重置播放状态
+    try {
+      await _engine?.stop();
+    } catch (_) {
+      // 引擎可能未初始化，忽略
+    }
+    _playing = false;
+    _position = Duration.zero;
+    _duration = Duration.zero;
+
+    // 2. 清空内存曲库与队列
+    setLibrary([]);
+
+    // 3. 清空本地文件夹配置（决定启动重扫）
+    _folders = const [];
+    await _prefs?.remove('libraryFolders');
+
+    // 4. 清空三类网络音源连接配置
+    await NetworkSourceConfig.instance.clearNasConfig();
+    await NetworkSourceConfig.instance.clearWebdavConfig();
+    await NetworkSourceConfig.instance.clearSubsonicConfig();
+    SubsonicService.clear();
+
+    // 5. 清空收藏与播放列表
+    _favoriteIds.clear();
+    await _prefs?.remove('favorites');
+    _playlists = const [];
+    await _prefs?.remove('playlists');
+
+    // 6. 重置播放模式（loop/shuffle），音量保留
+    _shuffle = false;
+    await _prefs?.remove('shuffle');
+    _repeatMode = RepeatMode.off;
+    await _prefs?.remove('repeatMode');
+
+    // 7. 删除磁盘缓存目录（仅副本，安全）
+    await _clearCacheDirs();
+
+    // 广播曲库变化，UI 刷新为空库
+    _librarySC.add(null);
+  }
+
+  /// 删除应用 Documents 下的三个缓存目录（封面 / NAS 边下边播 / WebDAV 边下边播）。
+  /// 均为音轨副本或生成物，不含用户源文件。
+  Future<void> _clearCacheDirs() async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      for (final name in const ['.covers', '.nas_cache', '.webdav_cache']) {
+        final dir = Directory(p.join(appDir.path, name));
+        if (await dir.exists()) {
+          await dir.delete(recursive: true);
+        }
+      }
+    } catch (e) {
+      debugPrint('clear cache dirs error: $e');
+    }
   }
 
   /// Resolve a playlist's ids into actual [Track] objects from the library.
@@ -422,6 +493,12 @@ class PlayerController {
           'initError=$_engineInitError), cannot play ${t.id}');
       return;
     }
+    // STRM 指针文件：先解析出真实目标（源内路径或 URL）再按 kind 分发，
+    // 不走常规的 nas/webdav 分支（其 remotePath 是 strm 文本文件本身）。
+    if (t.isStrm) {
+      await _playStrm(t);
+      return;
+    }
     switch (t.source) {
       case TrackSource.local:
         if (t.filePath != null) {
@@ -525,6 +602,135 @@ class PlayerController {
     }
   }
 
+  // ── STRM 指针播放（解析真实目标后复用现有流通道，不碰 core） ──
+
+  /// 解析 strm 真实目标：扫描期已落地（targetUri/targetKind）则直接采用，
+  /// 否则读 strm 文本兜底重新解析。
+  Future<StrmTarget?> _resolveStrmTarget(Track t) async {
+    if (t.targetUri != null && t.targetKind != null) {
+      return StrmTarget(kind: t.targetKind!, path: t.targetUri!);
+    }
+    if (t.strmPath == null) return null;
+    final text = await _readStrmText(t);
+    if (text == null) return null;
+    return parseStrmContent(
+      text,
+      fromWebdav: t.strmFromWebdav,
+      strmPath: t.strmPath!,
+    );
+  }
+
+  /// 读取 strm 文本（按所在源选择通道：WebDAV → readRemoteText，SMB → smbReadFile）。
+  Future<String?> _readStrmText(Track t) async {
+    try {
+      final text = t.strmFromWebdav
+          ? await WebdavService.readRemoteText(t.strmPath!)
+          : await NasService.readStrmText(t.strmPath!);
+      return text;
+    } catch (e) {
+      debugPrint('[_readStrmText] ${t.strmPath} -> $e');
+      return null;
+    }
+  }
+
+  /// STRM 播放分发：按真实目标 kind 复用对应流通道。
+  Future<void> _playStrm(Track t) async {
+    final target = await _resolveStrmTarget(t);
+    if (target == null) {
+      debugPrint('[_playStrm] 解析失败: ${t.id} (${t.strmPath})');
+      return;
+    }
+    switch (target.kind) {
+      case 'smb':
+        await _playStrmSmb(target.path);
+        break;
+      case 'dav':
+        await _playStrmDav(target.path);
+        break;
+      case 'http':
+      case 'stream':
+        // 外链：不携带 WebDAV 凭据（防泄漏），contentLength 未知。
+        await _playStrmHttp(target.path, kind: target.kind);
+        break;
+      default:
+        debugPrint('[_playStrm] 未知 kind: ${target.kind}');
+    }
+  }
+
+  Future<void> _playStrmSmb(String smbPath) async {
+    final connErr = await NasService.connect();
+    if (connErr != null) debugPrint('[_playStrmSmb] connect failed: $connErr');
+    final cache = await NasService.cachePathFor(smbPath);
+    final err = await _engine!.playSmbStream(
+      smbPath: smbPath,
+      formatHint: _formatHint(smbPath),
+      cacheFinalPath: cache,
+      contentLength: null,
+    );
+    if (err == null) {
+      _streaming = true;
+      _setPlaying(true);
+      return;
+    }
+    debugPrint('strm smb 流式失败，回退下载: $err');
+    final local = await NasService.downloadToLocalPath(smbPath);
+    if (local != null) {
+      _streaming = false;
+      await _engine!.play(local);
+      _setPlaying(true);
+    } else {
+      debugPrint('[_playStrmSmb] 回退下载失败: $smbPath');
+    }
+  }
+
+  Future<void> _playStrmDav(String davPath) async {
+    final url = WebdavService.fullUrlFor(davPath);
+    if (url == null) {
+      debugPrint('[_playStrmDav] fullUrl null: $davPath');
+      return;
+    }
+    final cache = await WebdavService.cachePathFor(davPath);
+    final err = await _engine!.playWebdavStream(
+      url: url,
+      username: WebdavService.username,
+      password: WebdavService.password,
+      formatHint: _formatHint(davPath),
+      cacheFinalPath: cache,
+      contentLength: null,
+    );
+    if (err == null) {
+      _streaming = true;
+      _setPlaying(true);
+      return;
+    }
+    debugPrint('strm dav 流式失败，回退下载: $err');
+    final local = await WebdavService.downloadToLocal(davPath);
+    if (local != null) {
+      _streaming = false;
+      await _engine!.play(local);
+      _setPlaying(true);
+    } else {
+      debugPrint('[_playStrmDav] 回退下载失败: $davPath');
+    }
+  }
+
+  Future<void> _playStrmHttp(String url, {required String kind}) async {
+    final err = await _engine!.playWebdavStream(
+      url: url,
+      username: '',
+      password: '',
+      formatHint: _formatHint(url),
+      cacheFinalPath: null,
+      contentLength: null,
+    );
+    if (err == null) {
+      _streaming = true;
+      _setPlaying(true);
+    } else {
+      debugPrint('[_playStrmHttp] 播放失败 ($kind): $url -> $err');
+    }
+  }
+
   /// 从路径取扩展名（不含点）作解码器提示。
   String? _formatHint(String? path) {
     if (path == null) return null;
@@ -597,6 +803,11 @@ class PlayerController {
     _position = d;
     _positionSC.add(d);
     final t = currentTrack;
+    if (_streaming && t != null && t.isStrm) {
+      // STRM 指针：用真实目标路径重启流（remotePath 是 strm 文本本身，不能用）。
+      await _restartStrmSeek(t, d);
+      return;
+    }
     if (_streaming &&
         t != null &&
         (t.source == TrackSource.nas || t.source == TrackSource.webdav)) {
@@ -652,9 +863,105 @@ class PlayerController {
         return; // 非流式路径不在此处理
     }
     if (err == null) {
+      _streaming = true;
       _setPlaying(true);
     } else {
-      debugPrint('[seek] 流式重启失败: $err');
+      // 流式重启失败（网络抖动/连接断开）：旧流已被拆、引擎已停。若不兜底，
+      // _playing 残留 true 而引擎 stopped → 播放按钮 resume 无效（"点了没反应"）。
+      // 回退整曲下载到本地缓存后本地播放，与 _playNas / _playWebdav 兜底一致。
+      debugPrint('[seek] 流式重启失败，回退下载: $err');
+      final local = t.source == TrackSource.nas
+          ? await NasService.downloadToLocal(t)
+          : await WebdavService.downloadToLocal(t.remotePath ?? '');
+      if (local != null) {
+        _streaming = false;
+        await _engine!.play(local);
+        _setPlaying(true);
+      } else {
+        debugPrint('[seek] 回退下载也失败，放弃: ${t.id}');
+        _setPlaying(false);
+      }
+    }
+  }
+
+  /// STRM 指针的流式 seek：解析真实目标后按 kind 重启流（带 seekSecs）。
+  /// remotePath 是 strm 文本本身，必须用解析出的真实路径。
+  Future<void> _restartStrmSeek(Track t, Duration d) async {
+    _lastStreamSeekAt = DateTime.now();
+    final secs = d.inMilliseconds / 1000.0;
+    final target = await _resolveStrmTarget(t);
+    if (target == null) {
+      debugPrint('[_restartStrmSeek] 解析失败: ${t.id}');
+      return;
+    }
+    String? err;
+    switch (target.kind) {
+      case 'smb':
+        final cache = await NasService.cachePathFor(target.path);
+        err = await _engine!.playSmbStream(
+          smbPath: target.path,
+          formatHint: _formatHint(target.path),
+          cacheFinalPath: cache,
+          contentLength: null,
+          seekSecs: secs,
+        );
+        break;
+      case 'dav':
+        final url = WebdavService.fullUrlFor(target.path);
+        if (url == null) return;
+        final cache = await WebdavService.cachePathFor(target.path);
+        err = await _engine!.playWebdavStream(
+          url: url,
+          username: WebdavService.username,
+          password: WebdavService.password,
+          formatHint: _formatHint(target.path),
+          cacheFinalPath: cache,
+          contentLength: null,
+          seekSecs: secs,
+        );
+        break;
+      case 'http':
+      case 'stream':
+        err = await _engine!.playWebdavStream(
+          url: target.path,
+          username: '',
+          password: '',
+          formatHint: _formatHint(target.path),
+          cacheFinalPath: null,
+          contentLength: null,
+          seekSecs: secs,
+        );
+        break;
+      default:
+        return;
+    }
+    if (err == null) {
+      _streaming = true;
+      _setPlaying(true);
+      return;
+    }
+    // 重启失败：smb/dav 有本地回退；http/stream 外链无回退，置暂停。
+    debugPrint('[_restartStrmSeek] 失败: $err');
+    if (target.kind == 'smb') {
+      final local = await NasService.downloadToLocalPath(target.path);
+      if (local != null) {
+        _streaming = false;
+        await _engine!.play(local);
+        _setPlaying(true);
+      } else {
+        _setPlaying(false);
+      }
+    } else if (target.kind == 'dav') {
+      final local = await WebdavService.downloadToLocal(target.path);
+      if (local != null) {
+        _streaming = false;
+        await _engine!.play(local);
+        _setPlaying(true);
+      } else {
+        _setPlaying(false);
+      }
+    } else {
+      _setPlaying(false);
     }
   }
 

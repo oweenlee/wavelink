@@ -44,6 +44,20 @@ class Track {
   /// ② 缓存命中判断（大小变化视为文件更新）。本地曲目为 null。
   final int? fileSize;
 
+  // —— STRM 指针文件扩展（兼容 Kodi/Jellyfin 的 .strm 桩文件）——
+  /// strm 文件在源内的路径（其所在源决定解析通道：NAS=SMB / WebDAV=DAV）。
+  /// 非空即表示本曲是 .strm 指针，真实目标在 [targetUri]/[targetKind]。
+  final String? strmPath;
+
+  /// strm 文件所在源是否为 WebDAV（false = SMB/NAS）。仅 [isStrm] 时有意义。
+  final bool strmFromWebdav;
+
+  /// 解析出的真实目标地址：源内相对路径或完整 URL。
+  final String? targetUri;
+
+  /// 解析出的真实目标类型：smb / dav / http / stream。
+  final String? targetKind;
+
   const Track({
     required this.id,
     required this.title,
@@ -59,10 +73,17 @@ class Track {
     this.durationHint,
     this.durationEstimated = false,
     this.fileSize,
+    this.strmPath,
+    this.strmFromWebdav = false,
+    this.targetUri,
+    this.targetKind,
   });
 
   bool get isLocal => source == TrackSource.local;
   bool get isNetwork => source != TrackSource.local;
+
+  /// 是否为 .strm 指针文件（播放前需先解析出真实目标再分发）。
+  bool get isStrm => strmPath != null && strmPath!.isNotEmpty;
 
   /// 是否有可播放的音频源（按来源分别判定）。
   bool get hasSource => switch (source) {
@@ -95,6 +116,10 @@ class Track {
     Duration? durationHint,
     bool? durationEstimated,
     int? fileSize,
+    String? strmPath,
+    bool? strmFromWebdav,
+    String? targetUri,
+    String? targetKind,
   }) =>
       Track(
         id: id ?? this.id,
@@ -111,6 +136,10 @@ class Track {
         durationHint: durationHint ?? this.durationHint,
         durationEstimated: durationEstimated ?? this.durationEstimated,
         fileSize: fileSize ?? this.fileSize,
+        strmPath: strmPath ?? this.strmPath,
+        strmFromWebdav: strmFromWebdav ?? this.strmFromWebdav,
+        targetUri: targetUri ?? this.targetUri,
+        targetKind: targetKind ?? this.targetKind,
       );
 
   @override

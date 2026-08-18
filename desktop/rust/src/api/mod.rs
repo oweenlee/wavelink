@@ -3,6 +3,7 @@
 //! 递归导出本模块下所有 pub 函数（engine / webdav / smb）。
 
 pub mod cover;
+pub mod duration;
 pub mod engine;
 pub mod smb;
 pub mod webdav;

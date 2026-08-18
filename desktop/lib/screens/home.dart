@@ -406,6 +406,57 @@ class _Sidebar extends ConsumerWidget {
               ),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _confirmClearAll(context, player),
+                icon: const Icon(LucideIcons.trash2, size: 16),
+                label: const Text('清空全部数据'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _onSurfaceVariant,
+                  side: const BorderSide(color: _border),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmClearAll(BuildContext context, PlayerController player) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _surface,
+        title: const Text('清空全部数据', style: TextStyle(color: _onSurface)),
+        content: const Text(
+          '将删除应用内的曲库、收藏、播放列表、所有网络音源配置以及磁盘缓存'
+          '（封面与边下边播副本）。\n\n'
+          '不会删除你 NAS / 电脑上的真实音乐文件，但此操作不可撤销。',
+          style: TextStyle(color: _onSurfaceVariant),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消', style: TextStyle(color: _onSurfaceVariant)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await player.clearAllData();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('已全部清空')),
+                );
+              }
+            },
+            child: const Text('确认清空', style: TextStyle(color: _onSurface)),
+          ),
         ],
       ),
     );
