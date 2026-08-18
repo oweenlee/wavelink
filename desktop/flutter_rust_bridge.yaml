@@ -1,0 +1,6 @@
+rust_input: "crate::api"
+rust_root: rust/
+dart_output: lib/src/rust/
+# webdav.rs 的 engine_play_webdav_stream 返回 StreamHandle（带生命周期），
+# 需开启 lifetime 支持
+enable_lifetime: true
