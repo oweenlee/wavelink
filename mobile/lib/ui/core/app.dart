@@ -16,8 +16,6 @@ import '../features/settings/view_models/locale_provider.dart';
 import '../features/library/view_models/library_header_notifier.dart';
 import '../features/library/view_models/library_provider.dart';
 import '../features/playback/view_models/playback_controller.dart';
-import '../features/subscription/view_models/subscription_guard.dart';
-import '../features/subscription/view_models/subscription_provider.dart';
 import 'widgets/mini_player_bar.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'routes.dart';
@@ -283,7 +281,6 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
 
   void _handleNas() {
     Navigator.of(context).pop(); // 关抽屉
-    if (!ensureSubscribed(context, ref)) return; // 未订阅 → 付费墙
     context.push('/nas');
   }
 
@@ -291,7 +288,6 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
   /// 重新扫描改由右侧同步按钮触发（仅已配置时显示）。
   void _handleSubsonic() {
     Navigator.of(context).pop(); // 关抽屉
-    if (!ensureSubscribed(context, ref)) return; // 未订阅 → 付费墙
     context.push('/subsonic');
   }
 
@@ -322,7 +318,6 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
   /// 重新扫描改由右侧同步按钮触发（仅已配置时显示）。
   void _handleWebdav() {
     Navigator.of(context).pop(); // 关抽屉
-    if (!ensureSubscribed(context, ref)) return; // 未订阅 → 付费墙
     context.push('/webdav');
   }
 
@@ -350,8 +345,6 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    // 订阅状态：未订阅时锁定网络来源（NAS/Subsonic/WebDAV）
-    final subscribed = ref.watch(subscriptionProvider).isSubscribed;
     return Drawer(
       backgroundColor: AppTheme.surfaceDark,
       width: 280,
@@ -437,7 +430,6 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
                   ? l10n.sourceNasConnected
                   : l10n.sourceNasHint,
               connected: SmbService.mountedShare != null,
-              locked: !subscribed,
               onTap: _handleNas,
               trailing: SmbService.isConnected
                   ? _NasSyncButton(
@@ -458,7 +450,6 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
                   ? l10n.sourceMusicServerConnected
                   : l10n.sourceMusicServerHint,
               connected: SubsonicService.isConfigured,
-              locked: !subscribed,
               loading: _subsonicScanning,
               result: _subsonicResult,
               onTap: _handleSubsonic,
@@ -474,7 +465,6 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
                   ? l10n.sourceWebdavConnected
                   : l10n.sourceWebdavHint,
               connected: WebdavService.isConfigured,
-              locked: !subscribed,
               loading: _webdavScanning,
               result: _webdavResult,
               onTap: _handleWebdav,
@@ -518,9 +508,6 @@ class _SourceRow extends StatelessWidget {
   final String? result;
   final Widget? trailing;
 
-  /// 订阅锁定：未订阅时行尾显示锁图标，点击仍触发 onTap（由调用方守卫）。
-  final bool locked;
-
   const _SourceRow({
     required this.icon,
     required this.label,
@@ -530,7 +517,6 @@ class _SourceRow extends StatelessWidget {
     this.loading = false,
     this.result,
     this.trailing,
-    this.locked = false,
   });
 
   @override
@@ -591,40 +577,28 @@ class _SourceRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // 订阅锁定：优先展示锁图标（隐藏 trailing 同步/扫描按钮，
-            // 避免未订阅用户误触付费功能）
-            if (locked)
-              const Padding(
-                padding: EdgeInsets.all(10),
-                child: Icon(
-                  LucideIcons.lock,
-                  size: 16,
+            // 右侧状态：扫描中 / 扫描结果 / trailing（同步按钮等）
+            // result 优先于 trailing：扫描完成显示"发现歌曲/失败"文案，
+            // 下次重扫前清空 result 后恢复同步按钮
+            if (loading)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppTheme.textSecondary,
+                ),
+              )
+            else if (result != null)
+              Text(
+                result!,
+                style: const TextStyle(
+                  fontSize: 11,
                   color: AppTheme.textTertiary,
                 ),
               )
             else
-              // 右侧状态：扫描中 / 扫描结果 / trailing（同步按钮等）
-              // result 优先于 trailing：扫描完成显示"发现歌曲/失败"文案，
-              // 下次重扫前清空 result 后恢复同步按钮
-              if (loading)
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppTheme.textSecondary,
-                  ),
-                )
-              else if (result != null)
-                Text(
-                  result!,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppTheme.textTertiary,
-                  ),
-                )
-              else
-                ?trailing,
+              ?trailing,
           ],
         ),
       ),

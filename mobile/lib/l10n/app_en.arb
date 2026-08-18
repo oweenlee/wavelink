@@ -234,19 +234,5 @@
   "sourceWebdavConnected": "Connected — tap to manage",
   "settingsMusicSources": "Music Sources",
   "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS",
-  "createPlaylistHint": "Creates an empty playlist. Add songs via the song menu → \"Add to playlist\"",
-  "paywallTitle": "Unlock all music sources",
-  "paywallSubtitle": "WaveLink local playback is free forever. Subscribe to access NAS, WebDAV and music servers, plus professional audio features.",
-  "paywallFeatureNas": "NAS shares (SMB): access your music library over LAN",
-  "paywallFeatureWebdav": "WebDAV cloud: Nextcloud / Synology / Seafile etc.",
-  "paywallFeatureServer": "Music servers: Subsonic / Navidrome etc.",
-  "paywallFeatureDsp": "Professional audio: AutoEQ / Room Correction / Bit-Perfect",
-  "paywallRestore": "Restore purchase",
-  "paywallPurchaseFailed": "Purchase did not complete. Please try again",
-  "paywallRestoreFailed": "No previous purchase found to restore",
-  "paywallActive": "Subscription active",
-  "paywallSubscribe": "Subscribe · {price}",
-  "paywallStartTrial": "Free trial · {days} days",
-  "paywallTrialAfter": "Then {price} auto-renews after trial",
-  "paywallTerms": "Subscription auto-renews and can be cancelled anytime in your store settings. Payment is charged to your App Store / Google Play account upon confirmation."
+  "createPlaylistHint": "Creates an empty playlist. Add songs via the song menu → \"Add to playlist\""
 }

@@ -234,19 +234,5 @@
   "sourceWebdavConnected": "接続済み — タップして管理",
   "settingsMusicSources": "音楽ソース",
   "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS",
-  "createPlaylistHint": "空のプレイリストを作成します。曲メニュー →「プレイリストに追加」で曲を追加してください",
-  "paywallTitle": "すべての音源をアンロック",
-  "paywallSubtitle": "WaveLink のローカル再生は永久に無料です。サブスクリプションで NAS・WebDAV・音楽サーバーに接続でき、プロ向けオーディオ機能も利用できます。",
-  "paywallFeatureNas": "NAS 共有（SMB）：LAN で音楽ライブラリにアクセス",
-  "paywallFeatureWebdav": "WebDAV クラウド：Nextcloud / Synology / Seafile など",
-  "paywallFeatureServer": "音楽サーバー：Subsonic / Navidrome など",
-  "paywallFeatureDsp": "プロ向けオーディオ：AutoEQ / ルーム補正 / Bit-Perfect",
-  "paywallRestore": "購入を復元",
-  "paywallPurchaseFailed": "購入が完了しませんでした。もう一度お試しください",
-  "paywallRestoreFailed": "復元できる購入が見つかりませんでした",
-  "paywallActive": "サブスクリプション有効",
-  "paywallSubscribe": "登録する · {price}",
-  "paywallStartTrial": "{days}日間無料トライアル",
-  "paywallTrialAfter": "トライアル後は {price} で自動更新",
-  "paywallTerms": "サブスクリプションは自動更新され、ストア設定でいつでも解約できます。支払いは確認時に App Store / Google Play アカウントに請求されます。"
+  "createPlaylistHint": "空のプレイリストを作成します。曲メニュー →「プレイリストに追加」で曲を追加してください"
 }

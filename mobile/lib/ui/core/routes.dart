@@ -13,7 +13,6 @@ import '../features/settings/views/room_correction_page.dart';
 import '../features/library/views/nas_settings_page.dart';
 import '../features/library/views/subsonic_settings_page.dart';
 import '../features/library/views/webdav_settings_page.dart';
-import '../features/subscription/views/paywall_page.dart';
 import 'app.dart';
 
 final goRouter = GoRouter(
@@ -117,10 +116,6 @@ final goRouter = GoRouter(
     GoRoute(
       path: '/room-correction',
       builder: (context, state) => const RoomCorrectionPage(),
-    ),
-    GoRoute(
-      path: '/paywall',
-      builder: (context, state) => const PaywallPage(),
     ),
   ],
 );
