@@ -7,6 +7,7 @@
 members = [
     "core",
     "mobile/rust",
+    "desktop/rust",
 ]
 # core/vendor/oboe 经 core 的 path 依赖自动成为本 workspace 隐式成员（cargo 默认行为，
 # 有意保留）：作为成员才能继承下方 [profile] 优化配置；勿用 exclude 移除。

@@ -3236,6 +3236,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "wavelink_desktop"
+version = "0.1.0"
+dependencies = [
+ "audio-core",
+ "base64",
+ "cpal",
+ "crossbeam-channel",
+ "flutter_rust_bridge",
+ "hex",
+ "md-5 0.10.6",
+ "reqwest",
+ "serde_json",
+ "smb2",
+ "tokio",
+]
+
+[[package]]
 name = "web-sys"
 version = "0.3.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
