@@ -18,6 +18,7 @@ import 'webdav_service.dart';
 import 'strm_resolver.dart';
 import 'cover_cache.dart';
 import 'track_repository.dart';
+import 'playback_state.dart';
 import 'network_source_config.dart';
 
 /// Playback loop behaviour.
@@ -60,6 +61,11 @@ class PlayerController {
   RepeatMode _repeatMode = RepeatMode.off;
   bool _shuffle = false;
   double _volume = 1.0;
+
+  // —— 播放续播恢复（重启后接着播）——
+  String? _loadedTrackId; // 已加载到引擎的 track id；区分 resume 是「已暂停」还是「从未播放（启动恢复）」
+  Duration? _pendingSeek; // 启动恢复时待应用的进度，首次 resume 播放时消费
+  DateTime? _lastPersistAt; // 进度落盘节流时间戳
 
   bool _playing = false;
   Duration _position = Duration.zero;
@@ -181,6 +187,8 @@ class PlayerController {
       }
       _librarySC.add(null);
     }
+    // 恢复上次的播放队列/曲目/进度（曲库已在上面就绪）
+    await _restorePlayback();
   }
 
   void _onEngineEvent(EngineEvent e) {
@@ -189,6 +197,7 @@ class PlayerController {
         if (e.value != null) {
           _position = Duration(milliseconds: (e.value! * 1000).round());
           _positionSC.add(_position);
+          _throttledPersistPosition();
         }
       case 'duration':
         if (e.value != null) {
@@ -324,6 +333,15 @@ class PlayerController {
     await _prefs?.remove('shuffle');
     _repeatMode = RepeatMode.off;
     await _prefs?.remove('repeatMode');
+
+    // 6.5 清空续播状态
+    _loadedTrackId = null;
+    _pendingSeek = null;
+    _lastPersistAt = null;
+    _queueIndex = null;
+    _queue = const [];
+    _queueBase = const [];
+    if (_prefs != null) await PlaybackSnapshot.clear(_prefs!);
 
     // 7. 删除磁盘缓存目录（仅副本，安全）
     await _clearCacheDirs();
@@ -504,7 +522,61 @@ class PlayerController {
       _durationSC.add(_duration);
     }
     await _playTrack(t);
+    _loadedTrackId = t.id;
+    _pendingSeek = null; // 切换/新播均从头，清掉恢复待 seek
     _loadLyrics(t);
+    _persistPlayback();
+  }
+
+  /// 节流落盘播放进度（每 3s 一次），避免高频 position 事件频繁写 SharedPreferences。
+  void _throttledPersistPosition() {
+    final now = DateTime.now();
+    if (_lastPersistAt != null &&
+        now.difference(_lastPersistAt!) < const Duration(seconds: 3)) {
+      return;
+    }
+    _lastPersistAt = now;
+    _persistPlayback();
+  }
+
+  /// 持久化当前播放上下文（曲目/进度/队列），供重启续播恢复。
+  void _persistPlayback() {
+    final t = currentTrack;
+    final p = _prefs;
+    if (t == null || p == null) return;
+    unawaited(
+      PlaybackSnapshot(
+        trackId: t.id,
+        position: _position,
+        queueIds: _queue.map((e) => e.id).toList(),
+      ).save(p),
+    );
+  }
+
+  /// 启动恢复：曲库就绪后，重建上次的队列/当前曲目/进度（暂停态，不自动出声）。
+  Future<void> _restorePlayback() async {
+    final p = _prefs;
+    if (p == null) return;
+    final snap = PlaybackSnapshot.fromPrefs(p);
+    final restored = restorePlayback(snap, _library);
+    if (restored == null) {
+      // 有快照但曲库已无该曲（被删）→ 清理残留；无快照则什么都不做
+      if (snap != null) unawaited(PlaybackSnapshot.clear(p));
+      return;
+    }
+    _queueBase = restored.queue;
+    _queue = restored.queue;
+    _queueIndex = restored.index;
+    _position = restored.position;
+    _pendingSeek = restored.pendingSeek;
+    // 广播，让 UI 立即显示当前曲目与进度（暂停态，不自动出声）
+    _indexSC.add(_queueIndex);
+    _positionSC.add(_position);
+    if (_duration == Duration.zero &&
+        restored.queue[restored.index].durationHint != null) {
+      _duration = restored.queue[restored.index].durationHint!;
+      _durationSC.add(_duration);
+    }
   }
 
   void _setPlaying(bool v) {
@@ -780,7 +852,18 @@ class PlayerController {
       _playing = false;
       _playingSC.add(false);
     } else {
-      await _engine?.resume();
+      final t = currentTrack;
+      if (t == null) return;
+      if (_loadedTrackId != t.id) {
+        // 引擎尚未加载该曲（如启动恢复后首次播放）→ 加载并 seek 到恢复进度
+        await _playTrack(t);
+        if (_pendingSeek != null) {
+          await seek(_pendingSeek!);
+          _pendingSeek = null;
+        }
+      } else {
+        await _engine?.resume();
+      }
       _playing = true;
       _playingSC.add(true);
     }
@@ -829,6 +912,8 @@ class PlayerController {
   Future<void> seek(Duration d) async {
     _position = d;
     _positionSC.add(d);
+    if (_pendingSeek != null) _pendingSeek = d; // 恢复进度随拖动更新
+    _persistPlayback();
     final t = currentTrack;
     if (_streaming && t != null && t.isStrm) {
       // STRM 指针：用真实目标路径重启流（remotePath 是 strm 文本本身，不能用）。
