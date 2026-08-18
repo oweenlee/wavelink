@@ -144,6 +144,14 @@ class NetworkSourceConfig {
     _notify();
   }
 
+  // ── 界面语言 ──
+  static const _kLocale = 'locale';
+  String get localePref => _prefs.getString(_kLocale) ?? 'system';
+  Future<void> setLocalePref(String v) async {
+    await _prefs.setString(_kLocale, v);
+    _notify();
+  }
+
   // ── prefs keys ──
   static const _kShowLocal = 'show_source_local';
   static const _kShowWebdav = 'show_source_webdav';

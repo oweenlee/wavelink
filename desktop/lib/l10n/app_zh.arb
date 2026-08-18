@@ -1,0 +1,121 @@
+{
+  "@@locale": "zh",
+  "search": "搜索",
+  "viewFavorites": "收藏",
+  "viewPlaylists": "播放列表",
+  "viewLibrary": "音乐库",
+  "dlgNewPlaylistTitle": "新建播放列表",
+  "dlgNameHintPlaylist": "播放列表名称",
+  "sidebarLocalMusic": "本地音乐",
+  "sidebarLibrary": "音乐库",
+  "sidebarAddFolder": "添加音乐文件夹",
+  "sidebarFavorites": "收藏",
+  "sidebarNetworkSources": "网络音源",
+  "sidebarPlaylists": "播放列表",
+  "btnNewPlaylist": "新建播放列表",
+  "btnClearAll": "清空全部数据",
+  "clearAllConfirmTitle": "清空全部数据",
+  "clearAllConfirmBody": "将删除应用内的曲库、收藏、播放列表、所有网络音源配置以及磁盘缓存（封面与边下边播副本）。\n\n不会删除你 NAS / 电脑上的真实音乐文件，但此操作不可撤销。",
+  "btnCancel": "取消",
+  "btnOk": "确定",
+  "btnConfirmClear": "确认清空",
+  "tooltipRescan": "重新扫描",
+  "tooltipConfig": "配置",
+  "tooltipSort": "排序",
+  "snackRescanning": "正在重新扫描…",
+  "snackAllCleared": "已全部清空",
+  "refreshedCount": "已刷新：{count} 首",
+  "@refreshedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "refreshFailed": "刷新失败：{e}",
+  "@refreshFailed": {
+    "placeholders": {
+      "e": {
+        "type": "Object"
+      }
+    }
+  },
+  "searchHint": "搜索歌曲、艺人 (⌘F)",
+  "trackCount": "{count} 首",
+  "@trackCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "libraryEmpty": "曲库为空",
+  "addFolderToStart": "添加本地音乐文件夹开始播放",
+  "noMatch": "没有匹配的曲目",
+  "sortDefault": "默认顺序",
+  "sortByTitle": "按标题",
+  "sortByArtist": "按艺人",
+  "favAdd": "收藏",
+  "favRemove": "取消收藏",
+  "playNext": "下一首播放",
+  "addToPlaylist": "加入播放列表",
+  "playNow": "立即播放",
+  "dlgAddToPlaylist": "加入播放列表",
+  "newPlaylist": "新建播放列表",
+  "playlistNameHint": "播放列表名称",
+  "nowPlayingEmpty": "未在播放",
+  "tapToStart": "点击左侧曲目开始播放",
+  "lyrics": "歌词",
+  "noLyrics": "暂无歌词",
+  "engineNotLoaded": "播放引擎未加载（动态库缺失或加载失败）",
+  "connOk": "连接成功",
+  "fillServerUrl": "请填写服务器地址",
+  "fillHostShare": "请填写主机与共享名",
+  "fillServerUser": "请填写服务器地址与用户名",
+  "saved": "已保存",
+  "scanningImporting": "正在扫描并导入…",
+  "scanFailed": "扫描失败：{e}",
+  "@scanFailed": {
+    "placeholders": {
+      "e": {
+        "type": "Object"
+      }
+    }
+  },
+  "unknownShareHint": "不知道共享名？列出服务器上的可用共享",
+  "listShares": "列出共享",
+  "cannotListShares": "无法列出共享：{e}",
+  "@cannotListShares": {
+    "placeholders": {
+      "e": {
+        "type": "Object"
+      }
+    }
+  },
+  "noSharesOnServer": "该服务器没有可用共享",
+  "pickShare": "选择共享",
+  "btnTest": "测试连接",
+  "btnSaveImport": "保存并导入",
+  "fieldServerUrl": "服务器地址 (URL) *",
+  "fieldPath": "根目录 (可选)",
+  "fieldUsernameOpt": "用户名 (可选)",
+  "fieldPassword": "密码",
+  "fieldHost": "主机 / IP *",
+  "fieldPort": "端口 (默认 445)",
+  "fieldShare": "共享名 *",
+  "fieldDomain": "域 (可选)",
+  "fieldUsernameReq": "用户名 *",
+  "language": "语言",
+  "langSystem": "跟随系统",
+  "langZh": "简体中文",
+  "langJa": "日本語",
+  "langDe": "Deutsch",
+  "langEn": "English",
+  "dlgTitleWebdav": "WebDAV 服务器",
+  "dlgTitleNas": "NAS (SMB)",
+  "dlgTitleSubsonic": "Subsonic 音乐服务器",
+  "dlgTitleLocal": "本地",
+  "simulated": "模拟",
+  "settingsTitle": "设置",
+  "settingsData": "数据"
+}

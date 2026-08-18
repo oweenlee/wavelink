@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../core/theme.dart';
+import '../l10n/app_localizations.dart';
 import '../models/track.dart';
 import '../src/rust/api/smb.dart' as frb_smb;
 import '../services/nas_service.dart';
@@ -111,18 +112,20 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
       err = '$e';
     }
     if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
     setState(() {
       _busy = false;
-      _status = err == null ? 'ok:连接成功' : 'err:$err';
+      _status = err == null ? 'ok:${l10n.connOk}' : 'err:$err';
     });
   }
 
   Future<void> _save() async {
     final cfg = NetworkSourceConfig.instance;
+    final l10n = AppLocalizations.of(context);
     switch (widget.source) {
       case TrackSource.webdav:
         if (_v('baseUrl').isEmpty) {
-          setState(() => _status = 'err:请填写服务器地址');
+          setState(() => _status = 'err:${l10n.fillServerUrl}');
           return;
         }
         await cfg.setWebdavConfig(
@@ -133,7 +136,7 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
         );
       case TrackSource.nas:
         if (_v('host').isEmpty || _v('share').isEmpty) {
-          setState(() => _status = 'err:请填写主机与共享名');
+          setState(() => _status = 'err:${l10n.fillHostShare}');
           return;
         }
         await cfg.setNasConfig(
@@ -146,7 +149,7 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
         );
       case TrackSource.subsonic:
         if (_v('baseUrl').isEmpty || _v('username').isEmpty) {
-          setState(() => _status = 'err:请填写服务器地址与用户名');
+          setState(() => _status = 'err:${l10n.fillServerUser}');
           return;
         }
         await cfg.setSubsonicConfig(
@@ -158,15 +161,16 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
         break;
     }
     _saved = true;
-    setState(() => _status = 'ok:已保存');
+    setState(() => _status = 'ok:${l10n.saved}');
   }
 
   Future<void> _saveAndImport() async {
+    final l10n = AppLocalizations.of(context);
     if (!_saved) await _save();
     if (!_saved) return; // 校验未通过
     setState(() {
       _busy = true;
-      _status = 'ok:正在扫描并导入…';
+      _status = 'ok:${l10n.scanningImporting}';
     });
     List<Track>? tracks;
     try {
@@ -184,7 +188,7 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _status = 'err:扫描失败：$e';
+        _status = 'err:${l10n.scanFailed(e)}';
       });
       return;
     }
@@ -194,7 +198,7 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
     if ((tracks?.isEmpty ?? true) && err != null) {
       setState(() {
         _busy = false;
-        _status = 'err:扫描失败：$err';
+        _status = 'err:${l10n.scanFailed(err)}';
       });
       return;
     }
@@ -204,19 +208,20 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
 
   /// NAS：列出服务器可用共享，供用户直接点选填入（避免盲填共享名导致扫不到）。
   Widget _sharesBrowser() {
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
           Expanded(
             child: Text(
-              '不知道共享名？列出服务器上的可用共享',
+              l10n.unknownShareHint,
               style: const TextStyle(color: kOnSurfaceVariant, fontSize: 12),
             ),
           ),
           TextButton(
             onPressed: _busy ? null : _browseShares,
-            child: const Text('列出共享', style: TextStyle(fontSize: 12)),
+            child: Text(l10n.listShares, style: const TextStyle(fontSize: 12)),
           ),
         ],
       ),
@@ -224,6 +229,7 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
   }
 
   Future<void> _browseShares() async {
+    final l10n = AppLocalizations.of(context);
     setState(() {
       _busy = true;
       _status = null;
@@ -241,22 +247,22 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _status = 'err:无法列出共享：$e';
+        _status = 'err:${l10n.cannotListShares(e)}';
       });
       return;
     }
     if (!mounted) return;
     setState(() => _busy = false);
     if (shares.isEmpty) {
-      setState(() => _status = 'err:该服务器没有可用共享');
+      setState(() => _status = 'err:${l10n.noSharesOnServer}');
       return;
     }
     final picked = await showDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
         backgroundColor: kSurface,
-        title: const Text('选择共享',
-            style: TextStyle(color: kOnSurface, fontSize: 14)),
+        title: Text(l10n.pickShare,
+            style: const TextStyle(color: kOnSurface, fontSize: 14)),
         children: shares
             .map(
               (s) => SimpleDialogOption(
@@ -288,11 +294,12 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final title = switch (widget.source) {
-      TrackSource.webdav => 'WebDAV 服务器',
-      TrackSource.nas => 'NAS (SMB)',
-      TrackSource.subsonic => 'Subsonic 音乐服务器',
-      TrackSource.local => '本地',
+      TrackSource.webdav => l10n.dlgTitleWebdav,
+      TrackSource.nas => l10n.dlgTitleNas,
+      TrackSource.subsonic => l10n.dlgTitleSubsonic,
+      TrackSource.local => l10n.dlgTitleLocal,
     };
     return AlertDialog(
       backgroundColor: kSurface,
@@ -314,11 +321,12 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
       actions: [
         TextButton(
           onPressed: _busy ? null : () => Navigator.pop(context),
-          child: const Text('取消', style: TextStyle(color: kOnSurfaceVariant)),
+          child: Text(l10n.btnCancel,
+              style: const TextStyle(color: kOnSurfaceVariant)),
         ),
         TextButton(
           onPressed: _busy ? null : _test,
-          child: const Text('测试连接', style: TextStyle(color: kOnSurface)),
+          child: Text(l10n.btnTest, style: const TextStyle(color: kOnSurface)),
         ),
         FilledButton(
           style: FilledButton.styleFrom(
@@ -336,32 +344,33 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
                     color: kSurface,
                   ),
                 )
-              : const Text('保存并导入'),
+              : Text(l10n.btnSaveImport),
         ),
       ],
     );
   }
 
   List<Widget> _fields() {
-    final List<(String, String, bool, bool)> defs = switch (widget.source) {
-      TrackSource.webdav => const [
-          ('baseUrl', '服务器地址 (URL) *', false, true),
-          ('path', '根目录 (可选)', false, false),
-          ('username', '用户名 (可选)', false, false),
-          ('password', '密码', true, false),
+    final l10n = AppLocalizations.of(context);
+    final defs = switch (widget.source) {
+      TrackSource.webdav => <(String, String, bool, bool)>[
+          ('baseUrl', l10n.fieldServerUrl, false, true),
+          ('path', l10n.fieldPath, false, false),
+          ('username', l10n.fieldUsernameOpt, false, false),
+          ('password', l10n.fieldPassword, true, false),
         ],
-      TrackSource.nas => const [
-          ('host', '主机 / IP *', false, true),
-          ('port', '端口 (默认 445)', false, false),
-          ('share', '共享名 *', false, true),
-          ('username', '用户名 (可选)', false, false),
-          ('password', '密码', true, false),
-          ('domain', '域 (可选)', false, false),
+      TrackSource.nas => <(String, String, bool, bool)>[
+          ('host', l10n.fieldHost, false, true),
+          ('port', l10n.fieldPort, false, false),
+          ('share', l10n.fieldShare, false, true),
+          ('username', l10n.fieldUsernameOpt, false, false),
+          ('password', l10n.fieldPassword, true, false),
+          ('domain', l10n.fieldDomain, false, false),
         ],
-      TrackSource.subsonic => const [
-          ('baseUrl', '服务器地址 (URL) *', false, true),
-          ('username', '用户名 *', false, true),
-          ('password', '密码', true, false),
+      TrackSource.subsonic => <(String, String, bool, bool)>[
+          ('baseUrl', l10n.fieldServerUrl, false, true),
+          ('username', l10n.fieldUsernameReq, false, true),
+          ('password', l10n.fieldPassword, true, false),
         ],
       TrackSource.local => const <(String, String, bool, bool)>[],
     };

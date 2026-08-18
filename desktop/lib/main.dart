@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'core/theme.dart';
+import 'l10n/app_localizations.dart';
 import 'screens/home.dart';
+import 'services/locale_provider.dart';
 import 'services/network_source_config.dart';
 import 'services/player_providers.dart';
 import 'services/tray_service.dart';
@@ -24,7 +28,7 @@ Future<void> main() async {
   const options = WindowOptions(
     size: Size(920, 660),
     center: true,
-    title: '本地音乐播放器',
+    title: 'WaveLink',
     minimumSize: Size(720, 520),
   );
   await windowManager.waitUntilReadyToShow(options, () async {
@@ -65,16 +69,27 @@ class _NoGlowScrollBehavior extends ScrollBehavior {
       child;
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends ConsumerWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(localeProvider);
+    final deviceLocale = PlatformDispatcher.instance.locale;
+    final locale = LocaleNotifier.resolve(mode, deviceLocale);
     return MaterialApp(
       title: 'WaveLink',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       scrollBehavior: _NoGlowScrollBehavior(),
+      locale: locale,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: LocaleNotifier.supported,
       home: const HomeScreen(),
     );
   }

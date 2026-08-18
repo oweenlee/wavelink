@@ -31,6 +31,10 @@ dependencies:
   flutter:
     sdk: flutter
 
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+
   # —— 与 mobile 保持一致的通用基础设施 ——
   shared_preferences: ^2.3.0    # 本地 KV 持久化（版本对齐 mobile）
   flutter_riverpod: 3.4.2        # 状态管理（与 mobile 统一框架）
@@ -68,6 +72,9 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+  # 官方国际化方案：gen-l10n 从 lib/l10n 下的 .arb 生成 AppLocalizations
+  # （与 mobile 完全一致：l10n.yaml + AppLocalizations.of(context)）。
+  generate: true
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

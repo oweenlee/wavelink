@@ -47,3 +47,10 @@ app.*.map.json
 # WorkBuddy agent state (local working memory / agent internals, not project source)
 .workbuddy/
 .agents/
+
+# 生成的本地化代码（flutter gen-l10n 由 .arb 生成，勿提交）
+lib/l10n/app_localizations.dart
+lib/l10n/app_localizations_en.dart
+lib/l10n/app_localizations_zh.dart
+lib/l10n/app_localizations_ja.dart
+lib/l10n/app_localizations_de.dart

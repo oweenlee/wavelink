@@ -9,9 +9,11 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:path/path.dart' as p;
 
 import '../core/theme.dart';
+import '../l10n/app_localizations.dart';
 import '../models/track.dart';
 import '../screens/network_dialogs.dart';
 import '../services/cover.dart';
+import '../services/locale_provider.dart';
 import '../services/lyrics.dart';
 import '../services/network_source_config.dart';
 import '../services/player_controller.dart';
@@ -109,12 +111,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   String get _viewTitle {
-    if (_query.isNotEmpty) return '搜索';
-    if (_viewMode == 'favorites') return '收藏';
+    final l10n = AppLocalizations.of(context);
+    if (_query.isNotEmpty) return l10n.search;
+    if (_viewMode == 'favorites') return l10n.viewFavorites;
     if (_viewMode.startsWith('pl:')) {
       final id = _viewMode.substring(3);
       return player.playlists.where((p) => p.id == id).firstOrNull?.name ??
-          '播放列表';
+          l10n.viewPlaylists;
     }
     if (_viewMode.startsWith('src:')) {
       final src = _viewMode.substring(4);
@@ -122,10 +125,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         'webdav' => 'WebDAV',
         'nas' => 'NAS',
         'subsonic' => 'Subsonic',
-        _ => '音乐库',
+        _ => l10n.viewLibrary,
       };
     }
-    return '音乐库';
+    return l10n.viewLibrary;
   }
 
   void _selectView(String mode) => setState(() => _viewMode = mode);
@@ -251,7 +254,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _createPlaylist() async {
-    final name = await _askName(context, '新建播放列表', '播放列表名称');
+    final l10n = AppLocalizations.of(context);
+    final name = await _askName(
+        context, l10n.dlgNewPlaylistTitle, l10n.dlgNameHintPlaylist);
     if (name != null && name.trim().isNotEmpty) {
       await player.createPlaylist(name.trim());
     }
@@ -259,6 +264,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<String?> _askName(
       BuildContext context, String title, String hint) async {
+    final l10n = AppLocalizations.of(context);
     final ctrl = TextEditingController();
     return showDialog<String>(
       context: context,
@@ -284,11 +290,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消', style: TextStyle(color: _onSurfaceVariant)),
+            child:
+                Text(l10n.btnCancel, style: const TextStyle(color: _onSurfaceVariant)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text),
-            child: const Text('确定', style: TextStyle(color: _onSurface)),
+            child: Text(l10n.btnOk, style: const TextStyle(color: _onSurface)),
           ),
         ],
       ),
@@ -319,6 +326,7 @@ class _Sidebar extends ConsumerWidget {
     ref.watch(libraryProvider);
     ref.watch(networkConfigProvider);
     ref.watch(nasStateProvider);
+    final l10n = AppLocalizations.of(context);
     return Container(
       width: 220,
       decoration: const BoxDecoration(
@@ -329,9 +337,9 @@ class _Sidebar extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(20, 22, 20, 14),
-            child: Text('本地音乐',
+            child: Text(l10n.sidebarLocalMusic,
                 style: TextStyle(
                     color: _onSurface,
                     fontSize: 17,
@@ -340,28 +348,28 @@ class _Sidebar extends ConsumerWidget {
           ),
           _NavItem(
             icon: LucideIcons.music,
-            label: '音乐库',
+            label: l10n.sidebarLibrary,
             active: viewMode == 'all',
             onTap: () => onSelect('all'),
           ),
           _NavItem(
             icon: LucideIcons.folderInput,
-            label: '添加音乐文件夹',
+            label: l10n.sidebarAddFolder,
             active: false,
             onTap: onAddFolder,
           ),
           _NavItem(
             icon: LucideIcons.heart,
-            label: '收藏',
+            label: l10n.sidebarFavorites,
             trailing: player.favoriteIds.isEmpty
                 ? null
                 : '${player.favoriteIds.length}',
             active: viewMode == 'favorites',
             onTap: () => onSelect('favorites'),
           ),
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(20, 18, 20, 6),
-            child: Text('网络音源',
+            child: Text(l10n.sidebarNetworkSources,
                 style: TextStyle(color: _onSurfaceVariant, fontSize: 12)),
           ),
           _NavItem(
@@ -385,9 +393,9 @@ class _Sidebar extends ConsumerWidget {
             active: viewMode == 'src:subsonic',
             onTap: () => onSelect('src:subsonic'),
           ),
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(20, 18, 20, 6),
-            child: Text('播放列表',
+            child: Text(l10n.sidebarPlaylists,
                 style: TextStyle(color: _onSurfaceVariant, fontSize: 12)),
           ),
           // 播放列表数量少，内联渲染即可（shrinkWrap）；整栏已在
@@ -414,7 +422,7 @@ class _Sidebar extends ConsumerWidget {
               child: OutlinedButton.icon(
                 onPressed: onCreate,
                 icon: const Icon(LucideIcons.plus, size: 16),
-                label: const Text('新建播放列表'),
+                label: Text(l10n.btnNewPlaylist),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _onSurfaceVariant,
                   side: const BorderSide(color: _border),
@@ -429,9 +437,9 @@ class _Sidebar extends ConsumerWidget {
             child: SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () => _confirmClearAll(context, player),
-                icon: const Icon(LucideIcons.trash2, size: 16),
-                label: const Text('清空全部数据'),
+                onPressed: () => _openSettings(context, player),
+                icon: const Icon(LucideIcons.settings, size: 16),
+                label: Text(l10n.settingsTitle),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _onSurfaceVariant,
                   side: const BorderSide(color: _border),
@@ -448,21 +456,22 @@ class _Sidebar extends ConsumerWidget {
   }
 
   void _confirmClearAll(BuildContext context, PlayerController player) {
+    final l10n = AppLocalizations.of(context);
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surface,
-        title: const Text('清空全部数据', style: TextStyle(color: _onSurface)),
-        content: const Text(
-          '将删除应用内的曲库、收藏、播放列表、所有网络音源配置以及磁盘缓存'
-          '（封面与边下边播副本）。\n\n'
-          '不会删除你 NAS / 电脑上的真实音乐文件，但此操作不可撤销。',
-          style: TextStyle(color: _onSurfaceVariant),
+        title: Text(l10n.clearAllConfirmTitle,
+            style: const TextStyle(color: _onSurface)),
+        content: Text(
+          l10n.clearAllConfirmBody,
+          style: const TextStyle(color: _onSurfaceVariant),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消', style: TextStyle(color: _onSurfaceVariant)),
+            child: Text(l10n.btnCancel,
+                style: const TextStyle(color: _onSurfaceVariant)),
           ),
           TextButton(
             onPressed: () async {
@@ -470,11 +479,71 @@ class _Sidebar extends ConsumerWidget {
               await player.clearAllData();
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已全部清空')),
+                  SnackBar(content: Text(l10n.snackAllCleared)),
                 );
               }
             },
-            child: const Text('确认清空', style: TextStyle(color: _onSurface)),
+            child: Text(l10n.btnConfirmClear,
+                style: const TextStyle(color: _onSurface)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 设置弹窗：语言（与 mobile 设置页对齐）+ 数据管理（清空所有数据）。
+  /// 「清空所有」复用 _confirmClearAll 的二次确认，避免破坏性操作一步直达。
+  void _openSettings(BuildContext context, PlayerController player) {
+    final l10n = AppLocalizations.of(context);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _surface,
+        title: Text(l10n.settingsTitle,
+            style: const TextStyle(color: _onSurface)),
+        content: SizedBox(
+          width: 360,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 语言段控（跟随系统 / 简中 / 英文）
+                _LanguageSwitcher(l10n: l10n),
+                const SizedBox(height: 6),
+                // 数据管理分组
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 6),
+                  child: Text(l10n.settingsData,
+                      style: const TextStyle(
+                          color: _onSurfaceVariant, fontSize: 12)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _confirmClearAll(context, player),
+                      icon: const Icon(LucideIcons.trash2, size: 16),
+                      label: Text(l10n.btnClearAll),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _onSurfaceVariant,
+                        side: const BorderSide(color: _border),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(l10n.btnOk,
+                style: const TextStyle(color: _onSurfaceVariant)),
           ),
         ],
       ),
@@ -491,6 +560,7 @@ class _Sidebar extends ConsumerWidget {
   /// 侧边栏网络音源项的操作按钮：已配置显示「刷新」+「配置」，
   /// 未配置仅显示「配置」引导入口。按钮设为紧凑约束以缩小两个图标的间距。
   List<Widget> _sourceActionButtons(BuildContext context, TrackSource source) {
+    final l10n = AppLocalizations.of(context);
     final configured = switch (source) {
       TrackSource.webdav => WebdavService.isConfigured,
       TrackSource.nas => NetworkSourceConfig.instance.nasHost != null,
@@ -502,7 +572,7 @@ class _Sidebar extends ConsumerWidget {
         IconButton(
           icon: const Icon(LucideIcons.refreshCw, size: 15),
           color: AppTheme.textTertiary,
-          tooltip: '重新扫描',
+          tooltip: l10n.tooltipRescan,
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
           splashRadius: 16,
@@ -511,7 +581,7 @@ class _Sidebar extends ConsumerWidget {
       IconButton(
         icon: const Icon(LucideIcons.settings, size: 15),
         color: AppTheme.textTertiary,
-        tooltip: '配置',
+        tooltip: l10n.tooltipConfig,
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
         splashRadius: 16,
@@ -527,8 +597,9 @@ class _Sidebar extends ConsumerWidget {
     PlayerController player,
     TrackSource source,
   ) async {
+    final l10n = AppLocalizations.of(context);
     ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('正在重新扫描…')));
+        .showSnackBar(SnackBar(content: Text(l10n.snackRescanning)));
     try {
       final tracks = switch (source) {
         TrackSource.webdav => await player.importWebdav(),
@@ -538,15 +609,79 @@ class _Sidebar extends ConsumerWidget {
       };
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已刷新：${tracks.length} 首')),
+          SnackBar(content: Text(l10n.refreshedCount(tracks.length))),
         );
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('刷新失败：$e')));
+            .showSnackBar(SnackBar(content: Text(l10n.refreshFailed(e))));
       }
     }
+  }
+}
+
+/// 语言切换（与 mobile 设置页对齐）：跟随系统 / 简中 / 英文。
+/// 段控选择后写入 localeProvider，由 main.dart 的 MaterialApp.locale 生效。
+class _LanguageSwitcher extends ConsumerWidget {
+  final AppLocalizations l10n;
+  const _LanguageSwitcher({required this.l10n});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(localeProvider);
+    const modes = ['system', 'zh', 'ja', 'de', 'en'];
+    String labelFor(String m) => switch (m) {
+          'system' => l10n.langSystem,
+          'zh' => l10n.langZh,
+          'ja' => l10n.langJa,
+          'de' => l10n.langDe,
+          'en' => l10n.langEn,
+          _ => l10n.langSystem,
+        };
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6, left: 2),
+            child: Text(l10n.language,
+                style: const TextStyle(color: _onSurfaceVariant, fontSize: 12)),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: _surface2,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _border),
+            ),
+            child: DropdownButton<String>(
+              value: mode,
+              isExpanded: true,
+              icon: const Icon(LucideIcons.chevronDown,
+                  size: 16, color: _onSurfaceVariant),
+              underline: const SizedBox.shrink(),
+              borderRadius: BorderRadius.circular(8),
+              items: modes
+                  .map(
+                    (key) => DropdownMenuItem<String>(
+                      value: key,
+                      child: Text(
+                        labelFor(key),
+                        style: const TextStyle(color: _onSurface, fontSize: 13),
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) {
+                if (v != null) ref.read(localeProvider.notifier).setMode(v);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -640,6 +775,7 @@ class _LibraryView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // 订阅当前曲目变化，刷新「正在播放」高亮
     ref.watch(currentIndexProvider);
+    final l10n = AppLocalizations.of(context);
     final currentId = player.currentTrack?.id;
     return Column(
       children: [
@@ -657,7 +793,7 @@ class _LibraryView extends ConsumerWidget {
                   ),
                   child: Row(
                     children: [
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.only(left: 12),
                         child: Icon(LucideIcons.search,
                             size: 18, color: AppTheme.textTertiary),
@@ -668,11 +804,11 @@ class _LibraryView extends ConsumerWidget {
                           controller: searchCtrl,
                           onChanged: onQuery,
                           style: const TextStyle(color: _onSurface, fontSize: 13.5),
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             border: InputBorder.none,
-                            hintText: '搜索歌曲、艺人 (⌘F)',
-                            hintStyle: TextStyle(color: _onSurfaceVariant),
-                            contentPadding: EdgeInsets.only(bottom: 2),
+                            hintText: l10n.searchHint,
+                            hintStyle: const TextStyle(color: _onSurfaceVariant),
+                            contentPadding: const EdgeInsets.only(bottom: 2),
                           ),
                         ),
                       ),
@@ -704,7 +840,7 @@ class _LibraryView extends ConsumerWidget {
                       fontSize: 15,
                       fontWeight: FontWeight.w600)),
               const SizedBox(width: 8),
-              Text('${tracks.length} 首',
+              Text(l10n.trackCount(tracks.length),
                   style: const TextStyle(
                       color: _onSurfaceVariant, fontSize: 12)),
             ],
@@ -723,18 +859,18 @@ class _LibraryView extends ConsumerWidget {
                         const Icon(LucideIcons.folderOpen,
                             size: 46, color: AppTheme.textTertiary),
                         const SizedBox(height: 16),
-                        const Text('曲库为空',
-                            style: TextStyle(
+                        Text(l10n.libraryEmpty,
+                            style: const TextStyle(
                                 color: _onSurface, fontSize: 16)),
                         const SizedBox(height: 6),
-                        const Text('添加本地音乐文件夹开始播放',
-                            style: TextStyle(
+                        Text(l10n.addFolderToStart,
+                            style: const TextStyle(
                                 color: _onSurfaceVariant, fontSize: 13)),
                         const SizedBox(height: 18),
                         OutlinedButton.icon(
                           onPressed: onAddFolder,
                           icon: const Icon(LucideIcons.plus, size: 16),
-                          label: const Text('添加音乐文件夹'),
+                          label: Text(l10n.sidebarAddFolder),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: _onSurface,
                             side: const BorderSide(color: _border),
@@ -746,9 +882,9 @@ class _LibraryView extends ConsumerWidget {
                     ),
                   );
                 }
-                return const Center(
-                  child: Text('没有匹配的曲目',
-                      style: TextStyle(color: _onSurfaceVariant)),
+                return Center(
+                  child: Text(l10n.noMatch,
+                      style: const TextStyle(color: _onSurfaceVariant)),
                 );
               }
               return ListView.builder(
@@ -780,16 +916,17 @@ class _SortMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return PopupMenuButton<int>(
       color: _surface,
       icon: const Icon(LucideIcons.arrowDownUp,
           size: 18, color: AppTheme.textTertiary),
-      tooltip: '排序',
+      tooltip: l10n.tooltipSort,
       onSelected: onSort,
       itemBuilder: (c) => [
-        const PopupMenuItem(value: 0, child: _SortItem('默认顺序')),
-        const PopupMenuItem(value: 1, child: _SortItem('按标题')),
-        const PopupMenuItem(value: 2, child: _SortItem('按艺人')),
+        PopupMenuItem(value: 0, child: _SortItem(l10n.sortDefault)),
+        PopupMenuItem(value: 1, child: _SortItem(l10n.sortByTitle)),
+        PopupMenuItem(value: 2, child: _SortItem(l10n.sortByArtist)),
       ],
     );
   }
@@ -821,13 +958,14 @@ class _TrackRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
+    final l10n = AppLocalizations.of(context);
     final badge = track.isNetwork
         ? track.source.short
         : (track.filePath != null
             ? p.extension(track.filePath!)
                 .toUpperCase()
                 .replaceFirst('.', '')
-            : '模拟');
+            : l10n.simulated);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -902,23 +1040,23 @@ class _TrackRow extends StatelessWidget {
                   PopupMenuItem(
                     value: 'fav',
                     child: Text(
-                        player.isFavorite(track) ? '取消收藏' : '收藏',
+                        player.isFavorite(track) ? l10n.favRemove : l10n.favAdd,
                         style: const TextStyle(color: _onSurface, fontSize: 13)),
                   ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'next',
-                    child: Text('下一首播放',
-                        style: TextStyle(color: _onSurface, fontSize: 13)),
+                    child: Text(l10n.playNext,
+                        style: const TextStyle(color: _onSurface, fontSize: 13)),
                   ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'add',
-                    child: Text('加入播放列表',
-                        style: TextStyle(color: _onSurface, fontSize: 13)),
+                    child: Text(l10n.addToPlaylist,
+                        style: const TextStyle(color: _onSurface, fontSize: 13)),
                   ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'play',
-                    child: Text('立即播放',
-                        style: TextStyle(color: _onSurface, fontSize: 13)),
+                    child: Text(l10n.playNow,
+                        style: const TextStyle(color: _onSurface, fontSize: 13)),
                   ),
                 ],
                 onSelected: (v) {
@@ -943,12 +1081,13 @@ class _TrackRow extends StatelessWidget {
   }
 
   void _openAddMenu(BuildContext context, Track track) {
+    final l10n = AppLocalizations.of(context);
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surface,
-        title: const Text('加入播放列表',
-            style: TextStyle(color: _onSurface)),
+        title: Text(l10n.dlgAddToPlaylist,
+            style: const TextStyle(color: _onSurface)),
         content: SizedBox(
           width: 300,
           child: Consumer(
@@ -963,7 +1102,7 @@ class _TrackRow extends StatelessWidget {
                     (pl) => ListTile(
                       title: Text(pl.name,
                           style: const TextStyle(color: _onSurface)),
-                      subtitle: Text('${pl.trackIds.length} 首',
+                      subtitle: Text(l10n.trackCount(pl.trackIds.length),
                           style:
                               const TextStyle(color: _onSurfaceVariant)),
                       onTap: () {
@@ -975,8 +1114,8 @@ class _TrackRow extends StatelessWidget {
                   ListTile(
                     leading: const Icon(LucideIcons.plus,
                         color: AppTheme.textTertiary),
-                    title: const Text('新建播放列表',
-                        style: TextStyle(color: _onSurface)),
+                    title: Text(l10n.newPlaylist,
+                        style: const TextStyle(color: _onSurface)),
                     onTap: () async {
                       Navigator.pop(ctx);
                       final name = await _askNewPlaylist(context, track);
@@ -997,19 +1136,20 @@ class _TrackRow extends StatelessWidget {
   }
 
   Future<String?> _askNewPlaylist(BuildContext context, Track track) async {
+    final l10n = AppLocalizations.of(context);
     final ctrl = TextEditingController();
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surface,
-        title: const Text('新建播放列表',
-            style: TextStyle(color: _onSurface)),
+        title: Text(l10n.dlgNewPlaylistTitle,
+            style: const TextStyle(color: _onSurface)),
         content: TextField(
           controller: ctrl,
           autofocus: true,
           style: const TextStyle(color: _onSurface),
           decoration: InputDecoration(
-            hintText: '播放列表名称',
+            hintText: l10n.playlistNameHint,
             hintStyle: const TextStyle(color: _onSurfaceVariant),
             enabledBorder: const OutlineInputBorder(
                 borderSide: BorderSide(color: _border)),
@@ -1021,12 +1161,12 @@ class _TrackRow extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消',
-                style: TextStyle(color: _onSurfaceVariant)),
+            child: Text(l10n.btnCancel,
+                style: const TextStyle(color: _onSurfaceVariant)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text),
-            child: const Text('确定', style: TextStyle(color: _onSurface)),
+            child: Text(l10n.btnOk, style: const TextStyle(color: _onSurface)),
           ),
         ],
       ),
@@ -1061,6 +1201,7 @@ class _NowPlaying extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(currentIndexProvider);
+    final l10n = AppLocalizations.of(context);
     final track = player.currentTrack;
     return Container(
       width: 340,
@@ -1083,7 +1224,7 @@ class _NowPlaying extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 22),
-            Text(track?.title ?? '未在播放',
+            Text(track?.title ?? l10n.nowPlayingEmpty,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -1091,13 +1232,13 @@ class _NowPlaying extends ConsumerWidget {
                     fontSize: 19,
                     fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
-            Text(track?.artist ?? '点击左侧曲目开始播放',
+            Text(track?.artist ?? l10n.tapToStart,
                 style: const TextStyle(
                     color: _onSurfaceVariant, fontSize: 14)),
             const SizedBox(height: 20),
             _Progress(player: player),
             const SizedBox(height: 18),
-            const Text('歌词',
+            Text(l10n.lyrics,
                 style:
                     TextStyle(color: _onSurfaceVariant, fontSize: 13)),
             const SizedBox(height: 8),
@@ -1173,10 +1314,12 @@ class _Lyrics extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final lines = ref.watch(lyricsProvider).value ?? const <LyricLine>[];
     if (lines.isEmpty) {
-      return const Center(
-        child: Text('暂无歌词', style: TextStyle(color: _onSurfaceVariant)),
+      return Center(
+        child: Text(l10n.noLyrics,
+            style: const TextStyle(color: _onSurfaceVariant)),
       );
     }
     final pos = ref.watch(positionProvider).value ?? Duration.zero;
@@ -1218,6 +1361,7 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
   @override
   Widget build(BuildContext context) {
     final player = widget.player;
+    final l10n = AppLocalizations.of(context);
     // 订阅模式/曲目变化，刷新 shuffle、循环、迷你封面等
     ref.watch(modeProvider);
     ref.watch(currentIndexProvider);
@@ -1284,7 +1428,7 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(t?.title ?? '未在播放',
+                              Text(t?.title ?? l10n.nowPlayingEmpty,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
@@ -1354,8 +1498,7 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
                       Padding(
                         padding: const EdgeInsets.only(right: 10),
                         child: Tooltip(
-                          message: player.engineInitError ??
-                              '播放引擎未加载（动态库缺失或加载失败）',
+                          message: player.engineInitError ?? l10n.engineNotLoaded,
                           child: const Icon(LucideIcons.alertCircle,
                               color: AppTheme.textTertiary, size: 18),
                         ),
