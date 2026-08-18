@@ -101,6 +101,57 @@ class Track {
         TrackSource.subsonic => 'Subsonic',
       };
 
+  /// SQLite 持久化映射：Duration 存毫秒、bool 存 0/1、enum 存 name。
+  /// 与 [TrackRepository] 的 tracks 表列一一对应。
+  Map<String, Object?> toMap() => {
+        'id': id,
+        'title': title,
+        'artist': artist,
+        'album': album,
+        'filePath': filePath,
+        'lyricsPath': lyricsPath,
+        'fallbackDurationMs': fallbackDuration.inMilliseconds,
+        'source': source.name,
+        'remotePath': remotePath,
+        'streamUrl': streamUrl,
+        'coverUrl': coverUrl,
+        'durationHintMs': durationHint?.inMilliseconds,
+        'durationEstimated': durationEstimated ? 1 : 0,
+        'fileSize': fileSize,
+        'strmPath': strmPath,
+        'strmFromWebdav': strmFromWebdav ? 1 : 0,
+        'targetUri': targetUri,
+        'targetKind': targetKind,
+      };
+
+  /// 从 SQLite 行构造 [Track]，缺省值兜底保持与模型默认值一致。
+  factory Track.fromMap(Map<String, Object?> m) => Track(
+        id: m['id'] as String,
+        title: m['title'] as String,
+        artist: m['artist'] as String,
+        album: m['album'] as String?,
+        filePath: m['filePath'] as String?,
+        lyricsPath: m['lyricsPath'] as String?,
+        fallbackDuration:
+            Duration(milliseconds: (m['fallbackDurationMs'] as int?) ?? 210000),
+        source: TrackSource.values.firstWhere(
+          (e) => e.name == (m['source'] as String? ?? 'local'),
+          orElse: () => TrackSource.local,
+        ),
+        remotePath: m['remotePath'] as String?,
+        streamUrl: m['streamUrl'] as String?,
+        coverUrl: m['coverUrl'] as String?,
+        durationHint: m['durationHintMs'] == null
+            ? null
+            : Duration(milliseconds: m['durationHintMs'] as int),
+        durationEstimated: (m['durationEstimated'] as int? ?? 0) == 1,
+        fileSize: m['fileSize'] as int?,
+        strmPath: m['strmPath'] as String?,
+        strmFromWebdav: (m['strmFromWebdav'] as int? ?? 0) == 1,
+        targetUri: m['targetUri'] as String?,
+        targetKind: m['targetKind'] as String?,
+      );
+
   Track copyWith({
     String? id,
     String? title,

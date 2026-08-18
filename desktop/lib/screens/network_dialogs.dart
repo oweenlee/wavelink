@@ -13,8 +13,8 @@ import '../services/webdav_service.dart';
 
 /// 网络音源配置对话框（WebDAV / NAS / Subsonic）。
 ///
-/// 单文件单组件，按 [source] 渲染不同字段；提供「测试连接」「保存」
-/// 「扫描并导入到曲库」三步操作。配置经 [NetworkSourceConfig] 持久化，
+/// 单文件单组件，按 [source] 渲染不同字段；提供「测试连接」(可选)
+/// 与「保存并导入到曲库」两步操作。配置经 [NetworkSourceConfig] 持久化，
 /// 不落盘测试（NAS）走临时握手。样式沿用桌面端单色板（无彩色强调）。
 class NetworkConfigDialog extends ConsumerStatefulWidget {
   final TrackSource source;
@@ -161,7 +161,7 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
     setState(() => _status = 'ok:已保存');
   }
 
-  Future<void> _scan() async {
+  Future<void> _saveAndImport() async {
     if (!_saved) await _save();
     if (!_saved) return; // 校验未通过
     setState(() {
@@ -320,17 +320,13 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
           onPressed: _busy ? null : _test,
           child: const Text('测试连接', style: TextStyle(color: kOnSurface)),
         ),
-        TextButton(
-          onPressed: _busy ? null : _save,
-          child: const Text('保存', style: TextStyle(color: kOnSurface)),
-        ),
         FilledButton(
           style: FilledButton.styleFrom(
             backgroundColor: kOnSurface,
             foregroundColor: kSurface,
             disabledBackgroundColor: kSurface2,
           ),
-          onPressed: _busy ? null : _scan,
+          onPressed: _busy ? null : _saveAndImport,
           child: _busy
               ? const SizedBox(
                   width: 14,
@@ -340,7 +336,7 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
                     color: kSurface,
                   ),
                 )
-              : const Text('扫描并导入'),
+              : const Text('保存并导入'),
         ),
       ],
     );

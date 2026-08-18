@@ -12,7 +12,6 @@ import '../models/track.dart';
 import '../screens/network_dialogs.dart';
 import '../services/cover.dart';
 import '../services/lyrics.dart';
-import '../services/nas_service.dart';
 import '../services/network_source_config.dart';
 import '../services/player_controller.dart';
 import '../services/player_providers.dart';
@@ -73,6 +72,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final pl = player.playlists.where((p) => p.id == id).firstOrNull;
       if (pl != null) return player.tracksOfPlaylist(pl);
     }
+    if (_viewMode.startsWith('src:')) {
+      final src = _viewMode.substring(4);
+      return player.library.where((t) => t.source.name == src).toList();
+    }
     return player.library;
   }
 
@@ -101,6 +104,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final id = _viewMode.substring(3);
       return player.playlists.where((p) => p.id == id).firstOrNull?.name ??
           '播放列表';
+    }
+    if (_viewMode.startsWith('src:')) {
+      final src = _viewMode.substring(4);
+      return switch (src) {
+        'webdav' => 'WebDAV',
+        'nas' => 'NAS',
+        'subsonic' => 'Subsonic',
+        _ => '音乐库',
+      };
     }
     return '音乐库';
   }
@@ -295,15 +307,7 @@ class _Sidebar extends ConsumerWidget {
     ref.watch(playlistsProvider);
     ref.watch(libraryProvider);
     ref.watch(networkConfigProvider);
-    final nasState =
-        ref.watch(nasStateProvider).value ?? NasConnectionState.disconnected;
-    final nasTrailing = switch (nasState) {
-      NasConnectionState.connected => '已连接',
-      NasConnectionState.connecting => '连接中',
-      NasConnectionState.error => '错误',
-      NasConnectionState.disconnected =>
-        NetworkSourceConfig.instance.nasHost != null ? '已配置' : null,
-    };
+    ref.watch(nasStateProvider);
     return Container(
       width: 220,
       decoration: const BoxDecoration(
@@ -351,23 +355,23 @@ class _Sidebar extends ConsumerWidget {
           _NavItem(
             icon: LucideIcons.globe,
             label: 'WebDAV',
-            trailing: WebdavService.isConfigured ? '已配置' : null,
-            active: false,
-            onTap: () => _openNetwork(context, TrackSource.webdav),
+            trailingActions: _sourceActionButtons(context, TrackSource.webdav),
+            active: viewMode == 'src:webdav',
+            onTap: () => onSelect('src:webdav'),
           ),
           _NavItem(
             icon: LucideIcons.server,
             label: 'NAS (SMB)',
-            trailing: nasTrailing,
-            active: false,
-            onTap: () => _openNetwork(context, TrackSource.nas),
+            trailingActions: _sourceActionButtons(context, TrackSource.nas),
+            active: viewMode == 'src:nas',
+            onTap: () => onSelect('src:nas'),
           ),
           _NavItem(
             icon: LucideIcons.radio,
             label: 'Subsonic',
-            trailing: SubsonicService.isConfigured ? '已配置' : null,
-            active: false,
-            onTap: () => _openNetwork(context, TrackSource.subsonic),
+            trailingActions: _sourceActionButtons(context, TrackSource.subsonic),
+            active: viewMode == 'src:subsonic',
+            onTap: () => onSelect('src:subsonic'),
           ),
           const Padding(
             padding: EdgeInsets.fromLTRB(20, 18, 20, 6),
@@ -468,6 +472,67 @@ class _Sidebar extends ConsumerWidget {
       builder: (ctx) => NetworkConfigDialog(source: source, player: player),
     );
   }
+
+  /// 侧边栏网络音源项的操作按钮：已配置显示「刷新」+「配置」，
+  /// 未配置仅显示「配置」引导入口。按钮设为紧凑约束以缩小两个图标的间距。
+  List<Widget> _sourceActionButtons(BuildContext context, TrackSource source) {
+    final configured = switch (source) {
+      TrackSource.webdav => WebdavService.isConfigured,
+      TrackSource.nas => NetworkSourceConfig.instance.nasHost != null,
+      TrackSource.subsonic => SubsonicService.isConfigured,
+      TrackSource.local => false,
+    };
+    final buttons = <Widget>[
+      if (configured)
+        IconButton(
+          icon: const Icon(LucideIcons.refreshCw, size: 15),
+          color: AppTheme.textTertiary,
+          tooltip: '重新扫描',
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+          splashRadius: 16,
+          onPressed: () => _refreshSource(context, player, source),
+        ),
+      IconButton(
+        icon: const Icon(LucideIcons.settings, size: 15),
+        color: AppTheme.textTertiary,
+        tooltip: '配置',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+        splashRadius: 16,
+        onPressed: () => _openNetwork(context, source),
+      ),
+    ];
+    return buttons;
+  }
+
+  /// 侧边栏直接重扫某网络音源（不进配置对话框），用 SnackBar 反馈结果。
+  Future<void> _refreshSource(
+    BuildContext context,
+    PlayerController player,
+    TrackSource source,
+  ) async {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('正在重新扫描…')));
+    try {
+      final tracks = switch (source) {
+        TrackSource.webdav => await player.importWebdav(),
+        TrackSource.nas => await player.importNas(),
+        TrackSource.subsonic => await player.importSubsonic(),
+        TrackSource.local => const <Track>[],
+      };
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已刷新：${tracks.length} 首')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('刷新失败：$e')));
+      }
+    }
+  }
 }
 
 class _NavItem extends StatelessWidget {
@@ -476,6 +541,7 @@ class _NavItem extends StatelessWidget {
   final String? trailing;
   final bool active;
   final VoidCallback onTap;
+  final List<Widget>? trailingActions;
 
   const _NavItem({
     required this.icon,
@@ -483,36 +549,46 @@ class _NavItem extends StatelessWidget {
     this.trailing,
     this.active = false,
     required this.onTap,
+    this.trailingActions,
   });
 
   @override
   Widget build(BuildContext context) {
+    final body = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      child: Row(
+        children: [
+          Icon(icon,
+              size: 18, color: active ? _onSurface : AppTheme.textTertiary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: active ? _onSurface : _onSurfaceVariant,
+                    fontSize: 13.5)),
+          ),
+          if (trailing != null)
+            Text(trailing!,
+                style: const TextStyle(
+                    color: _onSurfaceVariant, fontSize: 12)),
+        ],
+      ),
+    );
     return Material(
       color: active ? _surface2 : Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-          child: Row(
-            children: [
-              Icon(icon,
-                  size: 18,
-                  color: active ? _onSurface : AppTheme.textTertiary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(label,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: active ? _onSurface : _onSurfaceVariant,
-                        fontSize: 13.5)),
+      child: Row(
+        children: [
+          Expanded(child: InkWell(onTap: onTap, child: body)),
+          if (trailingActions != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: trailingActions!,
               ),
-              if (trailing != null)
-                Text(trailing!,
-                    style: const TextStyle(
-                        color: _onSurfaceVariant, fontSize: 12)),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
     );
   }

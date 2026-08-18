@@ -17,6 +17,7 @@ import 'subsonic_service.dart';
 import 'webdav_service.dart';
 import 'strm_resolver.dart';
 import 'cover_cache.dart';
+import 'track_repository.dart';
 import 'network_source_config.dart';
 
 /// Playback loop behaviour.
@@ -161,17 +162,24 @@ class PlayerController {
     _engine?.events.listen(_onEngineEvent);
     await _engine?.setVolume(_volume);
 
-    // 恢复持久化的音乐文件夹（重扫，可能在 runApp 之后才完成——
-    // UI 通过 libraryStream 感知曲库就绪）。
+    // 恢复曲库：网络音源靠 SQLite 跨重启存活（直接读回）；本地文件夹保持
+    // 每次启动重扫（与现状一致，且首次运行也会把本地曲库写入 DB）。
+    await TrackRepository.init();
+    try {
+      final dbTracks = await TrackRepository.getAll();
+      if (dbTracks.isNotEmpty) addLibraryFiles(dbTracks);
+    } catch (e) {
+      debugPrint('library restore error: $e');
+    }
     if (_folders.isNotEmpty) {
-      final restored = <Track>[];
       for (final folder in _folders) {
-        restored.addAll(await scanFolder(folder));
+        final scanned = await scanFolder(folder);
+        addLibraryFiles(scanned);
+        await TrackRepository.syncScan(scanned, localPrefix: folder);
+        // 后台提取本地封面（不阻塞 init；完成后广播刷新）
+        extractCoversFor(scanned);
       }
-      addLibraryFiles(restored);
       _librarySC.add(null);
-      // 后台提取本地封面（不阻塞 init；完成后广播刷新）
-      extractCoversFor(restored);
     }
   }
 
@@ -243,8 +251,8 @@ class PlayerController {
     }
   }
 
-  /// 添加一个音乐文件夹：持久化路径 + 扫描并入曲库，并广播 libraryStream。
-  /// 重复添加同一文件夹允许（等价于手动重扫，曲目按 id 去重）。
+  /// 添加一个音乐文件夹：持久化路径 + 扫描并入曲库 + 写库，并广播 libraryStream。
+  /// 重复添加同一文件夹允许（等价于手动重扫，按路径前缀整段替换，覆盖增删）。
   Future<void> addFolder(String path) async {
     if (!_folders.contains(path)) {
       _folders = [..._folders, path];
@@ -252,12 +260,13 @@ class PlayerController {
     }
     final tracks = await scanFolder(path);
     addLibraryFiles(tracks);
+    await TrackRepository.syncScan(tracks, localPrefix: path);
     _librarySC.add(null);
     // 后台提取本地封面（不阻塞 UI）
     extractCoversFor(tracks);
   }
 
-  /// 移除一个音乐文件夹（曲库中该文件夹下的曲目一并移除）。
+  /// 移除一个音乐文件夹（曲库与 DB 中该文件夹下的曲目一并移除）。
   Future<void> removeFolder(String path) async {
     _folders = _folders.where((f) => f != path).toList();
     await _prefs?.setStringList('libraryFolders', _folders);
@@ -268,6 +277,7 @@ class PlayerController {
     if (_queueIndex == null) {
       _queue = _shuffle ? _shuffled(_library, null) : _library;
     }
+    await TrackRepository.deleteLocalUnder(path);
     _librarySC.add(null);
   }
 
@@ -289,6 +299,9 @@ class PlayerController {
 
     // 2. 清空内存曲库与队列
     setLibrary([]);
+
+    // 2.5 清空持久化曲库（SQLite 整表删除；只删索引，不碰真实音乐文件）
+    await TrackRepository.clear();
 
     // 3. 清空本地文件夹配置（决定启动重扫）
     _folders = const [];
@@ -324,7 +337,12 @@ class PlayerController {
   Future<void> _clearCacheDirs() async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
-      for (final name in const ['.covers', '.nas_cache', '.webdav_cache']) {
+      for (final name in const [
+        '.covers',
+        '.nas_cache',
+        '.webdav_cache',
+        '.subsonic_cache',
+      ]) {
         final dir = Directory(p.join(appDir.path, name));
         if (await dir.exists()) {
           await dir.delete(recursive: true);
@@ -415,28 +433,37 @@ class PlayerController {
 
   // ---- Network sources (WebDAV / NAS / Subsonic) -------------------------
 
-  /// 扫描 WebDAV 服务器并导入曲库（按 id 去重）。返回扫描到的曲目。
+  /// 扫描 WebDAV 服务器并导入曲库（按 id 去重 + 写库）。返回扫描到的曲目。
   Future<List<Track>> importWebdav() async {
     final tracks = await WebdavService.scanWebdav();
-    if (tracks.isNotEmpty) addLibraryFiles(tracks);
+    if (tracks.isNotEmpty) {
+      addLibraryFiles(tracks);
+      await TrackRepository.syncScan(tracks, source: TrackSource.webdav);
+    }
     _librarySC.add(null);
     return tracks;
   }
 
-  /// 扫描 NAS (SMB) 共享并导入曲库。返回扫描到的曲目。
+  /// 扫描 NAS (SMB) 共享并导入曲库（按 id 去重 + 写库）。返回扫描到的曲目。
   Future<List<Track>> importNas() async {
     final tracks = await NasService.scan();
-    if (tracks.isNotEmpty) addLibraryFiles(tracks);
+    if (tracks.isNotEmpty) {
+      addLibraryFiles(tracks);
+      await TrackRepository.syncScan(tracks, source: TrackSource.nas);
+    }
     _librarySC.add(null);
     // 后台提取 NAS 封面（远程读头/尾字节解析，完成后增量广播刷新）
     if (tracks.isNotEmpty) extractCoversFor(tracks);
     return tracks;
   }
 
-  /// 扫描 Subsonic 音乐服务器并导入曲库。返回扫描到的曲目。
+  /// 扫描 Subsonic 音乐服务器并导入曲库（按 id 去重 + 写库）。返回扫描到的曲目。
   Future<List<Track>> importSubsonic() async {
     final tracks = await SubsonicService.scanLibrary();
-    if (tracks.isNotEmpty) addLibraryFiles(tracks);
+    if (tracks.isNotEmpty) {
+      addLibraryFiles(tracks);
+      await TrackRepository.syncScan(tracks, source: TrackSource.subsonic);
+    }
     _librarySC.add(null);
     return tracks;
   }
