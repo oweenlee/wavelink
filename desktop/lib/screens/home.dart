@@ -12,8 +12,8 @@ import '../core/theme.dart';
 import '../l10n/app_localizations.dart';
 import '../models/track.dart';
 import '../screens/network_dialogs.dart';
+import 'settings.dart';
 import '../services/cover.dart';
-import '../services/locale_provider.dart';
 import '../services/lyrics.dart';
 import '../services/network_source_config.dart';
 import '../services/player_controller.dart';
@@ -437,7 +437,11 @@ class _Sidebar extends ConsumerWidget {
             child: SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () => _openSettings(context, player),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                      builder: (_) => SettingsScreen(player: player)),
+                ),
                 icon: const Icon(LucideIcons.settings, size: 16),
                 label: Text(l10n.settingsTitle),
                 style: OutlinedButton.styleFrom(
@@ -455,100 +459,7 @@ class _Sidebar extends ConsumerWidget {
     );
   }
 
-  void _confirmClearAll(BuildContext context, PlayerController player) {
-    final l10n = AppLocalizations.of(context);
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _surface,
-        title: Text(l10n.clearAllConfirmTitle,
-            style: const TextStyle(color: _onSurface)),
-        content: Text(
-          l10n.clearAllConfirmBody,
-          style: const TextStyle(color: _onSurfaceVariant),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(l10n.btnCancel,
-                style: const TextStyle(color: _onSurfaceVariant)),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              await player.clearAllData();
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(l10n.snackAllCleared)),
-                );
-              }
-            },
-            child: Text(l10n.btnConfirmClear,
-                style: const TextStyle(color: _onSurface)),
-          ),
-        ],
-      ),
-    );
-  }
 
-  /// 设置弹窗：语言（与 mobile 设置页对齐）+ 数据管理（清空所有数据）。
-  /// 「清空所有」复用 _confirmClearAll 的二次确认，避免破坏性操作一步直达。
-  void _openSettings(BuildContext context, PlayerController player) {
-    final l10n = AppLocalizations.of(context);
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _surface,
-        title: Text(l10n.settingsTitle,
-            style: const TextStyle(color: _onSurface)),
-        content: SizedBox(
-          width: 360,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 语言段控（跟随系统 / 简中 / 英文）
-                _LanguageSwitcher(l10n: l10n),
-                const SizedBox(height: 6),
-                // 数据管理分组
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 6),
-                  child: Text(l10n.settingsData,
-                      style: const TextStyle(
-                          color: _onSurfaceVariant, fontSize: 12)),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () => _confirmClearAll(context, player),
-                      icon: const Icon(LucideIcons.trash2, size: 16),
-                      label: Text(l10n.btnClearAll),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _onSurfaceVariant,
-                        side: const BorderSide(color: _border),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(l10n.btnOk,
-                style: const TextStyle(color: _onSurfaceVariant)),
-          ),
-        ],
-      ),
-    );
-  }
 
   void _openNetwork(BuildContext context, TrackSource source) {
     showDialog<void>(
@@ -618,70 +529,6 @@ class _Sidebar extends ConsumerWidget {
             .showSnackBar(SnackBar(content: Text(l10n.refreshFailed(e))));
       }
     }
-  }
-}
-
-/// 语言切换（与 mobile 设置页对齐）：跟随系统 / 简中 / 英文。
-/// 段控选择后写入 localeProvider，由 main.dart 的 MaterialApp.locale 生效。
-class _LanguageSwitcher extends ConsumerWidget {
-  final AppLocalizations l10n;
-  const _LanguageSwitcher({required this.l10n});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final mode = ref.watch(localeProvider);
-    const modes = ['system', 'zh', 'ja', 'de', 'en'];
-    String labelFor(String m) => switch (m) {
-          'system' => l10n.langSystem,
-          'zh' => l10n.langZh,
-          'ja' => l10n.langJa,
-          'de' => l10n.langDe,
-          'en' => l10n.langEn,
-          _ => l10n.langSystem,
-        };
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6, left: 2),
-            child: Text(l10n.language,
-                style: const TextStyle(color: _onSurfaceVariant, fontSize: 12)),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: _surface2,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _border),
-            ),
-            child: DropdownButton<String>(
-              value: mode,
-              isExpanded: true,
-              icon: const Icon(LucideIcons.chevronDown,
-                  size: 16, color: _onSurfaceVariant),
-              underline: const SizedBox.shrink(),
-              borderRadius: BorderRadius.circular(8),
-              items: modes
-                  .map(
-                    (key) => DropdownMenuItem<String>(
-                      value: key,
-                      child: Text(
-                        labelFor(key),
-                        style: const TextStyle(color: _onSurface, fontSize: 13),
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) {
-                if (v != null) ref.read(localeProvider.notifier).setMode(v);
-              },
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 

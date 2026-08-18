@@ -45,8 +45,11 @@ class EngineEvent {
 enum PlayMode { normal, repeatOne, repeatAll, shuffle }
 
 /// WaveLink 引擎（单例）。负责动态库加载、命令下发与事件轮询。
+///
+/// 构造器为 public 仅用于测试（FakeEngine 子类注入）；生产路径一律走
+/// [load] 单例工厂，不应直接 `Engine()`。
 class Engine {
-  Engine._();
+  Engine();
 
   /// 初始化 RustLib 并加载动态库；找不到或加载失败返回 null
   /// （调用方应据此禁用播放并提示）。
@@ -65,7 +68,7 @@ class Engine {
       debugPrint('[engine] 加载动态库失败: $e');
       return null;
     }
-    return Engine._();
+    return Engine();
   }
 
   /// 候选动态库路径（按平台）。dev 默认指向 cargo 构建产物；打包后指向
@@ -149,6 +152,17 @@ class Engine {
       _startPolling();
     }
     return err;
+  }
+
+  /// 重新初始化引擎（用于独占模式实时切换）：先 deinit 再按默认参数 init。
+  ///
+  /// 保留 app 启动时实际使用的采样率/声道/缓冲（44100 / 2 / 280），
+  /// 仅切换 [exclusiveMode]。代价是切换瞬间停播（符合设置项语义）。
+  Future<String?> reinitialize({bool exclusiveMode = false}) async {
+    await frb.wavelinkDeinit();
+    _inited = false;
+    _pollTimer?.cancel();
+    return initialize(exclusiveMode: exclusiveMode);
   }
 
   void _startPolling() {
@@ -276,6 +290,50 @@ class Engine {
 
   /// 枚举输出设备（Phase 2 设备选择 UI 预留，当前未接线）。
   Future<List<String>> enumerateDevices() => frb.wavelinkEnumerateDevices();
+
+  // ── DSP / 输出配置（桌面补齐，镜像 mobile 的 engine_set_*）──
+
+  /// 实际输出采样率（Hz）
+  Future<int> outputSampleRate() => frb.wavelinkGetOutputSampleRate();
+
+  /// 设置输出采样率（下次播放生效）
+  Future<void> setOutputSampleRate(int rate) =>
+      frb.wavelinkSetOutputSampleRate(rate: rate);
+
+  Future<void> setPeqBand(int index, double freq, double gainDb, double q) =>
+      frb.wavelinkSetPeqBand(index: index, freq: freq, gainDb: gainDb, q: q);
+
+  Future<void> applyPreset(String presetName) =>
+      frb.wavelinkApplyPreset(presetName: presetName);
+
+  Future<void> setStereoWidener(bool enabled, double width) =>
+      frb.wavelinkSetStereoWidener(enabled: enabled, width: width);
+
+  Future<void> setSpeed(double speed) => frb.wavelinkSetSpeed(speed: speed);
+
+  Future<void> setCrossfeed(bool enabled) =>
+      frb.wavelinkSetCrossfeed(enabled: enabled);
+
+  Future<void> setLimiter(bool enabled) => frb.wavelinkSetLimiter(enabled: enabled);
+
+  Future<void> setDither(bool enabled) => frb.wavelinkSetDither(enabled: enabled);
+
+  Future<void> setNoiseShaping(bool enabled) =>
+      frb.wavelinkSetNoiseShaping(enabled: enabled);
+
+  Future<void> setReplaygainGain(double gainDb) =>
+      frb.wavelinkSetReplaygainGain(gainDb: gainDb);
+
+  Future<void> setReplaygainPeak(double? peak) =>
+      frb.wavelinkSetReplaygainPeak(peak: peak);
+
+  Future<void> setAutoEq(String? model) => frb.wavelinkSetAutoEq(model: model);
+
+  /// 加载房间校正 FIR（REW 导出 .wav），下次播放生效
+  Future<void> loadIr(String path) => frb.wavelinkLoadIr(path: path);
+
+  /// 清除 FIR（恢复平坦响应）
+  Future<void> clearIr() => frb.wavelinkClearIr();
 
   void dispose() {
     _pollTimer?.cancel();

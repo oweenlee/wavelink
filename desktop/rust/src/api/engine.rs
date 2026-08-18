@@ -7,6 +7,7 @@
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
+use audio_core::dsp::{PeqBand, PresetName, preset_bands};
 use audio_core::engine::{EngineEvent, EngineHandle, PlayMode};
 use audio_core::stream::StreamHandle;
 use audio_core::EngineConfig;
@@ -306,5 +307,200 @@ pub fn wavelink_enumerate_devices() -> Vec<String> {
     match host.output_devices() {
         Ok(devs) => devs.filter_map(|d| d.name().ok()).collect(),
         Err(_) => Vec::new(),
+    }
+}
+
+// ── DSP 控制（桌面补齐，镜像 mobile `api::engine` 的 engine_set_* 系列）──
+// core 的 EngineHandle DSP 接口是共享的，这里仅做 FRB 薄封装。
+
+/// 获取当前实际输出采样率（Hz）
+#[frb]
+pub fn wavelink_get_output_sample_rate() -> u32 {
+    ENGINE.lock().unwrap().as_ref().map(|(h, _)| h.output_sample_rate()).unwrap_or(0)
+}
+
+/// 设置输出采样率（下次播放生效）
+#[frb]
+pub fn wavelink_set_output_sample_rate(rate: u32) {
+    if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
+        handle.set_output_sample_rate(rate);
+    }
+}
+
+/// 设置参数均衡器某频段（index 从 0 起）
+#[frb]
+pub fn wavelink_set_peq_band(index: u32, freq: f32, gain_db: f32, q: f32) {
+    if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
+        handle.set_peq_band(index as usize, PeqBand { freq, gain_db, q, ..Default::default() });
+    }
+}
+
+/// 应用内置 EQ 预设（flat/rock/pop/dance/classical/soft/full_bass/full_treble/techno/vocals）
+#[frb]
+pub fn wavelink_apply_preset(preset_name: String) {
+    let name = match preset_name.as_str() {
+        "flat" => PresetName::Flat,
+        "rock" => PresetName::Rock,
+        "pop" => PresetName::Pop,
+        "dance" => PresetName::Dance,
+        "classical" => PresetName::Classical,
+        "soft" => PresetName::Soft,
+        "full_bass" | "fullBass" => PresetName::FullBass,
+        "full_treble" | "fullTreble" => PresetName::FullTreble,
+        "techno" => PresetName::Techno,
+        "vocals" => PresetName::Vocals,
+        _ => return,
+    };
+    if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
+        let bands = preset_bands(name);
+        for (i, band) in bands.iter().enumerate() {
+            handle.set_peq_band(i, band.clone());
+        }
+    }
+}
+
+/// 设置立体声展宽（width: 0.0 ~ 1.0）
+#[frb]
+pub fn wavelink_set_stereo_widener(enabled: bool, width: f32) {
+    if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
+        handle.set_stereo_widener(enabled, width);
+    }
+}
+
+/// 设置播放速度（0.25 ~ 4.0），1.0 = 正常
+#[frb]
+pub fn wavelink_set_speed(speed: f32) {
+    if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
+        handle.set_speed(speed.clamp(0.25, 4.0));
+    }
+}
+
+/// 设置跨馈（耳机化立体声）
+#[frb]
+pub fn wavelink_set_crossfeed(enabled: bool) {
+    if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
+        handle.set_crossfeed(enabled);
+    }
+}
+
+/// 启用/禁用真峰值限幅
+#[frb]
+pub fn wavelink_set_limiter(enabled: bool) {
+    if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
+        handle.set_limiter_enabled(enabled);
+    }
+}
+
+/// 启用/禁用抖动（含噪声整形）
+#[frb]
+pub fn wavelink_set_dither(enabled: bool) {
+    if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
+        handle.set_dither_enabled(enabled);
+    }
+}
+
+/// 启用/禁用 ATH 噪声整形
+#[frb]
+pub fn wavelink_set_noise_shaping(enabled: bool) {
+    if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
+        handle.set_noise_shaping(enabled);
+    }
+}
+
+/// 设置 ReplayGain 增益（dB），作为 Pre-amp 在 EQ 前应用
+#[frb]
+pub fn wavelink_set_replaygain_gain(gain_db: f32) {
+    if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
+        handle.set_replaygain_gain_db(gain_db);
+    }
+}
+
+/// 设置 ReplayGain 真峰值上限（防过载；None = 不限制）
+#[frb]
+pub fn wavelink_set_replaygain_peak(peak: Option<f32>) {
+    if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
+        handle.set_replaygain_peak(peak);
+    }
+}
+
+/// 应用/清除 AutoEQ 耳机校正档案（型号名；null/空 = 清除恢复平坦）
+#[frb]
+pub fn wavelink_set_auto_eq(model: Option<String>) {
+    let m = model.filter(|s| !s.is_empty());
+    if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
+        handle.set_auto_eq(m.as_deref());
+    }
+}
+
+/// 加载脉冲响应文件（房间校正 FIR 卷积），下次播放生效
+#[frb]
+pub fn wavelink_load_ir(path: String) {
+    if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
+        handle.load_ir(path);
+    }
+}
+
+/// 清除脉冲响应（恢复平坦响应）
+#[frb]
+pub fn wavelink_clear_ir() {
+    if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
+        handle.clear_ir();
+    }
+}
+
+// ── 单测（桌面补齐的桥函数：未 init 时应安全 no-op / 返回默认值，不 panic）──
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_sample_rate_defaults_to_zero_when_not_initialized() {
+        // 引擎未 init 时 getter 应安全返回 0，而非 panic
+        assert_eq!(wavelink_get_output_sample_rate(), 0);
+    }
+
+    #[test]
+    fn underrun_count_defaults_to_zero_when_not_initialized() {
+        assert_eq!(wavelink_underrun_count(), 0);
+    }
+
+    #[test]
+    fn dsp_setters_are_noop_and_do_not_panic_when_not_initialized() {
+        wavelink_set_peq_band(0, 1000.0, -3.0, 1.0);
+        wavelink_set_stereo_widener(true, 0.5);
+        wavelink_set_speed(1.25);
+        wavelink_set_crossfeed(true);
+        wavelink_set_limiter(true);
+        wavelink_set_dither(true);
+        wavelink_set_noise_shaping(true);
+        wavelink_set_replaygain_gain(-3.0);
+        wavelink_set_replaygain_peak(Some(-1.0));
+        wavelink_set_auto_eq(Some("Sennheiser HD600".to_string()));
+        wavelink_set_output_sample_rate(48000);
+        wavelink_load_ir("/tmp/ir.wav".to_string());
+        wavelink_clear_ir();
+        // 走到这里说明未 init 时各 setter 均为安全 no-op
+    }
+
+    #[test]
+    fn apply_preset_unknown_name_is_noop() {
+        // 未知预设名应安全返回（不 panic、不调用 handle）
+        wavelink_apply_preset("__not_a_preset__".to_string());
+    }
+
+    #[test]
+    fn apply_preset_known_names_map_without_panic() {
+        for name in [
+            "flat", "rock", "pop", "dance", "classical", "soft", "full_bass",
+            "full_treble", "techno", "vocals",
+        ] {
+            wavelink_apply_preset(name.to_string());
+        }
+    }
+
+    #[test]
+    fn enumerate_devices_does_not_panic() {
+        let _ = wavelink_enumerate_devices();
     }
 }

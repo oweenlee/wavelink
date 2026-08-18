@@ -106,3 +106,83 @@ Future<String?> wavelinkPollEvent() =>
 /// 枚举可用输出设备，返回 JSON 字符串（需释放）：["设备名1","设备名2"]
 Future<List<String>> wavelinkEnumerateDevices() =>
     RustLib.instance.api.crateApiEngineWavelinkEnumerateDevices();
+
+/// 获取当前实际输出采样率（Hz）
+Future<int> wavelinkGetOutputSampleRate() =>
+    RustLib.instance.api.crateApiEngineWavelinkGetOutputSampleRate();
+
+/// 设置输出采样率（下次播放生效）
+Future<void> wavelinkSetOutputSampleRate({required int rate}) =>
+    RustLib.instance.api.crateApiEngineWavelinkSetOutputSampleRate(rate: rate);
+
+/// 设置参数均衡器某频段（index 从 0 起）
+Future<void> wavelinkSetPeqBand({
+  required int index,
+  required double freq,
+  required double gainDb,
+  required double q,
+}) => RustLib.instance.api.crateApiEngineWavelinkSetPeqBand(
+  index: index,
+  freq: freq,
+  gainDb: gainDb,
+  q: q,
+);
+
+/// 应用内置 EQ 预设（flat/rock/pop/dance/classical/soft/full_bass/full_treble/techno/vocals）
+Future<void> wavelinkApplyPreset({required String presetName}) => RustLib
+    .instance
+    .api
+    .crateApiEngineWavelinkApplyPreset(presetName: presetName);
+
+/// 设置立体声展宽（width: 0.0 ~ 1.0）
+Future<void> wavelinkSetStereoWidener({
+  required bool enabled,
+  required double width,
+}) => RustLib.instance.api.crateApiEngineWavelinkSetStereoWidener(
+  enabled: enabled,
+  width: width,
+);
+
+/// 设置播放速度（0.25 ~ 4.0），1.0 = 正常
+Future<void> wavelinkSetSpeed({required double speed}) =>
+    RustLib.instance.api.crateApiEngineWavelinkSetSpeed(speed: speed);
+
+/// 设置跨馈（耳机化立体声）
+Future<void> wavelinkSetCrossfeed({required bool enabled}) =>
+    RustLib.instance.api.crateApiEngineWavelinkSetCrossfeed(enabled: enabled);
+
+/// 启用/禁用真峰值限幅
+Future<void> wavelinkSetLimiter({required bool enabled}) =>
+    RustLib.instance.api.crateApiEngineWavelinkSetLimiter(enabled: enabled);
+
+/// 启用/禁用抖动（含噪声整形）
+Future<void> wavelinkSetDither({required bool enabled}) =>
+    RustLib.instance.api.crateApiEngineWavelinkSetDither(enabled: enabled);
+
+/// 启用/禁用 ATH 噪声整形
+Future<void> wavelinkSetNoiseShaping({required bool enabled}) => RustLib
+    .instance
+    .api
+    .crateApiEngineWavelinkSetNoiseShaping(enabled: enabled);
+
+/// 设置 ReplayGain 增益（dB），作为 Pre-amp 在 EQ 前应用
+Future<void> wavelinkSetReplaygainGain({required double gainDb}) => RustLib
+    .instance
+    .api
+    .crateApiEngineWavelinkSetReplaygainGain(gainDb: gainDb);
+
+/// 设置 ReplayGain 真峰值上限（防过载；None = 不限制）
+Future<void> wavelinkSetReplaygainPeak({double? peak}) =>
+    RustLib.instance.api.crateApiEngineWavelinkSetReplaygainPeak(peak: peak);
+
+/// 应用/清除 AutoEQ 耳机校正档案（型号名；null/空 = 清除恢复平坦）
+Future<void> wavelinkSetAutoEq({String? model}) =>
+    RustLib.instance.api.crateApiEngineWavelinkSetAutoEq(model: model);
+
+/// 加载脉冲响应文件（房间校正 FIR 卷积），下次播放生效
+Future<void> wavelinkLoadIr({required String path}) =>
+    RustLib.instance.api.crateApiEngineWavelinkLoadIr(path: path);
+
+/// 清除脉冲响应（恢复平坦响应）
+Future<void> wavelinkClearIr() =>
+    RustLib.instance.api.crateApiEngineWavelinkClearIr();

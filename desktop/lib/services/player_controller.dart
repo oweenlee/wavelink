@@ -36,6 +36,8 @@ enum RepeatMode { off, all, one }
 class PlayerController {
   Engine? _engine;
   String? _engineInitError;
+  /// 暴露引擎实例给设置页等 UI 直接调用 DSP / 输出配置命令。
+  Engine? get engine => _engine;
 
   /// 引擎是否可播放（动态库已加载且初始化成功）。
   bool get engineReady => _engine != null && _engineInitError == null;

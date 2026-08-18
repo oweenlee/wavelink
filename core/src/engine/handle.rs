@@ -354,6 +354,14 @@ impl EngineHandle {
         rx.recv_timeout(Duration::from_secs(1)).unwrap_or(0)
     }
 
+    /// 获取当前实际输出采样率（Hz）。
+    ///
+    /// 桌面状态行展示用：cpal 建流后由后端写入 `output_sample_rate`，
+    /// 反映设备真实协商速率（可能与请求的 `config.sample_rate` 不同）。
+    pub fn output_sample_rate(&self) -> u32 {
+        self.output_sample_rate.load(Ordering::Acquire)
+    }
+
     /// 开始音频输入捕获
     pub fn start_capture(&self, sample_rate: u32, channels: u32) {
         let _ = self.tx.send(EngineCommand::StartCapture {

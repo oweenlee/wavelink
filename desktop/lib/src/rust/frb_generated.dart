@@ -68,7 +68,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0-beta.5';
 
   @override
-  int get rustContentHash => 1876031744;
+  int get rustContentHash => 229761347;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -178,6 +178,10 @@ abstract class RustLibApi extends BaseApi {
     required BigInt maxLen,
   });
 
+  Future<void> crateApiEngineWavelinkApplyPreset({required String presetName});
+
+  Future<void> crateApiEngineWavelinkClearIr();
+
   Future<String> crateApiEngineWavelinkCurrentPath();
 
   Future<void> crateApiEngineWavelinkDeinit();
@@ -185,6 +189,8 @@ abstract class RustLibApi extends BaseApi {
   Future<double> crateApiEngineWavelinkDurationSecs();
 
   Future<List<String>> crateApiEngineWavelinkEnumerateDevices();
+
+  Future<int> crateApiEngineWavelinkGetOutputSampleRate();
 
   Future<String?> crateApiEngineWavelinkInit({
     required int sampleRate,
@@ -198,6 +204,8 @@ abstract class RustLibApi extends BaseApi {
   Future<bool> crateApiEngineWavelinkIsPlaying();
 
   Future<String> crateApiEngineWavelinkLastError();
+
+  Future<void> crateApiEngineWavelinkLoadIr({required String path});
 
   Future<void> crateApiEngineWavelinkNext();
 
@@ -222,9 +230,41 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateApiEngineWavelinkSeek({required double posSecs});
 
+  Future<void> crateApiEngineWavelinkSetAutoEq({String? model});
+
+  Future<void> crateApiEngineWavelinkSetCrossfeed({required bool enabled});
+
+  Future<void> crateApiEngineWavelinkSetDither({required bool enabled});
+
+  Future<void> crateApiEngineWavelinkSetLimiter({required bool enabled});
+
+  Future<void> crateApiEngineWavelinkSetNoiseShaping({required bool enabled});
+
   Future<void> crateApiEngineWavelinkSetOutputDevice({String? name});
 
+  Future<void> crateApiEngineWavelinkSetOutputSampleRate({required int rate});
+
+  Future<void> crateApiEngineWavelinkSetPeqBand({
+    required int index,
+    required double freq,
+    required double gainDb,
+    required double q,
+  });
+
   Future<void> crateApiEngineWavelinkSetPlayMode({required int mode});
+
+  Future<void> crateApiEngineWavelinkSetReplaygainGain({
+    required double gainDb,
+  });
+
+  Future<void> crateApiEngineWavelinkSetReplaygainPeak({double? peak});
+
+  Future<void> crateApiEngineWavelinkSetSpeed({required double speed});
+
+  Future<void> crateApiEngineWavelinkSetStereoWidener({
+    required bool enabled,
+    required double width,
+  });
 
   Future<void> crateApiEngineWavelinkSetVolume({required double vol});
 
@@ -988,6 +1028,64 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<void> crateApiEngineWavelinkApplyPreset({required String presetName}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(presetName, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 22,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEngineWavelinkApplyPresetConstMeta,
+        argValues: [presetName],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEngineWavelinkApplyPresetConstMeta =>
+      const TaskConstMeta(
+        debugName: "wavelink_apply_preset",
+        argNames: ["presetName"],
+      );
+
+  @override
+  Future<void> crateApiEngineWavelinkClearIr() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 23,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEngineWavelinkClearIrConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEngineWavelinkClearIrConstMeta =>
+      const TaskConstMeta(debugName: "wavelink_clear_ir", argNames: []);
+
+  @override
   Future<String> crateApiEngineWavelinkCurrentPath() {
     return handler.executeNormal(
       NormalTask(
@@ -996,7 +1094,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 22,
+            funcId: 24,
             port: port_,
           );
         },
@@ -1023,7 +1121,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 23,
+            funcId: 25,
             port: port_,
           );
         },
@@ -1050,7 +1148,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 24,
+            funcId: 26,
             port: port_,
           );
         },
@@ -1077,7 +1175,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 25,
+            funcId: 27,
             port: port_,
           );
         },
@@ -1095,6 +1193,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiEngineWavelinkEnumerateDevicesConstMeta =>
       const TaskConstMeta(
         debugName: "wavelink_enumerate_devices",
+        argNames: [],
+      );
+
+  @override
+  Future<int> crateApiEngineWavelinkGetOutputSampleRate() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 28,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_u_32,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEngineWavelinkGetOutputSampleRateConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEngineWavelinkGetOutputSampleRateConstMeta =>
+      const TaskConstMeta(
+        debugName: "wavelink_get_output_sample_rate",
         argNames: [],
       );
 
@@ -1120,7 +1248,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 26,
+            funcId: 29,
             port: port_,
           );
         },
@@ -1163,7 +1291,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 27,
+            funcId: 30,
             port: port_,
           );
         },
@@ -1190,7 +1318,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 28,
+            funcId: 31,
             port: port_,
           );
         },
@@ -1209,6 +1337,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "wavelink_last_error", argNames: []);
 
   @override
+  Future<void> crateApiEngineWavelinkLoadIr({required String path}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(path, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 32,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEngineWavelinkLoadIrConstMeta,
+        argValues: [path],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEngineWavelinkLoadIrConstMeta =>
+      const TaskConstMeta(debugName: "wavelink_load_ir", argNames: ["path"]);
+
+  @override
   Future<void> crateApiEngineWavelinkNext() {
     return handler.executeNormal(
       NormalTask(
@@ -1217,7 +1373,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 29,
+            funcId: 33,
             port: port_,
           );
         },
@@ -1244,7 +1400,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 30,
+            funcId: 34,
             port: port_,
           );
         },
@@ -1272,7 +1428,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 31,
+            funcId: 35,
             port: port_,
           );
         },
@@ -1304,7 +1460,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 32,
+            funcId: 36,
             port: port_,
           );
         },
@@ -1335,7 +1491,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 33,
+            funcId: 37,
             port: port_,
           );
         },
@@ -1365,7 +1521,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 34,
+            funcId: 38,
             port: port_,
           );
         },
@@ -1392,7 +1548,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 35,
+            funcId: 39,
             port: port_,
           );
         },
@@ -1419,7 +1575,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 36,
+            funcId: 40,
             port: port_,
           );
         },
@@ -1446,7 +1602,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 37,
+            funcId: 41,
             port: port_,
           );
         },
@@ -1474,7 +1630,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 38,
+            funcId: 42,
             port: port_,
           );
         },
@@ -1493,6 +1649,161 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "wavelink_seek", argNames: ["posSecs"]);
 
   @override
+  Future<void> crateApiEngineWavelinkSetAutoEq({String? model}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_opt_String(model, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 43,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEngineWavelinkSetAutoEqConstMeta,
+        argValues: [model],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEngineWavelinkSetAutoEqConstMeta =>
+      const TaskConstMeta(
+        debugName: "wavelink_set_auto_eq",
+        argNames: ["model"],
+      );
+
+  @override
+  Future<void> crateApiEngineWavelinkSetCrossfeed({required bool enabled}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(enabled, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 44,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEngineWavelinkSetCrossfeedConstMeta,
+        argValues: [enabled],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEngineWavelinkSetCrossfeedConstMeta =>
+      const TaskConstMeta(
+        debugName: "wavelink_set_crossfeed",
+        argNames: ["enabled"],
+      );
+
+  @override
+  Future<void> crateApiEngineWavelinkSetDither({required bool enabled}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(enabled, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 45,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEngineWavelinkSetDitherConstMeta,
+        argValues: [enabled],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEngineWavelinkSetDitherConstMeta =>
+      const TaskConstMeta(
+        debugName: "wavelink_set_dither",
+        argNames: ["enabled"],
+      );
+
+  @override
+  Future<void> crateApiEngineWavelinkSetLimiter({required bool enabled}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(enabled, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 46,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEngineWavelinkSetLimiterConstMeta,
+        argValues: [enabled],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEngineWavelinkSetLimiterConstMeta =>
+      const TaskConstMeta(
+        debugName: "wavelink_set_limiter",
+        argNames: ["enabled"],
+      );
+
+  @override
+  Future<void> crateApiEngineWavelinkSetNoiseShaping({required bool enabled}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(enabled, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 47,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEngineWavelinkSetNoiseShapingConstMeta,
+        argValues: [enabled],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEngineWavelinkSetNoiseShapingConstMeta =>
+      const TaskConstMeta(
+        debugName: "wavelink_set_noise_shaping",
+        argNames: ["enabled"],
+      );
+
+  @override
   Future<void> crateApiEngineWavelinkSetOutputDevice({String? name}) {
     return handler.executeNormal(
       NormalTask(
@@ -1502,7 +1813,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 39,
+            funcId: 48,
             port: port_,
           );
         },
@@ -1524,6 +1835,76 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<void> crateApiEngineWavelinkSetOutputSampleRate({required int rate}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_32(rate, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 49,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEngineWavelinkSetOutputSampleRateConstMeta,
+        argValues: [rate],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEngineWavelinkSetOutputSampleRateConstMeta =>
+      const TaskConstMeta(
+        debugName: "wavelink_set_output_sample_rate",
+        argNames: ["rate"],
+      );
+
+  @override
+  Future<void> crateApiEngineWavelinkSetPeqBand({
+    required int index,
+    required double freq,
+    required double gainDb,
+    required double q,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_32(index, serializer);
+          sse_encode_f_32(freq, serializer);
+          sse_encode_f_32(gainDb, serializer);
+          sse_encode_f_32(q, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 50,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEngineWavelinkSetPeqBandConstMeta,
+        argValues: [index, freq, gainDb, q],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEngineWavelinkSetPeqBandConstMeta =>
+      const TaskConstMeta(
+        debugName: "wavelink_set_peq_band",
+        argNames: ["index", "freq", "gainDb", "q"],
+      );
+
+  @override
   Future<void> crateApiEngineWavelinkSetPlayMode({required int mode}) {
     return handler.executeNormal(
       NormalTask(
@@ -1533,7 +1914,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 40,
+            funcId: 51,
             port: port_,
           );
         },
@@ -1555,6 +1936,133 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<void> crateApiEngineWavelinkSetReplaygainGain({
+    required double gainDb,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_f_32(gainDb, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 52,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEngineWavelinkSetReplaygainGainConstMeta,
+        argValues: [gainDb],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEngineWavelinkSetReplaygainGainConstMeta =>
+      const TaskConstMeta(
+        debugName: "wavelink_set_replaygain_gain",
+        argNames: ["gainDb"],
+      );
+
+  @override
+  Future<void> crateApiEngineWavelinkSetReplaygainPeak({double? peak}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_opt_box_autoadd_f_32(peak, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 53,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEngineWavelinkSetReplaygainPeakConstMeta,
+        argValues: [peak],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEngineWavelinkSetReplaygainPeakConstMeta =>
+      const TaskConstMeta(
+        debugName: "wavelink_set_replaygain_peak",
+        argNames: ["peak"],
+      );
+
+  @override
+  Future<void> crateApiEngineWavelinkSetSpeed({required double speed}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_f_32(speed, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 54,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEngineWavelinkSetSpeedConstMeta,
+        argValues: [speed],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEngineWavelinkSetSpeedConstMeta =>
+      const TaskConstMeta(debugName: "wavelink_set_speed", argNames: ["speed"]);
+
+  @override
+  Future<void> crateApiEngineWavelinkSetStereoWidener({
+    required bool enabled,
+    required double width,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(enabled, serializer);
+          sse_encode_f_32(width, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 55,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiEngineWavelinkSetStereoWidenerConstMeta,
+        argValues: [enabled, width],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEngineWavelinkSetStereoWidenerConstMeta =>
+      const TaskConstMeta(
+        debugName: "wavelink_set_stereo_widener",
+        argNames: ["enabled", "width"],
+      );
+
+  @override
   Future<void> crateApiEngineWavelinkSetVolume({required double vol}) {
     return handler.executeNormal(
       NormalTask(
@@ -1564,7 +2072,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 41,
+            funcId: 56,
             port: port_,
           );
         },
@@ -1591,7 +2099,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 42,
+            funcId: 57,
             port: port_,
           );
         },
@@ -1618,7 +2126,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 43,
+            funcId: 58,
             port: port_,
           );
         },
@@ -1660,6 +2168,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   bool dco_decode_bool(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as bool;
+  }
+
+  @protected
+  double dco_decode_box_autoadd_f_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as double;
   }
 
   @protected
@@ -1726,6 +2240,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  double? dco_decode_opt_box_autoadd_f_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_f_32(raw);
   }
 
   @protected
@@ -1824,6 +2344,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  double sse_decode_box_autoadd_f_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_f_32(deserializer));
+  }
+
+  @protected
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_f_64(deserializer));
@@ -1913,6 +2439,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  double? sse_decode_opt_box_autoadd_f_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_f_32(deserializer));
     } else {
       return null;
     }
@@ -2025,6 +2562,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_f_32(double self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_f_32(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_f_64(self, serializer);
@@ -2116,6 +2659,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_f_32(double? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_f_32(self, serializer);
     }
   }
 
