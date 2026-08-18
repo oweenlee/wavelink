@@ -91,6 +91,81 @@ ThemeData buildAppTheme() {
         height: 1.2,
       ),
     ),
+    // ── 去「Flutter 系统味」：移除 Material 默认 ripple / 组件 elevation 染色 ──
+    // 这些默认值（点击水波纹、表面染色、对话框浮起、弹窗阴影）是 Flutter 味的
+    // 主来源；桌面端统一接管为「无墨水 + 边框分层 + 平铺表面」。
+    splashFactory: NoSplash.splashFactory,
+    splashColor: Colors.transparent,
+    highlightColor: Colors.transparent,
+    hoverColor: AppTheme.highlight, // 桌面 hover 反馈保留为极淡白，避免「死板」
+    appBarTheme: AppBarTheme(
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      surfaceTintColor: Colors.transparent,
+      backgroundColor: AppTheme.s1,
+      foregroundColor: AppTheme.textPrimary,
+    ),
+    cardTheme: CardThemeData(
+      elevation: 0,
+      surfaceTintColor: Colors.transparent,
+      color: AppTheme.s2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: AppTheme.highlightStrong),
+      ),
+    ),
+    dialogTheme: DialogThemeData(
+      elevation: 0,
+      surfaceTintColor: Colors.transparent,
+      backgroundColor: AppTheme.s2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    ),
+    popupMenuTheme: PopupMenuThemeData(
+      elevation: 0,
+      surfaceTintColor: Colors.transparent,
+      color: AppTheme.s2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      textStyle: TextStyle(color: AppTheme.textPrimary, fontSize: 13),
+    ),
+    dividerTheme: DividerThemeData(
+      color: AppTheme.divider,
+      thickness: 1,
+      space: 0,
+    ),
+    listTileTheme: ListTileThemeData(
+      tileColor: Colors.transparent,
+      iconColor: AppTheme.textSecondary,
+      textColor: AppTheme.textPrimary,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    ),
+    sliderTheme: SliderThemeData(
+      trackHeight: 3,
+      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+      // 去掉拖动时的默认交互光环（material 的「按压环」很出戏）
+      overlayShape: const RoundSliderOverlayShape(overlayRadius: 0),
+      overlayColor: AppTheme.highlight,
+    ),
+    scrollbarTheme: ScrollbarThemeData(
+      thickness: WidgetStateProperty.all(8),
+      radius: const Radius.circular(4),
+      thumbColor: WidgetStateProperty.all(AppTheme.textTertiary.withAlpha(120)),
+      trackColor: WidgetStateProperty.all(Colors.transparent),
+      crossAxisMargin: 2,
+      mainAxisMargin: 2,
+    ),
+    textSelectionTheme: TextSelectionThemeData(
+      cursorColor: AppTheme.textPrimary,
+      selectionColor: AppTheme.highlightStrong,
+      selectionHandleColor: AppTheme.textPrimary,
+    ),
+    tooltipTheme: TooltipThemeData(
+      decoration: BoxDecoration(
+        color: AppTheme.s3,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      textStyle: TextStyle(color: AppTheme.textPrimary, fontSize: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    ),
   );
 }
 

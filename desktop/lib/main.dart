@@ -53,6 +53,18 @@ Future<void> main() async {
   await tray.init();
 }
 
+/// 去掉桌面端滚动到边界时的发光/拉伸回弹（Material 默认在移动端有蓝色 overscroll
+/// glow，桌面端若出现会显得很「移动 Flutter」）。统一以无指示器的原生滚动表现。
+class _NoGlowScrollBehavior extends ScrollBehavior {
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) =>
+      child;
+}
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -62,6 +74,7 @@ class MyApp extends StatelessWidget {
       title: 'WaveLink',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
+      scrollBehavior: _NoGlowScrollBehavior(),
       home: const HomeScreen(),
     );
   }
