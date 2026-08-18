@@ -3245,6 +3245,7 @@ dependencies = [
  "crossbeam-channel",
  "flutter_rust_bridge",
  "hex",
+ "lofty",
  "md-5 0.10.6",
  "reqwest",
  "serde_json",

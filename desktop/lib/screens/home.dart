@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
@@ -151,6 +153,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.watch(playlistsProvider);
     ref.watch(libraryProvider);
     final visible = _visible;
+    // 当前强调色：Phase 1 与 mobile 一致使用 accentFallback（橙红）；
+    // Phase 2 封面提取管线落地后将改为「当前曲目封面主色」（封面主色强调）。
+    final accent = AppTheme.accentFallback;
     return Shortcuts(
       shortcuts: const {
         SingleActivator(LogicalKeyboardKey.keyF, meta: true):
@@ -171,40 +176,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           focusNode: _kbFocus,
           autofocus: true,
           onKeyEvent: _onKey,
-          child: Scaffold(
-            body: Column(
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      _Sidebar(
-                        player: player,
-                        viewMode: _viewMode,
-                        onSelect: _selectView,
-                        onCreate: _createPlaylist,
-                        onAddFolder: _addFolder,
-                      ),
-                      Expanded(
-                        child: _LibraryView(
+          child: AccentScope(
+            accent: accent,
+            child: Scaffold(
+              body: Column(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        _Sidebar(
                           player: player,
-                          tracks: visible,
-                          title: _viewTitle,
-                          query: _query,
-                          onQuery: (v) => setState(() => _query = v),
-                          sort: _sort,
-                          onSort: (v) => setState(() => _sort = v),
-                          searchFocus: _searchFocus,
-                          searchCtrl: _searchCtrl,
-                          onPlay: (i) => player.playFrom(visible, i),
+                          viewMode: _viewMode,
+                          onSelect: _selectView,
+                          onCreate: _createPlaylist,
                           onAddFolder: _addFolder,
                         ),
-                      ),
-                      _NowPlaying(player: player),
-                    ],
+                        Expanded(
+                          child: _LibraryView(
+                            player: player,
+                            tracks: visible,
+                            title: _viewTitle,
+                            query: _query,
+                            onQuery: (v) => setState(() => _query = v),
+                            sort: _sort,
+                            onSort: (v) => setState(() => _sort = v),
+                            searchFocus: _searchFocus,
+                            searchCtrl: _searchCtrl,
+                            onPlay: (i) => player.playFrom(visible, i),
+                            onAddFolder: _addFolder,
+                          ),
+                        ),
+                        _NowPlaying(player: player),
+                      ],
+                    ),
                   ),
-                ),
-                _TransportBar(player: player),
-              ],
+                  _TransportBar(player: player),
+                ],
+              ),
             ),
           ),
         ),
@@ -431,7 +439,7 @@ class _NavItem extends StatelessWidget {
             children: [
               Icon(icon,
                   size: 18,
-                  color: active ? _onSurface : _onSurfaceVariant),
+                  color: active ? _onSurface : AppTheme.textTertiary),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(label,
@@ -503,7 +511,7 @@ class _LibraryView extends ConsumerWidget {
                       const Padding(
                         padding: EdgeInsets.only(left: 12),
                         child: Icon(LucideIcons.search,
-                            size: 18, color: _onSurfaceVariant),
+                            size: 18, color: AppTheme.textTertiary),
                       ),
                       Expanded(
                         child: TextField(
@@ -522,7 +530,7 @@ class _LibraryView extends ConsumerWidget {
                       if (query.isNotEmpty)
                         IconButton(
                           icon: const Icon(LucideIcons.x,
-                              size: 16, color: _onSurfaceVariant),
+                              size: 16, color: AppTheme.textTertiary),
                           onPressed: () {
                             searchCtrl.clear();
                             onQuery('');
@@ -564,7 +572,7 @@ class _LibraryView extends ConsumerWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(LucideIcons.folderOpen,
-                            size: 46, color: _onSurfaceVariant),
+                            size: 46, color: AppTheme.textTertiary),
                         const SizedBox(height: 16),
                         const Text('曲库为空',
                             style: TextStyle(
@@ -626,7 +634,7 @@ class _SortMenu extends StatelessWidget {
     return PopupMenuButton<int>(
       color: _surface,
       icon: const Icon(LucideIcons.arrowDownUp,
-          size: 18, color: _onSurfaceVariant),
+          size: 18, color: AppTheme.textTertiary),
       tooltip: '排序',
       onSelected: onSort,
       itemBuilder: (c) => [
@@ -663,6 +671,7 @@ class _TrackRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = AccentScope.of(context);
     final badge = track.isNetwork
         ? track.source.short
         : (track.filePath != null
@@ -671,37 +680,55 @@ class _TrackRow extends StatelessWidget {
                 .replaceFirst('.', '')
             : '模拟');
     return Material(
-      color: selected ? _surface2 : Colors.transparent,
+      color: Colors.transparent,
       child: InkWell(
         onTap: () => onPlay(index),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-          child: Row(
-            children: [
-              CoverArt(seed: track.id, size: 42),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(track.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: selected ? _onSurface : _onSurface,
-                            fontSize: 13.5,
-                            fontWeight: selected
-                                ? FontWeight.w600
-                                : FontWeight.normal)),
-                    const SizedBox(height: 2),
-                    Text(track.artist,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: _onSurfaceVariant, fontSize: 12)),
-                  ],
+        child: Container(
+          decoration: selected
+              ? BoxDecoration(
+                  border: Border(
+                    left: BorderSide(color: accent, width: 2),
+                  ),
+                  color: accent.withValues(alpha: 0.05),
+                )
+              : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            child: Row(
+              children: [
+                CoverArt(seed: track.id, coverUrl: track.coverUrl, size: 42),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(track.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: selected ? accent : _onSurface,
+                              fontSize: 13.5,
+                              fontWeight: selected
+                                  ? FontWeight.w600
+                                  : FontWeight.normal)),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Icon(_sourceIcon(track.source),
+                              size: 12, color: AppTheme.textTertiary),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(track.artist,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: _onSurfaceVariant, fontSize: 12)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -718,7 +745,7 @@ class _TrackRow extends StatelessWidget {
               _FavoriteButton(player: player, track: track),
               PopupMenuButton<String>(
                 icon: const Icon(LucideIcons.moreVertical,
-                    size: 18, color: _onSurfaceVariant),
+                    size: 18, color: AppTheme.textTertiary),
                 color: _surface,
                 itemBuilder: (c) => [
                   PopupMenuItem(
@@ -760,6 +787,7 @@ class _TrackRow extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -795,7 +823,7 @@ class _TrackRow extends StatelessWidget {
                   ),
                   ListTile(
                     leading: const Icon(LucideIcons.plus,
-                        color: _onSurfaceVariant),
+                        color: AppTheme.textTertiary),
                     title: const Text('新建播放列表',
                         style: TextStyle(color: _onSurface)),
                     onTap: () async {
@@ -868,7 +896,7 @@ class _FavoriteButton extends ConsumerWidget {
       icon: Icon(
         fav ? LucideIcons.heart : LucideIcons.heartOff,
         size: 17,
-        color: fav ? _onSurface : _onSurfaceVariant,
+        color: fav ? _onSurface : AppTheme.textTertiary,
       ),
       onPressed: () => player.toggleFavorite(track),
     );
@@ -897,6 +925,7 @@ class _NowPlaying extends ConsumerWidget {
             Center(
               child: CoverArt(
                 seed: track?.id ?? 'empty',
+                coverUrl: track?.coverUrl,
                 size: 220,
                 rounded: true,
               ),
@@ -943,6 +972,7 @@ class _ProgressState extends ConsumerState<_Progress> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = AccentScope.of(context);
     final pos = ref.watch(positionProvider).value ?? Duration.zero;
     final dur = ref.watch(durationProvider).value ?? Duration.zero;
     final max = dur.inMilliseconds.toDouble();
@@ -952,8 +982,8 @@ class _ProgressState extends ConsumerState<_Progress> {
       children: [
         SliderTheme(
           data: SliderThemeData(
-            thumbColor: _onSurface,
-            activeTrackColor: _onSurface,
+            thumbColor: accent,
+            activeTrackColor: accent,
             inactiveTrackColor: _surface2,
             trackHeight: 3,
             thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
@@ -1046,6 +1076,7 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
     final progress =
         _seekDragMs ?? (max > 0 ? pos.inMilliseconds.toDouble().clamp(0.0, max) : 0.0);
     final t = player.currentTrack;
+    final accent = AccentScope.of(context);
     return Container(
       decoration: const BoxDecoration(
         color: _surface,
@@ -1055,8 +1086,8 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
         children: [
           SliderTheme(
             data: SliderThemeData(
-              thumbColor: _onSurface,
-              activeTrackColor: _onSurface,
+              thumbColor: accent,
+              activeTrackColor: accent,
               inactiveTrackColor: _surface2,
               trackHeight: 2.5,
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 0),
@@ -1079,7 +1110,7 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
                 // Left: mini now-playing
                 Row(
                   children: [
-                    CoverArt(seed: t?.id ?? 'empty', size: 40),
+                    CoverArt(seed: t?.id ?? 'empty', coverUrl: t?.coverUrl, size: 40),
                     const SizedBox(width: 12),
                     SizedBox(
                       width: 200,
@@ -1111,7 +1142,7 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
                           LucideIcons.shuffle,
                           color: player.shuffle
                               ? _onSurface
-                              : _onSurfaceVariant,
+                              : AppTheme.textTertiary,
                         ),
                         onPressed: player.toggleShuffle,
                       ),
@@ -1141,7 +1172,7 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
                               ? LucideIcons.repeat1
                               : LucideIcons.repeat,
                           color: player.repeatMode == RepeatMode.off
-                              ? _onSurfaceVariant
+                              ? AppTheme.textTertiary
                               : _onSurface,
                         ),
                         onPressed: player.cycleRepeat,
@@ -1157,11 +1188,11 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
                       message: player.engineInitError ??
                           '播放引擎未加载（动态库缺失或加载失败）',
                       child: const Icon(LucideIcons.alertCircle,
-                          color: _onSurfaceVariant, size: 18),
+                          color: AppTheme.textTertiary, size: 18),
                     ),
                   ),
                 const Icon(LucideIcons.volume2,
-                    color: _onSurfaceVariant, size: 20),
+                    color: AppTheme.textTertiary, size: 20),
                 const SizedBox(width: 8),
                 SizedBox(
                   width: 120,
@@ -1198,21 +1229,68 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
   }
 }
 
-/// Deterministic grayscale cover. Variation comes from the gradient, not hue.
+/// 统一封面组件：优先显示真实封面图（对齐 mobile「内容带色」），
+/// 无封面或加载失败时降级为确定性灰阶渐变占位。
+///
+/// [coverUrl] 同时支持本地缓存文件（[Image.file]，由封面提取管线写入）
+/// 与远程地址（[Image.network]，如 Subsonic 直接提供的封面 URL）。
 class CoverArt extends StatelessWidget {
   final String seed;
+  final String? coverUrl;
   final double size;
   final bool rounded;
-  const CoverArt(
-      {super.key, required this.seed, this.size = 48, this.rounded = true});
+  const CoverArt({
+    super.key,
+    required this.seed,
+    this.coverUrl,
+    this.size = 48,
+    this.rounded = true,
+  });
+
+  bool get _hasCover => coverUrl != null && coverUrl!.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
-    final g = coverGradient(seed);
     final radius = rounded ? size * 0.12 : 0.0;
-    return Container(
+    // 缩略图按展示尺寸解码缩放，避免大封面整图进内存（对齐 mobile cacheWidth 策略）
+    final cacheWidth = (size * 2.5).round().clamp(128, 1024);
+    return SizedBox(
       width: size,
       height: size,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: _hasCover
+            ? _coverImage(radius, cacheWidth)
+            : _gradientFallback(radius),
+      ),
+    );
+  }
+
+  Widget _coverImage(double radius, int cacheWidth) {
+    final url = coverUrl!;
+    final isRemote =
+        url.startsWith('http://') || url.startsWith('https://');
+    // 注意：cacheWidth 仅存在于 Image.file / Image.network 具名构造，
+    // 默认 Image(image:) 构造不接受，故此处分别构造。
+    final fallback = _gradientFallback(radius);
+    return isRemote
+        ? Image.network(
+            url,
+            fit: BoxFit.cover,
+            cacheWidth: cacheWidth,
+            errorBuilder: (_, _, _) => fallback,
+          )
+        : Image.file(
+            File(url),
+            fit: BoxFit.cover,
+            cacheWidth: cacheWidth,
+            errorBuilder: (_, _, _) => fallback,
+          );
+  }
+
+  Widget _gradientFallback(double radius) {
+    final g = coverGradient(seed);
+    return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(radius),
         gradient: LinearGradient(
@@ -1243,6 +1321,15 @@ class CoverArt extends StatelessWidget {
     );
   }
 }
+
+/// 来源图标映射（对齐 mobile SongTile._sourceIcon）：
+/// NAS=硬盘、WebDAV=云、Subsonic=服务器、本地=音乐。
+IconData _sourceIcon(TrackSource source) => switch (source) {
+      TrackSource.nas => LucideIcons.hardDrive,
+      TrackSource.webdav => LucideIcons.cloud,
+      TrackSource.subsonic => LucideIcons.server,
+      TrackSource.local => LucideIcons.music,
+    };
 
 String _fmt(Duration d) {
   final m = d.inMinutes;

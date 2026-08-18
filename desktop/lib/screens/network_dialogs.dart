@@ -404,7 +404,7 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
           Icon(
             ok ? LucideIcons.circleCheck : LucideIcons.circleAlert,
             size: 15,
-            color: ok ? kOnSurface : kOnSurfaceVariant,
+            color: ok ? kOnSurface : AppTheme.textTertiary,
           ),
           const SizedBox(width: 6),
           Expanded(

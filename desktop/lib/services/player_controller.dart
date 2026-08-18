@@ -13,6 +13,7 @@ import 'lyrics.dart';
 import 'nas_service.dart';
 import 'subsonic_service.dart';
 import 'webdav_service.dart';
+import 'cover_cache.dart';
 
 /// Playback loop behaviour.
 enum RepeatMode { off, all, one }
@@ -156,6 +157,8 @@ class PlayerController {
       }
       addLibraryFiles(restored);
       _librarySC.add(null);
+      // 后台提取本地封面（不阻塞 init；完成后广播刷新）
+      extractCoversFor(restored);
     }
   }
 
@@ -221,6 +224,8 @@ class PlayerController {
     final tracks = await scanFolder(path);
     addLibraryFiles(tracks);
     _librarySC.add(null);
+    // 后台提取本地封面（不阻塞 UI）
+    extractCoversFor(tracks);
   }
 
   /// 移除一个音乐文件夹（曲库中该文件夹下的曲目一并移除）。
@@ -240,6 +245,77 @@ class PlayerController {
   /// Resolve a playlist's ids into actual [Track] objects from the library.
   List<Track> tracksOfPlaylist(Playlist pl) =>
       _library.where((t) => pl.trackIds.contains(t.id)).toList();
+
+  // ---- 封面提取（本地文件）----
+
+  /// 为本地曲目批量提取封面（后台、限并发）。已缓存或已带 coverUrl 的跳过。
+  /// 不阻塞调用方；提取成功写回 [Track.coverUrl] 并广播 libraryStream 增量刷新。
+  void extractCoversFor(List<Track> tracks) {
+    final local = tracks
+        .where((t) =>
+            t.source == TrackSource.local &&
+            t.filePath != null &&
+            t.coverUrl == null)
+        .toList();
+    if (local.isEmpty) return;
+    unawaited(_runCoverExtraction(local));
+  }
+
+  Future<void> _runCoverExtraction(List<Track> local) async {
+    final cache = CoverCache.instance;
+    final pending = <Track>[];
+    // 快速路径：已有缓存文件的直接写回，不占并发槽
+    for (final t in local) {
+      final cached = await cache.cachedPathFor(t);
+      if (cached != null) {
+        _applyCoverUrl(t, cached);
+      } else {
+        pending.add(t);
+      }
+    }
+    if (pending.isEmpty) {
+      _librarySC.add(null);
+      return;
+    }
+    var i = 0;
+    Future<void> worker() async {
+      while (i < pending.length) {
+        final t = pending[i++];
+        final path = await cache.extractLocal(t);
+        if (path != null) _applyCoverUrl(t, path);
+      }
+    }
+
+    const concurrency = 4;
+    await Future.wait(List.generate(concurrency, (_) => worker()));
+    _librarySC.add(null);
+  }
+
+  int _coverApplied = 0;
+  void _applyCoverUrl(Track oldT, String path) {
+    if (oldT.coverUrl == path) return;
+    final updated = oldT.copyWith(coverUrl: path);
+    _library = _replaceTrack(_library, oldT, updated);
+    _queueBase = _replaceTrack(_queueBase, oldT, updated);
+    if (_queueIndex != null) {
+      _queue = _replaceTrack(_queue, oldT, updated);
+    }
+    // 增量广播：每 32 首刷新一次，避免海量曲目一次性刷新造成的卡顿
+    _coverApplied++;
+    if (_coverApplied % 32 == 0) _librarySC.add(null);
+  }
+
+  List<Track> _replaceTrack(List<Track> list, Track oldT, Track newT) {
+    var changed = false;
+    final out = list.map((x) {
+      if (x.id == oldT.id) {
+        changed = true;
+        return newT;
+      }
+      return x;
+    }).toList();
+    return changed ? out : list;
+  }
 
   // ---- Network sources (WebDAV / NAS / Subsonic) -------------------------
 

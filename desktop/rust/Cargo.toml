@@ -6,9 +6,11 @@ description = "WaveLink 桌面端 Rust FFI 桥接层（Flutter Rust Bridge，与
 
 [lib]
 name = "wavelink_desktop"
-# cdylib 供 Flutter 经 RustLib.init(externalLibrary:) 加载；
-# staticlib/lib 供 codegen 内部模块与复用（与 mobile 同构）
-crate-type = ["cdylib", "staticlib", "lib"]
+# 仅 cdylib：桌面端经 RustLib.init(externalLibrary:) 动态加载。
+# desktop 走「外部库加载」模型（不静态链接进 app），不需要 staticlib/lib；
+# 多 crate-type 会在 macOS 上生成 deps/libwavelink_desktop.dylib 并被顶层
+# cdylib 以绝对路径依赖，打包后脆弱。改单一 cdylib 产出自包含动态库。
+crate-type = ["cdylib"]
 
 [dependencies]
 # 路径依赖共享音频核心（继承 hi-res / DSP / bit-perfect）
@@ -22,6 +24,8 @@ flutter_rust_bridge = "=2.13.0-beta.5"
 # —— 网络音源（与 mobile 对齐）——
 # SMB 直挂：纯 Rust SMB2/3 客户端（支持 guest 匿名访问）
 smb2 = "0.17"
+# 封面提取兜底（与 core 同版本）：lofty 遍历全部标签图片取内嵌封面
+lofty = "0.24"
 # WebDAV 边下边播：HTTP 客户端（Digest/Basic 认证 + 流式读取）
 # default-features=false + rustls-tls：不依赖系统 OpenSSL，跨 mac/win/linux 编译
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
