@@ -72,13 +72,6 @@ class PlayerController {
   /// stopped 视为预期、不切歌；窗口外仍是正常自然结束语义。
   DateTime? _lastStreamSeekAt;
 
-  /// 流式时长跳变滤波：core 的渐进式时长估算在开播初期（前几秒）建立在
-  /// 喂流瞬时拉速上，与真实时长偏差可达数倍，若直接覆盖进度条 max 会
-  /// 来回跳（闪烁）。相对变化 >20% 的时长事件视为估算噪声忽略，保留
-  /// 扫描期真实 durationHint / 已收敛的估算值；渐进收敛路径每次修正
-  /// 步子小（<20%），不受影响。
-  static const _streamDurationJitterTolerance = 0.2;
-
   final _positionSC = StreamController<Duration>.broadcast();
   final _durationSC = StreamController<Duration>.broadcast();
   final _playingSC = StreamController<bool>.broadcast();
@@ -178,16 +171,6 @@ class PlayerController {
     }
   }
 
-  /// 流式时长跳变判定（纯函数，便于单测）：新时长与当前时长的相对变化
-  /// 超过 [tolerance] 视为估算噪声拒绝。渐进收敛每次修正步子小（<20%），
-  /// 不会被误伤；开局喂流瞬时拉速造成的数倍偏差会被拒掉。
-  @visibleForTesting
-  static bool isStreamDurationJitter(int prevMs, int newMs,
-      {double tolerance = _streamDurationJitterTolerance}) {
-    if (prevMs <= 0) return false;
-    return (newMs - prevMs).abs() / prevMs > tolerance;
-  }
-
   void _onEngineEvent(EngineEvent e) {
     switch (e.type) {
       case 'position':
@@ -197,18 +180,14 @@ class PlayerController {
         }
       case 'duration':
         if (e.value != null) {
-          final newDur = Duration(milliseconds: (e.value! * 1000).round());
-          // 流式估算噪声滤波（见 [isStreamDurationJitter]）
-          final jitter = _streaming &&
-              isStreamDurationJitter(_duration.inMilliseconds,
-                  newDur.inMilliseconds);
-          if (!jitter) {
-            _duration = newDur;
-            _durationSC.add(_duration);
-          } else {
-            debugPrint('[duration] 流式估算跳变 ${e.value}s 忽略 '
-                '(prev=${_duration.inSeconds}s)');
-          }
+          // 无条件接受：core 的流式时长估算已收敛后再发出（首报 5s、未收敛
+          // 每 3s 修正、1% 收敛停发、EOF 回传真实时长），播放中收到的值
+          // 就是要展示的值。曾加过「相对>20% 拒收」滤波，但 NAS 扫描期的
+          // durationHint 是按 1000kbps 粗估（误差可数倍），估算收敛值与
+          // 粗估值偏差大概率超阈值 → 真实时长被永久拒收，进度条/结束时间
+          // 钉死在粗估上（用户实测「结束时间不准确」的根因）。
+          _duration = Duration(milliseconds: (e.value! * 1000).round());
+          _durationSC.add(_duration);
         }
       case 'stopped':
         _playing = false;

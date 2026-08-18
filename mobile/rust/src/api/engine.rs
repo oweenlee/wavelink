@@ -437,7 +437,7 @@ pub(crate) fn engine_start_stream(
     format_hint: Option<String>,
     content_length: Option<u64>,
 ) -> Result<StreamHandle, String> {
-    with_engine(|h| h.play_stream_sync(format_hint, content_length))
+    with_engine(|h| h.play_stream_sync(format_hint, content_length, None))
         .ok_or_else(|| "引擎未初始化".to_string())?
         .map_err(|e| e.to_string())
 }

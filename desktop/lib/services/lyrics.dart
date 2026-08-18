@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:charset/charset.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -54,8 +55,7 @@ Future<List<LyricLine>> loadLyrics(String? lyricsPath) async {
   try {
     final file = File(lyricsPath);
     if (!await file.exists()) return const [];
-    final content = await file.readAsString();
-    return parseLrc(content);
+    return parseLrc(decodeLrcBytes(await file.readAsBytes()));
   } catch (e) {
     debugPrint('loadLyrics error: $e');
     return const [];
@@ -145,10 +145,29 @@ Future<List<LyricLine>> _loadCachedOrFetch(
   }
 }
 
-/// 字节 → 文本：UTF-8 解码并去除 BOM（Windows 记事本保存的 .lrc 带 BOM）。
+/// 字节 → 文本：先严格 UTF-8（合法序列原样通过），失败回退 GBK，
+/// 再失败回落宽松 UTF-8。对齐 mobile `lrc_codec.dart`：中文歌词库
+/// （群晖/Nextcloud 等）大量 `.lrc` 是 GBK/GB2312 编码，宽松 UTF-8 会把
+/// GBK 高位双字节“硬解”成乱码；严格模式拒绝非法 UTF-8 序列以可靠触发回退。
+/// 前置剥离 UTF-8 BOM（Windows 记事本保存的 .lrc 带 BOM）。
 String decodeLrcBytes(Uint8List bytes) {
-  final text = utf8.decode(bytes, allowMalformed: true);
-  return text.startsWith('\uFEFF') ? text.substring(1) : text;
+  var data = bytes;
+  if (data.length >= 3 &&
+      data[0] == 0xEF &&
+      data[1] == 0xBB &&
+      data[2] == 0xBF) {
+    data = data.sublist(3);
+  }
+  try {
+    return utf8.decode(data);
+  } on FormatException {
+    try {
+      return gbk.decode(data);
+    } catch (_) {
+      // 极端兜底：GBK 也失败时回到宽松 UTF-8，保证不抛异常
+      return utf8.decode(data, allowMalformed: true);
+    }
+  }
 }
 
 /// Find the index of the lyric line active at [position].

@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:local_music_player/services/lyrics.dart';
@@ -66,6 +69,27 @@ void main() {
       expect(activeLyricIndex(lines, const Duration(seconds: 10)), 1);
       // 早于第一行 → -1
       //（第一行 t=0，此用例不可构造 -1，改用负值时长验证边界）
+    });
+  });
+
+  group('decodeLrcBytes', () {
+    test('decodes UTF-8 with BOM', () {
+      final bytes = Uint8List.fromList(
+          [0xEF, 0xBB, 0xBF, ...utf8.encode('[00:01.00]中文歌词')]);
+      expect(decodeLrcBytes(bytes), '[00:01.00]中文歌词');
+    });
+
+    test('falls back to GBK for GB2312-encoded lyrics', () {
+      // “中文歌词”的 GBK 字节（高位双字节，非合法 UTF-8）
+      final gbkBytes = [0xD6, 0xD0, 0xCE, 0xC4, 0xB8, 0xE8, 0xB4, 0xCA];
+      final bytes = Uint8List.fromList(
+          [...utf8.encode('[00:01.00]'), ...gbkBytes]);
+      expect(decodeLrcBytes(bytes), '[00:01.00]中文歌词');
+    });
+
+    test('returns malformed-tolerant text as last resort', () {
+      final bytes = Uint8List.fromList([0x12, 0x34, 0xAB]); // 非法 UTF-8 与 GBK
+      expect(decodeLrcBytes(bytes), isA<String>()); // 不抛异常
     });
   });
 }

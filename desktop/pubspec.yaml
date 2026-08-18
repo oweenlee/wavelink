@@ -36,6 +36,7 @@ dependencies:
   flutter_riverpod: 3.4.2        # 状态管理（与 mobile 统一框架）
   lucide_icons_flutter: ^3.1.15 # 统一图标语言（替代 cupertino_icons）
   path_provider: ^2.1.0         # 应用数据/缓存目录
+  charset: ^2.0.1               # 歌词 GBK 解码回退（与 mobile 对齐）
   package_info_plus: ^8.0.0     # app 版本/包名
   http: ^1.2.0                  # Subsonic API / 流 URL 下载（版本对齐 mobile）
   webdav_client: ^1.2.2         # WebDAV PROPFIND 扫描（版本对齐 mobile）

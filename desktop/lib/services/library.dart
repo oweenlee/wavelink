@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../models/track.dart';
+import 'scan_helpers.dart';
 
-List<String> get _audioExtensions =>
-    ['.mp3', '.flac', '.wav', '.m4a', '.aac', '.ogg', '.opus'];
+// 与网络音源共用同一扩展名白名单（scan_helpers.audioExtensions），
+// 保证本地与 NAS/WebDAV 扫到的曲目集合一致（含 hi-res：APE/WV/DSF/DFF/ALAC）。
+List<String> get _audioExtensions => audioExtensions;
 
 /// 递归扫描目录，返回按 艺人→标题 排序的曲目列表（空目录返回空列表）。
 /// 目录不存在 / 不可读 / 为空时返回空列表，由 UI 展示空库提示并引导用户
@@ -59,9 +61,15 @@ Track? _parseTrack(File file) {
     title = (name.substring(0, start) + name.substring(end + 1)).trim();
   }
 
-  // 查找同名 .lrc 歌词文件（同级目录）。
-  final lrcPath = '${p.withoutExtension(file.path)}.lrc';
-  final lyricsPath = File(lrcPath).existsSync() ? lrcPath : null;
+  // 查找同名 .lrc 歌词文件（同级目录，兼容大小写；都存在时优先小写）。
+  String? lyricsPath;
+  for (final ext in const ['.lrc', '.LRC']) {
+    final candidate = '${p.withoutExtension(file.path)}$ext';
+    if (File(candidate).existsSync()) {
+      lyricsPath = candidate;
+      break;
+    }
+  }
 
   return Track(
     id: file.path,

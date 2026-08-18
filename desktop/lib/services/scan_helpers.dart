@@ -17,6 +17,8 @@ const List<String> audioExtensions = [
   '.dsf',
   '.dff',
   '.wv',
+  '.aiff',
+  '.aif',
 ];
 
 /// 从文件名解析 艺人 / 标题。

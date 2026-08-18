@@ -879,6 +879,9 @@ fn run_from_stream(
     let mut consecutive_errors = 0u32;
     // 跟踪最后发送帧的 pts，EOF 冲刷重采样器残余时用
     let mut last_pts = 0.0f64;
+    // 正常播完（后两个 break 分支）与中断（stop_rx / 解码错误）区分：
+    // 只有自然 EOF 才回传真实时长——中断时 last_pts 不代表曲长。
+    let mut reached_eof = false;
 
     loop {
         if stop_rx.try_recv().is_ok() {
@@ -887,12 +890,14 @@ fn run_from_stream(
         let packet = match format.next_packet() {
             Ok(Some(pkt)) => pkt,
             Ok(None) => {
+                reached_eof = true;
                 debug!("流式 EOF");
                 break;
             }
             Err(symphonia::core::errors::Error::IoError(ref e))
                 if e.kind() == std::io::ErrorKind::UnexpectedEof =>
             {
+                reached_eof = true;
                 debug!("流式 EOF");
                 break;
             }
@@ -1006,6 +1011,11 @@ fn run_from_stream(
         &tx,
         &stop_rx,
     );
+    // 精确时长回传：整曲自然播完时 last_pts 即真实总时长（seek 后仍为
+    // 流内绝对时间），供 UI 把结束时间校准到最后一位（渐进估算最多 ±1%）。
+    if reached_eof && last_pts > 0.0 {
+        let _ = event_tx.send(EngineEvent::DurationSecs(last_pts));
+    }
     Ok(())
 }
 

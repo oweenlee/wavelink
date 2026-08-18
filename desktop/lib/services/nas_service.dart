@@ -239,16 +239,27 @@ class NasService {
     return tracks;
   }
 
-  /// 递归扫描单个子目录；列举失败隔离跳过（返回空），不影响其余目录。
+  /// 递归扫描单个子目录；列举失败重试一次后仍失败则隔离跳过（返回空），
+  /// 不影响其余目录。NAS 高并发/连接波动时偶发列举失败，重试可显著减少
+  /// 整目录丢失（用户曲库“感觉少了几百首”的常见来源：某目录一次失败
+  /// 即被静默跳过）。
   static Future<List<Track>> _scanSubtree(String path) async {
-    List<frb_smb.SmbDirEntry> entries;
-    try {
-      entries = await frb_smb.smbListDirectory(path: path);
-    } catch (e) {
-      debugPrint('[NasService] 子目录列举失败(隔离跳过): $path -> $e');
-      return const [];
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final entries = await frb_smb.smbListDirectory(path: path);
+        return await _scanEntries(entries, path);
+      } catch (e) {
+        if (attempt == 0) {
+          debugPrint('[NasService] 子目录列举失败(重试1次): $path -> $e');
+          // 间隔短暂重试：闪过性连接问题（池连接恰被回收等）
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+        } else {
+          debugPrint('[NasService] 子目录列举失败(重试仍失败,隔离跳过): '
+              '$path -> $e');
+        }
+      }
     }
-    return _scanEntries(entries, path);
+    return const [];
   }
 
   static Track? _toTrack(String dirPath, frb_smb.SmbDirEntry entry) {
