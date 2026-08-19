@@ -11,6 +11,7 @@ import '../src/rust/api/smb.dart' as frb_smb;
 import '../src/rust/api/duration.dart' as frb_duration;
 import 'network_source_config.dart';
 import 'scan_helpers.dart';
+import 'stable_hash.dart';
 import 'strm_resolver.dart';
 
 /// NAS 连接状态（侧栏展示 + 播放前保活判定用）。
@@ -301,7 +302,7 @@ class NasService {
     }
 
     return Track(
-      id: 'nas_${smbPath.hashCode}',
+      id: 'nas_${fnv1a(smbPath)}',
       title: title,
       artist: artist == 'Unknown Artist' ? 'Unknown Artist' : artist,
       album: 'NAS Music',
@@ -342,7 +343,7 @@ class NasService {
     }
 
     return Track(
-      id: 'nas_strm_${smbPath.hashCode}',
+      id: 'nas_strm_${fnv1a(smbPath)}',
       title: t,
       artist: a,
       album: 'NAS Music',
@@ -377,7 +378,7 @@ class NasService {
       final cacheDir = Directory('${appDir.path}/.nas_cache');
       if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
       final name = smbPath.split('/').last;
-      return '${cacheDir.path}/${smbPath.hashCode}_$name';
+      return '${cacheDir.path}/${fnv1a(smbPath)}_$name';
     } catch (e) {
       lastError = '$e';
       return null;

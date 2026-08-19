@@ -8,6 +8,7 @@ import '../models/track.dart';
 import '../src/rust/api/cover.dart' as frb_cover;
 import '../src/rust/api/smb.dart' as frb_smb;
 import 'nas_service.dart';
+import 'stable_hash.dart';
 
 /// 本地封面缓存与提取。
 ///
@@ -32,7 +33,7 @@ class CoverCache {
 
   /// 稳定缓存键：filePath 的 FNV-1a 十六进制（跨运行一致）。
   String _keyFor(Track t) =>
-      t.filePath != null ? _fnv1a(t.filePath!) : t.id;
+      t.filePath != null ? fnv1a(t.filePath!) : t.id;
 
   /// 纯路径推导（不检查是否存在）：`<缓存目录>/<键>.jpg`。
   ///
@@ -111,17 +112,4 @@ class CoverCache {
       return null;
     }
   }
-}
-
-/// FNV-1a 64-bit 哈希 → 16 位十六进制字符串（确定性，跨运行稳定）。
-String _fnv1a(String s) {
-  const prime = 0x100000001b3;
-  var hash = 0xcbf29ce484222325;
-  for (final b in s.codeUnits) {
-    hash ^= b;
-    hash *= prime;
-    // 保持 64-bit 无符号等价（Dart int 为 64-bit 有符号，掩码避免溢出语义差异）
-    hash &= 0xFFFFFFFFFFFFFFFF;
-  }
-  return hash.toRadixString(16).padLeft(16, '0');
 }

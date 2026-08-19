@@ -18,6 +18,7 @@ import 'webdav_service.dart';
 import 'strm_resolver.dart';
 import 'cover_cache.dart';
 import 'track_repository.dart';
+import 'cache_cleaner.dart';
 import 'playback_state.dart';
 import 'network_source_config.dart';
 
@@ -209,6 +210,17 @@ class PlayerController {
     }
     // 恢复上次的播放队列/曲目/进度（曲库已在上面就绪）
     await _restorePlayback();
+    // 曲库就绪后清理孤儿缓存（本地文件夹重扫 + 源差集同步均已落库）
+    await _cleanOrphanCaches();
+  }
+
+  /// 曲库差集同步后删除已不存在曲目的缓存文件；失败仅记录，不阻塞流程。
+  Future<void> _cleanOrphanCaches() async {
+    try {
+      await CacheCleaner.cleanOrphans(await TrackRepository.getAll());
+    } catch (e) {
+      debugPrint('cache cleanup skipped: $e');
+    }
   }
 
   void _onEngineEvent(EngineEvent e) {
@@ -495,6 +507,7 @@ class PlayerController {
       }
     }
     _librarySC.add(null);
+    await _cleanOrphanCaches();
     return tracks;
   }
 
@@ -512,6 +525,7 @@ class PlayerController {
     _librarySC.add(null);
     // 后台提取 NAS 封面（远程读头/尾字节解析，完成后增量广播刷新）
     if (tracks.isNotEmpty) extractCoversFor(tracks);
+    await _cleanOrphanCaches();
     return tracks;
   }
 
@@ -527,6 +541,7 @@ class PlayerController {
       }
     }
     _librarySC.add(null);
+    await _cleanOrphanCaches();
     return tracks;
   }
 
@@ -609,8 +624,16 @@ class PlayerController {
       return;
     }
     _queueBase = restored.queue;
-    _queue = restored.queue;
-    _queueIndex = restored.index;
+    // shuffle 开启时同样对恢复队列应用乱序（当前曲目放首位，进度不受影响），
+    // 否则跨重启后 shuffle 状态与队列顺序不一致。
+    if (_shuffle) {
+      final cur = restored.queue[restored.index];
+      _queue = _shuffled(restored.queue, cur);
+      _queueIndex = 0;
+    } else {
+      _queue = restored.queue;
+      _queueIndex = restored.index;
+    }
     _position = restored.position;
     _pendingSeek = restored.pendingSeek;
     // 广播，让 UI 立即显示当前曲目与进度（暂停态，不自动出声）
@@ -871,6 +894,9 @@ class PlayerController {
       _setPlaying(true);
     } else {
       debugPrint('[_playStrmHttp] 播放失败 ($kind): $url -> $err');
+      // 失败时确保播放态复位，避免 UI 停在“正在播放”但实际无声
+      _streaming = false;
+      _setPlaying(false);
     }
   }
 
@@ -1236,7 +1262,10 @@ class PlayerController {
   }
 
   Future<void> dispose() async {
+    // 停引擎、关闭数据库，避免退出时残留播放线程与未关闭的 SQLite 连接
+    await _engine?.stop();
     _engine?.dispose();
+    await TrackRepository.close();
     await _positionSC.close();
     await _durationSC.close();
     await _playingSC.close();

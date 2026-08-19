@@ -1,12 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/track.dart';
 import 'network_source_config.dart';
 import 'scan_helpers.dart';
+import 'stable_hash.dart';
 
 /// Subsonic / Navidrome / Jellyfin / Emby API 客户端（桌面端）。
 ///
@@ -22,6 +24,9 @@ class SubsonicService {
   static String? _baseUrl;
   static String? _username;
   static String? _password;
+
+  /// 最近一次扫描/操作的用户可读错误（供 UI 在扫描结果为空时提示原因）。
+  static String? lastError;
 
   static bool get isConfigured =>
       _baseUrl != null &&
@@ -51,10 +56,14 @@ class SubsonicService {
   }) async {
     try {
       final url = baseUrl.replaceAll(RegExp(r'/+$'), '');
+      // token 认证：t=当前 epoch 秒，s=md5(密码+t)，避免明文密码进 URL
+      final t = '${DateTime.now().millisecondsSinceEpoch ~/ 1000}';
+      final s = md5.convert(utf8.encode('$password$t')).toString();
       final uri = Uri.parse('$url/rest/ping').replace(
         queryParameters: {
           'u': username,
-          'p': password,
+          't': t,
+          's': s,
           'v': '1.16.0',
           'c': 'wavelink',
         },
@@ -89,12 +98,19 @@ class SubsonicService {
 
   static String _url(String path) => '$_baseUrl/rest$path';
 
-  static Map<String, String> _authParams() => {
-        'u': _username!,
-        'p': _password!,
-        'v': '1.16.0',
-        'c': 'wavelink',
-      };
+  /// Subsonic token 认证参数（OpenSubsonic）：`t` 为当前时间戳（epoch 秒），
+  /// `s` 为 `md5(密码 + t)`。避免把明文密码拼进 URL query（会进日志/历史）。
+  static Map<String, String> _authParams() {
+    final t = '${DateTime.now().millisecondsSinceEpoch ~/ 1000}';
+    final s = md5.convert(utf8.encode('$_password$t')).toString();
+    return {
+      'u': _username!,
+      't': t,
+      's': s,
+      'v': '1.16.0',
+      'c': 'wavelink',
+    };
+  }
 
   static Future<http.Response> _get(
     String path, [
@@ -126,41 +142,47 @@ class SubsonicService {
   /// 失败抛异常（交由调用方处理/回显），不静默返回空。
   static Future<List<Track>> scanLibrary() async {
     if (!isConfigured) return [];
+    lastError = null;
 
     final tracks = <Track>[];
-    var offset = 0;
-    const pageSize = 500;
-    while (true) {
-      final albumListResp = await _get('/getAlbumList2', {
-        'type': 'alphabeticalByName',
-        'size': '$pageSize',
-        'offset': '$offset',
-      });
-      final albumListJson = _parse(albumListResp, 'getAlbumList2');
-      final albums =
-          albumListJson['subsonic-response']?['albumList2']?['album'] as List?;
-      if (albums == null || albums.isEmpty) break;
+    try {
+      var offset = 0;
+      const pageSize = 500;
+      while (true) {
+        final albumListResp = await _get('/getAlbumList2', {
+          'type': 'alphabeticalByName',
+          'size': '$pageSize',
+          'offset': '$offset',
+        });
+        final albumListJson = _parse(albumListResp, 'getAlbumList2');
+        final albums = albumListJson['subsonic-response']?['albumList2']?['album']
+            as List?;
+        if (albums == null || albums.isEmpty) break;
 
-      for (final album in albums.cast<Map<String, dynamic>>()) {
-        final albumId = album['id'] as String?;
-        if (albumId == null) continue;
-        final albumName = album['name'] as String?;
-        final albumArtist = album['artist'] as String?;
+        for (final album in albums.cast<Map<String, dynamic>>()) {
+          final albumId = album['id'] as String?;
+          if (albumId == null) continue;
+          final albumName = album['name'] as String?;
+          final albumArtist = album['artist'] as String?;
 
-        final songResponse = await _get('/getAlbum', {'id': albumId});
-        final songJson = _parse(songResponse, 'getAlbum($albumId)');
-        final songs =
-            songJson['subsonic-response']?['album']?['song'] as List?;
-        if (songs == null) continue;
+          final songResponse = await _get('/getAlbum', {'id': albumId});
+          final songJson = _parse(songResponse, 'getAlbum($albumId)');
+          final songs =
+              songJson['subsonic-response']?['album']?['song'] as List?;
+          if (songs == null) continue;
 
-        for (final song in songs.cast<Map<String, dynamic>>()) {
-          final track = _toTrack(song, albumArtist, albumName);
-          if (track != null) tracks.add(track);
+          for (final song in songs.cast<Map<String, dynamic>>()) {
+            final track = _toTrack(song, albumArtist, albumName);
+            if (track != null) tracks.add(track);
+          }
         }
-      }
 
-      if (albums.length < pageSize) break;
-      offset += pageSize;
+        if (albums.length < pageSize) break;
+        offset += pageSize;
+      }
+    } catch (e) {
+      lastError = 'Subsonic 扫描失败：$e';
+      rethrow;
     }
     return tracks;
   }
@@ -184,8 +206,11 @@ class SubsonicService {
     String? streamUrl;
     if (_baseUrl != null) {
       if (coverArt != null) {
-        coverUrl = '$_baseUrl/rest/getCoverArt?id=$coverArt'
-            '&u=$_username&p=$_password&v=1.16.0&c=wavelink';
+        // 用 token 参数拼 query，避免明文密码进 URL
+        final q = _authParams();
+        coverUrl = Uri.parse('$_baseUrl/rest/getCoverArt').replace(
+          queryParameters: {'id': coverArt, ...q},
+        ).toString();
       }
       final q = _authParams();
       final uri = Uri.parse('$_baseUrl/rest/stream').replace(
@@ -227,7 +252,8 @@ class SubsonicService {
       final cacheDir = Directory('${appDir.path}/.subsonic_cache');
       if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
       final ext = _extFromUrl(track.streamUrl!);
-      final localFile = File('${cacheDir.path}/${track.id.hashCode}$ext');
+      final localFile =
+          File('${cacheDir.path}/${fnv1a(track.id)}$ext');
       if (await localFile.exists() && await localFile.length() > 0) {
         return localFile.path;
       }

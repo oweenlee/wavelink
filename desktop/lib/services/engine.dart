@@ -169,7 +169,11 @@ class Engine {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(milliseconds: 40), (_) {
       if (_eventController.isClosed) return;
-      unawaited(_pollOnce());
+      // 捕获异步错误：引擎 deinit（reinitialize/退出）后 wavelinkPollEvent
+      // 可能抛异常，直接 unawaited 会变 unhandled async error。
+      unawaited(_pollOnce().catchError((Object e) {
+        debugPrint('poll error: $e');
+      }));
     });
   }
 

@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/track.dart';
 import '../src/rust/api/smb.dart' as frb_smb;
 import 'nas_service.dart';
+import 'stable_hash.dart';
 import 'webdav_service.dart';
 
 class LyricLine {
@@ -125,7 +126,8 @@ Future<List<LyricLine>> _loadCachedOrFetch(
 ) async {
   try {
     final appDir = await getApplicationDocumentsDirectory();
-    final cacheFile = File('${appDir.path}/.lrc_cache/${key.hashCode}.lrc');
+    final cacheFile =
+        File('${appDir.path}/.lrc_cache/${fnv1a(key)}.lrc');
     if (await cacheFile.exists()) {
       final parsed = parseLrc(await cacheFile.readAsString());
       if (parsed.isNotEmpty) return parsed;

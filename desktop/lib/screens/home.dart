@@ -266,40 +266,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       BuildContext context, String title, String hint) async {
     final l10n = AppLocalizations.of(context);
     final ctrl = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _surface,
-        title: Text(title, style: const TextStyle(color: _onSurface)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          style: const TextStyle(color: _onSurface),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: const TextStyle(color: _onSurfaceVariant),
-            enabledBorder: const OutlineInputBorder(
-              borderSide: BorderSide(color: _border),
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: _surface,
+          title: Text(title, style: const TextStyle(color: _onSurface)),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            style: const TextStyle(color: _onSurface),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: const TextStyle(color: _onSurfaceVariant),
+              enabledBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: _border),
+              ),
+              focusedBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: _onSurfaceVariant),
+              ),
             ),
-            focusedBorder: const OutlineInputBorder(
-              borderSide: BorderSide(color: _onSurfaceVariant),
-            ),
+            onSubmitted: (value) => Navigator.pop(ctx, ctrl.text),
           ),
-          onSubmitted: (value) => Navigator.pop(ctx, ctrl.text),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(l10n.btnCancel,
+                  style: const TextStyle(color: _onSurfaceVariant)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text),
+              child: Text(l10n.btnOk,
+                  style: const TextStyle(color: _onSurface)),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child:
-                Text(l10n.btnCancel, style: const TextStyle(color: _onSurfaceVariant)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text),
-            child: Text(l10n.btnOk, style: const TextStyle(color: _onSurface)),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      ctrl.dispose();
+    }
   }
 }
 
@@ -985,39 +990,44 @@ class _TrackRow extends StatelessWidget {
   Future<String?> _askNewPlaylist(BuildContext context, Track track) async {
     final l10n = AppLocalizations.of(context);
     final ctrl = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _surface,
-        title: Text(l10n.dlgNewPlaylistTitle,
-            style: const TextStyle(color: _onSurface)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          style: const TextStyle(color: _onSurface),
-          decoration: InputDecoration(
-            hintText: l10n.playlistNameHint,
-            hintStyle: const TextStyle(color: _onSurfaceVariant),
-            enabledBorder: const OutlineInputBorder(
-                borderSide: BorderSide(color: _border)),
-            focusedBorder: const OutlineInputBorder(
-                borderSide: BorderSide(color: _onSurfaceVariant)),
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: _surface,
+          title: Text(l10n.dlgNewPlaylistTitle,
+              style: const TextStyle(color: _onSurface)),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            style: const TextStyle(color: _onSurface),
+            decoration: InputDecoration(
+              hintText: l10n.playlistNameHint,
+              hintStyle: const TextStyle(color: _onSurfaceVariant),
+              enabledBorder: const OutlineInputBorder(
+                  borderSide: BorderSide(color: _border)),
+              focusedBorder: const OutlineInputBorder(
+                  borderSide: BorderSide(color: _onSurfaceVariant)),
+            ),
+            onSubmitted: (value) => Navigator.pop(ctx, ctrl.text),
           ),
-          onSubmitted: (value) => Navigator.pop(ctx, ctrl.text),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(l10n.btnCancel,
+                  style: const TextStyle(color: _onSurfaceVariant)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text),
+              child: Text(l10n.btnOk,
+                  style: const TextStyle(color: _onSurface)),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(l10n.btnCancel,
-                style: const TextStyle(color: _onSurfaceVariant)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text),
-            child: Text(l10n.btnOk, style: const TextStyle(color: _onSurface)),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      ctrl.dispose();
+    }
   }
 }
 

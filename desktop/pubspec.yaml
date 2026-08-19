@@ -43,6 +43,7 @@ dependencies:
   charset: ^2.0.1               # 歌词 GBK 解码回退（与 mobile 对齐）
   package_info_plus: ^8.0.0     # app 版本/包名
   http: ^1.2.0                  # Subsonic API / 流 URL 下载（版本对齐 mobile）
+  crypto: ^3.0.0                # Subsonic token 认证（md5(密码+时间戳)）
   webdav_client: ^1.2.2         # WebDAV PROPFIND 扫描（版本对齐 mobile）
 
   # —— 曲库持久化（SQLite，桌面端走 sqflite_common_ffi）——

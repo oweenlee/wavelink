@@ -37,6 +37,7 @@ class TrackRepository {
   }
 
   static Database? _db;
+  static Future<Database>? _dbFuture;
   static bool _initialized = false;
 
   /// 初始化后端：桌面（mac/win/linux）需先启动 FFI；移动端走原生通道。
@@ -51,8 +52,12 @@ class TrackRepository {
     _initialized = true;
   }
 
-  static Future<Database> get _database async {
-    if (_db != null) return _db!;
+  /// 打开数据库。用 future 缓存避免并发调用时双 openDatabase 竞态
+  /// （`_db ??=` 在两个 await 之间仍为 null，会重复建连接）。
+  static Future<Database> get _database =>
+      _dbFuture ??= _openDatabase();
+
+  static Future<Database> _openDatabase() async {
     await init();
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
@@ -88,6 +93,12 @@ class TrackRepository {
     return _db!;
   }
 
+  /// 转义 LIKE 模式里的通配符（% _ \），避免本地文件夹路径含这些字符时误匹配。
+  static String _escapeLike(String s) => s
+      .replaceAll(r'\', r'\\')
+      .replaceAll('%', r'\%')
+      .replaceAll('_', r'\_');
+
   /// 启动恢复：读回全部曲目（网络音源靠此跨重启存活）。
   /// 失败向上抛异常，由调用方（PlayerController.init）兜底为空库并上报——
   /// 本层不再静默吞错（曾因 debugPrint 吞掉导致曲库静默清空且用户无感知）。
@@ -115,8 +126,8 @@ class TrackRepository {
       if (localPrefix != null) {
         await txn.delete(
           'tracks',
-          where: 'source = ? AND filePath LIKE ?',
-          whereArgs: [TrackSource.local.name, '$localPrefix/%'],
+          where: 'source = ? AND filePath LIKE ? ESCAPE ?',
+          whereArgs: [TrackSource.local.name, '${_escapeLike(localPrefix)}/%', r'\'],
         );
       } else if (source != null) {
         final ids = scanned.map((t) => t.id).toList();
@@ -152,8 +163,8 @@ class TrackRepository {
     final db = await _database;
     await db.delete(
       'tracks',
-      where: 'source = ? AND filePath LIKE ?',
-      whereArgs: [TrackSource.local.name, '$prefix/%'],
+      where: 'source = ? AND filePath LIKE ? ESCAPE ?',
+      whereArgs: [TrackSource.local.name, '${_escapeLike(prefix)}/%', r'\'],
     );
   }
 
@@ -167,5 +178,7 @@ class TrackRepository {
   static Future<void> close() async {
     await _db?.close();
     _db = null;
+    _dbFuture = null;
+    _initialized = false;
   }
 }

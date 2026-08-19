@@ -194,7 +194,14 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
     }
     if (!mounted) return;
     // 扫描结果为空但有错误：显式提示，避免「已连接却列表空、无任何报错」。
-    final err = NasService.lastError;
+    // 注意按音源读对应服务的 lastError（曾统一读 NasService.lastError，
+    // webdav/subsonic 出错时永远取不到值）。
+    final err = switch (widget.source) {
+      TrackSource.webdav => WebdavService.lastError,
+      TrackSource.nas => NasService.lastError,
+      TrackSource.subsonic => SubsonicService.lastError,
+      TrackSource.local => null,
+    };
     if ((tracks?.isEmpty ?? true) && err != null) {
       setState(() {
         _busy = false;

@@ -12,6 +12,7 @@ import '../src/rust/api/webdav.dart' as frb_webdav;
 import '../src/rust/api/duration.dart' as frb_duration;
 import 'network_source_config.dart';
 import 'scan_helpers.dart';
+import 'stable_hash.dart';
 import 'strm_resolver.dart';
 
 /// WebDAV 音乐服务器服务（桌面端）。
@@ -255,7 +256,7 @@ class WebdavService {
     }
 
     return Track(
-      id: 'dav_${path.hashCode}',
+      id: 'dav_${fnv1a(path)}',
       title: title,
       artist: artist == 'Unknown Artist' ? _artistPlaceholder : artist,
       album: _albumPlaceholder,
@@ -294,7 +295,7 @@ class WebdavService {
     }
 
     return Track(
-      id: 'dav_strm_${path.hashCode}',
+      id: 'dav_strm_${fnv1a(path)}',
       title: t,
       artist: a,
       album: _albumPlaceholder,
@@ -318,7 +319,7 @@ class WebdavService {
       final cacheDir = Directory('${appDir.path}/.webdav_cache');
       if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
       final name = davPath.split('/').last;
-      return '${cacheDir.path}/${davPath.hashCode}_$name';
+      return '${cacheDir.path}/${fnv1a(davPath)}_$name';
     } catch (e) {
       lastError = '$e';
       return null;
@@ -336,7 +337,7 @@ class WebdavService {
       final cacheDir = Directory('${appDir.path}/.webdav_cache');
       if (!await cacheDir.exists()) return null;
       final name = davPath.split('/').last;
-      final localFile = File('${cacheDir.path}/${davPath.hashCode}_$name');
+      final localFile = File('${cacheDir.path}/${fnv1a(davPath)}_$name');
       if (await localFile.exists() && await localFile.length() > 0) {
         return localFile.path;
       }

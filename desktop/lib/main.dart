@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
-import 'dart:ui' show PlatformDispatcher;
 
 import 'core/theme.dart';
 import 'l10n/app_localizations.dart';
@@ -35,7 +35,9 @@ Future<void> main() async {
     await windowManager.show();
     await windowManager.focus();
   });
-  windowManager.addListener(_AppWindowListener());
+  // 保存引用以便退出时移除（匿名实例 addListener 后无法 remove）。
+  final windowListener = _AppWindowListener();
+  windowManager.addListener(windowListener);
   await windowManager.setPreventClose(true);
 
   // 单一 ProviderContainer：main 与 UI 共享同一个播放控制器实例，
@@ -51,7 +53,12 @@ Future<void> main() async {
 
   runApp(UncontrolledProviderScope(container: container, child: const MyApp()));
 
-  await player.init();
+  // 初始化失败不崩溃：记录日志，曲库/引擎就绪通知靠 player 内部错误流兜底。
+  try {
+    await player.init();
+  } catch (e) {
+    debugPrint('player.init failed: $e');
+  }
 
   final tray = TrayService(player);
   await tray.init();
