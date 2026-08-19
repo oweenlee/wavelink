@@ -1,0 +1,3 @@
+/* WaveLink permission descriptions - English */
+"NSAppleMusicUsageDescription" = "WaveLink needs access to your music library to import songs.";
+"NSLocalNetworkUsageDescription" = "WaveLink needs access to your local network to connect to NAS / SMB servers on your network.";

@@ -1,0 +1,70 @@
+# WaveLink Mobile 发版配置（fastlane 2.238）
+#
+# 版本号以 pubspec.yaml 的 `version` 为单一来源（Flutter 标准）：
+#   version: 1.0.0+1  →  build-name = 1.0.0（面向用户），build-number = 1（自增）
+# 所有 lane 自动读取它，iOS/Android 版本从 pubspec 映射，无需额外同步。
+#
+# 常用流程：
+#   fastlane bump_version            # patch +1，build number +1
+#   fastlane bump_version kind:minor # 次版本 +1，build number +1
+#   fastlane build_ios               # 构建 ipa
+#   fastlane build_android           # 构建 AAB
+#   fastlane upload_testflight       # 构建 + 上传 TestFlight
+
+default_platform(:ios)
+
+# fastlane 从 fastlane/ 目录运行，pubspec.yaml 在上级目录，用 __dir__ 定位
+def pubspec_path
+  File.expand_path('../pubspec.yaml', __dir__)
+end
+
+# 读取 pubspec.yaml 版本，返回 [build_name, build_number]
+def flutter_version
+  m = File.read(pubspec_path).match(/^version:\s*(\d+\.\d+\.\d+)\+(\d+)/)
+  UI.user_error!('pubspec.yaml 缺少 version: x.y.z+b 字段') unless m
+  [m[1], m[2]]
+end
+
+desc '递增版本号（major/minor/patch，默认 patch），build number 同时 +1'
+lane :bump_version do |options|
+  kind = (options[:kind] || 'patch').to_s
+  name, build = flutter_version
+  parts = name.split('.').map(&:to_i)
+  case kind
+  when 'major'
+    parts = [parts[0] + 1, 0, 0]
+  when 'minor'
+    parts = [parts[0], parts[1] + 1, 0]
+  else
+    parts = [parts[0], parts[1], parts[2] + 1]
+  end
+  new_name = parts.join('.')
+  new_build = build.to_i + 1
+  content = File.read(pubspec_path)
+                 .sub(/^version:.*$/, "version: #{new_name}+#{new_build}")
+  File.write(pubspec_path, content)
+  UI.success("pubspec.yaml: #{name}+#{build} → #{new_name}+#{new_build}")
+end
+
+desc '构建 iOS ipa（Release）'
+lane :build_ios do
+  name, build = flutter_version
+  sh "flutter build ipa --release --build-name #{name} --build-number #{build}"
+  # 产物：build/ios/ipa/*.ipa
+end
+
+desc '构建 Android AAB（Release）'
+lane :build_android do
+  name, build = flutter_version
+  sh "flutter build appbundle --release --build-name #{name} --build-number #{build}"
+  # 产物：build/app/outputs/bundle/release/app-release.aab
+end
+
+desc '构建并上传 iOS 到 TestFlight（需先在 App Store Connect 建好应用与证书）'
+lane :upload_testflight do
+  name, build = flutter_version
+  sh "flutter build ipa --release --build-name #{name} --build-number #{build}"
+  upload_to_testflight(
+    skip_waiting_for_build_processing: true,
+  )
+end

@@ -65,3 +65,8 @@ lib/l10n/app_localizations_ko.dart
 # Workbuddy agent tooling
 .workbuddy/
 lib/l10n/app_localizations_ja.dart
+
+# fastlane 生成物（Fastfile/Appfile 保留提交）
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output/
