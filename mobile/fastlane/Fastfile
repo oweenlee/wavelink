@@ -46,6 +46,16 @@ lane :bump_version do |options|
   UI.success("pubspec.yaml: #{name}+#{build} → #{new_name}+#{new_build}")
 end
 
+desc '仅递增 build number，版本号不变（如 1.0.0+1 → 1.0.0+2）'
+lane :bump_build do
+  name, build = flutter_version
+  new_build = build.to_i + 1
+  content = File.read(pubspec_path)
+                 .sub(/^version:.*$/, "version: #{name}+#{new_build}")
+  File.write(pubspec_path, content)
+  UI.success("pubspec.yaml: #{name}+#{build} → #{name}+#{new_build}")
+end
+
 desc '构建 iOS ipa（Release）'
 lane :build_ios do
   name, build = flutter_version
@@ -65,6 +75,13 @@ lane :upload_testflight do
   name, build = flutter_version
   sh "flutter build ipa --release --build-name #{name} --build-number #{build}"
   upload_to_testflight(
+    ipa: 'build/ios/ipa/wavelink_mobile.ipa',
     skip_waiting_for_build_processing: true,
   )
+end
+
+desc '一键发版：递增版本号（默认 patch，可用 kind:minor/major）+ 上传 TestFlight'
+lane :release do |options|
+  bump_version(options)
+  upload_testflight
 end

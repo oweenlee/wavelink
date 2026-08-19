@@ -1,5 +1,5 @@
 # iOS bundle identifier（Android 由 build_android lane 显式使用，
 # 上传 Play Console 时在 lane 内传 --application-id）。
-app_identifier "com.wavelink.wavelinkmobile"
+app_identifier "com.wavelink.player"
 # 开发者团队 ID（Apple Developer Portal 获取，上传 App Store/TestFlight 必填）
-team_id "在此填入团队 ID"
+team_id "7B9U6K89CN"

@@ -21,6 +21,14 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 递增版本号（major/minor/patch，默认 patch），build number 同时 +1
 
+### bump_build
+
+```sh
+[bundle exec] fastlane bump_build
+```
+
+仅递增 build number，版本号不变（如 1.0.0+1 → 1.0.0+2）
+
 ### build_ios
 
 ```sh
@@ -44,6 +52,14 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 ```
 
 构建并上传 iOS 到 TestFlight（需先在 App Store Connect 建好应用与证书）
+
+### release
+
+```sh
+[bundle exec] fastlane release
+```
+
+一键发版：递增版本号（默认 patch，可用 kind:minor/major）+ 上传 TestFlight
 
 ----
 
