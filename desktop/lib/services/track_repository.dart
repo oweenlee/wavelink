@@ -158,6 +158,17 @@ class TrackRepository {
     });
   }
 
+  /// 更新单曲封面缓存路径（封面提取完成后写回，供跨重启持久）。
+  static Future<void> updateCoverUrl(String id, String? coverUrl) async {
+    final db = await _database;
+    await db.update(
+      'tracks',
+      {'coverUrl': coverUrl},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   /// 移除某本地文件夹下全部曲目（UI 移除文件夹时调用）。失败向上抛。
   static Future<void> deleteLocalUnder(String prefix) async {
     final db = await _database;

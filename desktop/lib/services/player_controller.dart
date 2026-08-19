@@ -190,7 +190,14 @@ class PlayerController {
     await TrackRepository.init();
     try {
       final dbTracks = await TrackRepository.getAll();
-      if (dbTracks.isNotEmpty) addLibraryFiles(dbTracks);
+      if (dbTracks.isNotEmpty) {
+        addLibraryFiles(dbTracks);
+        // 补提网络源封面：封面文件可能在缓存清理/历史操作中丢失，
+        // 后台快速路径（已缓存直接写回）+ 缺失才远程提取，不阻塞启动。
+        final remote =
+            dbTracks.where((t) => t.source != TrackSource.local).toList();
+        if (remote.isNotEmpty) extractCoversFor(remote);
+      }
     } catch (e) {
       _reportError('曲库读取失败，本次启动以空库运行', e);
     }
@@ -476,6 +483,10 @@ class PlayerController {
     if (_queueIndex != null) {
       _queue = _replaceTrack(_queue, oldT, updated);
     }
+    // 写回 DB：封面路径跨重启持久（否则重启后网络源曲目封面全部丢失）。
+    unawaited(TrackRepository.updateCoverUrl(oldT.id, path).catchError((Object e) {
+      debugPrint('coverUrl persist failed for ${oldT.id}: $e');
+    }));
     // 增量广播：每 32 首刷新一次，避免海量曲目一次性刷新造成的卡顿
     _coverApplied++;
     if (_coverApplied % 32 == 0) _librarySC.add(null);
