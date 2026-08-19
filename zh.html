@@ -5,53 +5,142 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>隐私政策 - WaveLink</title>
 <style>
-  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; line-height: 1.7; color: #222; }
-  h1 { font-size: 1.6em; } h2 { font-size: 1.15em; margin-top: 28px; }
-  .lang { margin-bottom: 8px; }
-  .lang a { margin-right: 12px; }
-  .updated { color: #888; font-size: 0.9em; }
+  :root {
+    --accent: #b45309;
+    --accent-2: #d97706;
+    --text: #1a1a2e;
+    --muted: #6b7280;
+    --card: #ffffff;
+    --bg: #f6f7fb;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    background-image: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(108, 92, 231, 0.12), transparent),
+                      radial-gradient(ellipse 60% 40% at 90% 110%, rgba(162, 155, 254, 0.12), transparent);
+    color: var(--text);
+    line-height: 1.75;
+    padding: 48px 16px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 32px; gap: 12px;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.05em; }
+  .logo-icon {
+    width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: flex; align-items: center; justify-content: center; color: #fff;
+  }
+  .logo-icon svg { width: 18px; height: 18px; }
+  .lang { display: flex; gap: 6px; }
+  .lang a {
+    text-decoration: none; font-size: 0.85em; font-weight: 600;
+    color: var(--muted); padding: 6px 14px; border-radius: 999px;
+    background: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.06);
+    transition: all 0.2s ease;
+  }
+  .lang a:hover { color: var(--accent); border-color: var(--accent); }
+  .card {
+    background: var(--card);
+    border-radius: 20px;
+    padding: 40px 44px 44px;
+    box-shadow: 0 1px 2px rgba(26,26,46,0.04), 0 12px 40px rgba(26,26,46,0.08);
+    border: 1px solid rgba(255,255,255,0.8);
+  }
+  h1 { font-size: 1.75em; letter-spacing: -0.02em; line-height: 1.3; }
+  .updated {
+    color: var(--muted); font-size: 0.9em; margin: 8px 0 24px;
+    display: inline-block; background: rgba(180,83,9,0.08); color: var(--accent);
+    padding: 4px 12px; border-radius: 999px; font-weight: 600;
+  }
+  .lead { font-size: 1.06em; color: #374151; }
+  h2 {
+    font-size: 1.1em; margin-top: 32px; padding-top: 28px;
+    border-top: 1px solid #f0f0f5;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .num {
+    width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff; font-size: 0.8em; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  p { color: #374151; }
+  ul { list-style: none; margin-top: 8px; }
+  li { position: relative; padding-left: 22px; margin-top: 8px; color: #374151; }
+  li::before {
+    content: ""; position: absolute; left: 4px; top: 0.72em;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  }
+  strong { color: var(--text); }
+  a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  a:hover { text-decoration: underline; }
+  footer { text-align: center; margin-top: 28px; color: var(--muted); font-size: 0.85em; }
+  @media (max-width: 560px) {
+    body { padding: 24px 12px 56px; }
+    header { flex-direction: column; align-items: flex-start; }
+    .card { padding: 28px 24px 32px; }
+  }
 </style>
 </head>
 <body>
-<div class="lang">
-  <a href="index.html">English</a>
-  <a href="zh.html">中文</a>
+<div class="wrap">
+  <header>
+    <div class="logo">
+      <span class="logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10"/><path d="M8 14a4 4 0 1 0 8 0V4"/></svg>
+      </span>
+      WaveLink
+    </div>
+    <div class="lang">
+      <a href="index.html">English</a>
+      <a href="zh.html">中文</a>
+    </div>
+  </header>
+
+  <div class="card">
+    <h1>隐私政策</h1>
+    <span class="updated">更新日期：2026年8月19日</span>
+
+    <p class="lead">WaveLink 是一款以本地播放为核心的 HiFi 音乐播放器。本政策说明我们如何处理您的信息。</p>
+
+    <h2><span class="num">一</span>我们收集什么</h2>
+    <p><strong>我们不收集任何个人数据。</strong>WaveLink 没有账号系统、没有登录、没有统计埋点，也不含任何广告 SDK。我们不会追踪您或您的设备。</p>
+
+    <h2><span class="num">二</span>您为使用功能而提供的信息</h2>
+    <ul>
+      <li><strong>NAS / WebDAV 连接：</strong>当您配置 NAS 或 WebDAV 服务器时，服务器地址和您的凭据<em>仅保存在您的设备上</em>（或系统安全钥匙串中），仅用于连接您指定的服务器。</li>
+      <li><strong>导入 Apple Music：</strong>在您的授权下，WaveLink 仅在导入或读取您选择的音乐时访问您的 Apple Music 资料库，仅用于此用途。</li>
+    </ul>
+
+    <h2><span class="num">三</span>数据的使用与存储</h2>
+    <p>您提供的所有数据仅用于实现您请求的功能。您的 NAS/WebDAV 凭据不会离开您的设备，也绝不会传输给我们或任何第三方。音乐元数据仅保存在本地或您自行配置的服务器上。</p>
+
+    <h2><span class="num">四</span>信息共享</h2>
+    <p>我们不会向任何第三方出售、出租或共享您的信息。</p>
+
+    <h2><span class="num">五</span>数据安全</h2>
+    <p>凭据在可用时安全存储在您设备的安全钥匙串中。与 NAS/WebDAV 服务器的通信会根据您选择的协议（例如 HTTPS）进行加密。</p>
+
+    <h2><span class="num">六</span>您的控制与删除</h2>
+    <p>您可以随时在应用内删除任何 NAS/WebDAV 配置，或卸载 WaveLink 以清除所有本地数据。您也可以随时在系统设置中撤销对 Apple Music 的访问权限。</p>
+
+    <h2><span class="num">七</span>儿童隐私</h2>
+    <p>WaveLink 不面向 13 岁以下儿童，我们也不会故意收集儿童的信息。</p>
+
+    <h2><span class="num">八</span>政策更新</h2>
+    <p>我们可能会不时更新本政策。重大变更将通过更新上述"更新日期"来体现。</p>
+
+    <h2><span class="num">九</span>联系我们</h2>
+    <p>如果您对本隐私政策有任何疑问，请联系：<a href="mailto:owen.lee.dev@outlook.com">owen.lee.dev@outlook.com</a></p>
+  </div>
+
+  <footer>© 2026 WaveLink 保留所有权利。</footer>
 </div>
-
-<h1>隐私政策</h1>
-<p class="updated">更新日期：2026年8月19日</p>
-
-<p>WaveLink 是一款以本地播放为核心的 HiFi 音乐播放器。本政策说明我们如何处理您的信息。</p>
-
-<h2>一、我们收集什么</h2>
-<p><strong>我们不收集任何个人数据。</strong>WaveLink 没有账号系统、没有登录、没有统计埋点，也不含任何广告 SDK。我们不会追踪您或您的设备。</p>
-
-<h2>二、您为使用功能而提供的信息</h2>
-<ul>
-  <li><strong>NAS / WebDAV 连接：</strong>当您配置 NAS 或 WebDAV 服务器时，服务器地址和您的凭据<em>仅保存在您的设备上</em>（或系统安全钥匙串中），仅用于连接您指定的服务器。</li>
-  <li><strong>导入 Apple Music：</strong>在您的授权下，WaveLink 仅在导入或读取您选择的音乐时访问您的 Apple Music 资料库，仅用于此用途。</li>
-</ul>
-
-<h2>三、数据的使用与存储</h2>
-<p>您提供的所有数据仅用于实现您请求的功能。您的 NAS/WebDAV 凭据不会离开您的设备，也绝不会传输给我们或任何第三方。音乐元数据仅保存在本地或您自行配置的服务器上。</p>
-
-<h2>四、信息共享</h2>
-<p>我们不会向任何第三方出售、出租或共享您的信息。</p>
-
-<h2>五、数据安全</h2>
-<p>凭据在可用时安全存储在您设备的安全钥匙串中。与 NAS/WebDAV 服务器的通信会根据您选择的协议（例如 HTTPS）进行加密。</p>
-
-<h2>六、您的控制与删除</h2>
-<p>您可以随时在应用内删除任何 NAS/WebDAV 配置，或卸载 WaveLink 以清除所有本地数据。您也可以随时在系统设置中撤销对 Apple Music 的访问权限。</p>
-
-<h2>七、儿童隐私</h2>
-<p>WaveLink 不面向 13 岁以下儿童，我们也不会故意收集儿童的信息。</p>
-
-<h2>八、政策更新</h2>
-<p>我们可能会不时更新本政策。重大变更将通过更新上述"更新日期"来体现。</p>
-
-<h2>九、联系我们</h2>
-<p>如果您对本隐私政策有任何疑问，请联系：<a href="mailto:owen.lee.dev@outlook.com">owen.lee.dev@outlook.com</a></p>
-
 </body>
 </html>
