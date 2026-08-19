@@ -243,7 +243,9 @@ class NasService {
     // 同层子目录并发扫描（SMB 连接池限流到 ~10 并发）。
     if (dirs.isNotEmpty) {
       final subs = await Future.wait(dirs.map(_scanSubtree));
-      for (final r in subs) tracks.addAll(r);
+      for (final r in subs) {
+        tracks.addAll(r);
+      }
     }
     return tracks;
   }

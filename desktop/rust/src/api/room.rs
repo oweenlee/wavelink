@@ -76,7 +76,7 @@ impl CorrectionConfig {
             "harman_tilt" => rc::TargetCurve::HarmanTilt,
             other => return Err(format!("未知目标曲线: {other}（flat / harman_tilt）")),
         };
-        if !(64..=65536).contains(&self.taps) || self.taps % 2 != 0 {
+        if !(64..=65536).contains(&self.taps) || !self.taps.is_multiple_of(2) {
             return Err(format!("taps 需为 64..=65536 的偶数，当前 {}", self.taps));
         }
         if !self.freq_min.is_finite() || !self.freq_max.is_finite() || self.freq_min <= 0.0 || self.freq_max <= self.freq_min {

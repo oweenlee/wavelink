@@ -200,7 +200,9 @@ class WebdavService {
     }
     if (dirs.isNotEmpty) {
       final subs = await Future.wait(dirs.map((d) => _scanSubtree(client, d)));
-      for (final r in subs) tracks.addAll(r);
+      for (final r in subs) {
+        tracks.addAll(r);
+      }
     }
     return tracks;
   }
