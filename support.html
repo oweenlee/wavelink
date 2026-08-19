@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Support - WaveLink</title>
+<style>
+  :root {
+    --accent: #b45309;
+    --accent-2: #d97706;
+    --text: #1a1a2e;
+    --muted: #6b7280;
+    --card: #ffffff;
+    --bg: #f6f7fb;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    background-image: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(108, 92, 231, 0.12), transparent),
+                      radial-gradient(ellipse 60% 40% at 90% 110%, rgba(162, 155, 254, 0.12), transparent);
+    color: var(--text);
+    line-height: 1.75;
+    padding: 48px 16px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 32px; gap: 12px;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.05em; }
+  .logo-icon {
+    width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: flex; align-items: center; justify-content: center; color: #fff;
+  }
+  .logo-icon svg { width: 18px; height: 18px; }
+  .lang { display: flex; gap: 6px; flex-wrap: wrap; }
+  .lang a {
+    text-decoration: none; font-size: 0.85em; font-weight: 600;
+    color: var(--muted); padding: 6px 14px; border-radius: 999px;
+    background: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.06);
+    transition: all 0.2s ease;
+  }
+  .lang a:hover { color: var(--accent); border-color: var(--accent); }
+  .lang a.active { color: var(--accent); border-color: var(--accent); background: rgba(180,83,9,0.06); }
+  .card {
+    background: var(--card);
+    border-radius: 20px;
+    padding: 40px 44px 44px;
+    box-shadow: 0 1px 2px rgba(26,26,46,0.04), 0 12px 40px rgba(26,26,46,0.08);
+    border: 1px solid rgba(255,255,255,0.8);
+  }
+  h1 { font-size: 1.75em; letter-spacing: -0.02em; line-height: 1.3; }
+  .updated {
+    color: var(--muted); font-size: 0.9em; margin: 8px 0 24px;
+    display: inline-block; background: rgba(180,83,9,0.08); color: var(--accent);
+    padding: 4px 12px; border-radius: 999px; font-weight: 600;
+  }
+  .lead { font-size: 1.06em; color: #374151; }
+  h2 {
+    font-size: 1.1em; margin-top: 32px; padding-top: 28px;
+    border-top: 1px solid #f0f0f5;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .num {
+    width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff; font-size: 0.8em; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  p { color: #374151; }
+  ul { list-style: none; margin-top: 8px; }
+  li { position: relative; padding-left: 22px; margin-top: 8px; color: #374151; }
+  li::before {
+    content: ""; position: absolute; left: 4px; top: 0.72em;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  }
+  strong { color: var(--text); }
+  a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  a:hover { text-decoration: underline; }
+  details {
+    margin-top: 14px;
+    background: #fafafd;
+    border: 1px solid #f0f0f5;
+    border-radius: 14px;
+    padding: 4px 18px;
+    transition: border-color 0.2s ease;
+  }
+  details:hover { border-color: rgba(180,83,9,0.3); }
+  details[open] { border-color: rgba(180,83,9,0.35); }
+  summary {
+    cursor: pointer; font-weight: 600; color: var(--text);
+    list-style: none; display: flex; align-items: center; gap: 12px;
+    padding: 13px 0;
+    user-select: none;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::before {
+    content: "+"; flex-shrink: 0;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff; font-size: 0.85em; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: transform 0.2s ease;
+  }
+  details[open] summary::before { transform: rotate(45deg); }
+  details p { margin: 0 0 14px 32px; font-size: 0.95em; }
+  details p:last-child { margin-bottom: 16px; }
+  .contact { margin-top: 12px; }
+  footer { text-align: center; margin-top: 28px; color: var(--muted); font-size: 0.85em; }
+  @media (max-width: 560px) {
+    body { padding: 24px 12px 56px; }
+    header { flex-direction: column; align-items: flex-start; }
+    .card { padding: 28px 24px 32px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">
+      <span class="logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10"/><path d="M8 14a4 4 0 1 0 8 0V4"/></svg>
+      </span>
+      WaveLink
+    </div>
+    <div class="lang">
+      <a href="index.html">Privacy</a>
+      <a href="support.html" class="active">Support</a>
+      <a href="support-zh.html">中文</a>
+    </div>
+  </header>
+
+  <div class="card">
+    <h1>Support & FAQ</h1>
+    <span class="updated">Last updated: August 19, 2026</span>
+
+    <p class="lead">Tips, troubleshooting, and answers to common questions about WaveLink. Can't find what you're looking for? <a href="mailto:owen.lee.dev@outlook.com">Email us</a> and we'll get back to you within 48 hours.</p>
+
+    <h2><span class="num">1</span>Getting Started</h2>
+    <ul>
+      <li><strong>Supported formats:</strong> FLAC, ALAC, WAV, AIFF, DSD (DSF/DFF), APE, MP3, AAC, and Ogg Vorbis. Lossless and hi-res files are played at their native sample rate and bit depth with no conversion.</li>
+      <li><strong>Scanning local music:</strong> WaveLink scans selected folders on your device, reading embedded metadata and cover art automatically.</li>
+      <li><strong>Importing from Apple Music / iTunes:</strong> With your permission, WaveLink can import tracks from your Apple Music library. Access is used only for importing and can be revoked anytime in system settings.</li>
+      <li><strong>Playback queue:</strong> Tap any track to play it; "Play Next" and "Play Later" let you build a queue on the fly.</li>
+    </ul>
+
+    <h2><span class="num">2</span>HiFi Output</h2>
+    <ul>
+      <li><strong>Native sample rate switching:</strong> WaveLink negotiates the output stream at the file's native sample rate (e.g. a 44.1 kHz FLAC plays at 44.1 kHz, a DSD64 file at 2.8224 MHz). No resampling — what you hear is what's on the disc.</li>
+      <li><strong>Exclusive mode:</strong> On Android, WaveLink first attempts MMAP exclusive output and automatically falls back to shared mode if the device doesn't support it. On Windows desktop, WASAPI exclusive mode can be enabled in settings.</li>
+      <li><strong>USB DAC:</strong> When a USB DAC is connected, audio is routed to it automatically. WaveLink attempts native exclusive output on the DAC. If the DAC isn't detected, see <em>Troubleshooting</em> below.</li>
+      <li><strong>Volume:</strong> Digital volume is applied in 32-bit float processing, so lowering the volume doesn't sacrifice bit depth.</li>
+      <li><strong>Room correction:</strong> Import FIR filter files (e.g. measured with REW) to apply convolution-based room correction and EQ — a pro feature unique to WaveLink.</li>
+    </ul>
+
+    <h2><span class="num">3</span>NAS & WebDAV</h2>
+    <ul>
+      <li><strong>Adding a server:</strong> Go to Settings → Library → Add Server, enter the address and your credentials. Credentials are stored <em>only on your device</em> (or in the system keychain) and are never transmitted to us or any third party.</li>
+      <li><strong>Supported protocols:</strong> SMB and WebDAV (including HTTPS). Use WebDAV over HTTPS for encrypted transfers.</li>
+      <li><strong>Offline playback:</strong> Download tracks from your server to play back offline without any DRM or lock-in.</li>
+    </ul>
+
+    <h2><span class="num">4</span>Troubleshooting</h2>
+
+    <details>
+      <summary>No sound is playing</summary>
+      <p>Check the system output device and volume first. If you're using a USB DAC, make sure it's selected as the system output. On Windows, try disabling WASAPI exclusive mode, then re-enabling it after the track starts. If the file is DSD, confirm DSD passthrough is supported by your DAC, otherwise WaveLink converts DSD to PCM automatically.</p>
+    </details>
+
+    <details>
+      <summary>Popping or stutter when switching tracks</summary>
+      <p>This usually happens at the moment the audio stream is rebuilt for a new sample rate. If it's frequent, check that the device isn't overloaded (high CPU, other apps). On shared (non-exclusive) mode, system sounds or other apps can briefly interrupt playback — enabling exclusive mode where available reduces this.</p>
+    </details>
+
+    <details>
+      <summary>My USB DAC isn't detected</summary>
+      <p>Replug the DAC, try a different cable or port, and make sure it's powered (some DACs need external power). On Android, grant USB permission when prompted and check Settings → USB Output. Restart the app — the audio engine re-enumerates output devices on launch.</p>
+    </details>
+
+    <details>
+      <summary>NAS / WebDAV server won't connect</summary>
+      <p>Verify the address, port, and credentials. Check that the server is reachable from the same network (try its web interface from your phone/computer). If the server only allows one connection, close other clients. For WebDAV, ensure the server supports the protocol version WaveLink uses; HTTPS URLs require a valid certificate.</p>
+    </details>
+
+    <details>
+      <summary>Music is missing from my library</summary>
+      <p>Run a rescan (Settings → Library → Rescan). Files downloaded from some stores may be DRM-protected and cannot be read by third-party players. If a track is corrupt, the scanner skips it — check the file plays in another player and re-add it.</p>
+    </details>
+
+    <details>
+      <summary>Battery drains faster during playback</summary>
+      <p>Hi-res playback at native sample rates uses more CPU. Keep the screen brightness low and avoid other heavy apps while listening. On Android, exclusive mode can be more efficient than shared mode on supported devices.</p>
+    </details>
+
+    <h2><span class="num">5</span>Contact & Feedback</h2>
+    <p class="contact">Found a bug or have a feature request? We read everything. Contact us at <a href="mailto:owen.lee.dev@outlook.com">owen.lee.dev@outlook.com</a> — we typically reply within 48 hours.</p>
+  </div>
+
+  <footer>© 2026 WaveLink. All rights reserved.</footer>
+</div>
+</body>
+</html>
