@@ -226,7 +226,10 @@ pub(crate) fn run_engine(
                         .unwrap_or(0);
                     let sr = state.output_sample_rate as f64;
                     let ch = state.config.channels as f64;
-                    let pos_secs = pos_samples.saturating_sub(latency) as f64 / (sr * ch);
+                    // dsp_latency 以帧为单位（卷积 block_size），position 为交错样本数，
+                    // 补偿前需换算到交错样本，否则多声道下少补 (ch-1)/ch
+                    let latency_ilv = latency * state.config.channels as u64;
+                    let pos_secs = pos_samples.saturating_sub(latency_ilv) as f64 / (sr * ch);
                     let _ = external_tx.send(EngineEvent::Position(pos_secs));
                     // 定期发送电平事件（与 Position 同频，200ms）
                     let lv = *state.levels.lock();

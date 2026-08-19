@@ -308,8 +308,10 @@ impl EngineHandle {
             .unwrap_or_else(|e| e.into_inner())
             .channels as f64;
         if sr > 0.0 && ch > 0.0 {
-            let latency = self.dsp_latency.load(Ordering::Acquire) as f64;
-            (samples.saturating_sub(latency as u64) as f64) / (sr * ch)
+            let latency = self.dsp_latency.load(Ordering::Acquire);
+            // dsp_latency 以帧为单位，position 为交错样本数，换算后补偿
+            let latency_ilv = (latency as f64 * ch) as u64;
+            (samples.saturating_sub(latency_ilv) as f64) / (sr * ch)
         } else {
             0.0
         }
