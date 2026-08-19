@@ -11,6 +11,7 @@ import '../core/theme.dart';
 import '../services/engine.dart';
 import '../services/locale_provider.dart';
 import '../services/player_controller.dart';
+import '../src/rust/api/room.dart' as frb_room;
 
 /// 设置页（桌面补齐）：语言 / 数据管理 + 音频输出 / DSP / 诊断。
 ///
@@ -79,6 +80,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String _preset = 'flat';
   String _irPath = '';
 
+  // ── 引擎高级配置 ──
+  bool _bitPerfect = false;
+  bool _autoSampleRate = false;
+  double _crossfadeMs = 0;
+
   // ── 诊断 ──
   int _underrun = 0;
   String _lastError = '';
@@ -127,6 +133,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _preset = p.getString('dsp.preset') ?? 'flat';
       _autoEq = p.getString('dsp.autoEq') ?? '';
       _irPath = p.getString('dsp.irPath') ?? '';
+      _bitPerfect = p.getBool('engine.bitPerfect') ?? false;
+      _autoSampleRate = p.getBool('engine.autoSampleRate') ?? false;
+      _crossfadeMs = (p.getInt('engine.crossfadeMs') ?? 0).toDouble();
     });
     _refreshSr();
   }
@@ -486,16 +495,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       )),
       _row(_divider()),
       _groupLabel('数据'),
-      _row(Row(
+      _row(Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(LucideIcons.database,
-              size: 16, color: AppTheme.textTertiary),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text('删除全部曲库、收藏与播放列表（不可恢复）',
-                style: TextStyle(
-                    color: AppTheme.textSecondary, fontSize: 12)),
+          const Row(
+            children: [
+              Icon(LucideIcons.database,
+                  size: 16, color: AppTheme.textTertiary),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text('删除全部曲库、收藏与播放列表（不可恢复）',
+                    style: TextStyle(
+                        color: AppTheme.textSecondary, fontSize: 12)),
+              ),
+            ],
           ),
+          const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () => _confirmClearAll(context),
             style: OutlinedButton.styleFrom(
@@ -555,9 +570,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _chip('模式', _exclusive ? '独占' : '共享'),
           _chip('采样率', _actualSr != null ? '$_actualSr Hz' : '—'),
         ])),
-        if (Platform.isWindows)
+        if (Platform.isWindows || Platform.isMacOS)
           _row(_switchRow(
-            'WASAPI 独占模式（切换将重启引擎）',
+            Platform.isWindows
+                ? 'WASAPI 独占模式（切换将重启引擎）'
+                : 'Hog Mode（独占音频设备，切换将重启引擎）',
             _exclusive,
             (v) async {
               setState(() {
@@ -602,6 +619,67 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       _refreshSr();
                     }
                   },
+                ),
+              ],
+            ),
+          ],
+        )),
+        _row(_divider()),
+        _groupLabel('高级'),
+        _row(_switchRow('Bit-Perfect 直通（绕过 SRC 与 DSP）', _bitPerfect, (v) {
+          setState(() {
+            _bitPerfect = v;
+            _saveBool('engine.bitPerfect', v);
+          });
+          // 启动参数，下次启动生效
+        }, key: const Key('sw_bitperfect'))),
+        _row(_switchRow('自动采样率（按源文件切换输出）', _autoSampleRate, (v) {
+          setState(() {
+            _autoSampleRate = v;
+            _saveBool('engine.autoSampleRate', v);
+          });
+        }, key: const Key('sw_autosr'))),
+        _row(Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _fieldLabel('曲间无缝 Crossfade（下次启动生效）'),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderThemeData(
+                      thumbColor: AppTheme.textPrimary,
+                      activeTrackColor: AppTheme.textPrimary,
+                      inactiveTrackColor: AppTheme.s4,
+                      trackHeight: 3,
+                      thumbShape:
+                          const RoundSliderThumbShape(enabledThumbRadius: 6),
+                      overlayShape:
+                          const RoundSliderOverlayShape(overlayRadius: 14),
+                    ),
+                    child: Slider(
+                      value: _crossfadeMs,
+                      min: 0,
+                      max: 8000,
+                      divisions: 32,
+                      onChanged: (v) {
+                        setState(() {
+                          _crossfadeMs = v;
+                          _saveInt('engine.crossfadeMs', v.round());
+                        });
+                      },
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 64,
+                  child: Text(
+                      _crossfadeMs == 0
+                          ? '关闭'
+                          : '${_crossfadeMs.round()} ms',
+                      textAlign: TextAlign.end,
+                      style: WlText.mono(color: AppTheme.textSecondary)),
                 ),
               ],
             ),
@@ -730,36 +808,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _row(Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _fieldLabel('AutoEQ 耳机型号（留空清除）'),
+            _fieldLabel('AutoEQ 耳机型号'),
             const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: _field(
-                    onChanged: (v) => _autoEq = v,
-                  ),
+            InkWell(
+              key: const Key('autoeq_picker'),
+              onTap: _pickAutoEq,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppTheme.s3,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppTheme.highlightStrong),
                 ),
-                const SizedBox(width: 8),
-                _primaryBtn(
-                  label: '应用',
-                  onPressed: () {
-                    engine?.setAutoEq(_autoEq.isEmpty ? null : _autoEq);
-                    _saveString(
-                        'dsp.autoEq', _autoEq.isEmpty ? null : _autoEq);
-                  },
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _autoEq.isEmpty ? '关闭 AutoEQ' : _autoEq,
+                        style: TextStyle(
+                            color: _autoEq.isEmpty
+                                ? AppTheme.textTertiary
+                                : AppTheme.textPrimary,
+                            fontSize: 13),
+                      ),
+                    ),
+                    const Icon(LucideIcons.chevronDown,
+                        size: 16, color: AppTheme.textSecondary),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                OutlinedButton(
-                  onPressed: () {
-                    setState(() {
-                      _autoEq = '';
-                      _saveString('dsp.autoEq', null);
-                    });
-                    engine?.setAutoEq(null);
-                  },
-                  child: const Text('清除'),
-                ),
-              ],
+              ),
             ),
           ],
         )),
@@ -793,6 +872,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     engine?.clearIr();
                   },
                   child: const Text('清除'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _divider(),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('从 REW 测量曲线生成校正 IR（.txt 频响导出）',
+                      style: TextStyle(
+                          color: AppTheme.textSecondary, fontSize: 12)),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _generateRew,
+                  icon: const Icon(LucideIcons.wand2,
+                      size: 15, color: AppTheme.textSecondary),
+                  label: const Text('生成'),
                 ),
               ],
             ),
@@ -944,6 +1041,105 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _saveString('dsp.irPath', x.path);
         });
       }
+    }
+  }
+
+  /// AutoEQ 型号选择（对齐 mobile）：弹 catalog 列表，含顶部「关闭」项。
+  Future<void> _pickAutoEq() async {
+    final accent = AccentScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final catalog = await engine?.autoEqCatalog() ?? const <String>[];
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.s2,
+        title: const Text('AutoEQ 耳机型号',
+            style: TextStyle(color: AppTheme.textPrimary, fontSize: 15)),
+        content: SizedBox(
+          width: 380,
+          height: 360,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              _AutoEqTile(
+                label: '关闭 AutoEQ',
+                selected: _autoEq.isEmpty,
+                accent: accent,
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  setState(() {
+                    _autoEq = '';
+                    _saveString('dsp.autoEq', null);
+                  });
+                  engine?.setAutoEq(null);
+                },
+              ),
+              ...catalog.map((m) => _AutoEqTile(
+                    label: m,
+                    selected: m == _autoEq,
+                    accent: accent,
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      setState(() {
+                        _autoEq = m;
+                        _saveString('dsp.autoEq', m);
+                      });
+                      engine?.setAutoEq(m);
+                    },
+                  )),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (mounted && _autoEq.isNotEmpty) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(SnackBar(content: Text('已应用 AutoEQ：$_autoEq')));
+    }
+  }
+
+  /// 从 REW 频响测量文本生成校正 FIR：解析 → core 生成系数 → 存临时 WAV → 加载。
+  Future<void> _generateRew() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final x = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'REW 测量', extensions: ['txt']),
+      ],
+    );
+    if (x == null || !mounted) return;
+    try {
+      final text = await File(x.path).readAsString();
+      final pts = await frb_room.parseRewText(text: text);
+      if (pts.isEmpty) {
+        messenger.showSnackBar(
+            const SnackBar(content: Text('REW 文件解析失败：无有效测量点')));
+        return;
+      }
+      final config = await frb_room.defaultCorrectionConfig();
+      final sr = _actualSr ?? 44100;
+      final result = await frb_room.generateRoomCorrection(
+        rewTxt: text,
+        config: config,
+        sampleRate: sr,
+      );
+      final irFile = File(
+          '${Directory.systemTemp.path}/wavelink_correction_${DateTime.now().millisecondsSinceEpoch}.wav');
+      await frb_room.saveIrWav(
+          ir: result.ir, sampleRate: sr, path: irFile.path);
+      await engine?.loadIr(irFile.path);
+      if (!mounted) return;
+      setState(() {
+        _irPath = irFile.path;
+        _saveString('dsp.irPath', irFile.path);
+      });
+      messenger.showSnackBar(SnackBar(
+        content: Text(
+            '已生成校正 IR（${result.points} 点测量，${result.appliedGainDb.toStringAsFixed(1)} dB）'),
+      ));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('生成失败：$e')));
     }
   }
 
@@ -1125,6 +1321,51 @@ class _EngineNullBanner extends StatelessWidget {
   }
 }
 
+/// AutoEQ 型号 tile：选中时强调色勾选 + 文字高亮。
+class _AutoEqTile extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final Color accent;
+  final VoidCallback onTap;
+  const _AutoEqTile({
+    required this.label,
+    required this.selected,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? accent.withAlpha(0x12) : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(label,
+                    style: TextStyle(
+                        color: selected
+                            ? AppTheme.textPrimary
+                            : AppTheme.textSecondary,
+                        fontSize: 13,
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.w400)),
+              ),
+              if (selected)
+                Icon(LucideIcons.check, size: 16, color: accent),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 设置页左侧导航栏：品牌 + 分类 + 底部引擎状态。
 class _SettingsRail extends StatelessWidget {
   final int activeIndex;
@@ -1147,21 +1388,30 @@ class _SettingsRail extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // 品牌区
+          // 品牌区：返回主页按钮 + WaveLink 标识
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
             child: Row(
               children: [
-                // Logo 块
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: accent,
-                    borderRadius: BorderRadius.circular(9),
+                // 返回主页按钮
+                Material(
+                  color: AppTheme.s3,
+                  borderRadius: BorderRadius.circular(10),
+                  child: InkWell(
+                    key: const Key('settings_back'),
+                    onTap: () => Navigator.of(context).pop(),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppTheme.highlightStrong),
+                      ),
+                      child: const Icon(LucideIcons.arrowLeft,
+                          size: 18, color: AppTheme.textSecondary),
+                    ),
                   ),
-                  child: const Icon(LucideIcons.waves,
-                      size: 18, color: Color(0xFF0E1011)),
                 ),
                 const SizedBox(width: 10),
                 Column(

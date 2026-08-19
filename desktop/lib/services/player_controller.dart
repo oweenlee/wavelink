@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/track.dart';
 import '../models/playlist.dart';
+import '../src/rust/api/analyze.dart' as frb_analyze;
+import 'analysis_service.dart';
 import 'engine.dart';
 import 'library.dart';
 import 'lyrics.dart';
@@ -95,6 +97,8 @@ class PlayerController {
   final _playlistsSC = StreamController<void>.broadcast();
   final _modeSC = StreamController<void>.broadcast();
   final _librarySC = StreamController<void>.broadcast();
+  /// 音频分析完成（广播 trackId）：播放页据此刷新 BPM/Key 徽章。
+  final _analysisSC = StreamController<String>.broadcast();
 
   /// 用户可读错误（曲库写入失败等）。UI 订阅后以 SnackBar 呈现；
   /// 详细异常走 debugPrint（仅 debug 构建），对用户只暴露一句人话。
@@ -108,6 +112,7 @@ class PlayerController {
   Stream<void> get favoritesStream => _favoritesSC.stream;
   Stream<void> get playlistsStream => _playlistsSC.stream;
   Stream<void> get modeStream => _modeSC.stream;
+  Stream<String> get analysisStream => _analysisSC.stream;
 
   /// 曲库内容变化（添加文件夹 / 启动重扫完成）。UI 订阅以替代 setState 刷新。
   Stream<void> get libraryStream => _librarySC.stream;
@@ -178,6 +183,11 @@ class PlayerController {
             sampleRate: 44100,
             channels: 2,
             bufferMs: 280,
+            // 高级音频引擎配置从设置页持久化（reinitialize 会保留这些值）
+            bitPerfect: _prefs!.getBool('engine.bitPerfect') ?? false,
+            autoSampleRate: _prefs!.getBool('engine.autoSampleRate') ?? false,
+            crossfadeMs: (_prefs!.getInt('engine.crossfadeMs') ?? 0)
+                .clamp(0, 8000),
           );
     if (_engineInitError != null) {
       debugPrint('engine init error: $_engineInitError');
@@ -432,6 +442,7 @@ class PlayerController {
     // 6.7 清空音频输出与 DSP 设置（设备/采样率/效果链/EQ/FIR）
     for (final k in const [
       'outputDevice', 'outputSampleRate', 'exclusiveMode',
+      'engine.bitPerfect', 'engine.autoSampleRate', 'engine.crossfadeMs',
       'dsp.widener', 'dsp.widenerWidth', 'dsp.crossfeed', 'dsp.limiter',
       'dsp.dither', 'dsp.noiseShaping', 'dsp.gain', 'dsp.speed',
       'dsp.preset', 'dsp.autoEq', 'dsp.irPath',
@@ -715,6 +726,8 @@ class PlayerController {
           'initError=$_engineInitError), cannot play ${t.id}');
       return;
     }
+    // 后台分析当前曲目（BPM/Key/能量），不阻塞播放；完成后通知播放页刷新徽章
+    unawaited(_analyzeTrack(t));
     // STRM 指针文件：先解析出真实目标（源内路径或 URL）再按 kind 分发，
     // 不走常规的 nas/webdav 分支（其 remotePath 是 strm 文本文件本身）。
     if (t.isStrm) {
@@ -742,6 +755,22 @@ class PlayerController {
         await _playSubsonic(t);
     }
   }
+
+  /// 后台分析 [t]（仅本地可分析路径：local 文件 / 已缓存的 WebDAV）。
+  /// 分析完成后若仍是当前曲目则广播刷新 UI；失败静默。
+  Future<void> _analyzeTrack(Track t) async {
+    final path = await AnalysisService.instance.localPathFor(t);
+    if (path == null) return;
+    final result = await AnalysisService.instance.analyze(t.id, path);
+    if (result == null) return;
+    if (!_analysisSC.isClosed && currentTrack?.id == t.id) {
+      _analysisSC.add(t.id);
+    }
+  }
+
+  /// 同步读取某曲目的分析结果（播放页 build 用）。
+  frb_analyze.AnalyzeResult? getAnalysis(String trackId) =>
+      AnalysisService.instance.get(trackId);
 
   Future<void> _playWebdav(Track t) async {
     final davPath = t.remotePath;
@@ -1332,5 +1361,6 @@ class PlayerController {
     await _modeSC.close();
     await _librarySC.close();
     await _errorSC.close();
+    await _analysisSC.close();
   }
 }

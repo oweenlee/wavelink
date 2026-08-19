@@ -100,6 +100,9 @@ class FakeEngine extends Engine {
   Future<void> setAutoEq(String? model) async => calls['setAutoEq'] = model;
 
   @override
+  Future<List<String>> autoEqCatalog() async => ['HD650', 'HD800S'];
+
+  @override
   Future<void> loadIr(String path) async => calls['loadIr'] = path;
 
   @override
@@ -248,6 +251,51 @@ void main() {
       expect(prefs.getBool('dsp.limiter'), isTrue);
     });
 
+    testWidgets('engine toggles persist to prefs and rehydrate',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({'engine.bitPerfect': true});
+      final fake = FakeEngine();
+      final player = FakePlayerController(fake);
+      await _pumpSettings(tester, player);
+      await _selectSection(tester, 'audio');
+
+      // 回显：prefs 中已开启的 BitPerfect 在 UI 上应为开
+      final bpSwitch = tester.widget<Switch>(find.descendant(
+        of: find.byKey(const Key('sw_bitperfect')),
+        matching: find.byType(Switch),
+      ));
+      expect(bpSwitch.value, isTrue);
+
+      // 新切换的 AutoSampleRate 即时落盘
+      final asrSwitch = find.descendant(
+        of: find.byKey(const Key('sw_autosr')),
+        matching: find.byType(Switch),
+      );
+      await tester.tap(asrSwitch);
+      await tester.pump();
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('engine.autoSampleRate'), isTrue);
+    });
+
+    testWidgets('AutoEQ picker selects catalog model', (tester) async {
+      final fake = FakeEngine();
+      final player = FakePlayerController(fake);
+      await _pumpSettings(tester, player);
+      await _selectSection(tester, 'dsp');
+
+      // 打开选择器 → 弹 catalog（含关闭项 + 型号）
+      await tester.tap(find.byKey(const Key('autoeq_picker')));
+      await tester.pumpAndSettle();
+      expect(find.text('关闭 AutoEQ'), findsWidgets);
+      await tester.tap(find.text('HD650'));
+      await tester.pumpAndSettle();
+
+      // 选中即应用：engine.setAutoEq + prefs 落盘
+      expect(fake.calls['setAutoEq'], 'HD650');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('dsp.autoEq'), 'HD650');
+    });
+
     testWidgets('clear-all flow calls player.clearAllData', (tester) async {
       final fake = FakeEngine();
       final player = FakePlayerController(fake);
@@ -265,15 +313,19 @@ void main() {
       expect(player.clearAllCalled, isTrue);
     });
 
-    testWidgets('exclusive switch only shown on Windows', (tester) async {
+    testWidgets('exclusive switch shown on Windows and macOS', (tester) async {
       final fake = FakeEngine();
       final player = FakePlayerController(fake);
       await _pumpSettings(tester, player);
       await _selectSection(tester, 'audio');
 
-      if (Platform.isWindows) {
+      final shown = Platform.isWindows || Platform.isMacOS;
+      if (shown) {
         expect(find.byKey(const Key('sw_exclusive')), findsOneWidget);
-        await tester.tap(find.byKey(const Key('sw_exclusive')));
+        await tester.tap(find.descendant(
+          of: find.byKey(const Key('sw_exclusive')),
+          matching: find.byType(Switch),
+        ));
         await tester.pumpAndSettle();
         expect(fake.reinitializedExclusive, isTrue);
       } else {

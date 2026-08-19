@@ -1092,6 +1092,13 @@ class _NowPlaying extends ConsumerWidget {
             Text(track?.artist ?? l10n.tapToStart,
                 style: const TextStyle(
                     color: _onSurfaceVariant, fontSize: 14)),
+            const SizedBox(height: 12),
+            // BPM/Key 分析徽章（播放时后台分析，完成后经 analysisStream 刷新）
+            StreamBuilder<String>(
+              stream: player.analysisStream,
+              builder: (context, _) =>
+                  _AnalysisTags(player: player, track: track),
+            ),
             const SizedBox(height: 20),
             _Progress(player: player),
             const SizedBox(height: 18),
@@ -1105,6 +1112,43 @@ class _NowPlaying extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// BPM / Key 分析徽章（对齐 mobile 播放页 _Tags）。无结果（未分析完/失败）
+/// 时渲染为空，不占位；分析完成经 [PlayerController.analysisStream] 触发重建。
+class _AnalysisTags extends StatelessWidget {
+  final PlayerController player;
+  final Track? track;
+  const _AnalysisTags({required this.player, required this.track});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = track;
+    if (t == null) return const SizedBox.shrink();
+    final a = player.getAnalysis(t.id);
+    if (a == null) return const SizedBox.shrink();
+    final chips = <Widget>[];
+    if (a.bpm != null) chips.add(_chip('${a.bpm!.round()} BPM'));
+    if (a.key != null && a.key!.isNotEmpty) chips.add(_chip(a.key!));
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Wrap(spacing: 6, runSpacing: 6, children: chips);
+  }
+
+  Widget _chip(String label) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: _surface2,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: _border),
+        ),
+        child: Text(label,
+            style: const TextStyle(
+                fontFamily: 'JetBrainsMono',
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0.5,
+                color: _onSurfaceVariant)),
+      );
 }
 
 class _Progress extends ConsumerStatefulWidget {

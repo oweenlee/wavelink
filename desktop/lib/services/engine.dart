@@ -126,6 +126,16 @@ class Engine {
   Timer? _pollTimer;
   final _eventController = StreamController<EngineEvent>.broadcast();
 
+  // 启动参数快照：reinitialize（独占模式实时切换）时复用，避免丢失
+  // crossfade / autoSampleRate / bitPerfect 等非默认配置。
+  int _sampleRate = 44100;
+  int _channels = 2;
+  int _bufferMs = 280;
+  bool _bitPerfect = false;
+  bool _autoSampleRate = false;
+  int _crossfadeMs = 0;
+  String? _outputDevice;
+
   /// 引擎事件流（position / duration / track_changed / stopped / error ...）
   Stream<EngineEvent> get events => _eventController.stream;
 
@@ -137,8 +147,17 @@ class Engine {
     bool bitPerfect = false,
     bool exclusiveMode = false,
     String? outputDevice,
+    int crossfadeMs = 0,
+    bool autoSampleRate = false,
   }) async {
     if (_inited) return null;
+    _sampleRate = sampleRate;
+    _channels = channels;
+    _bufferMs = bufferMs;
+    _bitPerfect = bitPerfect;
+    _autoSampleRate = autoSampleRate;
+    _crossfadeMs = crossfadeMs;
+    _outputDevice = outputDevice;
     final err = await frb.wavelinkInit(
       sampleRate: sampleRate,
       channels: channels,
@@ -146,6 +165,8 @@ class Engine {
       bitPerfect: bitPerfect,
       exclusiveMode: exclusiveMode,
       outputDevice: outputDevice,
+      crossfadeMs: crossfadeMs,
+      autoSampleRate: autoSampleRate,
     );
     if (err == null) {
       _inited = true;
@@ -154,15 +175,24 @@ class Engine {
     return err;
   }
 
-  /// 重新初始化引擎（用于独占模式实时切换）：先 deinit 再按默认参数 init。
+  /// 重新初始化引擎（用于独占模式实时切换）：先 deinit 再按启动参数 init。
   ///
-  /// 保留 app 启动时实际使用的采样率/声道/缓冲（44100 / 2 / 280），
+  /// 保留启动时实际生效的采样率/声道/缓冲/crossfade/bitPerfect 等配置，
   /// 仅切换 [exclusiveMode]。代价是切换瞬间停播（符合设置项语义）。
   Future<String?> reinitialize({bool exclusiveMode = false}) async {
     await frb.wavelinkDeinit();
     _inited = false;
     _pollTimer?.cancel();
-    return initialize(exclusiveMode: exclusiveMode);
+    return initialize(
+      sampleRate: _sampleRate,
+      channels: _channels,
+      bufferMs: _bufferMs,
+      bitPerfect: _bitPerfect,
+      exclusiveMode: exclusiveMode,
+      outputDevice: _outputDevice,
+      crossfadeMs: _crossfadeMs,
+      autoSampleRate: _autoSampleRate,
+    );
   }
 
   void _startPolling() {
@@ -332,6 +362,9 @@ class Engine {
       frb.wavelinkSetReplaygainPeak(peak: peak);
 
   Future<void> setAutoEq(String? model) => frb.wavelinkSetAutoEq(model: model);
+
+  /// AutoEQ 耳机校正档案目录（oratory1990 实测型号名），供设置页选择展示
+  Future<List<String>> autoEqCatalog() => frb.wavelinkAutoEqCatalog();
 
   /// 加载房间校正 FIR（REW 导出 .wav），下次播放生效
   Future<void> loadIr(String path) => frb.wavelinkLoadIr(path: path);

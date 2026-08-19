@@ -18,6 +18,8 @@ Future<String?> wavelinkInit({
   required bool bitPerfect,
   required bool exclusiveMode,
   String? outputDevice,
+  required int crossfadeMs,
+  required bool autoSampleRate,
 }) => RustLib.instance.api.crateApiEngineWavelinkInit(
   sampleRate: sampleRate,
   channels: channels,
@@ -25,6 +27,8 @@ Future<String?> wavelinkInit({
   bitPerfect: bitPerfect,
   exclusiveMode: exclusiveMode,
   outputDevice: outputDevice,
+  crossfadeMs: crossfadeMs,
+  autoSampleRate: autoSampleRate,
 );
 
 /// 释放引擎。与 `wavelink_init` 配对，可重新 init（ENGINE 可重置）。
@@ -178,6 +182,11 @@ Future<void> wavelinkSetReplaygainPeak({double? peak}) =>
 /// 应用/清除 AutoEQ 耳机校正档案（型号名；null/空 = 清除恢复平坦）
 Future<void> wavelinkSetAutoEq({String? model}) =>
     RustLib.instance.api.crateApiEngineWavelinkSetAutoEq(model: model);
+
+/// AutoEQ 耳机校正档案目录（oratory1990 实测，型号名供设置页选择展示，
+/// 选中后经 `wavelink_set_auto_eq` 应用）。与 mobile 的 `auto_eq_catalog` 对齐。
+Future<List<String>> wavelinkAutoEqCatalog() =>
+    RustLib.instance.api.crateApiEngineWavelinkAutoEqCatalog();
 
 /// 加载脉冲响应文件（房间校正 FIR 卷积），下次播放生效
 Future<void> wavelinkLoadIr({required String path}) =>

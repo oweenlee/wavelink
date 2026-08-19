@@ -71,6 +71,8 @@ pub fn wavelink_init(
     bit_perfect: bool,
     exclusive_mode: bool,
     output_device: Option<String>,
+    crossfade_ms: u32,
+    auto_sample_rate: bool,
 ) -> Option<String> {
     let mut engine = ENGINE.lock().unwrap();
     if engine.is_some() {
@@ -83,9 +85,9 @@ pub fn wavelink_init(
         sample_rate: if sample_rate == 0 { 44100 } else { sample_rate },
         channels: if channels == 0 { 2 } else { channels },
         buffer_ms: if buffer_ms == 0 { 280 } else { buffer_ms },
-        crossfade_ms: 0,
+        crossfade_ms,
         output_device: device,
-        auto_sample_rate: false,
+        auto_sample_rate,
         exclusive_mode,
         bit_perfect,
         ..Default::default()
@@ -430,6 +432,16 @@ pub fn wavelink_set_auto_eq(model: Option<String>) {
     if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
         handle.set_auto_eq(m.as_deref());
     }
+}
+
+/// AutoEQ 耳机校正档案目录（oratory1990 实测，型号名供设置页选择展示，
+/// 选中后经 `wavelink_set_auto_eq` 应用）。与 mobile 的 `auto_eq_catalog` 对齐。
+#[frb]
+pub fn wavelink_auto_eq_catalog() -> Vec<String> {
+    audio_core::dsp::autoeq::catalog()
+        .iter()
+        .map(|p| p.name.to_string())
+        .collect()
 }
 
 /// 加载脉冲响应文件（房间校正 FIR 卷积），下次播放生效
