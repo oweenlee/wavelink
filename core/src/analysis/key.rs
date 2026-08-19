@@ -11,10 +11,17 @@
 
 use realfft::RealFftPlanner;
 
-/// Krumhansl-Schmuckler 调性 profiles（Krumhansl-Kessler 1982 原始值）
+/// Krumhansl-Kessler 1982 major probe-tone profile
 const KS_MAJOR: [f32; 12] = [
     6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88,
 ];
+/// 小调模板：KK 1982 minor 前 5 项 + 经验调优后半段。
+///
+/// KK 1982 原始 minor 后半段与 major 差异较大，在 HPCP 谐波折叠后会
+/// 把 C major（泛音丰富）误判为相对小调 Em（共享 C 大调音阶全部音符）。
+/// 后半段向 major 靠拢可抑制 relative-key 混淆（代价：Am/Dm 等与
+/// C/G/F 的判别力略降，但 major/minor 判别本身依赖 chroma 差异而非
+/// 模板绝对值，实际影响可控）。
 const KS_MINOR: [f32; 12] = [
     6.33, 2.68, 3.52, 5.38, 2.60, 4.00, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88,
 ];

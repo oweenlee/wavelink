@@ -671,7 +671,12 @@ pub async fn engine_play_smb_stream(
     format_hint: Option<String>,
     cache_final_path: Option<String>,
 ) -> Result<(), String> {
-    let handle = crate::api::engine::engine_start_stream(format_hint, None)?;
+    // 流式播放前先取文件大小：传给 core 用于渐进式时长估算
+    // （无 content_length 时 core 无法估算流式播放总时长，进度条 max 不准）。
+    // smb_file_size 走 list_directory，10s 超时；失败不阻塞播放（传 None 降级为粗估）。
+    let content_length = smb_file_size(smb_path.clone()).await.ok();
+    let handle =
+        crate::api::engine::engine_start_stream(format_hint, content_length)?;
     // 首块喂流成功信号：喂流 task 写入第一块后通知，主函数据此确认流已启动
     let (first_tx, first_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let first_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(first_tx)));
