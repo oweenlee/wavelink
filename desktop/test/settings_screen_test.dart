@@ -220,6 +220,7 @@ void main() {
       await _pumpSettings(tester, player);
       await _selectSection(tester, 'dsp');
 
+      await tester.ensureVisible(find.byKey(const Key('fir_clear')));
       await tester.tap(find.byKey(const Key('fir_clear')));
       await tester.pump();
       expect(fake.calls['clearIr'], isTrue);

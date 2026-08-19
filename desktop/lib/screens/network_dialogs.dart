@@ -310,7 +310,13 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
     };
     return AlertDialog(
       backgroundColor: kSurface,
-      title: Text(title, style: const TextStyle(color: kOnSurface)),
+      title: Text(title,
+          style: const TextStyle(
+              fontFamily: 'SpaceGrotesk',
+              color: kOnSurface,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.3)),
       content: SizedBox(
         width: 440,
         child: SingleChildScrollView(
@@ -340,6 +346,10 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
             backgroundColor: kOnSurface,
             foregroundColor: kSurface,
             disabledBackgroundColor: kSurface2,
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8)),
           ),
           onPressed: _busy ? null : _saveAndImport,
           child: _busy
@@ -394,10 +404,19 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
                 labelText: d.$2,
                 labelStyle:
                     const TextStyle(color: kOnSurfaceVariant, fontSize: 12),
-                enabledBorder:
-                    const OutlineInputBorder(borderSide: BorderSide(color: kBorder)),
-                focusedBorder: const OutlineInputBorder(
-                  borderSide: BorderSide(color: kOnSurfaceVariant),
+                isDense: true,
+                filled: true,
+                fillColor: AppTheme.s3,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: AppTheme.highlightStrong),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(
+                      color: AppTheme.textTertiary, width: 1.4),
                 ),
               ),
             ),
@@ -409,27 +428,36 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
   Widget _statusLine() {
     final ok = _status!.startsWith('ok:');
     final msg = _status!.substring(3);
+    final color = ok ? AppTheme.ok : AppTheme.danger;
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Row(
-        children: [
-          Icon(
-            ok ? LucideIcons.circleCheck : LucideIcons.circleAlert,
-            size: 15,
-            color: ok ? kOnSurface : AppTheme.textTertiary,
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              msg,
-              style: TextStyle(
-                color: ok ? kOnSurface : kOnSurfaceVariant,
-                fontSize: 12,
-                fontWeight: ok ? FontWeight.w600 : FontWeight.normal,
+      padding: const EdgeInsets.only(top: 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: color.withAlpha(0x0D),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withAlpha(0x40)),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              ok ? LucideIcons.circleCheck : LucideIcons.circleAlert,
+              size: 15,
+              color: color,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                msg,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12.5,
+                  fontWeight: ok ? FontWeight.w600 : FontWeight.w500,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -346,10 +346,11 @@ class _Sidebar extends ConsumerWidget {
             padding: EdgeInsets.fromLTRB(20, 22, 20, 14),
             child: Text(l10n.sidebarLocalMusic,
                 style: TextStyle(
+                    fontFamily: 'SpaceGrotesk',
                     color: _onSurface,
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
-                    letterSpacing: 0.3)),
+                    letterSpacing: -0.3)),
           ),
           _NavItem(
             icon: LucideIcons.music,
@@ -556,35 +557,56 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = AccentScope.of(context);
     final body = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
           Icon(icon,
-              size: 18, color: active ? _onSurface : AppTheme.textTertiary),
-          const SizedBox(width: 12),
+              size: 17, color: active ? accent : AppTheme.textTertiary),
+          const SizedBox(width: 11),
           Expanded(
             child: Text(label,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                     color: active ? _onSurface : _onSurfaceVariant,
-                    fontSize: 13.5)),
+                    fontSize: 13,
+                    fontWeight: active ? FontWeight.w600 : FontWeight.w400)),
           ),
           if (trailing != null)
             Text(trailing!,
                 style: const TextStyle(
-                    color: _onSurfaceVariant, fontSize: 12)),
+                    color: AppTheme.textTertiary, fontSize: 11)),
         ],
       ),
     );
-    return Material(
-      color: active ? _surface2 : Colors.transparent,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
       child: Row(
         children: [
-          Expanded(child: InkWell(onTap: onTap, child: body)),
+          // 选中态左侧强调色条
+          Container(
+            width: 3,
+            height: 26,
+            decoration: BoxDecoration(
+              color: active ? accent : Colors.transparent,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Expanded(
+            child: Material(
+              color: active ? _surface2 : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              child: InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(8),
+                child: body,
+              ),
+            ),
+          ),
           if (trailingActions != null)
             Padding(
-              padding: const EdgeInsets.only(right: 2),
+              padding: const EdgeInsets.only(right: 4),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: trailingActions!,
@@ -880,7 +902,11 @@ class _TrackRow extends StatelessWidget {
                 ),
                 child: Text(badge,
                     style: const TextStyle(
-                        color: _onSurfaceVariant, fontSize: 10)),
+                        fontFamily: 'JetBrainsMono',
+                        color: _onSurfaceVariant,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.3)),
               ),
               const SizedBox(width: 10),
               _FavoriteButton(player: player, track: track),
@@ -1042,9 +1068,10 @@ class _FavoriteButton extends ConsumerWidget {
     final fav = player.isFavorite(track);
     return IconButton(
       icon: Icon(
-        fav ? Icons.favorite : Icons.favorite_border,
+        fav ? LucideIcons.heart : LucideIcons.heart,
         size: 17,
-        color: fav ? AppTheme.danger : AppTheme.textSecondary,
+        color: fav ? AppTheme.danger : AppTheme.textTertiary,
+        fill: fav ? 1.0 : 0.0,
       ),
       onPressed: () => player.toggleFavorite(track),
     );
@@ -1057,7 +1084,9 @@ class _NowPlaying extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // watch libraryProvider 让封面异步提取完成后面板也能刷新
     ref.watch(currentIndexProvider);
+    ref.watch(libraryProvider);
     final l10n = AppLocalizations.of(context);
     final track = player.currentTrack;
     return Container(
@@ -1067,7 +1096,7 @@ class _NowPlaying extends ConsumerWidget {
         border: Border(left: BorderSide(color: _border)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1076,36 +1105,36 @@ class _NowPlaying extends ConsumerWidget {
                 key: ValueKey('np-${track?.coverUrl ?? track?.id ?? 'empty'}'),
                 seed: track?.id ?? 'empty',
                 coverUrl: track?.coverUrl,
-                size: 220,
+                size: 168,
                 rounded: true,
               ),
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 16),
             Text(track?.title ?? l10n.nowPlayingEmpty,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
+                    fontFamily: 'SpaceGrotesk',
                     color: _onSurface,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w700)),
-            const SizedBox(height: 6),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.3)),
+            const SizedBox(height: 4),
             Text(track?.artist ?? l10n.tapToStart,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                    color: _onSurfaceVariant, fontSize: 14)),
-            const SizedBox(height: 12),
+                    color: _onSurfaceVariant, fontSize: 13)),
+            const SizedBox(height: 10),
             // BPM/Key 分析徽章（播放时后台分析，完成后经 analysisStream 刷新）
             StreamBuilder<String>(
               stream: player.analysisStream,
               builder: (context, _) =>
                   _AnalysisTags(player: player, track: track),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 14),
             _Progress(player: player),
-            const SizedBox(height: 18),
-            Text(l10n.lyrics,
-                style:
-                    TextStyle(color: _onSurfaceVariant, fontSize: 13)),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Expanded(child: _Lyrics(player: player)),
           ],
         ),
@@ -1209,38 +1238,99 @@ class _ProgressState extends ConsumerState<_Progress> {
       TextStyle(color: _onSurfaceVariant, fontSize: 12);
 }
 
-class _Lyrics extends ConsumerWidget {
+class _Lyrics extends ConsumerStatefulWidget {
   final PlayerController player;
   const _Lyrics({required this.player});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_Lyrics> createState() => _LyricsState();
+}
+
+class _LyricsState extends ConsumerState<_Lyrics> {
+  final _ctrl = ScrollController();
+  int _lastActive = -1;
+
+  /// 每行歌词固定高度，用于计算 auto-scroll offset。
+  static const _lineH = 40.0;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final lines = ref.watch(lyricsProvider).value ?? const <LyricLine>[];
     if (lines.isEmpty) {
       return Center(
         child: Text(l10n.noLyrics,
-            style: const TextStyle(color: _onSurfaceVariant)),
+            style: const TextStyle(color: _onSurfaceVariant, fontSize: 13)),
       );
     }
     final pos = ref.watch(positionProvider).value ?? Duration.zero;
     final active = activeLyricIndex(lines, pos);
-    return ListView.builder(
-      itemCount: lines.length,
-      itemBuilder: (c, i) {
-        final isActive = i == active;
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
-          child: Text(
-            lines[i].text,
-            style: TextStyle(
-              color: isActive ? _onSurface : _onSurfaceVariant,
-              fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-              fontSize: isActive ? 15 : 13.5,
-            ),
-          ),
+
+    // 当前行变化时平滑滚动至居中位置
+    if (active != _lastActive) {
+      _lastActive = active;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_ctrl.hasClients || active < 0) return;
+        final viewport = _ctrl.position.viewportDimension;
+        final target =
+            active * _lineH - (viewport - _lineH) / 2;
+        _ctrl.animateTo(
+          target.clamp(0.0, _ctrl.position.maxScrollExtent),
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
         );
-      },
+      });
+    }
+
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (rect) => const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Color(0x00000000),
+          Color(0xFF000000),
+          Color(0xFF000000),
+          Color(0x00000000),
+        ],
+        stops: [0.0, 0.1, 0.9, 1.0],
+      ).createShader(rect),
+      child: ListView.builder(
+        controller: _ctrl,
+        padding: const EdgeInsets.symmetric(vertical: 50),
+        itemCount: lines.length,
+        itemBuilder: (c, i) {
+          final isActive = i == active;
+          final distance = (i - active).abs();
+          return SizedBox(
+            height: _lineH,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                lines[i].text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isActive
+                      ? _onSurface
+                      : distance <= 2
+                          ? _onSurfaceVariant
+                          : AppTheme.textTertiary,
+                  fontWeight:
+                      isActive ? FontWeight.w600 : FontWeight.w400,
+                  fontSize: isActive ? 15.5 : 13,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -1353,30 +1443,45 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
                             IconButton(
                               icon: Icon(
                                 LucideIcons.shuffle,
+                                size: 18,
                                 color: player.shuffle
-                                    ? _onSurface
+                                    ? accent
                                     : AppTheme.textTertiary,
                               ),
                               onPressed: player.toggleShuffle,
                             ),
                           IconButton(
-                            iconSize: 26,
-                            icon: const Icon(Icons.skip_previous,
-                                color: _onSurface),
+                            icon: const Icon(LucideIcons.skipBack,
+                                size: 22, color: AppTheme.textPrimary),
                             onPressed: player.previous,
                           ),
-                          IconButton(
-                            iconSize: 34,
-                            icon: Icon(
-                              playing ? Icons.pause : Icons.play_arrow,
-                              color: _onSurface,
+                          const SizedBox(width: 4),
+                          // 圆形播放/暂停按钮（强调色底）
+                          Material(
+                            color: accent,
+                            shape: const CircleBorder(),
+                            clipBehavior: Clip.antiAlias,
+                            child: InkWell(
+                              onTap: player.togglePlay,
+                              child: Container(
+                                width: 42,
+                                height: 42,
+                                alignment: Alignment.center,
+                                child: Icon(
+                                  playing
+                                      ? LucideIcons.pause
+                                      : LucideIcons.play,
+                                  size: 22,
+                                  color: accent.onAccent,
+                                  fill: playing ? 1.0 : 0.0,
+                                ),
+                              ),
                             ),
-                            onPressed: player.togglePlay,
                           ),
+                          const SizedBox(width: 4),
                           IconButton(
-                            iconSize: 26,
-                            icon: const Icon(Icons.skip_next,
-                                color: _onSurface),
+                            icon: const Icon(LucideIcons.skipForward,
+                                size: 22, color: AppTheme.textPrimary),
                             onPressed: player.next,
                           ),
                           if (showMode)
@@ -1385,9 +1490,10 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
                                 player.repeatMode == RepeatMode.one
                                     ? LucideIcons.repeat1
                                     : LucideIcons.repeat,
+                                size: 18,
                                 color: player.repeatMode == RepeatMode.off
                                     ? AppTheme.textTertiary
-                                    : _onSurface,
+                                    : accent,
                               ),
                               onPressed: player.cycleRepeat,
                             ),
