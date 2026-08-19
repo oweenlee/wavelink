@@ -27,11 +27,17 @@ Widget _testApp(Widget child) => ProviderScope(
       ),
     );
 
-/// 把设置页泵入测试视口，并把视口拉高到 4000px，使 ListView 把全部 section
-/// 渲染到同一屏（避免懒构建 / offstage 导致 find / tap 找不到目标）。
+/// 把设置页泵入测试视口。主从布局下每个 section 单独挂载，视口高度给足
+/// 避免内容区滚动导致 tap 命中不到（DSP 区较高，1100px 可整屏容纳）。
 Future<void> _pumpSettings(WidgetTester tester, PlayerController player) async {
-  await tester.binding.setSurfaceSize(const Size(800, 4000));
+  await tester.binding.setSurfaceSize(const Size(980, 1100));
   await tester.pumpWidget(_testApp(SettingsScreen(player: player)));
+  await tester.pumpAndSettle();
+}
+
+/// 点左侧导航切到指定分类（key: general/audio/dsp/diag）。
+Future<void> _selectSection(WidgetTester tester, String key) async {
+  await tester.tap(find.byKey(Key('nav_$key')));
   await tester.pumpAndSettle();
 }
 
@@ -131,22 +137,35 @@ void main() {
   });
 
   group('SettingsScreen', () {
-    testWidgets('renders all sections and engine-null hint', (tester) async {
+    testWidgets('renders nav + all sections and engine-null hint',
+        (tester) async {
       final player = PlayerController(); // engine 未加载
       await _pumpSettings(tester, player);
 
+      // 导航栏 4 项齐全
+      expect(find.byKey(const Key('nav_general')), findsOneWidget);
+      expect(find.byKey(const Key('nav_audio')), findsOneWidget);
+      expect(find.byKey(const Key('nav_dsp')), findsOneWidget);
+      expect(find.byKey(const Key('nav_diag')), findsOneWidget);
+
+      // 默认选中「通用」，引擎未加载横幅存在
       expect(find.byKey(const Key('sec_general')), findsOneWidget);
-      expect(find.byKey(const Key('sec_audio')), findsOneWidget);
-      expect(find.byKey(const Key('sec_dsp')), findsOneWidget);
-      expect(find.byKey(const Key('sec_diag')), findsOneWidget);
-      // 引擎未加载提示
       expect(find.textContaining('音频引擎未加载'), findsOneWidget);
+
+      // 逐一切换分类，校验对应内容标题出现
+      await _selectSection(tester, 'audio');
+      expect(find.byKey(const Key('sec_audio')), findsOneWidget);
+      await _selectSection(tester, 'dsp');
+      expect(find.byKey(const Key('sec_dsp')), findsOneWidget);
+      await _selectSection(tester, 'diag');
+      expect(find.byKey(const Key('sec_diag')), findsOneWidget);
     });
 
     testWidgets('DSP toggles call engine methods', (tester) async {
       final fake = FakeEngine();
       final player = FakePlayerController(fake);
       await _pumpSettings(tester, player);
+      await _selectSection(tester, 'dsp');
 
       // 立体声展宽开关 → setStereoWidener(true, 0.5)
       final widenerSwitch = find.descendant(
@@ -171,6 +190,7 @@ void main() {
       final fake = FakeEngine();
       final player = FakePlayerController(fake);
       await _pumpSettings(tester, player);
+      await _selectSection(tester, 'audio');
 
       await tester.enterText(find.byKey(const Key('sr_field')), '48000');
       await tester.tap(find.byKey(const Key('sr_apply')));
@@ -182,6 +202,7 @@ void main() {
       final fake = FakeEngine();
       final player = FakePlayerController(fake);
       await _pumpSettings(tester, player);
+      await _selectSection(tester, 'dsp');
 
       await tester.tap(find.byKey(const Key('preset_dropdown')));
       await tester.pumpAndSettle();
@@ -194,6 +215,7 @@ void main() {
       final fake = FakeEngine();
       final player = FakePlayerController(fake);
       await _pumpSettings(tester, player);
+      await _selectSection(tester, 'dsp');
 
       await tester.tap(find.byKey(const Key('fir_clear')));
       await tester.pump();
@@ -204,6 +226,7 @@ void main() {
       final fake = FakeEngine();
       final player = FakePlayerController(fake);
       await _pumpSettings(tester, player);
+      await _selectSection(tester, 'general');
 
       await tester.tap(find.widgetWithText(OutlinedButton, '清空所有数据'));
       await tester.pumpAndSettle();
@@ -220,6 +243,7 @@ void main() {
       final fake = FakeEngine();
       final player = FakePlayerController(fake);
       await _pumpSettings(tester, player);
+      await _selectSection(tester, 'audio');
 
       if (Platform.isWindows) {
         expect(find.byKey(const Key('sw_exclusive')), findsOneWidget);
