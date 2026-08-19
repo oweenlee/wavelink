@@ -184,6 +184,9 @@ class PlayerController {
     }
     _engine?.events.listen(_onEngineEvent);
     await _engine?.setVolume(_volume);
+    // 恢复音频输出/DSP 设置（设备、采样率、效果链、EQ、FIR），
+    // 与设置页同源读写 SharedPreferences。
+    await _restoreAudioSettings();
 
     // 恢复曲库：网络音源靠 SQLite 跨重启存活（直接读回）；本地文件夹保持
     // 每次启动重扫（与现状一致，且首次运行也会把本地曲库写入 DB）。
@@ -219,6 +222,38 @@ class PlayerController {
     await _restorePlayback();
     // 曲库就绪后清理孤儿缓存（本地文件夹重扫 + 源差集同步均已落库）
     await _cleanOrphanCaches();
+  }
+
+  /// 恢复音频输出与 DSP 设置（prefs 键与设置页一致）；引擎未加载则跳过。
+  /// 失败仅记录，不影响启动流程（恢复是可丢失的优化，非正确性前提）。
+  Future<void> _restoreAudioSettings() async {
+    final p = _prefs;
+    if (p == null || _engine == null) return;
+    try {
+      final device = p.getString('outputDevice');
+      if (device != null) await _engine?.setOutputDevice(device);
+      final sr = p.getInt('outputSampleRate');
+      if (sr != null) await _engine?.setOutputSampleRate(sr);
+      if (p.getBool('exclusiveMode') ?? false) {
+        await _engine?.reinitialize(exclusiveMode: true);
+      }
+      await _engine?.setStereoWidener(
+          p.getBool('dsp.widener') ?? false, p.getDouble('dsp.widenerWidth') ?? 0.5);
+      await _engine?.setCrossfeed(p.getBool('dsp.crossfeed') ?? false);
+      await _engine?.setLimiter(p.getBool('dsp.limiter') ?? false);
+      await _engine?.setDither(p.getBool('dsp.dither') ?? false);
+      await _engine?.setNoiseShaping(p.getBool('dsp.noiseShaping') ?? false);
+      await _engine?.setReplaygainGain(p.getDouble('dsp.gain') ?? 0);
+      await _engine?.setSpeed(p.getDouble('dsp.speed') ?? 1.0);
+      final preset = p.getString('dsp.preset');
+      if (preset != null) await _engine?.applyPreset(preset);
+      final eq = p.getString('dsp.autoEq');
+      if (eq != null && eq.isNotEmpty) await _engine?.setAutoEq(eq);
+      final ir = p.getString('dsp.irPath');
+      if (ir != null && ir.isNotEmpty) await _engine?.loadIr(ir);
+    } catch (e) {
+      debugPrint('restore audio settings error: $e');
+    }
   }
 
   /// 曲库差集同步后删除已不存在曲目的缓存文件；失败仅记录，不阻塞流程。
@@ -393,6 +428,16 @@ class PlayerController {
     _queue = const [];
     _queueBase = const [];
     if (_prefs != null) await PlaybackSnapshot.clear(_prefs!);
+
+    // 6.7 清空音频输出与 DSP 设置（设备/采样率/效果链/EQ/FIR）
+    for (final k in const [
+      'outputDevice', 'outputSampleRate', 'exclusiveMode',
+      'dsp.widener', 'dsp.widenerWidth', 'dsp.crossfeed', 'dsp.limiter',
+      'dsp.dither', 'dsp.noiseShaping', 'dsp.gain', 'dsp.speed',
+      'dsp.preset', 'dsp.autoEq', 'dsp.irPath',
+    ]) {
+      await _prefs?.remove(k);
+    }
 
     // 7. 删除磁盘缓存目录（仅副本，安全）
     await _clearCacheDirs();

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/theme.dart';
 import '../services/engine.dart';
@@ -12,11 +14,12 @@ import '../services/player_controller.dart';
 
 /// 设置页（桌面补齐）：语言 / 数据管理 + 音频输出 / DSP / 诊断。
 ///
-/// 布局采用桌面音乐 app 常见的「左侧导航 + 右侧内容」主从结构（对齐 Tidal /
-/// Foobar2000 / Roon 范式），而非单列长滚动。设计遵循桌面端灰阶哲学
-/// （无彩色强调），技术读数用等宽 [WlText.mono]。
-/// 音频命令直接走 [Engine] 服务（[PlayerController.engine]），不引入 riverpod
-/// repository 抽象，保持与 mobile 解耦、移动端零回归。
+/// 布局「左侧导航 + 右侧内容」主从结构（Tidal / Roon 范式）。视觉延续灰阶
+/// 哲学，但引入 [AccentScope] 强调色作交互焦点（导航选中、Switch/Slider、
+/// 主按钮），并用语义色状态灯表达引擎健康度——控件层精致、信息层清晰。
+///
+/// 音频/DSP 设置与 [PlayerController.init] 的 `_restoreAudioSettings` 同源
+/// 读写 SharedPreferences（启动恢复、即时落盘，「清空所有数据」一并清除）。
 class SettingsScreen extends ConsumerStatefulWidget {
   final PlayerController player;
   const SettingsScreen({super.key, required this.player});
@@ -40,12 +43,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// 分类顺序即导航栏顺序；[key] 同时用作内容标题 Key 前缀（`sec_<key>`）。
   static const List<_SectionMeta> _sections = [
     _SectionMeta('general', '通用', LucideIcons.settings, '语言与数据管理'),
-    _SectionMeta('audio', '音频输出', LucideIcons.volume2, '设备选择与引擎状态'),
+    _SectionMeta('audio', '音频输出', LucideIcons.volume2, '设备选择与采样率'),
     _SectionMeta('dsp', 'DSP 效果', LucideIcons.slidersHorizontal, '实时音频处理链'),
     _SectionMeta('diag', '诊断', LucideIcons.activity, '引擎运行指标'),
   ];
 
   int _active = 0;
+  SharedPreferences? _prefs;
+  Timer? _diagTimer;
 
   final List<String> _locales = const ['system', 'zh', 'ja', 'de', 'en'];
   final Map<String, String> _localeLabels = const {
@@ -87,12 +92,55 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _loadDevices();
     _refreshDiagnostic();
     _refreshSr();
+    _loadPersistedState();
+    // 诊断页周期自刷新（仅当激活时拉取，避免后台空转）
+    _diagTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (_active == 3) _refreshDiagnostic();
+    });
   }
 
   @override
   void dispose() {
+    _diagTimer?.cancel();
     _srController.dispose();
     super.dispose();
+  }
+
+  /// 从 SharedPreferences 回显音频/DSP 设置（与引擎恢复同源，保证 UI 与
+  /// 实际生效一致；prefs 读回是缓存实例，几乎瞬时）。
+  Future<void> _loadPersistedState() async {
+    final p = await SharedPreferences.getInstance();
+    _prefs = p;
+    if (!mounted) return;
+    setState(() {
+      _selectedDevice = p.getString('outputDevice');
+      _exclusive = p.getBool('exclusiveMode') ?? false;
+      _srController.text = (p.getInt('outputSampleRate') ?? 44100).toString();
+      _widenerOn = p.getBool('dsp.widener') ?? false;
+      _widenerWidth = p.getDouble('dsp.widenerWidth') ?? 0.5;
+      _crossfeed = p.getBool('dsp.crossfeed') ?? false;
+      _limiter = p.getBool('dsp.limiter') ?? false;
+      _dither = p.getBool('dsp.dither') ?? false;
+      _noiseShaping = p.getBool('dsp.noiseShaping') ?? false;
+      _gain = p.getDouble('dsp.gain') ?? 0;
+      _speed = p.getDouble('dsp.speed') ?? 1.0;
+      _preset = p.getString('dsp.preset') ?? 'flat';
+      _autoEq = p.getString('dsp.autoEq') ?? '';
+      _irPath = p.getString('dsp.irPath') ?? '';
+    });
+    _refreshSr();
+  }
+
+  // ── 即时落盘（fire-and-forget，与启动恢复同 key） ──
+  void _saveBool(String k, bool v) => unawaited(_prefs?.setBool(k, v));
+  void _saveDouble(String k, double v) => unawaited(_prefs?.setDouble(k, v));
+  void _saveInt(String k, int v) => unawaited(_prefs?.setInt(k, v));
+  void _saveString(String k, String? v) {
+    if (v == null) {
+      unawaited(_prefs?.remove(k));
+    } else {
+      unawaited(_prefs?.setString(k, v));
+    }
   }
 
   Future<void> _loadDevices() async {
@@ -105,10 +153,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _refreshDiagnostic() async {
     final e = engine;
     if (e == null) return;
-    _underrun = await e.underrunCount();
-    _lastError = await e.lastError();
-    _currentPath = await e.currentPath();
-    if (mounted) setState(() {});
+    final u = await e.underrunCount();
+    final l = await e.lastError();
+    final c = await e.currentPath();
+    if (!mounted) return;
+    setState(() {
+      _underrun = u;
+      _lastError = l;
+      _currentPath = c;
+    });
   }
 
   Future<void> _refreshSr() async {
@@ -118,27 +171,103 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (mounted) setState(() {});
   }
 
-  // ── 通用卡片基元 ──
+  // ───────────────────────── 页面骨架 ─────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AccentScope.of(context);
+    final engineNull = engine == null;
+    return Scaffold(
+      backgroundColor: AppTheme.s1,
+      body: Row(
+        children: [
+          _SettingsRail(
+            activeIndex: _active,
+            engineReady: !engineNull,
+            onSelect: (i) => setState(() => _active = i),
+          ),
+          Expanded(
+            child: _SectionContent(
+              section: _sections[_active],
+              engineNull: engineNull,
+              accent: accent,
+              child: _activeContent(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _activeContent() {
+    switch (_active) {
+      case 0:
+        return _buildGeneral();
+      case 1:
+        return _buildAudio();
+      case 2:
+        return _buildDsp();
+      default:
+        return _buildDiag();
+    }
+  }
+
+  // ───────────────────────── 控件基元 ─────────────────────────
+
+  /// 卡片：圆角 + 边框 + 微弱投影（投影保留「浮起」感，桌面端克制使用）。
   Widget _card({required List<Widget> children}) => Container(
         decoration: BoxDecoration(
           color: AppTheme.s2,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: AppTheme.highlightStrong),
+          boxShadow: const [
+            BoxShadow(
+                color: Color(0x33000000),
+                blurRadius: 16,
+                offset: Offset(0, 6)),
+          ],
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-        child: Column(children: children),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
       );
 
   Widget _row(Widget child) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 9),
         child: child,
       );
 
   Widget _divider() =>
       const Divider(height: 1, thickness: 1, color: AppTheme.divider);
 
+  /// 分组标题：大写 + 字距 + 前置短横（细分卡片内语义区）。
+  Widget _groupLabel(String t) => Padding(
+        padding: const EdgeInsets.only(top: 16, bottom: 4),
+        child: Row(
+          children: [
+            Container(
+              width: 3,
+              height: 12,
+              decoration: BoxDecoration(
+                color: AppTheme.textTertiary,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(t.toUpperCase(),
+                style: const TextStyle(
+                    color: AppTheme.textTertiary,
+                    fontSize: 11,
+                    letterSpacing: 1.2,
+                    fontWeight: FontWeight.w600)),
+          ],
+        ),
+      );
+
+  Widget _fieldLabel(String t) => Text(t,
+      style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12));
+
   Widget _switchRow(String label, bool value, ValueChanged<bool> onChanged,
-          {Key? key}) =>
+          {Key? key, Color? accent}) =>
       Row(
         key: key ?? Key('sw_$label'),
         children: [
@@ -151,11 +280,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             value: value,
             onChanged: onChanged,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            activeThumbColor: (accent ?? AppTheme.textPrimary).withAlpha(255),
+            activeTrackColor:
+                (accent ?? AppTheme.textPrimary).withAlpha(0x30),
+            inactiveThumbColor: AppTheme.textTertiary,
+            inactiveTrackColor: AppTheme.s3,
           ),
         ],
       );
 
-  /// 技术读数 chip：label 用三级灰，value 用一级灰（等宽）。
+  /// 技术读数 chip：label 三级灰、value 等宽一级灰。
   Widget _chip(String label, String value) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
@@ -167,7 +301,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           text: TextSpan(
             children: [
               TextSpan(
-                  text: '$label ', style: WlText.mono(color: AppTheme.textTertiary)),
+                  text: '$label ',
+                  style: WlText.mono(color: AppTheme.textTertiary)),
               TextSpan(
                   text: value, style: WlText.mono(color: AppTheme.textPrimary)),
             ],
@@ -181,6 +316,620 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         children: children,
       );
 
+  /// 统一输入框：s3 填充、圆角、focus 强调色。
+  Widget _field({
+    Key? key,
+    TextEditingController? controller,
+    String? hint,
+    void Function(String)? onChanged,
+    Color? accent,
+  }) =>
+      TextField(
+        key: key,
+        controller: controller,
+        onChanged: onChanged,
+        style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle:
+              const TextStyle(color: AppTheme.textTertiary, fontSize: 13),
+          isDense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          filled: true,
+          fillColor: AppTheme.s3,
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: AppTheme.highlightStrong),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(
+                color: accent ?? AppTheme.textTertiary, width: 1.4),
+          ),
+        ),
+      );
+
+  /// 统一下拉框：s3 底、圆角、无下划线。
+  Widget _dropdown<T>({
+    required T? value,
+    required List<DropdownMenuItem<T>> items,
+    required ValueChanged<T?> onChanged,
+    String? hint,
+    Key? key,
+  }) =>
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: AppTheme.s3,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppTheme.highlightStrong),
+        ),
+        child: DropdownButton<T>(
+          key: key,
+          value: value,
+          isExpanded: true,
+          underline: const SizedBox.shrink(),
+          icon: const Icon(LucideIcons.chevronDown,
+              size: 16, color: AppTheme.textSecondary),
+          hint: hint != null
+              ? Text(hint,
+                  style: const TextStyle(
+                      color: AppTheme.textTertiary, fontSize: 13))
+              : null,
+          items: items,
+          onChanged: onChanged,
+        ),
+      );
+
+  /// 统一滑块行：label + 强调色 Slider + 等宽读数。
+  Widget _sliderRow({
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required String Function(double) fmt,
+    required ValueChanged<double> onChanged,
+    Color? accent,
+  }) =>
+      _row(Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _fieldLabel(label),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: SliderTheme(
+                  data: SliderThemeData(
+                    thumbColor: accent ?? AppTheme.textPrimary,
+                    activeTrackColor: accent ?? AppTheme.textPrimary,
+                    inactiveTrackColor: AppTheme.s4,
+                    trackHeight: 3,
+                    thumbShape:
+                        const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayShape:
+                        const RoundSliderOverlayShape(overlayRadius: 14),
+                  ),
+                  child: Slider(
+                    value: value,
+                    min: min,
+                    max: max,
+                    onChanged: onChanged,
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 64,
+                child: Text(fmt(value),
+                    textAlign: TextAlign.end,
+                    style: WlText.mono(color: AppTheme.textSecondary)),
+              ),
+            ],
+          ),
+        ],
+      ));
+
+  /// 实心主按钮（强调色底 + 对比文字）。
+  Widget _primaryBtn({
+    Key? key,
+    required String label,
+    required VoidCallback onPressed,
+    Color? accent,
+  }) =>
+      FilledButton(
+        key: key,
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: accent ?? AppTheme.textPrimary,
+          foregroundColor: (accent ?? AppTheme.textPrimary).computeLuminance() >
+                  0.45
+              ? AppTheme.background
+              : Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          textStyle:
+              const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        child: Text(label),
+      );
+
+  // ───────────────────────── 通用 ─────────────────────────
+
+  Widget _buildGeneral() {
+    final mode = ref.watch(localeProvider);
+    return _card(children: [
+      _groupLabel('语言'),
+      _row(Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _fieldLabel('界面语言'),
+          const SizedBox(height: 6),
+          _dropdown<String>(
+            value: mode,
+            onChanged: (v) {
+              if (v != null) {
+                ref.read(localeProvider.notifier).setMode(v);
+              }
+            },
+            items: _locales
+                .map((k) => DropdownMenuItem(
+                      value: k,
+                      child: Text(_localeLabels[k]!,
+                          style: const TextStyle(
+                              color: AppTheme.textPrimary, fontSize: 13)),
+                    ))
+                .toList(),
+          ),
+        ],
+      )),
+      _row(_divider()),
+      _groupLabel('数据'),
+      _row(Row(
+        children: [
+          const Icon(LucideIcons.database,
+              size: 16, color: AppTheme.textTertiary),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text('删除全部曲库、收藏与播放列表（不可恢复）',
+                style: TextStyle(
+                    color: AppTheme.textSecondary, fontSize: 12)),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => _confirmClearAll(context),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppTheme.danger,
+              side: const BorderSide(color: AppTheme.danger),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            icon: const Icon(LucideIcons.trash2, size: 15),
+            label: const Text('清空所有数据'),
+          ),
+        ],
+      )),
+    ]);
+  }
+
+  // ───────────────────────── 音频输出 ─────────────────────────
+
+  Widget _buildAudio() => _card(children: [
+        _groupLabel('输出设备'),
+        _row(Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _fieldLabel('设备'),
+            const SizedBox(height: 6),
+            _dropdown<String?>(
+              value: _selectedDevice,
+              hint: '系统默认',
+              onChanged: (v) async {
+                setState(() {
+                  _selectedDevice = v;
+                  _saveString('outputDevice', v);
+                });
+                await engine?.setOutputDevice(v);
+              },
+              items: [
+                const DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text('系统默认',
+                      style: TextStyle(
+                          color: AppTheme.textPrimary, fontSize: 13)),
+                ),
+                ..._devices.map(
+                  (d) => DropdownMenuItem<String?>(
+                    value: d,
+                    child: Text(d,
+                        style: const TextStyle(
+                            color: AppTheme.textPrimary, fontSize: 13)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        )),
+        _row(_chips([
+          _chip('设备', _selectedDevice ?? '系统默认'),
+          _chip('模式', _exclusive ? '独占' : '共享'),
+          _chip('采样率', _actualSr != null ? '$_actualSr Hz' : '—'),
+        ])),
+        if (Platform.isWindows)
+          _row(_switchRow(
+            'WASAPI 独占模式（切换将重启引擎）',
+            _exclusive,
+            (v) async {
+              setState(() {
+                _exclusive = v;
+                _saveBool('exclusiveMode', v);
+              });
+              final messenger = ScaffoldMessenger.of(context);
+              final err = await engine?.reinitialize(exclusiveMode: v);
+              if (err != null && mounted) {
+                messenger.showSnackBar(
+                    SnackBar(content: Text('独占模式切换失败：$err')));
+              }
+              _refreshSr();
+            },
+            key: const Key('sw_exclusive'),
+          )),
+        _row(_divider()),
+        _groupLabel('采样率'),
+        _row(Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _fieldLabel('输出采样率（Hz，下次播放生效）'),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: _field(
+                    key: const Key('sr_field'),
+                    controller: _srController,
+                    hint: '44100',
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _primaryBtn(
+                  key: const Key('sr_apply'),
+                  label: '应用',
+                  onPressed: () {
+                    final r = int.tryParse(_srController.text);
+                    if (r != null) {
+                      engine?.setOutputSampleRate(r);
+                      _saveInt('outputSampleRate', r);
+                      _refreshSr();
+                    }
+                  },
+                ),
+              ],
+            ),
+          ],
+        )),
+      ]);
+
+  // ───────────────────────── DSP 效果 ─────────────────────────
+
+  Widget _buildDsp() => _card(children: [
+        _groupLabel('空间效果'),
+        _row(_switchRow('立体声展宽', _widenerOn, (v) {
+          setState(() {
+            _widenerOn = v;
+            _saveBool('dsp.widener', v);
+          });
+          engine?.setStereoWidener(v, _widenerWidth);
+        })),
+        _sliderRow(
+          label: '展宽宽度',
+          value: _widenerWidth,
+          min: 0,
+          max: 1,
+          fmt: (v) => v.toStringAsFixed(2),
+          onChanged: (v) {
+            setState(() {
+              _widenerWidth = v;
+              _saveDouble('dsp.widenerWidth', v);
+            });
+            if (_widenerOn) engine?.setStereoWidener(true, v);
+          },
+        ),
+        _row(_switchRow('跨馈 (Crossfeed)', _crossfeed, (v) {
+          setState(() {
+            _crossfeed = v;
+            _saveBool('dsp.crossfeed', v);
+          });
+          engine?.setCrossfeed(v);
+        })),
+        _row(_divider()),
+        _groupLabel('动态处理'),
+        _row(_switchRow('真峰值限幅 (Limiter)', _limiter, (v) {
+          setState(() {
+            _limiter = v;
+            _saveBool('dsp.limiter', v);
+          });
+          engine?.setLimiter(v);
+        })),
+        _row(_switchRow('抖动 (Dither)', _dither, (v) {
+          setState(() {
+            _dither = v;
+            _saveBool('dsp.dither', v);
+          });
+          engine?.setDither(v);
+        })),
+        _row(_switchRow('噪声整形 (Noise Shaping)', _noiseShaping, (v) {
+          setState(() {
+            _noiseShaping = v;
+            _saveBool('dsp.noiseShaping', v);
+          });
+          engine?.setNoiseShaping(v);
+        })),
+        _row(_divider()),
+        _groupLabel('增益与速度'),
+        _sliderRow(
+          label: 'ReplayGain 增益 (dB)',
+          value: _gain,
+          min: -12,
+          max: 12,
+          fmt: (v) => v.toStringAsFixed(1),
+          onChanged: (v) {
+            setState(() {
+              _gain = v;
+              _saveDouble('dsp.gain', v);
+            });
+            engine?.setReplaygainGain(v);
+          },
+        ),
+        _sliderRow(
+          label: '播放速度',
+          value: _speed,
+          min: 0.25,
+          max: 4,
+          fmt: (v) => '${v.toStringAsFixed(2)}x',
+          onChanged: (v) {
+            setState(() {
+              _speed = v;
+              _saveDouble('dsp.speed', v);
+            });
+            engine?.setSpeed(v);
+          },
+        ),
+        _row(_divider()),
+        _groupLabel('均衡器'),
+        _row(Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _fieldLabel('EQ 预设'),
+            const SizedBox(height: 6),
+            _dropdown<String>(
+              key: const Key('preset_dropdown'),
+              value: _preset,
+              onChanged: (v) {
+                if (v != null) {
+                  setState(() {
+                    _preset = v;
+                    _saveString('dsp.preset', v);
+                  });
+                  engine?.applyPreset(v);
+                }
+              },
+              items: const [
+                'flat', 'rock', 'pop', 'dance', 'classical', 'soft',
+                'full_bass', 'full_treble', 'techno', 'vocals'
+              ]
+                  .map((p) => DropdownMenuItem(
+                        value: p,
+                        child: Text(p,
+                            style: const TextStyle(
+                                color: AppTheme.textPrimary, fontSize: 13)),
+                      ))
+                  .toList(),
+            ),
+          ],
+        )),
+        _row(Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _fieldLabel('AutoEQ 耳机型号（留空清除）'),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: _field(
+                    onChanged: (v) => _autoEq = v,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _primaryBtn(
+                  label: '应用',
+                  onPressed: () {
+                    engine?.setAutoEq(_autoEq.isEmpty ? null : _autoEq);
+                    _saveString(
+                        'dsp.autoEq', _autoEq.isEmpty ? null : _autoEq);
+                  },
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: () {
+                    setState(() {
+                      _autoEq = '';
+                      _saveString('dsp.autoEq', null);
+                    });
+                    engine?.setAutoEq(null);
+                  },
+                  child: const Text('清除'),
+                ),
+              ],
+            ),
+          ],
+        )),
+        _row(_divider()),
+        _groupLabel('房间校正'),
+        _row(Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _fieldLabel('FIR 脉冲响应 (REW → .wav)'),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _irPath.isEmpty ? '未载入' : _irPath.split('/').last,
+                    style: WlText.mono(color: AppTheme.textSecondary),
+                  ),
+                ),
+                OutlinedButton(
+                  onPressed: _pickIr,
+                  child: const Text('载入'),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  key: const Key('fir_clear'),
+                  onPressed: () {
+                    setState(() {
+                      _irPath = '';
+                      _saveString('dsp.irPath', null);
+                    });
+                    engine?.clearIr();
+                  },
+                  child: const Text('清除'),
+                ),
+              ],
+            ),
+          ],
+        )),
+      ]);
+
+  // ───────────────────────── 诊断 ─────────────────────────
+
+  Widget _buildDiag() {
+    final engineReady = engine != null;
+    return Column(
+      children: [
+        _metricRow(engineReady),
+        const SizedBox(height: 12),
+        _card(children: [
+          _row(Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _fieldLabel('当前曲目'),
+              const SizedBox(height: 6),
+              Text(
+                _currentPath.isEmpty ? '—' : _currentPath,
+                style: WlText.mono(color: AppTheme.textSecondary),
+              ),
+            ],
+          )),
+          _row(_divider()),
+          _row(Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _fieldLabel('最后错误'),
+              const SizedBox(height: 6),
+              Text(
+                _lastError.isEmpty ? '无' : _lastError,
+                style: WlText.mono(
+                    color: _lastError.isEmpty
+                        ? AppTheme.textTertiary
+                        : AppTheme.warn),
+              ),
+            ],
+          )),
+          _row(_divider()),
+          _row(Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(LucideIcons.refreshCw,
+                      size: 14, color: AppTheme.textTertiary),
+                  SizedBox(width: 6),
+                  Text('每 2 秒自动刷新',
+                      style: TextStyle(
+                          color: AppTheme.textTertiary, fontSize: 11)),
+                ],
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _refreshDiagnostic(),
+                icon: const Icon(LucideIcons.rotateCw,
+                    size: 15, color: AppTheme.textSecondary),
+                label: const Text('立即刷新'),
+              ),
+            ],
+          )),
+        ]),
+      ],
+    );
+  }
+
+  /// 三个指标卡：Underrun 计数 / 采样率 / 引擎状态。
+  Widget _metricRow(bool engineReady) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _metricCard(
+            icon: LucideIcons.gauge,
+            label: 'UNDERRUN',
+            value: '$_underrun',
+          ),
+          const SizedBox(width: 12),
+          _metricCard(
+            icon: LucideIcons.waves,
+            label: '采样率',
+            value: _actualSr != null ? '$_actualSr Hz' : '—',
+          ),
+          const SizedBox(width: 12),
+          _metricCard(
+            icon: engineReady ? LucideIcons.circleCheck : LucideIcons.circleAlert,
+            label: '引擎状态',
+            value: engineReady ? '就绪' : '未加载',
+            valueColor:
+                engineReady ? AppTheme.ok : AppTheme.warn,
+          ),
+        ],
+      );
+
+  Widget _metricCard({
+    required IconData icon,
+    required String label,
+    required String value,
+    Color? valueColor,
+  }) =>
+      Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: AppTheme.s2,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.highlightStrong),
+            boxShadow: const [
+              BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 16,
+                  offset: Offset(0, 6)),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 18, color: valueColor ?? AppTheme.textTertiary),
+              const SizedBox(height: 10),
+              Text(label,
+                  style: const TextStyle(
+                      color: AppTheme.textTertiary,
+                      fontSize: 10,
+                      letterSpacing: 1.2,
+                      fontWeight: FontWeight.w600)),
+              const SizedBox(height: 3),
+              Text(value,
+                  style: WlText.mono(
+                      fontSize: 17,
+                      color: valueColor ?? AppTheme.textPrimary,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      );
+
   Future<void> _pickIr() async {
     final x = await openFile(
       acceptedTypeGroups: const [
@@ -189,7 +938,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
     if (x != null) {
       await engine?.loadIr(x.path);
-      if (mounted) setState(() => _irPath = x.path);
+      if (mounted) {
+        setState(() {
+          _irPath = x.path;
+          _saveString('dsp.irPath', x.path);
+        });
+      }
     }
   }
 
@@ -219,590 +973,222 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (ok == true) {
       await widget.player.clearAllData();
       if (mounted) {
-        messenger
-            .showSnackBar(const SnackBar(content: Text('已清空所有数据')));
+        messenger.showSnackBar(const SnackBar(content: Text('已清空所有数据')));
       }
     }
   }
+}
+
+/// 内容区：页头（图标块 + 标题 + 副标题 + 引擎状态胶囊）+ 分类内容。
+class _SectionContent extends StatelessWidget {
+  final _SectionMeta section;
+  final bool engineNull;
+  final Color accent;
+  final Widget child;
+  const _SectionContent({
+    required this.section,
+    required this.engineNull,
+    required this.accent,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final engineNull = engine == null;
-    return Scaffold(
-      backgroundColor: AppTheme.s1,
-      body: Row(
-        children: [
-          _SettingsRail(
-            activeIndex: _active,
-            onSelect: (i) => setState(() => _active = i),
-          ),
-          Expanded(child: _sectionContent(engineNull)),
-        ],
-      ),
-    );
-  }
-
-  Widget _sectionContent(bool engineNull) => LayoutBuilder(
-        builder: (context, c) => SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 20),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 620),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _sectionHeader(_sections[_active]),
-                  const SizedBox(height: 16),
-                  if (engineNull) _engineNullBanner(),
-                  _activeContent(),
-                  const SizedBox(height: 24),
-                ],
-              ),
+    return LayoutBuilder(
+      builder: (context, c) => SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 660),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _PageHeader(section: section, engineNull: engineNull),
+                const SizedBox(height: 20),
+                if (engineNull) const _EngineNullBanner(),
+                child,
+                const SizedBox(height: 32),
+              ],
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
+}
 
-  Widget _sectionHeader(_SectionMeta m) => Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Icon(m.icon, size: 20, color: AppTheme.textPrimary),
-          const SizedBox(width: 10),
-          Column(
+/// 页头：强调色图标块 + SpaceGrotesk 标题 + 副标题 + 引擎状态胶囊。
+class _PageHeader extends StatelessWidget {
+  final _SectionMeta section;
+  final bool engineNull;
+  const _PageHeader({required this.section, required this.engineNull});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AccentScope.of(context);
+    return Row(
+      children: [
+        // 图标块（强调色 24% 底 + 强调色图标）
+        Container(
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(
+            color: accent.withAlpha(0x24),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(section.icon, size: 22, color: accent),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(m.title,
-                  key: Key('sec_${m.key}'),
-                  style: const TextStyle(
-                      fontFamily: 'SpaceGrotesk',
-                      fontWeight: FontWeight.w700,
-                      fontSize: 20,
-                      color: AppTheme.textPrimary,
-                      letterSpacing: -0.3)),
-              const SizedBox(height: 2),
-              Text(m.subtitle,
+              Text(section.title,
+                  key: Key('sec_${section.key}'),
+                  style: WlText.display(fontSize: 22)),
+              const SizedBox(height: 3),
+              Text(section.subtitle,
                   style: const TextStyle(
                       color: AppTheme.textSecondary, fontSize: 12)),
             ],
           ),
-        ],
-      );
-
-  Widget _engineNullBanner() => Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppTheme.s3,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppTheme.highlightStrong),
         ),
-        child: const Row(
-          children: [
-            Icon(LucideIcons.alertCircle, size: 16, color: AppTheme.textTertiary),
-            SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                '音频引擎未加载（缺少动态库），DSP / 设备设置不可用。',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-              ),
-            ),
-          ],
-        ),
-      );
-
-  Widget _activeContent() {
-    switch (_active) {
-      case 0:
-        return _buildGeneral();
-      case 1:
-        return _buildAudio();
-      case 2:
-        return _buildDsp();
-      default:
-        return _buildDiag();
-    }
+        _EnginePill(ready: !engineNull),
+      ],
+    );
   }
-
-  // ── 通用 ──
-  Widget _buildGeneral() {
-    final mode = ref.watch(localeProvider);
-    return _card(children: [
-      _row(Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('语言',
-              style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-          const SizedBox(height: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: AppTheme.s3,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppTheme.highlightStrong),
-            ),
-            child: DropdownButton<String>(
-              value: mode,
-              isExpanded: true,
-              underline: const SizedBox.shrink(),
-              icon: const Icon(LucideIcons.chevronDown,
-                  size: 16, color: AppTheme.textSecondary),
-              items: _locales
-                  .map((k) => DropdownMenuItem(
-                        value: k,
-                        child: Text(_localeLabels[k]!,
-                            style: const TextStyle(
-                                color: AppTheme.textPrimary, fontSize: 13)),
-                      ))
-                  .toList(),
-              onChanged: (v) {
-                if (v != null) {
-                  ref.read(localeProvider.notifier).setMode(v);
-                }
-              },
-            ),
-          ),
-        ],
-      )),
-      _row(_divider()),
-      _row(Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          OutlinedButton(
-            onPressed: () => _confirmClearAll(context),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppTheme.danger,
-              side: const BorderSide(color: AppTheme.danger),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Text('清空所有数据'),
-          ),
-        ],
-      )),
-    ]);
-  }
-
-  // ── 音频输出 ──
-  Widget _buildAudio() => _card(children: [
-        _row(Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('输出设备',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-            const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                color: AppTheme.s3,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppTheme.highlightStrong),
-              ),
-              child: DropdownButton<String?>(
-                value: _selectedDevice,
-                isExpanded: true,
-                underline: const SizedBox.shrink(),
-                hint: const Text('系统默认',
-                    style: TextStyle(
-                        color: AppTheme.textTertiary, fontSize: 13)),
-                icon: const Icon(LucideIcons.chevronDown,
-                    size: 16, color: AppTheme.textSecondary),
-                items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('系统默认',
-                        style: TextStyle(
-                            color: AppTheme.textPrimary, fontSize: 13)),
-                  ),
-                  ..._devices.map(
-                    (d) => DropdownMenuItem<String?>(
-                      value: d,
-                      child: Text(d,
-                          style: const TextStyle(
-                              color: AppTheme.textPrimary, fontSize: 13)),
-                    ),
-                  ),
-                ],
-                onChanged: (v) async {
-                  setState(() => _selectedDevice = v);
-                  await engine?.setOutputDevice(v);
-                },
-              ),
-            ),
-          ],
-        )),
-        _row(_chips([
-          _chip('设备', _selectedDevice ?? '系统默认'),
-          _chip('模式', _exclusive ? '独占' : '共享'),
-          _chip('采样率', _actualSr != null ? '$_actualSr Hz' : '—'),
-        ])),
-        if (Platform.isWindows)
-          _row(_switchRow(
-            'WASAPI 独占模式（切换将重启引擎）',
-            _exclusive,
-            (v) async {
-              setState(() => _exclusive = v);
-              final messenger = ScaffoldMessenger.of(context);
-              final err = await engine?.reinitialize(exclusiveMode: v);
-              if (err != null && mounted) {
-                messenger.showSnackBar(
-                    SnackBar(content: Text('独占模式切换失败：$err')));
-              }
-              _refreshSr();
-            },
-            key: const Key('sw_exclusive'),
-          )),
-        _row(_divider()),
-        _row(Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('输出采样率（Hz，下次播放生效）',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    key: const Key('sr_field'),
-                    controller: _srController,
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(
-                        color: AppTheme.textPrimary, fontSize: 13),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 8),
-                      filled: true,
-                      fillColor: AppTheme.s3,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide:
-                            BorderSide(color: AppTheme.highlightStrong),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton(
-                  key: const Key('sr_apply'),
-                  onPressed: () {
-                    final r = int.tryParse(_srController.text);
-                    if (r != null) engine?.setOutputSampleRate(r);
-                  },
-                  child: const Text('应用'),
-                ),
-              ],
-            ),
-          ],
-        )),
-      ]);
-
-  // ── DSP 效果 ──
-  Widget _buildDsp() => _card(children: [
-        _row(_switchRow('立体声展宽', _widenerOn, (v) {
-          setState(() => _widenerOn = v);
-          engine?.setStereoWidener(v, _widenerWidth);
-        })),
-        _row(Row(
-          children: [
-            Expanded(
-              child: Slider(
-                value: _widenerWidth,
-                min: 0,
-                max: 1,
-                label: '展宽',
-                onChanged: (v) {
-                  setState(() => _widenerWidth = v);
-                  if (_widenerOn) engine?.setStereoWidener(true, v);
-                },
-              ),
-            ),
-            SizedBox(
-              width: 56,
-              child: Text(_widenerWidth.toStringAsFixed(2),
-                  style: WlText.mono(color: AppTheme.textSecondary)),
-            ),
-          ],
-        )),
-        _row(_divider()),
-        _row(_switchRow('跨馈 (Crossfeed)', _crossfeed, (v) {
-          setState(() => _crossfeed = v);
-          engine?.setCrossfeed(v);
-        })),
-        _row(_switchRow('真峰值限幅 (Limiter)', _limiter, (v) {
-          setState(() => _limiter = v);
-          engine?.setLimiter(v);
-        })),
-        _row(_switchRow('抖动 (Dither)', _dither, (v) {
-          setState(() => _dither = v);
-          engine?.setDither(v);
-        })),
-        _row(_switchRow('噪声整形 (Noise Shaping)', _noiseShaping, (v) {
-          setState(() => _noiseShaping = v);
-          engine?.setNoiseShaping(v);
-        })),
-        _row(_divider()),
-        _row(Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('ReplayGain 增益 (dB)',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: Slider(
-                    value: _gain,
-                    min: -12,
-                    max: 12,
-                    label: '增益',
-                    onChanged: (v) {
-                      setState(() => _gain = v);
-                      engine?.setReplaygainGain(v);
-                    },
-                  ),
-                ),
-                SizedBox(
-                  width: 56,
-                  child: Text(_gain.toStringAsFixed(1),
-                      style: WlText.mono(color: AppTheme.textSecondary)),
-                ),
-              ],
-            ),
-          ],
-        )),
-        _row(Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('播放速度',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: Slider(
-                    value: _speed,
-                    min: 0.25,
-                    max: 4,
-                    label: '速度',
-                    onChanged: (v) {
-                      setState(() => _speed = v);
-                      engine?.setSpeed(v);
-                    },
-                  ),
-                ),
-                SizedBox(
-                  width: 56,
-                  child: Text('${_speed.toStringAsFixed(2)}x',
-                      style: WlText.mono(color: AppTheme.textSecondary)),
-                ),
-              ],
-            ),
-          ],
-        )),
-        _row(_divider()),
-        _row(Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('EQ 预设',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-            const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                color: AppTheme.s3,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppTheme.highlightStrong),
-              ),
-              child: DropdownButton<String>(
-                key: const Key('preset_dropdown'),
-                value: _preset,
-                isExpanded: true,
-                underline: const SizedBox.shrink(),
-                icon: const Icon(LucideIcons.chevronDown,
-                    size: 16, color: AppTheme.textSecondary),
-                items: const [
-                  'flat',
-                  'rock',
-                  'pop',
-                  'dance',
-                  'classical',
-                  'soft',
-                  'full_bass',
-                  'full_treble',
-                  'techno',
-                  'vocals'
-                ]
-                    .map((p) => DropdownMenuItem(
-                          value: p,
-                          child: Text(p,
-                              style: const TextStyle(
-                                  color: AppTheme.textPrimary, fontSize: 13)),
-                        ))
-                    .toList(),
-                onChanged: (v) {
-                  if (v != null) {
-                    setState(() => _preset = v);
-                    engine?.applyPreset(v);
-                  }
-                },
-              ),
-            ),
-          ],
-        )),
-        _row(Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('AutoEQ 耳机型号（留空清除）',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    onChanged: (v) => _autoEq = v,
-                    style: const TextStyle(
-                        color: AppTheme.textPrimary, fontSize: 13),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 8),
-                      filled: true,
-                      fillColor: AppTheme.s3,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide:
-                            BorderSide(color: AppTheme.highlightStrong),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton(
-                  onPressed: () =>
-                      engine?.setAutoEq(_autoEq.isEmpty ? null : _autoEq),
-                  child: const Text('应用'),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton(
-                  onPressed: () {
-                    setState(() => _autoEq = '');
-                    engine?.setAutoEq(null);
-                  },
-                  child: const Text('清除'),
-                ),
-              ],
-            ),
-          ],
-        )),
-        _row(_divider()),
-        _row(Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('房间校正 FIR (REW → .wav)',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _irPath.isEmpty ? '未载入' : _irPath.split('/').last,
-                    style: WlText.mono(color: AppTheme.textSecondary),
-                  ),
-                ),
-                OutlinedButton(
-                  onPressed: _pickIr,
-                  child: const Text('载入'),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton(
-                  key: const Key('fir_clear'),
-                  onPressed: () {
-                    setState(() => _irPath = '');
-                    engine?.clearIr();
-                  },
-                  child: const Text('清除'),
-                ),
-              ],
-            ),
-          ],
-        )),
-      ]);
-
-  // ── 诊断 ──
-  Widget _buildDiag() => _card(children: [
-        _row(_chips([
-          _chip('Underrun 计数', '$_underrun'),
-          _chip('最后错误', _lastError.isEmpty ? '无' : _lastError),
-        ])),
-        _row(Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('当前曲目',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-            const SizedBox(height: 6),
-            Text(
-              _currentPath.isEmpty ? '—' : _currentPath,
-              style: WlText.mono(color: AppTheme.textSecondary),
-            ),
-          ],
-        )),
-        _row(Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            OutlinedButton(
-              onPressed: () => _refreshDiagnostic(),
-              child: const Text('刷新'),
-            ),
-          ],
-        )),
-      ]);
 }
 
-/// 设置页左侧导航栏：返回 + 品牌 + 4 个分类。
-/// 视觉语言与 home 的 [_Sidebar]/[_NavItem] 对齐（s2 底、选中 s3 + 左侧白条）。
-class _SettingsRail extends StatelessWidget {
-  final int activeIndex;
-  final ValueChanged<int> onSelect;
-  const _SettingsRail(
-      {required this.activeIndex, required this.onSelect});
+/// 引擎健康度胶囊：绿点=就绪，黄点=未加载。
+class _EnginePill extends StatelessWidget {
+  final bool ready;
+  const _EnginePill({required this.ready});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = ready ? AppTheme.ok : AppTheme.warn;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withAlpha(0x14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withAlpha(0x50)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 7),
+          Text(ready ? '引擎就绪' : '引擎未加载',
+              style: TextStyle(
+                  color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+}
+
+/// 引擎未加载提示横幅。
+class _EngineNullBanner extends StatelessWidget {
+  const _EngineNullBanner();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 220,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.warn.withAlpha(0x0D),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.warn.withAlpha(0x40)),
+      ),
+      child: const Row(
+        children: [
+          Icon(LucideIcons.alertCircle, size: 16, color: AppTheme.warn),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '音频引擎未加载（缺少动态库），DSP / 设备设置不可用。',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 设置页左侧导航栏：品牌 + 分类 + 底部引擎状态。
+class _SettingsRail extends StatelessWidget {
+  final int activeIndex;
+  final bool engineReady;
+  final ValueChanged<int> onSelect;
+  const _SettingsRail({
+    required this.activeIndex,
+    required this.engineReady,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AccentScope.of(context);
+    return Container(
+      width: 230,
       decoration: const BoxDecoration(
         color: AppTheme.s2,
         border: Border(right: BorderSide(color: AppTheme.highlightStrong)),
       ),
       child: Column(
         children: [
+          // 品牌区
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 14, 12, 10),
+            padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
             child: Row(
               children: [
-                IconButton(
-                  icon: const Icon(LucideIcons.arrowLeft,
-                      size: 18, color: AppTheme.textPrimary),
-                  onPressed: () => Navigator.of(context).pop(),
-                  tooltip: '返回',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                // Logo 块
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: accent,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: const Icon(LucideIcons.waves,
+                      size: 18, color: Color(0xFF0E1011)),
                 ),
-                const SizedBox(width: 4),
-                const Text('WaveLink',
-                    style: TextStyle(
-                        fontFamily: 'SpaceGrotesk',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                        color: AppTheme.textPrimary,
-                        letterSpacing: -0.3)),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('WaveLink',
+                        style: TextStyle(
+                            fontFamily: 'SpaceGrotesk',
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                            color: AppTheme.textPrimary,
+                            letterSpacing: -0.3)),
+                    Text('设置 SETTINGS',
+                        style: TextStyle(
+                            color: AppTheme.textTertiary,
+                            fontSize: 10,
+                            letterSpacing: 0.8)),
+                  ],
+                ),
               ],
             ),
           ),
           const Divider(height: 1, thickness: 1, color: AppTheme.divider),
+          // 分类导航
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.only(top: 8, bottom: 8),
+              padding: const EdgeInsets.fromLTRB(10, 14, 10, 8),
               itemCount: _SettingsScreenState._sections.length,
               itemBuilder: (c, i) {
                 final m = _SettingsScreenState._sections[i];
@@ -812,10 +1198,19 @@ class _SettingsRail extends StatelessWidget {
                   icon: m.icon,
                   label: m.title,
                   active: active,
+                  accent: accent,
                   onTap: () => onSelect(i),
                 );
               },
             ),
+          ),
+          // 底部引擎状态
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: AppTheme.divider)),
+            ),
+            child: _EnginePill(ready: engineReady),
           ),
         ],
       ),
@@ -823,51 +1218,63 @@ class _SettingsRail extends StatelessWidget {
   }
 }
 
+/// 导航单项：选中时强调色左侧条 + 图标着色 + s3 底，hover 淡白。
 class _RailItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool active;
+  final Color accent;
   final VoidCallback onTap;
   const _RailItem({
     super.key,
     required this.icon,
     required this.label,
     required this.active,
+    required this.accent,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: active ? AppTheme.s3 : Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          decoration: active
-              ? const BoxDecoration(
-                  border: Border(
-                    left: BorderSide(color: AppTheme.textPrimary, width: 3),
-                  ),
-                )
-              : null,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Row(
-            children: [
-              Icon(icon,
-                  size: 18,
-                  color: active
-                      ? AppTheme.textPrimary
-                      : AppTheme.textTertiary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(label,
-                    style: TextStyle(
-                        color: active
-                            ? AppTheme.textPrimary
-                            : AppTheme.textSecondary,
-                        fontSize: 13)),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Material(
+        color: active ? AppTheme.s3 : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border(
+                left: active
+                    ? BorderSide(color: accent, width: 3)
+                    : const BorderSide(color: Colors.transparent, width: 3),
               ),
-            ],
+            ),
+            child: Row(
+              children: [
+                Icon(icon,
+                    size: 17,
+                    color: active ? accent : AppTheme.textTertiary),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Text(label,
+                      style: TextStyle(
+                          color: active
+                              ? AppTheme.textPrimary
+                              : AppTheme.textSecondary,
+                          fontSize: 13,
+                          fontWeight:
+                              active ? FontWeight.w600 : FontWeight.w400)),
+                ),
+                if (active)
+                  Icon(LucideIcons.chevronRight,
+                      size: 14, color: accent.withAlpha(0x66)),
+              ],
+            ),
           ),
         ),
       ),

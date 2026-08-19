@@ -222,6 +222,32 @@ void main() {
       expect(fake.calls['clearIr'], isTrue);
     });
 
+    testWidgets('DSP toggle persists to prefs and rehydrates',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({'dsp.crossfeed': true});
+      final fake = FakeEngine();
+      final player = FakePlayerController(fake);
+      await _pumpSettings(tester, player);
+      await _selectSection(tester, 'dsp');
+
+      // 回显：prefs 中已开启的跨馈在 UI 上应为开
+      final crossSwitch = tester.widget<Switch>(find.descendant(
+        of: find.byKey(const Key('sw_跨馈 (Crossfeed)')),
+        matching: find.byType(Switch),
+      ));
+      expect(crossSwitch.value, isTrue);
+
+      // 新切换的限幅开关即时落盘
+      final limiterSwitch = find.descendant(
+        of: find.byKey(const Key('sw_真峰值限幅 (Limiter)')),
+        matching: find.byType(Switch),
+      );
+      await tester.tap(limiterSwitch);
+      await tester.pump();
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('dsp.limiter'), isTrue);
+    });
+
     testWidgets('clear-all flow calls player.clearAllData', (tester) async {
       final fake = FakeEngine();
       final player = FakePlayerController(fake);
