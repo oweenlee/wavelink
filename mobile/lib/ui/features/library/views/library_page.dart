@@ -400,32 +400,51 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
 
 class _EmptyLibrary extends StatelessWidget {
   final String message;
-  const _EmptyLibrary({required this.message});
+
+  /// 空曲库提示时点击可打开抽屉引导导入音乐；
+  /// 搜索结果为空（query 非空）时不可点。
+  final bool openDrawer;
+  const _EmptyLibrary({required this.message, this.openDrawer = false});
 
   @override
   Widget build(BuildContext context) {
+    final content = Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          LucideIcons.library,
+          size: 64,
+          color: AppTheme.textTertiary.withValues(alpha: 0.3),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          message,
+          style: const TextStyle(
+            fontSize: 15,
+            color: AppTheme.textSecondary,
+            height: 1.5,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+
+    if (!openDrawer) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: content,
+        ),
+      );
+    }
+    // 空曲库：点击提示文案打开侧边栏（内含导入音乐入口）
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              LucideIcons.library,
-              size: 64,
-              color: AppTheme.textTertiary.withValues(alpha: 0.3),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              style: const TextStyle(
-                fontSize: 15,
-                color: AppTheme.textSecondary,
-                height: 1.5,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
+      child: InkWell(
+        onTap: () => Scaffold.of(context).openDrawer(),
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+          child: content,
         ),
       ),
     );
@@ -463,6 +482,7 @@ class _SongsTab extends ConsumerWidget {
     if (displayed.isEmpty) {
       return _EmptyLibrary(
         message: query.isNotEmpty ? l10n.noResults : l10n.noMusicHint,
+        openDrawer: query.isEmpty,
       );
     }
 
@@ -527,6 +547,7 @@ class _AlbumsTab extends ConsumerWidget {
     if (albumNames.isEmpty) {
       return _EmptyLibrary(
         message: query.isNotEmpty ? l10n.noResults : l10n.noAlbumInfo,
+        openDrawer: query.isEmpty,
       );
     }
 
@@ -654,6 +675,7 @@ class _ArtistsTab extends ConsumerWidget {
     if (artistNames.isEmpty) {
       return _EmptyLibrary(
         message: query.isNotEmpty ? l10n.noResults : l10n.noArtistInfo,
+        openDrawer: query.isEmpty,
       );
     }
 

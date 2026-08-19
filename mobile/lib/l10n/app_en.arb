@@ -79,7 +79,7 @@
   "libAlbums": "Albums",
   "libArtists": "Artists",
   "libPlaylists": "Playlists",
-  "noMusicHint": "No music imported yet\nTap \"Import Music\" above to add songs",
+  "noMusicHint": "No music imported yet\nTap here to open the menu and add a source",
   "importN": "Import ({count})",
   "importMusic": "Import Music",
   "import": "Import",

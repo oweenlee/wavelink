@@ -79,7 +79,7 @@
   "libAlbums": "Alben",
   "libArtists": "Interpreten",
   "libPlaylists": "Playlists",
-  "noMusicHint": "Noch keine Musik importiert\nTippe oben auf „Musik importieren“, um Lieder hinzuzufügen",
+  "noMusicHint": "Noch keine Musik importiert\nTippe hier, um das Menü zu öffnen und eine Quelle hinzuzufügen",
   "importN": "Importieren ({count})",
   "importMusic": "Musik importieren",
   "import": "Importieren",

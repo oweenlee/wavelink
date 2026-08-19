@@ -79,7 +79,7 @@
   "libAlbums": "アルバム",
   "libArtists": "アーティスト",
   "libPlaylists": "プレイリスト",
-  "noMusicHint": "まだ音楽がインポートされていません\n上の「音楽をインポート」をタップして曲を追加してください",
+  "noMusicHint": "まだ音楽がインポートされていません\nここをタップしてメニューを開き、音源を追加してください",
   "importN": "インポート ({count})",
   "importMusic": "音楽をインポート",
   "import": "インポート",

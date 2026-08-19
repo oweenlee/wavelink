@@ -79,7 +79,7 @@
   "libAlbums": "专辑",
   "libArtists": "艺术家",
   "libPlaylists": "播放列表",
-  "noMusicHint": "还没有导入音乐\n点击上方\"导入音乐\"添加歌曲",
+  "noMusicHint": "还没有导入音乐\n点击此处打开侧边栏，选择音源导入",
   "importN": "导入 ({count})",
   "importMusic": "导入音乐",
   "import": "导入",
