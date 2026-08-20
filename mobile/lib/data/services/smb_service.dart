@@ -268,8 +268,10 @@ class SmbService {
     if (!Platform.isIOS) return false;
     final err = lastError;
     if (err == null) return false;
-    return err.contains('No route to host') ||
-        err.contains('Network is unreachable');
+    // 统一小写匹配（与 WebDAV/Subsonic 侧一致），底层错误文本大小写不定
+    final lower = err.toLowerCase();
+    return lower.contains('no route to host') ||
+        lower.contains('network is unreachable');
   }
 
   /// 挂载共享（后续 list/read 均相对该共享根目录）

@@ -315,7 +315,14 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
           .length;
       if (nasCount > 0) {
         final confirmed = await _confirmReplaceNas(nasCount);
-        if (!confirmed || !mounted) return;
+        if (!confirmed || !mounted) {
+          // 验证连接时（_verifyConnection 前置）已把全局会话切到新主机；
+          // 用户取消替换时配置/曲库仍是旧主机，需断开会话，避免旧库播放
+          // 走 ensureReady 时误在未确认的新主机上读文件（disconnect 有
+          // _scanning 守护，扫描中会安全跳过）。
+          await SmbService.disconnect();
+          return;
+        }
         // 清除旧 NAS 曲库条目与缓存（失败不阻断保存）
         try {
           await ref.read(libraryProvider.notifier).clearNasSongs();
