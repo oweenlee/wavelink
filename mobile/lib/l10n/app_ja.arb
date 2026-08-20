@@ -8,6 +8,7 @@
   "titleSettings": "設定",
   "navPlaying": "再生中",
   "favMusic": "お気に入りの曲",
+  "recentPlayed": "最近再生した曲",
   "songsCount": "{count} 曲",
   "shufflePlay": "シャッフル再生",
   "play": "再生",

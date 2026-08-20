@@ -8,6 +8,7 @@
   "titleSettings": "설정",
   "navPlaying": "재생 중",
   "favMusic": "좋아요 한 음악",
+  "recentPlayed": "최근 재생",
   "songsCount": "{count}곡",
   "shufflePlay": "셔플 재생",
   "play": "재생",

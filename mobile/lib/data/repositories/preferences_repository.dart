@@ -54,12 +54,6 @@ class PreferencesRepository {
     required List<double> gains,
   }) => PreferencesService.instance.setEqState(preset: preset, gains: gains);
 
-  // ── 收藏 ──
-
-  Set<String> get favorites => PreferencesService.instance.favorites;
-  Future<void> setFavorites(Set<String> ids) =>
-      PreferencesService.instance.setFavorites(ids);
-
   // ── 播放列表 ──
 
   Map<String, List<String>> get playlists =>

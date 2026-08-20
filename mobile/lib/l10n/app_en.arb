@@ -8,6 +8,7 @@
   "titleSettings": "Settings",
   "navPlaying": "Playing",
   "favMusic": "Liked Music",
+  "recentPlayed": "Recently Played",
   "songsCount": "{count} songs",
   "shufflePlay": "Shuffle Play",
   "play": "Play",

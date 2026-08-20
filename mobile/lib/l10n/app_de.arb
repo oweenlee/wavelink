@@ -8,6 +8,7 @@
   "titleSettings": "Einstellungen",
   "navPlaying": "Wiedergabe",
   "favMusic": "Geliebte Musik",
+  "recentPlayed": "Zuletzt gehört",
   "songsCount": "{count} Lieder",
   "shufflePlay": "Zufallswiedergabe",
   "play": "Abspielen",

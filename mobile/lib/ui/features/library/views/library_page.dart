@@ -828,14 +828,23 @@ class _PlaylistsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final player = ref.watch(playbackControllerProvider);
-    ref.watch(libraryProvider); // 收藏/播放列表变化时刷新
+    final library = ref.watch(libraryProvider); // 收藏/播放列表/最近播放变化时刷新
     final favorites = player.favoriteSongs;
     final saved = player.playlists;
+    final recentPlayed = library.recentPlayed;
     final query = ref.watch(libraryHeaderProvider).searchQuery;
 
-    // "我喜欢的音乐" 固定在最前，其余为已保存播放列表；
+    // "最近播放"与"我喜欢的音乐"固定在最前，其余为已保存播放列表；
     // 搜索时按播放列表名过滤（与歌曲/专辑/艺术家 tab 一致，搜索贯穿全库）
     final entries = <_PlaylistEntry>[
+      _PlaylistEntry(
+        name: l10n.recentPlayed,
+        count: recentPlayed.length,
+        color: AppTheme.highlight,
+        songs: recentPlayed,
+        builtIn: true,
+        placeholderIcon: LucideIcons.history,
+      ),
       _PlaylistEntry(
         name: l10n.favMusic,
         count: favorites.length,
@@ -942,7 +951,10 @@ class _PlaylistsTab extends ConsumerWidget {
                         height: 48,
                         placeholder: Center(
                           child: Icon(
-                            pl.builtIn ? Icons.favorite : LucideIcons.listMusic,
+                            pl.placeholderIcon ??
+                                (pl.builtIn
+                                    ? Icons.favorite
+                                    : LucideIcons.listMusic),
                             color: Colors.white.withValues(alpha: 0.6),
                             size: 22,
                           ),
@@ -1173,12 +1185,16 @@ class _PlaylistEntry {
   final Color color;
   final List<Song> songs;
   final bool builtIn;
+
+  /// 封面占位图标（内置条目专属；null 时按 builtIn 用红心/歌单图标）
+  final IconData? placeholderIcon;
   const _PlaylistEntry({
     required this.name,
     required this.count,
     required this.color,
     required this.songs,
     this.builtIn = false,
+    this.placeholderIcon,
   });
 }
 

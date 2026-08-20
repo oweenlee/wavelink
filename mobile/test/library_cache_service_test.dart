@@ -160,4 +160,27 @@ void main() {
     check(loaded.map((s) => s.id)).deepEquals(['db1']);
     check(await File('$docs/.library_cache.json').exists()).isTrue();
   });
+
+  group('播放历史', () {
+    test('recordPlay 后按歌去重倒序返回', () async {
+      await LibraryCacheService.recordPlay('a');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await LibraryCacheService.recordPlay('b');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await LibraryCacheService.recordPlay('a'); // 重复播放：保留最新一条
+
+      final recent = await LibraryCacheService.loadRecentPlayed();
+      check(recent.map((r) => r.songId)).deepEquals(['a', 'b']);
+      final a = recent.firstWhere((r) => r.songId == 'a');
+      final b = recent.firstWhere((r) => r.songId == 'b');
+      check(a.playedAt).isGreaterThan(b.playedAt);
+    });
+
+    test('limit 生效', () async {
+      await LibraryCacheService.recordPlay('x1');
+      await LibraryCacheService.recordPlay('x2');
+      final recent = await LibraryCacheService.loadRecentPlayed(limit: 1);
+      check(recent.map((r) => r.songId)).deepEquals(['x2']);
+    });
+  });
 }

@@ -12,6 +12,7 @@ import '../../../../data/services/smb_service.dart';
 import '../../../../data/services/webdav_service.dart';
 import '../../../../data/services/import_service.dart';
 import '../../../../data/services/lrc_parser.dart';
+import '../../../../data/services/library_cache_service.dart';
 import '../../../../data/repositories/audio_engine_repository.dart';
 import '../../../../data/services/rust_service.dart'
     show AnalyzeResult, readMetadata;
@@ -173,6 +174,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
   VoidCallback? onNext;
   VoidCallback? onPrevious;
 
+  /// 每次实际开始播放一首歌时回调（曲终自动切歌/手动切歌/点播均触发），
+  /// 供 PlaybackController 同步最近播放列表。
+  void Function(Song song)? onSongStarted;
+
   AudioEngineRepository get _engineRepo =>
       ref.read(audioEngineRepositoryProvider);
 
@@ -327,6 +332,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
     state = state.copyWith(currentSong: song, position: 0.0);
     _playCurrent(fallbackSong: previous);
     saveResume();
+    // 播放历史持久化 + 最近播放列表同步（fire-and-forget，失败不影响播放）
+    unawaited(LibraryCacheService.recordPlay(song.id));
+    onSongStarted?.call(song);
   }
 
   /// [fallbackSong]：切歌时传入旧曲。若新歌路径解析失败（SMB 下载失败/

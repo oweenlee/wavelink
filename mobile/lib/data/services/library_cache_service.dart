@@ -29,7 +29,9 @@ class LibraryCacheService {
 
   /// 数据库 schema 版本。**改表结构时必须 +1**，并在 [_onUpgrade] 里补
   /// 对应迁移语句（onCreate 建的是最新结构，老库走 onUpgrade 逐级升级）。
-  static const int dbVersion = 1;
+  /// v2：新增 favorites 表（收藏从 SharedPreferences 迁入）。
+  /// v3：新增 play_history 表（播放历史/最近播放）。
+  static const int dbVersion = 3;
 
   static Database? _db;
   static bool _initDone = false;
@@ -90,6 +92,8 @@ class LibraryCacheService {
             duration_estimated INTEGER NOT NULL DEFAULT 0
           )
         ''');
+        await db.execute(_createFavoritesSql);
+        await db.execute(_createPlayHistorySql);
       },
     );
     // 首次打开：若存在旧 JSON 缓存且库内无数据，迁移后删除。
@@ -97,16 +101,36 @@ class LibraryCacheService {
     return _db!;
   }
 
+  /// favorites 表 DDL：song_id 主键，created_at 保留收藏时间（备用排序）。
+  static const _createFavoritesSql = '''
+    CREATE TABLE favorites (
+      song_id TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL
+    )
+  ''';
+
+  /// play_history 表 DDL：每次实际开始播放插入一行（保留重复播放），
+  /// 读取时按 song_id 去重取最近一次。
+  static const _createPlayHistorySql = '''
+    CREATE TABLE play_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      song_id TEXT NOT NULL,
+      played_at INTEGER NOT NULL
+    )
+  ''';
+
   /// 逐级迁移：switch 不 break，保证跨多版本的老库依次应用每一步迁移。
   static Future<void> _onUpgrade(
     Database db,
     int oldVersion,
     int newVersion,
   ) async {
-    // 示例（未来 v2 加列时）：
-    // if (oldVersion < 2) {
-    //   await db.execute('ALTER TABLE songs ADD COLUMN genre TEXT');
-    // }
+    if (oldVersion < 2) {
+      await db.execute(_createFavoritesSql);
+    }
+    if (oldVersion < 3) {
+      await db.execute(_createPlayHistorySql);
+    }
   }
 
   /// 保存曲库（全量替换）。写操作覆盖式合并 + 串行落盘：
@@ -165,6 +189,82 @@ class LibraryCacheService {
       return rows.map((r) => _fromRow(r, dir.path)).toList();
     } catch (e) {
       Log.e('LibraryCache', '读取失败: $e');
+      return [];
+    }
+  }
+
+  /// 收藏歌曲 id 集合。收藏独立成表，避免 SharedPreferences 整表 jsonEncode
+  /// 全量覆写（收藏数百首后每次增删都要序列化整个数组）。
+  /// 读失败返回空集合（不抛给调用方）。
+  static Future<Set<String>> loadFavorites() async {
+    try {
+      final db = await _database;
+      final rows = await db.query('favorites');
+      return rows.map((r) => r['song_id'] as String).toSet();
+    } catch (e) {
+      Log.e('LibraryCache', '收藏读取失败: $e');
+      return {};
+    }
+  }
+
+  /// 收藏全量保存（覆盖式替换，与 [saveSongs] 语义一致），事务保证原子性。
+  static Future<void> saveFavorites(Set<String> ids) async {
+    try {
+      final db = await _database;
+      await db.transaction((txn) async {
+        await txn.delete('favorites');
+        final batch = txn.batch();
+        final now = DateTime.now().millisecondsSinceEpoch;
+        for (final id in ids) {
+          batch.insert(
+            'favorites',
+            {'song_id': id, 'created_at': now},
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+        await batch.commit(noResult: true);
+      });
+    } catch (e) {
+      Log.e('LibraryCache', '收藏保存失败: $e');
+    }
+  }
+
+  /// 记录一次播放（每次开始播放插一行，保留重复播放的真实历史）。
+  /// 失败静默（播放不因历史记录失败而中断）。
+  static Future<void> recordPlay(String songId) async {
+    try {
+      final db = await _database;
+      await db.insert('play_history', {
+        'song_id': songId,
+        'played_at': DateTime.now().millisecondsSinceEpoch,
+      });
+    } catch (e) {
+      Log.e('LibraryCache', '播放历史写入失败: $e');
+    }
+  }
+
+  /// 最近播放的歌曲 id 列表（按歌去重，仅保留每首最近一次播放时间，倒序）。
+  static Future<List<({String songId, int playedAt})>> loadRecentPlayed({
+    int limit = 50,
+  }) async {
+    try {
+      final db = await _database;
+      final rows = await db.rawQuery(
+        'SELECT song_id, MAX(played_at) AS played_at '
+        'FROM play_history GROUP BY song_id '
+        'ORDER BY played_at DESC LIMIT ?',
+        [limit],
+      );
+      return rows
+          .map(
+            (r) => (
+              songId: r['song_id'] as String,
+              playedAt: r['played_at'] as int,
+            ),
+          )
+          .toList();
+    } catch (e) {
+      Log.e('LibraryCache', '播放历史读取失败: $e');
       return [];
     }
   }

@@ -76,6 +76,7 @@ class PlaybackController {
     _library.onSongsLoaded = _onLibrarySongsLoaded;
     _library.onSongsAdded = _onLibrarySongsAdded;
 
+    _player.onSongStarted = _library.onSongPlayed;
     _player.onTrackEnd = () {
       next();
     };
@@ -105,6 +106,8 @@ class PlaybackController {
     }
     _player.setCurrentSong(_ref.read(queueProvider).currentSong);
     _library.batchExtractCovers(songs);
+    // 曲库就绪后恢复最近播放（按 id 匹配到 Song 对象）
+    _library.loadRecentPlayedFromDb();
   }
 
   /// 断点续播：恢复上次会话的队列 + 当前索引 + 播放位置（不自动播放）。

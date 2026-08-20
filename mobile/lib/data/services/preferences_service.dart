@@ -226,13 +226,6 @@ class PreferencesService {
   double get coverBlur => _prefs.getDouble(_kCoverBlur) ?? 0.7;
   Future<void> setCoverBlur(double v) => _prefs.setDouble(_kCoverBlur, v);
 
-  // ── 收藏 ──
-  static const _kFavorites = 'favorites';
-  Set<String> get favorites =>
-      (_prefs.getStringList(_kFavorites) ?? []).toSet();
-  Future<void> setFavorites(Set<String> ids) =>
-      _prefs.setStringList(_kFavorites, ids.toList());
-
   // ── 播放列表（id 列表，JSON 序列化）──
   static const _kPlaylists = 'playlists';
 

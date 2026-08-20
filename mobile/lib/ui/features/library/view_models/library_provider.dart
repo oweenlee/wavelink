@@ -8,6 +8,7 @@ import '../../../../data/services/preferences_service.dart';
 import '../../../../data/services/smb_service.dart';
 import '../../../../data/services/webdav_service.dart';
 import '../../../../data/services/strm_resolver.dart';
+import '../../../../data/services/library_cache_service.dart';
 import '../../../../domain/models/song.dart';
 import '../../../core/providers/repositories.dart';
 import '../../playback/view_models/queue_provider.dart';
@@ -26,6 +27,9 @@ class LibraryState {
   final List<Song> importedSongs;
   final bool scanDone;
   final Set<String> favoriteIds;
+
+  /// 最近播放（按歌去重，最近在前，最多 50 首）
+  final List<Song> recentPlayed;
 
   /// NAS 后台导入是否进行中（曲库顶部展示进度条）
   final bool nasImporting;
@@ -46,6 +50,7 @@ class LibraryState {
     this.importedSongs = const [],
     this.scanDone = false,
     this.favoriteIds = const {},
+    this.recentPlayed = const [],
     this.nasImporting = false,
     this.nasImportedCount = 0,
     this.nasImportError,
@@ -67,6 +72,7 @@ class LibraryState {
     List<Song>? importedSongs,
     bool? scanDone,
     Set<String>? favoriteIds,
+    List<Song>? recentPlayed,
     bool? nasImporting,
     int? nasImportedCount,
     Object? nasImportError = _unset,
@@ -77,6 +83,7 @@ class LibraryState {
       importedSongs: importedSongs ?? this.importedSongs,
       scanDone: scanDone ?? this.scanDone,
       favoriteIds: favoriteIds ?? this.favoriteIds,
+      recentPlayed: recentPlayed ?? this.recentPlayed,
       nasImporting: nasImporting ?? this.nasImporting,
       nasImportedCount: nasImportedCount ?? this.nasImportedCount,
       nasImportError: identical(nasImportError, _unset)
@@ -280,12 +287,60 @@ class LibraryNotifier extends Notifier<LibraryState> {
   }
 
   void _persistFavorites() {
-    ref.read(preferencesRepositoryProvider).setFavorites(state.favoriteIds);
+    // 收藏持久化走 SQLite：增量表写入，避免 SharedPreferences 整表覆写
+    unawaited(LibraryCacheService.saveFavorites(state.favoriteIds));
   }
 
+  /// 启动时从 SQLite 恢复收藏（异步落库，完成后刷新内存 state）。
+  /// 收藏量小且库打开在曲库恢复之后，短暂延迟不影响播放。
   void loadFavoritesPrefs() {
-    final favorites = ref.read(preferencesRepositoryProvider).favorites;
-    state = state.copyWith(favoriteIds: {...state.favoriteIds, ...favorites});
+    unawaited(_loadFavoritesFromDb());
+  }
+
+  Future<void> _loadFavoritesFromDb() async {
+    try {
+      final favorites = await LibraryCacheService.loadFavorites();
+      if (!ref.mounted) return;
+      state = state.copyWith(favoriteIds: {...state.favoriteIds, ...favorites});
+    } catch (e) {
+      Log.e('Library', '收藏恢复失败: $e');
+    }
+  }
+
+  /// 最近播放内存上限（与 SQLite 查询 limit 一致）
+  static const _recentMax = 50;
+
+  /// 启动时从 SQLite 恢复最近播放（在曲库就绪后调用，按 id 匹配到 Song）。
+  Future<void> loadRecentPlayedFromDb() async {
+    try {
+      final recent = await LibraryCacheService.loadRecentPlayed(
+        limit: _recentMax,
+      );
+      if (!ref.mounted) return;
+      final byId = {
+        for (final s in state.importedSongs) s.id: s,
+      };
+      final songs = <Song>[];
+      for (final r in recent) {
+        final s = byId[r.songId];
+        if (s != null) songs.add(s);
+      }
+      state = state.copyWith(recentPlayed: songs);
+    } catch (e) {
+      Log.e('Library', '最近播放恢复失败: $e');
+    }
+  }
+
+  /// 播放事件回调（由 PlaybackController 接线）：去重置顶刷新内存最近播放。
+  /// SQLite 落盘由 PlayerNotifier.playSong 统一负责，这里只维护 UI 状态。
+  void onSongPlayed(Song song) {
+    final recent = <Song>[
+      song,
+      ...state.recentPlayed.where((s) => s.id != song.id),
+    ];
+    state = state.copyWith(
+      recentPlayed: recent.take(_recentMax).toList(),
+    );
   }
 
   // ── 导入与扫描 ──

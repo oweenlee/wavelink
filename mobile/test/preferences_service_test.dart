@@ -51,13 +51,6 @@ void main() {
       check(prefs.coverBlur).equals(0.3);
     });
 
-    test('收藏集合读写', () async {
-      final prefs = PreferencesService.instance;
-      check(prefs.favorites).isEmpty();
-      await prefs.setFavorites({'a', 'b'});
-      check(prefs.favorites).deepEquals({'a', 'b'});
-    });
-
     test('播放列表读写', () async {
       final prefs = PreferencesService.instance;
       await prefs.savePlaylist('我的列表', ['s1', 's2']);

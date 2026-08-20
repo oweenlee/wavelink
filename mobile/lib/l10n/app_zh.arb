@@ -8,6 +8,7 @@
   "titleSettings": "设置",
   "navPlaying": "正在播放",
   "favMusic": "我喜欢的音乐",
+  "recentPlayed": "最近播放",
   "songsCount": "{count} 首歌曲",
   "shufflePlay": "随机播放",
   "play": "播放",
