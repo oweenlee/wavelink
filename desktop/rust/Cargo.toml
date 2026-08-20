@@ -26,6 +26,9 @@ flutter_rust_bridge = "=2.13.0-beta.5"
 smb2 = "0.17"
 # 封面提取兜底（与 core 同版本）：lofty 遍历全部标签图片取内嵌封面
 lofty = "0.24"
+# CUE 文本 GBK 回退解码（中文/日文抓轨的 cue 常非 UTF-8；core 的
+# parse_cue 按 UTF-8 读行，非法字节直接失败，故在桥接层先解码）
+encoding_rs = "0.8"
 # WebDAV 边下边播：HTTP 客户端（Digest/Basic 认证 + 流式读取）
 # default-features=false + rustls-tls：不依赖系统 OpenSSL，跨 mac/win/linux 编译
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }

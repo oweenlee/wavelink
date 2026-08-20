@@ -67,5 +67,24 @@ void main() {
       expect(tracks.map((t) => t.artist).toList(), ['A', 'A', 'B']);
       expect(tracks.map((t) => t.title).toList(), ['1', '2', '2']);
     });
+
+    test('.cue 文件本身不会作为曲目入库', () async {
+      writeFile('A - B.flac');
+      writeFile('album.cue');
+      final tracks = await scanFolder(tmp.path);
+      expect(tracks.length, 1);
+      expect(tracks.single.title, 'B');
+    });
+
+    test('引擎不可用时 cue 静默降级：镜像音频仍按普通曲目入库', () async {
+      // 未加载 dylib（单测环境）：parseCueBytes 抛异常 → 跳过该 cue，
+      // 不做镜像排除，音频文件照常扫描（不崩、不丢曲）。
+      writeFile('ArtistA - Song1.wav');
+      writeFile('album.cue');
+      final tracks = await scanFolder(tmp.path);
+      expect(tracks.length, 1);
+      expect(tracks.single.isCueTrack, isFalse);
+      expect(tracks.single.filePath, endsWith('ArtistA - Song1.wav'));
+    });
   });
 }

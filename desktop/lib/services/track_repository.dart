@@ -24,16 +24,20 @@ class TrackRepository {
   /// 数据库 schema 版本。**改表结构时必须 +1**，并在 [_onUpgrade] 里补
   /// 对应迁移语句（onCreate 建的是最新结构，老库走 onUpgrade 逐级升级）。
   /// 不加迁移直接改 onCreate = 老用户升级后曲库被当作损坏丢弃、静默清空。
-  static const int dbVersion = 1;
+  static const int dbVersion = 2;
 
   /// 逐级迁移：switch 不 break，保证跨多版本的老库（如 v1 → v3）依次
   /// 应用每一步迁移，与 onCreate 的最终结构对齐。
   static Future<void> _onUpgrade(
       Database db, int oldVersion, int newVersion) async {
-    // 示例（未来 v2 加列时）：
-    // if (oldVersion < 2) {
-    //   await db.execute('ALTER TABLE tracks ADD COLUMN genre TEXT');
-    // }
+    if (oldVersion < 2) {
+      // v2：元数据增强 + CUE 分轨（标签内嵌歌词 / cue 虚拟曲目 / 音轨号）
+      await db.execute('ALTER TABLE tracks ADD COLUMN cuePath TEXT');
+      await db.execute('ALTER TABLE tracks ADD COLUMN cueTrackIndex INTEGER');
+      await db.execute('ALTER TABLE tracks ADD COLUMN cueTrackCount INTEGER');
+      await db.execute('ALTER TABLE tracks ADD COLUMN lyricsText TEXT');
+      await db.execute('ALTER TABLE tracks ADD COLUMN trackNumber INTEGER');
+    }
   }
 
   static Database? _db;
@@ -85,7 +89,12 @@ class TrackRepository {
             strmPath TEXT,
             strmFromWebdav INTEGER NOT NULL DEFAULT 0,
             targetUri TEXT,
-            targetKind TEXT
+            targetKind TEXT,
+            cuePath TEXT,
+            cueTrackIndex INTEGER,
+            cueTrackCount INTEGER,
+            lyricsText TEXT,
+            trackNumber INTEGER
           )
         ''');
       },

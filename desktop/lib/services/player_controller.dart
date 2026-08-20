@@ -100,6 +100,10 @@ class PlayerController {
   /// 音频分析完成（广播 trackId）：播放页据此刷新 BPM/Key 徽章。
   final _analysisSC = StreamController<String>.broadcast();
 
+  /// 实时频谱（16 频段 0~1，引擎 ~25Hz 推送）：可视化组件订阅。
+  /// 暂停/停止后引擎不再推送，UI 侧自行衰减到零（见 SpectrumVisualizer）。
+  final _spectrumSC = StreamController<List<double>>.broadcast();
+
   /// 用户可读错误（曲库写入失败等）。UI 订阅后以 SnackBar 呈现；
   /// 详细异常走 debugPrint（仅 debug 构建），对用户只暴露一句人话。
   final _errorSC = StreamController<String>.broadcast();
@@ -113,6 +117,9 @@ class PlayerController {
   Stream<void> get playlistsStream => _playlistsSC.stream;
   Stream<void> get modeStream => _modeSC.stream;
   Stream<String> get analysisStream => _analysisSC.stream;
+
+  /// 实时频谱事件流（16 频段幅值 0~1）。
+  Stream<List<double>> get spectrumStream => _spectrumSC.stream;
 
   /// 曲库内容变化（添加文件夹 / 启动重扫完成）。UI 订阅以替代 setState 刷新。
   Stream<void> get libraryStream => _librarySC.stream;
@@ -315,6 +322,9 @@ class PlayerController {
         }
       case 'error':
         debugPrint('engine error: ${e.message}');
+      case 'spectrum':
+        final bands = e.bands;
+        if (bands != null && !_spectrumSC.isClosed) _spectrumSC.add(bands);
       default:
         break;
     }
@@ -736,7 +746,9 @@ class PlayerController {
     }
     switch (t.source) {
       case TrackSource.local:
-        if (t.filePath != null) {
+        if (t.isCueTrack) {
+          await _playCueTrack(t);
+        } else if (t.filePath != null) {
           try {
             await _engine!.play(t.filePath!);
             _streaming = false;
@@ -753,6 +765,25 @@ class PlayerController {
         await _playNas(t);
       case TrackSource.subsonic:
         await _playSubsonic(t);
+    }
+  }
+
+  /// CUE 虚拟分轨播放：经引擎队列从指定分轨起播（core 展开 .cue 并遵循
+  /// start/end 边界；position/duration/seek 均为虚拟轨相对值，UI 无需
+  /// 特殊处理），随后清空引擎侧整碟剩余分轨——队列控制权归 Dart
+  /// （随机/循环/播放列表语义以 Dart 队列为准，避免引擎自行顺碟推进）。
+  /// 分轨曲终 → 引擎 stopped → Dart next() 切歌，与普通曲目同构。
+  Future<void> _playCueTrack(Track t) async {
+    try {
+      await _engine!.playQueue([t.cuePath!], startIndex: t.cueTrackIndex!);
+      final remaining = (t.cueTrackCount ?? 0) - t.cueTrackIndex! - 1;
+      for (var i = 0; i < remaining; i++) {
+        await _engine!.removeQueueEntry(1);
+      }
+      _streaming = false;
+      _setPlaying(true);
+    } catch (e) {
+      debugPrint('[_playCueTrack] failed: $e');
     }
   }
 
@@ -1362,5 +1393,6 @@ class PlayerController {
     await _librarySC.close();
     await _errorSC.close();
     await _analysisSC.close();
+    await _spectrumSC.close();
   }
 }

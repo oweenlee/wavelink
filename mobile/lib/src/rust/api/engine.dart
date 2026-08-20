@@ -67,6 +67,16 @@ Future<void> enginePlay({required String path}) =>
 Future<void> enginePlayQueue({required List<String> paths}) =>
     RustLib.instance.api.crateApiEngineEnginePlayQueue(paths: paths);
 
+/// 从指定下标起播队列（0-based；CUE 分轨场景：传入 .cue 路径由 core 展开
+/// 为虚拟分轨后从 [start_index] 起播）。
+Future<void> enginePlayQueueAt({
+  required List<String> paths,
+  required int startIndex,
+}) => RustLib.instance.api.crateApiEngineEnginePlayQueueAt(
+  paths: paths,
+  startIndex: startIndex,
+);
+
 Future<void> enginePause() => RustLib.instance.api.crateApiEngineEnginePause();
 
 Future<void> engineResume() =>

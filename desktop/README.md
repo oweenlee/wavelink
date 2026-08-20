@@ -72,7 +72,17 @@ flutter run -d macos
 - **播放派发**（`PlayerController`）：本地 → `engine.play(path)`；WebDAV / NAS → Rust 流式（`enginePlayWebdavStream` / `enginePlaySmbStream`，失败回退整曲缓存下载）；Subsonic → 下载 `streamUrl` 到缓存后本地播放。`playIndex` 先用 `durationHint` 预填进度条，避免网络曲时长未知导致进度条不动。
 - **侧栏「网络音源」区** + `NetworkConfigDialog`（`lib/screens/network_dialogs.dart`）：按来源填写凭据，`测试连接` → `保存` → `扫描并导入`（去重并入曲库）。导入入口 `importWebdav/importNas/importSubsonic`。
 
-> 侧栏网络曲显示来源徽标（`DAV` / `NAS` / `SUB`），本地曲显示文件扩展名或「模拟」（纯 Dart 回退）。
+> 侧栏网络曲显示来源徽标（`DAV` / `NAS` / `SUB`），本地曲显示文件扩展名或「模拟」（纯 Dart 回退）；CUE 虚拟分轨显示 `CUE` 徽标。
+
+## 本地曲库扫描（标签元数据 + CUE 分轨）
+
+`addFolder` 后的扫描（`lib/services/library.dart`）分两阶段，引擎未加载/读取失败时静默降级文件名「艺人 - 标题」规则，扫描永远可用：
+
+- **阶段 1 — CUE 展开**：解析目录内全部 `.cue`（经 Rust `parse_cue_bytes`，UTF-8 失败回退 GBK——中文/日文抓轨常见编码），整轨镜像拆成逐首虚拟曲目（`Track.cuePath` / `cueTrackIndex` / `cueTrackCount`），被引用的镜像音频文件不重复入库；镜像全部缺失时不排除，整轨仍以普通曲目保留。
+- **阶段 2 — 标签增强**：8 路并发经 Rust `read_metadata` 读真实标签（标题/艺人/专辑/音轨号/时长/内嵌歌词），封面字节顺手写入 `.covers` 缓存（省去后台二次解析）；外部同名 `.lrc` 仍在扫描期记录。
+- **排序**：艺人 → 专辑 → 音轨号 → 标题（无标签曲目行为与旧版一致）。时长曲目行可见，供进度提示。
+- **CUE 播放**：`playQueueAt([cuePath], 轨号)` 起播后逐条 `removeQueueEntry` 清空引擎侧的整碟剩余分轨——队列控制权始终归 Dart（随机/循环/播放列表语义生效）；core 的 position/duration/seek 均为虚拟轨相对值，UI 零适配。
+- **新 FFI 模块**：`desktop/rust/src/api/metadata.rs`（`read_metadata`）、`cue.rs`（`parse_cue_bytes`，与 core 的 UTF-8-only `parse_cue` 不同，桥接层先解码再走 `parse_cue_str`）；`engine.rs` 增 `wavelink_remove_from_queue`。改 Rust 后需重跑 `flutter_rust_bridge_codegen generate`。
 
 ## 快捷键
 
@@ -95,14 +105,20 @@ flutter run -d macos
 - ✅ **Rust 绑定层迁移到 FRB 2.13.0-beta.5**（与 mobile 同版本），dylib 经 `RustLib.init(externalLibrary:)` 加载；`cargo build` + `flutter analyze` 双端零错误
 - ✅ macOS 真机验证通过（出声 / dylib 加载 / 事件轮询 / UI 渲染全链路）
 - ✅ 代码 review 修复（2026-08-18）：事件泵按周期抽干（上限 64/次）；seek 毫秒精度；音量/进度拖动 `onChangeEnd` 提交（拖动不再每帧写盘/调引擎）；曲库文件夹持久化（重启恢复）；`playNext` shuffle 下基准队列插入位置修正；Rust 引擎 `Mutex<Option>` 化（deinit 后可重新 init）；非阻塞启动；主题色单源 `lib/core/theme.dart`
-- ✅ 单元测试：`flutter test` 28 用例全绿（PlayerController 状态机 / LRC 解析 / 目录扫描 / 空库 UI 冒烟 / 网络音源侧栏）；`analysis_options.yaml` 开启 `strict-casts / strict-inference / strict-raw-types`
+- ✅ 单元测试：`flutter test` 71 用例全绿（PlayerController 状态机 / LRC 解析 / 目录扫描 / 空库 UI 冒烟 / 网络音源侧栏 / 标签元数据 + CUE 真 dylib 全链路）；`analysis_options.yaml` 开启 `strict-casts / strict-inference / strict-raw-types`
 - ✅ **网络音源（WebDAV / NAS(SMB) / Subsonic）**：`TrackSource` 枚举 + `NetworkSourceConfig` 配置中心 + `WebdavService`/`NasService`/`SubsonicService` 扫描下载 + 播放派发（`PlayerController` 流式 vs 缓存兜底）+ 侧栏「网络音源」区与 `NetworkConfigDialog`；`cargo check` / `flutter analyze` 双端零错误
+- ✅ **标签元数据增强（2026-08-20）**：扫描期经 Rust `read_metadata` 读真实标签（标题/艺人/专辑/音轨号/时长/内嵌歌词），封面字节扫描期顺手落盘缓存；失败降级文件名「艺人 - 标题」规则；曲库排序升级为 艺人→专辑→音轨号→标题；曲目行显示真实时长；内嵌歌词（ID3 USLT / Vorbis LYRICS / MP4 ©lyr）作外部 .lrc 兜底
+- ✅ **CUE 分轨（2026-08-20）**：扫描期解析 `.cue`（UTF-8/GBK 双编码，经 `parse_cue_bytes`），整轨镜像拆逐首虚拟曲目入库（镜像文件不重复入库）；播放经 `playQueueAt + removeQueueEntry` 从指定分轨起播，引擎 position/duration/seek 均为虚拟轨相对值，队列控制权归 Dart；曲目行 CUE 徽标
+- ✅ **频谱可视化（2026-08-20）**：引擎 `spectrum` 事件（16 频段）经 `PlayerController.spectrumStream` 广播，「正在播放」面板 `SpectrumVisualizer` 渲染（快攻慢放平滑 + 暂停衰减 + RepaintBoundary 隔离，颜色随封面强调色）
 
 ### 未做（Phase 2+）
 - Windows/WASAPI、Linux 真机验证与打包（dmg/msi，把 dylib 拷入 app bundle）
-- DSP 控制 UI（EQ/AutoEQ/房间校正）、bit-perfect/独占开关 UI、输出设备选择 UI
-- 频谱可视化、gapless 无缝播放（当前逐文件，切歌有极短间隔；引擎侧整队列 API 已预留未接线）
+- DSP 控制 UI 补全（逐段 PEQ 自定义界面，预设/AutoEQ/房间校正已有）、bit-perfect/独占开关 UI 打磨、输出设备选择 UI 打磨
+- gapless 无缝播放（当前逐文件，切歌有极短间隔；引擎侧整队列 API 已预留未接线；CUE 分轨切换亦为逐次起播）
+- 桌面原生体验：全局媒体键（macOS 媒体键 / Windows SMTC / Linux MPRIS）、定时关闭、开机自启
 - 结构性重构（拆分 PlayerController 职责 / home.dart 按组件拆文件）——有意推迟，收益低于回归风险
-- 元数据 tag 读取（当前文件名 `Artist - Title` 约定解析；core 的 symphonia 可读 tag，待接）
 
-详见仓库根 `DESKTOP_FLUTTER_MVP_PLAN.md`。
+### mobile 侧已知状态（仅记录未改，桌面端不受影响）
+
+- ~~GBK cue 解析失败~~ **已修**：mobile 桥接层已改为 `parse_cue_bytes`（先试 UTF-8 剥 BOM，失败回退 GBK，再走 `parse_cue_str`），与桌面同款；另已将 `engine_play_queue_at` 暴露到 FFI，将来接线随时可用。
+- CUE 仍未接入 mobile 的 UI/曲库/播放链路（`parseCueBytes` 有包装但无消费者）——有意识保留：移动端导入渠道（MediaStore/Subsonic/NAS/WebDAV）几乎不会产生 cue 文件，整轨镜像用户集中在桌面端。将来要接线时，播放模型照抄桌面（`enginePlayQueueAt` 起播 + 清空引擎残余队列）。

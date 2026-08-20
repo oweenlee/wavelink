@@ -1,6 +1,6 @@
 # audio-core
 
-> 跨端纯 Rust 音频核心。被 `desktop/src-tauri/crates/sdk` 与 `mobile/rust` 以 path 依赖引用。
+> 跨端纯 Rust 音频核心。被 `desktop/rust`（crate `wavelink_desktop`）与 `mobile/rust` 以 path 依赖引用。
 
 纯 Rust 音频引擎。零 C 依赖，macOS/Windows/Linux/Android/iOS 均可编译。
 

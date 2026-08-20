@@ -20,6 +20,9 @@ arc-swap = "1"
 realfft = "3.5"
 lofty = "0.24"
 parking_lot = "0.12"
+# CUE 文本 GBK 回退解码（中文/日文抓轨的 cue 常非 UTF-8；core 的
+# parse_cue 按 UTF-8 读行，非法字节直接失败，故在桥接层先解码）
+encoding_rs = "0.8"
 # SMB 直挂：纯 Rust SMB2/3 客户端（替换 smb_connect，支持 guest 匿名访问）
 smb2 = "0.17"
 # WebDAV 边下边播：HTTP 客户端（Digest/Basic 认证 + 流式读取）

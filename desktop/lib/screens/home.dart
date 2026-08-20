@@ -20,6 +20,7 @@ import '../services/player_controller.dart';
 import '../services/player_providers.dart';
 import '../services/subsonic_service.dart';
 import '../services/webdav_service.dart';
+import '../widgets/spectrum_visualizer.dart';
 
 // 单色板来自 core/theme.dart（与 ThemeData 同源）；别名仅为缩短引用。
 const _surface = kSurface;
@@ -833,13 +834,15 @@ class _TrackRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
     final l10n = AppLocalizations.of(context);
-    final badge = track.isNetwork
-        ? track.source.short
-        : (track.filePath != null
-            ? p.extension(track.filePath!)
-                .toUpperCase()
-                .replaceFirst('.', '')
-            : l10n.simulated);
+    final badge = track.isCueTrack
+        ? 'CUE'
+        : track.isNetwork
+            ? track.source.short
+            : (track.filePath != null
+                ? p.extension(track.filePath!)
+                    .toUpperCase()
+                    .replaceFirst('.', '')
+                : l10n.simulated);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -892,6 +895,16 @@ class _TrackRow extends StatelessWidget {
                     ],
                   ),
                 ),
+              // 标签扫描期读到的真实时长（网络曲为扫描回填；未知不显示）
+              if (track.durationHint != null &&
+                  track.durationHint! > Duration.zero) ...[
+                Text(_fmt(track.durationHint!),
+                    style: const TextStyle(
+                        fontFamily: 'JetBrainsMono',
+                        color: AppTheme.textTertiary,
+                        fontSize: 10.5)),
+                const SizedBox(width: 10),
+              ],
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -1133,6 +1146,9 @@ class _NowPlaying extends ConsumerWidget {
                   _AnalysisTags(player: player, track: track),
             ),
             const SizedBox(height: 14),
+            // 实时频谱（引擎 spectrum 事件驱动；暂停后自然衰减到零）
+            SpectrumVisualizer(player: player, height: 36),
+            const SizedBox(height: 12),
             _Progress(player: player),
             const SizedBox(height: 12),
             Expanded(child: _Lyrics(player: player)),

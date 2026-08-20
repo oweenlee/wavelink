@@ -8,8 +8,10 @@
 
 import 'api/analyze.dart';
 import 'api/cover.dart';
+import 'api/cue.dart';
 import 'api/duration.dart';
 import 'api/engine.dart';
+import 'api/metadata.dart';
 import 'api/room.dart';
 import 'api/smb.dart';
 import 'api/webdav.dart';
@@ -53,10 +55,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_box_autoadd_f_64(dynamic raw);
 
   @protected
+  int dco_decode_box_autoadd_u_32(dynamic raw);
+
+  @protected
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
 
   @protected
   CorrectionConfig dco_decode_correction_config(dynamic raw);
+
+  @protected
+  CueFileResult dco_decode_cue_file_result(dynamic raw);
+
+  @protected
+  CueSheetResult dco_decode_cue_sheet_result(dynamic raw);
+
+  @protected
+  CueTrackResult dco_decode_cue_track_result(dynamic raw);
 
   @protected
   double dco_decode_f_32(dynamic raw);
@@ -72,6 +86,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<CueFileResult> dco_decode_list_cue_file_result(dynamic raw);
+
+  @protected
+  List<CueTrackResult> dco_decode_list_cue_track_result(dynamic raw);
 
   @protected
   List<FreqPoint> dco_decode_list_freq_point(dynamic raw);
@@ -95,6 +115,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<SmbShareInfo> dco_decode_list_smb_share_info(dynamic raw);
 
   @protected
+  MetadataResult dco_decode_metadata_result(dynamic raw);
+
+  @protected
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
@@ -102,6 +125,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
+
+  @protected
+  int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
 
   @protected
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
@@ -162,10 +188,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
+  int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
+
+  @protected
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
   CorrectionConfig sse_decode_correction_config(SseDeserializer deserializer);
+
+  @protected
+  CueFileResult sse_decode_cue_file_result(SseDeserializer deserializer);
+
+  @protected
+  CueSheetResult sse_decode_cue_sheet_result(SseDeserializer deserializer);
+
+  @protected
+  CueTrackResult sse_decode_cue_track_result(SseDeserializer deserializer);
 
   @protected
   double sse_decode_f_32(SseDeserializer deserializer);
@@ -181,6 +219,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<CueFileResult> sse_decode_list_cue_file_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<CueTrackResult> sse_decode_list_cue_track_result(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<FreqPoint> sse_decode_list_freq_point(SseDeserializer deserializer);
@@ -206,6 +254,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  MetadataResult sse_decode_metadata_result(SseDeserializer deserializer);
+
+  @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
@@ -213,6 +264,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
+  int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
@@ -280,11 +334,29 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
 
   @protected
   void sse_encode_correction_config(
     CorrectionConfig self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_cue_file_result(CueFileResult self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_cue_sheet_result(
+    CueSheetResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_cue_track_result(
+    CueTrackResult self,
     SseSerializer serializer,
   );
 
@@ -302,6 +374,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_cue_file_result(
+    List<CueFileResult> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_cue_track_result(
+    List<CueTrackResult> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_freq_point(
@@ -343,6 +427,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_metadata_result(
+    MetadataResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
 
   @protected
@@ -350,6 +440,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);

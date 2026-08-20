@@ -165,6 +165,16 @@ pub fn wavelink_stop() {
     }
 }
 
+/// 从引擎待播队列移除条目（0=当前曲不允许移除，1=待播第一首）。
+/// CUE 场景：Dart 侧逐曲管理队列时，`wavelink_play_queue_at_json` 会让
+/// core 把整碟剩余分轨留在引擎队列，需逐个移除交还 Dart 控制权。
+#[frb]
+pub fn wavelink_remove_from_queue(index: u32) {
+    if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
+        handle.remove_from_queue(index as usize);
+    }
+}
+
 #[frb]
 pub fn wavelink_next() {
     if let Some((handle, _)) = ENGINE.lock().unwrap().as_ref() {
@@ -475,6 +485,11 @@ mod tests {
     #[test]
     fn underrun_count_defaults_to_zero_when_not_initialized() {
         assert_eq!(wavelink_underrun_count(), 0);
+    }
+
+    #[test]
+    fn remove_from_queue_is_noop_when_not_initialized() {
+        wavelink_remove_from_queue(1);
     }
 
     #[test]

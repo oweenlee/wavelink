@@ -10,13 +10,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 /// 解析 .cue 文件字节，返回分轨表。
 ///
-/// 旧版 `parse_cue_file` 直通 core `parse_cue`（按 UTF-8 读行），GBK 编码
-/// 的 cue（中文/日文抓轨常见）会因非法 UTF-8 直接失败。这里接收原始字节：
-/// 先试 UTF-8（剥 BOM），失败回退 GBK 解码，再走 `parse_cue_str`。
-///
 /// [data]：cue 文件原始字节（UTF-8 / GBK 均可）；
-/// [base_dir]：cue 所在目录，FILE 声明的相对路径以此为基准转绝对
-/// （与 core `resolve_entries` 的「cue 父目录 + 相对路径」语义一致）。
+/// [base_dir]：cue 所在目录，FILE 声明的相对路径以此为基准转绝对。
 Future<CueSheetResult> parseCueBytes({
   required List<int> data,
   required String baseDir,

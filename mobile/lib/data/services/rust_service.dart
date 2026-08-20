@@ -119,9 +119,19 @@ Future<void> streamDecoderStop(decode.StreamDecoder decoder) {
 
 // ── CUE 分轨 ──
 
-/// 解析 .cue 文件，返回分轨表
-Future<cue.CueSheetResult> parseCueFile(String path) {
-  return cue.parseCueFile(path: path);
+/// 解析 .cue 文件字节（UTF-8/GBK 双编码），返回分轨表。
+/// [baseDir] 为 cue 所在目录：FILE 相对路径以此为基准转为绝对路径。
+///
+/// 注意：桥接层已具备 CUE 解析能力，但 UI/曲库/播放链路暂未接线——
+/// 移动端导入渠道（MediaStore/Subsonic/NAS/WebDAV）几乎不会产生 cue
+/// 文件，整轨镜像用户集中在桌面端。将来需要接线时，播放模型参考桌面：
+/// `enginePlayQueueAt([cuePath], 轨号)` 起播 + `engineRemoveFromQueue`
+/// 清空引擎侧剩余分轨（position/duration/seek 均为虚拟轨相对值）。
+Future<cue.CueSheetResult> parseCueBytes({
+  required List<int> data,
+  required String baseDir,
+}) {
+  return cue.parseCueBytes(data: data, baseDir: baseDir);
 }
 
 // ── 播放列表 ──

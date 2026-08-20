@@ -253,6 +253,12 @@ class Engine {
   Future<void> setPlayMode(PlayMode mode) =>
       frb.wavelinkSetPlayMode(mode: mode.index); // 顺序与 Rust 约定一致
 
+  /// 从引擎待播队列移除条目（0=当前曲不允许移除，1=待播第一首）。
+  /// CUE 场景：[playQueue] 从分轨起播后，core 会把整碟剩余分轨留在
+  /// 引擎队列；逐个移除交还 Dart 侧队列控制权（见 PlayerController）。
+  Future<void> removeQueueEntry(int index) =>
+      frb.wavelinkRemoveFromQueue(index: index);
+
   /// 设置输出设备（Phase 2 设备选择 UI 预留，当前未接线）。
   Future<void> setOutputDevice(String? name) =>
       frb.wavelinkSetOutputDevice(name: name);

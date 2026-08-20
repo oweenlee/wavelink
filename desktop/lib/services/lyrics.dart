@@ -73,7 +73,19 @@ Future<List<LyricLine>> loadLyrics(String? lyricsPath) async {
 Future<List<LyricLine>> loadLyricsFor(Track t) async {
   switch (t.source) {
     case TrackSource.local:
-      return loadLyrics(t.lyricsPath);
+      // 外部同名 .lrc 优先（用户可编辑），内嵌标签歌词（扫描期读取的
+      // ID3 USLT / Vorbis LYRICS / MP4 ©lyr）作兜底。
+      final lines = await loadLyrics(t.lyricsPath);
+      if (lines.isNotEmpty) return lines;
+      final embedded = t.lyricsText;
+      if (embedded != null && embedded.trim().isNotEmpty) {
+        try {
+          return parseLrc(embedded);
+        } catch (e) {
+          debugPrint('embedded lyrics parse error: $e');
+        }
+      }
+      return const [];
     case TrackSource.nas:
       if (t.remotePath == null) return const [];
       return _loadCachedOrFetch(

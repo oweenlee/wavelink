@@ -1,3 +1,15 @@
+//! 桌面端 CUE 分轨解析 FFI
+//!
+//! 扫描期解析 `.cue` 分轨表：整轨镜像（APE/FLAC/WAV）拆成逐首虚拟曲目
+//! 进入曲库。播放时 Dart 侧用 `wavelink_play_queue_at_json` 从指定分轨
+//! 起播（core 的 resolve_entries 会自动展开 .cue 并遵循 start/end 边界）。
+//!
+//! 与 mobile `api::cue::parse_cue_file` 的差异：桌面版接收**原始字节 +
+//! 基准目录**。mobile 版经 `parse_cue` 按 UTF-8 读行，遇到 GBK 编码的
+//! cue（中文/日文抓轨常见）会因非法 UTF-8 直接失败；这里先试 UTF-8
+//! （剥 BOM），失败回退 GBK 解码。FILE 相对路径按 [base_dir] 转绝对，
+//! 与 core `resolve_entries` 的「cue 父目录 + 相对路径」语义一致。
+
 use std::path::Path;
 
 use flutter_rust_bridge::frb;
@@ -29,13 +41,8 @@ pub struct CueSheetResult {
 
 /// 解析 .cue 文件字节，返回分轨表。
 ///
-/// 旧版 `parse_cue_file` 直通 core `parse_cue`（按 UTF-8 读行），GBK 编码
-/// 的 cue（中文/日文抓轨常见）会因非法 UTF-8 直接失败。这里接收原始字节：
-/// 先试 UTF-8（剥 BOM），失败回退 GBK 解码，再走 `parse_cue_str`。
-///
 /// [data]：cue 文件原始字节（UTF-8 / GBK 均可）；
-/// [base_dir]：cue 所在目录，FILE 声明的相对路径以此为基准转绝对
-/// （与 core `resolve_entries` 的「cue 父目录 + 相对路径」语义一致）。
+/// [base_dir]：cue 所在目录，FILE 声明的相对路径以此为基准转绝对。
 #[frb]
 pub fn parse_cue_bytes(data: Vec<u8>, base_dir: String) -> Result<CueSheetResult, String> {
     let text = decode_cue_text(&data)?;

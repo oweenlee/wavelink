@@ -61,6 +61,12 @@ Future<void> wavelinkResume() =>
 Future<void> wavelinkStop() =>
     RustLib.instance.api.crateApiEngineWavelinkStop();
 
+/// 从引擎待播队列移除条目（0=当前曲不允许移除，1=待播第一首）。
+/// CUE 场景：Dart 侧逐曲管理队列时，`wavelink_play_queue_at_json` 会让
+/// core 把整碟剩余分轨留在引擎队列，需逐个移除交还 Dart 控制权。
+Future<void> wavelinkRemoveFromQueue({required int index}) =>
+    RustLib.instance.api.crateApiEngineWavelinkRemoveFromQueue(index: index);
+
 Future<void> wavelinkNext() =>
     RustLib.instance.api.crateApiEngineWavelinkNext();
 

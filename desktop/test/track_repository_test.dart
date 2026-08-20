@@ -95,6 +95,33 @@ void main() {
       expect(r.targetUri, 'smb://host/x.flac');
       expect(r.targetKind, 'smb');
     });
+
+    test('字段往返：CUE 分轨与标签元数据字段正确还原', () async {
+      final t = Track(
+        id: '/m/album.cue#01',
+        title: '第一首',
+        artist: '某艺人',
+        album: '整轨专辑',
+        source: TrackSource.local,
+        filePath: '/m/album.flac',
+        trackNumber: 1,
+        lyricsText: '[00:01.00]内嵌歌词',
+        cuePath: '/m/album.cue',
+        cueTrackIndex: 0,
+        cueTrackCount: 9,
+      );
+      expect(t.isCueTrack, isTrue);
+      await TrackRepository.syncScan([t], localPrefix: '/m');
+
+      final r = (await TrackRepository.getAll()).single;
+      expect(r.album, '整轨专辑');
+      expect(r.trackNumber, 1);
+      expect(r.lyricsText, '[00:01.00]内嵌歌词');
+      expect(r.isCueTrack, isTrue);
+      expect(r.cuePath, '/m/album.cue');
+      expect(r.cueTrackIndex, 0);
+      expect(r.cueTrackCount, 9);
+    });
   });
 
   group('网络音源：按来源差集清理已移除曲目', () {

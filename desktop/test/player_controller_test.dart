@@ -95,6 +95,31 @@ void main() {
     });
   });
 
+  group('CUE 虚拟分轨', () {
+    Track mkCue(int i, int total) => Track(
+        id: '/tmp/a.cue#${i.toString().padLeft(2, '0')}',
+        title: '轨 $i',
+        artist: '某艺人',
+        album: '整轨专辑',
+        filePath: '/tmp/a.flac',
+        trackNumber: i + 1,
+        cuePath: '/tmp/a.cue',
+        cueTrackIndex: i,
+        cueTrackCount: total);
+
+    test('cue 曲目入队/状态机与普通曲目同构（引擎缺失时安全 no-op）', () async {
+      final ts = [mkCue(0, 3), mkCue(1, 3), mkCue(2, 3)];
+      c.playFrom(ts, 1);
+      expect(c.currentIndex, 1);
+      expect(c.currentTrack!.isCueTrack, isTrue);
+      await c.next();
+      expect(c.currentIndex, 2);
+      await c.previous();
+      await c.previous(); // 进度为零 → 回上一轨
+      expect(c.currentIndex, 0);
+    });
+  });
+
   group('playNext', () {
     test('inserts right after the current track', () async {
       final ts = mkTracks(3);

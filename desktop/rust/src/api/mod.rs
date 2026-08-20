@@ -4,8 +4,10 @@
 
 pub mod analyze;
 pub mod cover;
+pub mod cue;
 pub mod duration;
 pub mod engine;
+pub mod metadata;
 pub mod room;
 pub mod smb;
 pub mod webdav;

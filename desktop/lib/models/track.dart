@@ -58,6 +58,25 @@ class Track {
   /// 解析出的真实目标类型：smb / dav / http / stream。
   final String? targetKind;
 
+  // —— CUE 分轨扩展（整轨镜像拆分的虚拟曲目）——
+  /// 来源 .cue 文件路径（非空即本曲是 CUE 虚拟分轨）。
+  final String? cuePath;
+
+  /// 分轨在 CUE 展平列表中的 0-based 下标（播放时经
+  /// `playQueueAt([cuePath], cueTrackIndex)` 定位起播）。
+  final int? cueTrackIndex;
+
+  /// CUE 展平后的总分轨数（播放后用于清空引擎侧剩余分轨，
+  /// 队列控制权交还 Dart）。
+  final int? cueTrackCount;
+
+  /// 内嵌歌词（扫描期从标签读取：ID3 USLT / Vorbis LYRICS / MP4 ©lyr）。
+  /// 外部同名 .lrc（[lyricsPath]）优先，内嵌作兜底。
+  final String? lyricsText;
+
+  /// 标签音轨号（专辑内排序：曲库按 艺人→专辑→音轨号 排序用）。
+  final int? trackNumber;
+
   const Track({
     required this.id,
     required this.title,
@@ -77,10 +96,18 @@ class Track {
     this.strmFromWebdav = false,
     this.targetUri,
     this.targetKind,
+    this.cuePath,
+    this.cueTrackIndex,
+    this.cueTrackCount,
+    this.lyricsText,
+    this.trackNumber,
   });
 
   bool get isLocal => source == TrackSource.local;
   bool get isNetwork => source != TrackSource.local;
+
+  /// 是否为 CUE 虚拟分轨（播放走 playQueueAt + 清空引擎残余队列）。
+  bool get isCueTrack => cuePath != null && cueTrackIndex != null;
 
   /// 是否为 .strm 指针文件（播放前需先解析出真实目标再分发）。
   bool get isStrm => strmPath != null && strmPath!.isNotEmpty;
@@ -122,6 +149,11 @@ class Track {
         'strmFromWebdav': strmFromWebdav ? 1 : 0,
         'targetUri': targetUri,
         'targetKind': targetKind,
+        'cuePath': cuePath,
+        'cueTrackIndex': cueTrackIndex,
+        'cueTrackCount': cueTrackCount,
+        'lyricsText': lyricsText,
+        'trackNumber': trackNumber,
       };
 
   /// 从 SQLite 行构造 [Track]，缺省值兜底保持与模型默认值一致。
@@ -150,6 +182,11 @@ class Track {
         strmFromWebdav: (m['strmFromWebdav'] as int? ?? 0) == 1,
         targetUri: m['targetUri'] as String?,
         targetKind: m['targetKind'] as String?,
+        cuePath: m['cuePath'] as String?,
+        cueTrackIndex: m['cueTrackIndex'] as int?,
+        cueTrackCount: m['cueTrackCount'] as int?,
+        lyricsText: m['lyricsText'] as String?,
+        trackNumber: m['trackNumber'] as int?,
       );
 
   Track copyWith({
@@ -171,6 +208,11 @@ class Track {
     bool? strmFromWebdav,
     String? targetUri,
     String? targetKind,
+    String? cuePath,
+    int? cueTrackIndex,
+    int? cueTrackCount,
+    String? lyricsText,
+    int? trackNumber,
   }) =>
       Track(
         id: id ?? this.id,
@@ -191,6 +233,11 @@ class Track {
         strmFromWebdav: strmFromWebdav ?? this.strmFromWebdav,
         targetUri: targetUri ?? this.targetUri,
         targetKind: targetKind ?? this.targetKind,
+        cuePath: cuePath ?? this.cuePath,
+        cueTrackIndex: cueTrackIndex ?? this.cueTrackIndex,
+        cueTrackCount: cueTrackCount ?? this.cueTrackCount,
+        lyricsText: lyricsText ?? this.lyricsText,
+        trackNumber: trackNumber ?? this.trackNumber,
       );
 
   @override

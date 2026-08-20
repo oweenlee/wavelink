@@ -210,6 +210,12 @@ pub fn engine_play_queue(paths: Vec<String>) {
     with_engine(|h| h.play_queue(paths));
 }
 
+/// 从指定下标起播队列（0-based；CUE 分轨场景：传入 .cue 路径由 core 展开
+/// 为虚拟分轨后从 [start_index] 起播）。
+pub fn engine_play_queue_at(paths: Vec<String>, start_index: u32) {
+    with_engine(|h| h.play_queue_at(paths, start_index as usize));
+}
+
 pub fn engine_pause() {
     with_engine(|h| h.pause());
 }
