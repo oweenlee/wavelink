@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
@@ -10,9 +10,11 @@ import 'package:path_provider/path_provider.dart';
 import '../models/track.dart';
 import '../src/rust/api/cover.dart' as frb_cover;
 import '../src/rust/api/smb.dart' as frb_smb;
+import '../src/rust/api/webdav.dart' as frb_webdav;
 import 'nas_service.dart';
 import 'stable_hash.dart';
 import 'subsonic_service.dart';
+import 'webdav_service.dart';
 
 /// 本地封面缓存与提取。
 ///
@@ -139,25 +141,101 @@ class CoverCache {
     if (t.remotePath == null) return null;
     final out = File(await cacheFilePathFor(t));
     if (await out.exists()) return out.path;
+    final sw = Stopwatch()..start();
     // 确保 SMB 会话可用（内部 keepalive 探测，不健康则重建）
-    if (await NasService.connect() != null) return null;
+    final connErr = await NasService.connect();
+    if (connErr != null) {
+      debugPrint('[cover] nas ${t.id}: connect 失败 ($connErr)');
+      return null;
+    }
     final maxLen = BigInt.from(_remoteProbeBytes);
     try {
       final head = await frb_smb.smbReadHead(
           path: t.remotePath!, maxLen: maxLen);
       final headCover = await _coverFromBytes(head);
       if (headCover != null) {
-        return writeCover(t, headCover);
+        final p = await writeCover(t, headCover);
+        debugPrint(
+            '[cover] nas ${t.id}: head ${head.length}B '
+            'cover=${headCover.length}B ${sw.elapsedMilliseconds}ms → $p');
+        return p;
       }
       final tail = await frb_smb.smbReadTail(
           path: t.remotePath!, maxLen: maxLen);
       final tailCover = await _coverFromBytes(tail);
       if (tailCover != null) {
-        return writeCover(t, tailCover);
+        final p = await writeCover(t, tailCover);
+        debugPrint(
+            '[cover] nas ${t.id}: tail ${tail.length}B '
+            'cover=${tailCover.length}B ${sw.elapsedMilliseconds}ms → $p');
+        return p;
+      }
+      // 头/尾截断均解析失败（WAV 等容器要求完整文件，diag 实证头部 4MB
+      // 截断时 lofty 直接报 data chunk 缺失）→ ≤30MB 整文件下载窦底
+      //（对齐 mobile `_fetchCoverByFullDownload`；下载本就会入播放缓存，
+      // 不用白不下）。
+      int? size = t.fileSize;
+      try {
+        size = (await frb_smb.smbFileSize(path: t.remotePath!)).toInt();
+      } catch (_) {
+        // 探测失败回退曲目已知大小
+      }
+      if (size != null && size > 0 && size <= 30 * 1024 * 1024) {
+        final local = await NasService.downloadToLocal(t);
+        if (local != null) {
+          final fullCover = await _coverFromBytes(await File(local).readAsBytes());
+          if (fullCover != null) {
+            final p = await writeCover(t, fullCover);
+            debugPrint(
+                '[cover] nas ${t.id}: 整文件窦底 ${size}B '
+                'cover=${fullCover.length}B ${sw.elapsedMilliseconds}ms → $p');
+            return p;
+          }
+        }
+      }
+      debugPrint(
+          '[cover] nas ${t.id}: 无封面（head/tail/full 均无）'
+          ' ${sw.elapsedMilliseconds}ms');
+      return null;
+    } catch (e) {
+      debugPrint(
+          '[cover] nas ${t.id}: 失败 ${sw.elapsedMilliseconds}ms: $e');
+      return null;
+    }
+  }
+
+  /// 为 WebDAV 曲目提取并缓存封面（对齐 mobile `fetchRemoteCover`：
+  /// Range 读头 → 读尾 → 头尾拼接窦底；moov 跨窗口时头尾各自难解析）。
+  /// 已缓存则直接返回。
+  Future<String?> extractWebdav(Track t) async {
+    final davPath = t.remotePath;
+    if (davPath == null) return null;
+    final out = File(await cacheFilePathFor(t));
+    if (await out.exists()) return out.path;
+    final url = WebdavService.fullUrlFor(davPath);
+    if (url == null) return null;
+    // 4MB：与 Rust 侧 RANGE_READ_CAP 对齐（服务器忽略 Range 时也不拉满整曲）
+    final maxLen = BigInt.from(4 * 1024 * 1024);
+    final user = WebdavService.username;
+    final pass = WebdavService.password;
+    try {
+      final head = await frb_webdav.engineReadWebdavRange(
+          url: url, username: user, password: pass, maxLen: maxLen, suffix: false);
+      final headCover = await _coverFromBytes(head);
+      if (headCover != null) return writeCover(t, headCover);
+      final tail = await frb_webdav.engineReadWebdavRange(
+          url: url, username: user, password: pass, maxLen: maxLen, suffix: true);
+      final tailCover = await _coverFromBytes(tail);
+      if (tailCover != null) return writeCover(t, tailCover);
+      // 头尾各自解析失败：拼接窦底（与 mobile 一致）
+      if (head.isNotEmpty && tail.isNotEmpty) {
+        final merged = await _coverFromBytes(
+            Uint8List.fromList([...head, ...tail]));
+        if (merged != null) return writeCover(t, merged);
       }
       return null;
-    } catch (_) {
-      // 拉取/解析失败：静默降级为灰阶占位
+    } catch (e) {
+      debugPrint('[cover] webdav ${t.id}: 失败: $e');
       return null;
     }
   }
