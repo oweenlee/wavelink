@@ -3,11 +3,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:http/http.dart' as http;
 import '../../../../data/services/preferences_service.dart';
 import '../../../../data/services/smb_service.dart';
 import '../../../../data/services/webdav_service.dart';
-import '../../../../data/services/strm_resolver.dart';
 import '../../../../data/services/library_cache_service.dart';
 import '../../../../domain/models/song.dart';
 import '../../../core/providers/repositories.dart';
@@ -106,44 +104,6 @@ class LibraryNotifier extends Notifier<LibraryState> {
   /// 使恢复结果作废，避免把已移除/清除的收藏 merge 回来。
   bool _favoritesTouched = false;
 
-  /// 收藏离线下载并发闸门：限制同时在途的远端下载数，
-  /// 避免一次收藏大量歌曲时打满 NAS 连接（历史教训：4 并发
-  /// 曾触发 NAS 连接数限制导致整批超时）。超出的排队等待。
-  /// 用实例字段而非 static：static 状态在热重载/容器重建后残留
-  /// （_active 不归零 + 未 complete 的 waiter 永久不醒 → 后续
-  /// acquire 死锁），实例随 Notifier 生命周期干净地销毁。
-  static const _offlineMax = 4;
-  int _offlineActive = 0;
-  final List<Completer<void>> _offlineWaiters = [];
-
-  Future<void> _acquireOffline() async {
-    if (_offlineActive < _offlineMax) {
-      _offlineActive++;
-      return;
-    }
-    final c = Completer<void>();
-    _offlineWaiters.add(c);
-    await c.future;
-    _offlineActive++;
-  }
-
-  void _releaseOffline() {
-    _offlineActive--;
-    if (_offlineWaiters.isNotEmpty) {
-      _offlineWaiters.removeAt(0).complete();
-    }
-  }
-
-  /// 容器销毁时唤醒所有排队中的下载（避免 unawaited task 永久挂起）；
-  /// 新容器从零开始，不受旧闸门状态影响。
-  void _releaseOfflineGateOnDispose() {
-    for (final w in _offlineWaiters) {
-      if (!w.isCompleted) w.complete();
-    }
-    _offlineWaiters.clear();
-    _offlineActive = 0;
-  }
-
   /// 封面提取调度（拆分自本类）：完成后回调刷新 UI 并持久化
   late final CoverService _covers = CoverService(
     ref,
@@ -169,8 +129,6 @@ class LibraryNotifier extends Notifier<LibraryState> {
 
   @override
   LibraryState build() {
-    // Riverpod 3.x：Notifier 生命周期清理走 ref.onDispose（无 dispose 覆写点）
-    ref.onDispose(_releaseOfflineGateOnDispose);
     return const LibraryState();
   }
 
@@ -205,8 +163,6 @@ class LibraryNotifier extends Notifier<LibraryState> {
     }
     state = state.copyWith(favoriteIds: ids);
     _persistFavorites();
-    // 收藏时静默预下载，离线可播（失败静默，不影响收藏状态）
-    if (nowFavorite) _triggerOfflineDownload(song);
   }
 
   void setFavorite(String songId, bool favorite) {
@@ -218,76 +174,6 @@ class LibraryNotifier extends Notifier<LibraryState> {
     }
     state = state.copyWith(favoriteIds: ids);
     _persistFavorites();
-    if (favorite) {
-      final song = allKnownSongs()
-          .where((s) => s.id == songId)
-          .firstOrNull;
-      if (song != null) _triggerOfflineDownload(song);
-    }
-  }
-
-  /// 收藏歌曲离线预下载（静默 fire-and-forget，失败只记日志）。
-  /// 复用播放缓存通路：SMB/WebDAV/STRM 走 downloadToLocal，HTTP 下载到
-  /// `.stream_cache`（与流式播放缓存同一目录），离线/在线都能命中缓存。
-  void _triggerOfflineDownload(Song song) {
-    unawaited(_downloadForOffline(song));
-  }
-
-  Future<void> _downloadForOffline(Song song) async {
-    await _acquireOffline();
-    try {
-      if (song.smbPath != null && song.smbPath!.isNotEmpty) {
-        await SmbService.downloadToLocal(song.smbPath!);
-        return;
-      }
-      if (song.davPath != null && song.davPath!.isNotEmpty) {
-        await WebdavService.downloadToLocal(song.davPath!);
-        return;
-      }
-      // STRM 指针歌：按解析落地的目标类型分发
-      if (song.isStrm) {
-        final uri = song.targetUri;
-        if (uri == null || uri.isEmpty) return;
-        switch (song.targetKind) {
-          case 'smb':
-            await SmbService.downloadToLocal(uri);
-          case 'dav':
-            await WebdavService.downloadToLocal(uri);
-          case 'http':
-            await _downloadHttpToStreamCache(uri, song.id);
-        }
-        return;
-      }
-      // Subsonic 流式源：HTTP 下载到播放缓存目录
-      if (song.streamUrl != null && song.streamUrl!.isNotEmpty) {
-        await _downloadHttpToStreamCache(song.streamUrl!, song.id);
-      }
-    } catch (e) {
-      Log.w('Library', '收藏离线下载失败: ${song.title} — $e');
-    } finally {
-      _releaseOffline();
-    }
-  }
-
-  Future<void> _downloadHttpToStreamCache(String url, String songId) async {
-    final appDir = await getApplicationDocumentsDirectory();
-    final cacheDir = Directory('${appDir.path}/.stream_cache');
-    if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
-    final cacheFile = File('${cacheDir.path}/$songId${strmExtFromUrl(url)}');
-    if (await cacheFile.exists() && await cacheFile.length() > 0) return;
-    // 流式落盘而非全量进内存：50MB+ FLAC/WAV 直接读 bodyBytes 会撑爆
-    // Dart heap，边收边写只占一个小缓冲。
-    final req = http.Request('GET', Uri.parse(url));
-    final streamed =
-        await req.send().timeout(const Duration(seconds: 30));
-    if (streamed.statusCode != 200) return;
-    final sink = cacheFile.openWrite();
-    try {
-      await streamed.stream.pipe(sink);
-    } catch (_) {
-      if (await cacheFile.exists()) await cacheFile.delete();
-      rethrow;
-    }
   }
 
   void _persistFavorites() {

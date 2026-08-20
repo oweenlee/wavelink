@@ -156,21 +156,4 @@ void main() {
       check(ids).deepEquals(['a', 'b']);
     });
   });
-
-  group('LibraryNotifier 收藏离线下载', () {
-    test('收藏本地歌不触发远端下载且不崩溃', () async {
-      final n = seed(buildContainer(), [_localSong('local1')]);
-      n.setFavorite('local1', true);
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      check(n.state.favoriteIds).deepEquals({'local1'});
-    });
-
-    test('收藏 NAS 歌触发下载：无 NAS 配置时静默失败不崩溃', () async {
-      // 默认无 NAS host 配置，downloadToLocal 在 ensureReady 处快速失败返回
-      final n = seed(buildContainer(), [_nasSong('a')]);
-      n.setFavorite('a', true);
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      check(n.state.favoriteIds).deepEquals({'a'});
-    });
-  });
 }
