@@ -157,6 +157,7 @@
   "nasConnectionFailed": "연결에 실패했습니다",
   "nasConnectionFailedTitle": "NAS 연결에 실패했습니다",
   "nasCheckHint": "휴대폰과 PC가 같은 Wi-Fi에 연결되어 있고 NAS 주소가 올바른지 확인하세요.",
+  "nasLocalNetworkRetry": "첫 연결 시 '로컬 네트워크' 권한을 허용해 주세요. 자동으로 재시도합니다…",
   "nasCopy": "복사",
   "nasShares": "공유: {shares}",
   "nasImportedSongs": "NAS 연결됨 · 곡 {count}개 가져옴",

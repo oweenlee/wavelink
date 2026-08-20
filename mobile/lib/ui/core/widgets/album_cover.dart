@@ -168,19 +168,14 @@ class SongCoverArt extends StatelessWidget {
     required this.isPlaying,
   });
 
-  /// 获取封面缓存文件（coverUrl 优先，否则按 path hash 查找）
-  File? _coverFile() {
-    if (song.coverUrl != null) {
-      final f = File(song.coverUrl!);
-      if (f.existsSync()) return f;
-    }
-    return null;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final coverFile = _coverFile();
-    final hasCover = coverFile != null && coverFile.existsSync();
+    // coverUrl 非空即信任文件存在（封面写入与 coverUrl 赋值在同一提取
+    // 流程内原子完成，缓存清理不会删有曲库引用的封面）。不在 build 里
+    // 做 existsSync 同步 stat：列表高频重建时每行 1~2 次同步文件 IO 会
+    // 拖累滚动；文件万一缺失由 Image.file 的 errorBuilder 兜底占位。
+    final coverFile = song.coverUrl != null ? File(song.coverUrl!) : null;
+    final hasCover = coverFile != null;
 
     // 当前曲目且未在播放：静态暂停图标（保留选择态，不跳动画）
     final pausedIndicator = !isPlaying && isCurrent

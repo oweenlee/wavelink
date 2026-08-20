@@ -25,6 +25,21 @@ class SubsonicService {
       _username != null &&
       _password != null;
 
+  /// 最近一次连接测试的具体错误信息（UI 展示排查 / 本地网络权限判定）
+  static String? lastError;
+
+  /// iOS 本地网络权限是否在拦截连接（仅 iOS）：
+  /// 首次发起局域网连接时系统弹「本地网络」权限框，授权前连接被直接
+  /// 阻断（No route to host / Network is unreachable）。仅填局域网 IP
+  /// 时触发，公网 http(s) 地址不受影响。
+  static bool get isLocalNetworkBlocked {
+    if (!Platform.isIOS) return false;
+    final err = lastError;
+    if (err == null) return false;
+    final lower = err.toLowerCase();
+    return lower.contains('no route to host') || lower.contains('unreachable');
+  }
+
   /// 从持久化配置恢复（app 启动时调用）
   static void loadFromPrefs() {
     final prefs = PreferencesService.instance;
@@ -45,7 +60,8 @@ class SubsonicService {
     // 连接前网络检测：无网络直接给明确提示（与 SMB 对齐），不甩底层异常
     final connectivity = await Connectivity().checkConnectivity();
     if (connectivity.isEmpty || connectivity.contains(ConnectivityResult.none)) {
-      return '未连接网络：请先连上 Wi-Fi（如需访问局域网/公网服务器）';
+      lastError = '未连接网络：请先连上 Wi-Fi（如需访问局域网/公网服务器）';
+      return lastError;
     }
     try {
       final url = baseUrl.replaceAll(RegExp(r'/+$'), '');
@@ -60,19 +76,24 @@ class SubsonicService {
       final resp = await http
           .get(uri, headers: {'Accept': 'application/json'})
           .timeout(const Duration(seconds: 10));
-      if (resp.statusCode != 200) return _friendlyHttpStatus(resp.statusCode);
+      if (resp.statusCode != 200) {
+        lastError = _friendlyHttpStatus(resp.statusCode);
+        return lastError;
+      }
       final json = jsonDecode(resp.body);
       final status = json['subsonic-response']?['status'] as String?;
       if (status != 'ok') {
         final err = json['subsonic-response']?['error']?['message'] as String?;
-        return err != null
-            ? '服务器返回错误：$err'
-            : '服务器响应异常（status=$status）';
+        lastError =
+            err != null ? '服务器返回错误：$err' : '服务器响应异常（status=$status）';
+        return lastError;
       }
+      lastError = null;
       return null;
     } catch (e) {
       Log.e('Subsonic', 'ping failed: $e');
-      return _friendlyTestError(e);
+      lastError = _friendlyTestError(e);
+      return lastError;
     }
   }
 

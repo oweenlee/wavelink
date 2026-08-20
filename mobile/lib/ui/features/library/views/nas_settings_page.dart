@@ -56,6 +56,60 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     super.dispose();
   }
 
+  /// 执行 SMB 连接 + 共享名验证（与保存配置无关，读当前表单值）。
+  /// 返回记录区分「服务器通」与「共享可读」：服务器通了但共享名错时
+  /// 报 share_failed，避免误报"已连接"。
+  Future<({bool ok, bool shareOk})> _attemptConnect() async {
+    final host = _hostCtrl.text.trim();
+    final port = int.tryParse(_portCtrl.text.trim()) ?? 445;
+    final user = _userCtrl.text.trim();
+    final pass = _passCtrl.text;
+
+    final ok = await SmbService.connect(
+      host: host,
+      port: port,
+      username: user,
+      password: pass,
+    );
+    if (!ok) return (ok: false, shareOk: false);
+
+    final shareParts = _shareCtrl.text
+        .trim()
+        .split('/')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    final shareName = shareParts.isEmpty ? null : shareParts.first;
+    final shareOk =
+        shareName == null || await SmbService.connectShare(shareName);
+    return (ok: true, shareOk: shareOk);
+  }
+
+  /// 验证连接（含 iOS 首次安装"本地网络"权限未授权时的自动重试：
+  /// 系统在首次发起局域网连接时弹权限框，授权前点"测试连接"会被直接
+  /// 阻断，第一次必然失败——提示用户点"允许"并延迟重试一次）。
+  /// 返回服务器/共享验证结果；调用方负责 UI 状态与提示。
+  Future<({bool ok, bool shareOk})> _verifyConnection() async {
+    var result = await _attemptConnect();
+    if (!result.ok && SmbService.isLocalNetworkBlocked) {
+      if (!mounted) return result;
+      final l10n = AppLocalizations.of(context);
+      Fluttertoast.showToast(
+        msg: l10n.nasLocalNetworkRetry,
+        gravity: ToastGravity.BOTTOM,
+        timeInSecForIosWeb: 3,
+        fontSize: 13,
+        backgroundColor: AppTheme.accentFallback,
+        textColor: AppTheme.textPrimary,
+      );
+      // 留出权限弹窗的操作时间再重试
+      await Future.delayed(const Duration(milliseconds: 2500));
+      if (!mounted) return result;
+      result = await _attemptConnect();
+    }
+    return result;
+  }
+
   Future<void> _testConnection() async {
     // 先收键盘，让按钮区恢复全高、测试结果可见
     FocusScope.of(context).unfocus();
@@ -64,12 +118,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
       _connectionStatus = '';
     });
 
-    final host = _hostCtrl.text.trim();
-    final port = int.tryParse(_portCtrl.text.trim()) ?? 445;
-    final user = _userCtrl.text.trim();
-    final pass = _passCtrl.text;
-
-    if (host.isEmpty) {
+    if (_hostCtrl.text.trim().isEmpty) {
       setState(() {
         _connecting = false;
         _connectionStatus = 'host_empty';
@@ -77,38 +126,18 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
       return;
     }
 
-    // Try SMB connection
-    final ok = await SmbService.connect(
-      host: host,
-      port: port,
-      username: user,
-      password: pass,
-    );
-
-    // 服务器通了还要验证共享名：STATUS_BAD_NETWORK_NAME 是共享名错而非
-    // 服务器错——连接成功≠共享可读，避免误报"已连接"。
-    var shareOk = true;
-    if (ok) {
-      final shareParts = _shareCtrl.text
-          .trim()
-          .split('/')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
-      final shareName = shareParts.isEmpty ? null : shareParts.first;
-      if (shareName != null) {
-        shareOk = await SmbService.connectShare(shareName);
-      }
-    }
+    final result = await _verifyConnection();
 
     if (!mounted) return;
     setState(() {
       _connecting = false;
       _connectionStatus =
-          ok && shareOk ? 'connected' : (ok ? 'share_failed' : 'failed');
+          result.ok && result.shareOk
+              ? 'connected'
+              : (result.ok ? 'share_failed' : 'failed');
     });
 
-    if (ok && shareOk) {
+    if (result.ok && result.shareOk) {
       final shares = await SmbService.listShares();
       if (mounted) {
         final l10n = AppLocalizations.of(context);
@@ -123,7 +152,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
       }
       // 测试成功后不断开会话：保留给后续 SMB 播放直接用
       // （原来 disconnect 会销毁会话，导致之后所有 SMB 歌无法播放）
-    } else if (ok) {
+    } else if (result.ok) {
       // 服务器通但共享名错：弹出详细错误（lastError = STATUS_BAD_NETWORK_NAME）
       _showErrorSnackBar();
     } else if (mounted) {
@@ -230,6 +259,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
   }
 
   Future<void> _saveAndConnect() async {
+    if (_connecting) return; // 防重复点击
     FocusScope.of(context).unfocus();
     final l10n = AppLocalizations.of(context);
     final prefs = PreferencesService.instance;
@@ -247,6 +277,28 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
       );
       return;
     }
+
+    // 保存前自动验证连接：失败即中止——不保存、不触发后台导入，
+    // 避免配置错误时仍盲目导入、事后只能回头改。
+    setState(() {
+      _connecting = true;
+      _connectionStatus = '';
+    });
+    final result = await _verifyConnection();
+    if (!mounted) return;
+    if (!result.ok || !result.shareOk) {
+      setState(() {
+        _connecting = false;
+        _connectionStatus =
+            result.ok ? 'share_failed' : 'failed';
+      });
+      _showErrorSnackBar();
+      return;
+    }
+    setState(() {
+      _connecting = false;
+      _connectionStatus = '';
+    });
 
     // 检测连接目标是否更换（首次配置不弹窗；仅改凭据不算更换）
     final oldHost = prefs.nasHost ?? '';

@@ -260,6 +260,18 @@ class SmbService {
     }
   }
 
+  /// iOS 首次安装场景：系统在首次发起局域网连接时弹出"本地网络"权限框，
+  /// 未授权时直接阻断连接（报 No route to host / Network is unreachable）。
+  /// 无 API 可查授权状态，只能按错误特征识别；命中时 UI 层自动重试一次，
+  /// 给用户点"允许"的时间。
+  static bool get isLocalNetworkBlocked {
+    if (!Platform.isIOS) return false;
+    final err = lastError;
+    if (err == null) return false;
+    return err.contains('No route to host') ||
+        err.contains('Network is unreachable');
+  }
+
   /// 挂载共享（后续 list/read 均相对该共享根目录）
   /// 连接错误人性化：把底层 I/O 错误映射成可操作的提示。
   /// iOS 本地网络权限无 API 可查（被拒时系统直接阻断连接，报

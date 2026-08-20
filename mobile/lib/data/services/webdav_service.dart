@@ -42,6 +42,18 @@ class WebdavService {
   /// 最近一次操作的具体错误信息（用于 UI 展示排查）
   static String? lastError;
 
+  /// iOS 本地网络权限是否在拦截连接（仅 iOS）：
+  /// 首次发起局域网连接时系统弹「本地网络」权限框，授权前连接被直接
+  /// 阻断（No route to host / Network is unreachable），表现为首次测试
+  /// 必失败。据此提示用户点"允许"并自动重试。
+  static bool get isLocalNetworkBlocked {
+    if (!Platform.isIOS) return false;
+    final err = lastError;
+    if (err == null) return false;
+    final lower = err.toLowerCase();
+    return lower.contains('no route to host') || lower.contains('unreachable');
+  }
+
   /// 扫描期元数据占位标记（未读元数据时统一用这些值占位）。
   static const albumPlaceholder = 'WebDAV Music';
   static const artistPlaceholder = 'Unknown Artist';

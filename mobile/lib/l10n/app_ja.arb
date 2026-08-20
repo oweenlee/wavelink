@@ -157,6 +157,7 @@
   "nasConnectionFailed": "接続に失敗しました",
   "nasConnectionFailedTitle": "NAS 接続に失敗しました",
   "nasCheckHint": "スマホと PC が同じ Wi-Fi に接続され、NAS アドレスが正しいことを確認してください。",
+  "nasLocalNetworkRetry": "初回接続時は「ローカルネットワーク」の権限を許可してください。自動的に再試行します…",
   "nasCopy": "コピー",
   "nasShares": "共有：{shares}",
   "nasImportedSongs": "NAS に接続 · {count} 曲をインポートしました",

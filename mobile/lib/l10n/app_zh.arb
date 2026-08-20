@@ -157,6 +157,7 @@
   "nasConnectionFailed": "连接失败",
   "nasConnectionFailedTitle": "NAS 连接失败",
   "nasCheckHint": "请确认手机和电脑连接的是同一个 Wi-Fi，且 NAS 地址填写正确。",
+  "nasLocalNetworkRetry": "首次连接会弹出“本地网络”权限提示，请点允许，正在自动重试…",
   "nasCopy": "复制",
   "nasShares": "共享：{shares}",
   "nasImportedSongs": "NAS 已连接 · 导入 {count} 首歌",

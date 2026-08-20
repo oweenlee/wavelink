@@ -111,12 +111,21 @@ class LibraryNotifier extends Notifier<LibraryState> {
 
   /// 封面就绪：Song.coverUrl 是可变字段，重建列表触发 UI 刷新，
   /// 并落盘，否则重启后曲库恢复时封面全部丢失。
+  ///
+  /// 封面提取是按轮推进（每轮 8 首、数百首持续数十轮），若每轮都全量
+  /// 重建 state + 全量落盘，提取期间列表会高频重建（曾实测每 150~400ms
+  /// 一次刷新风暴，滚动/渲染明显卡顿）。节流合并：回调在 [Timer] 尾部
+  /// 合并，600ms 窗口内只刷新一次，末轮 600ms 后仍会做最终落盘。
+  static const _coversFlushInterval = Duration(milliseconds: 600);
+  Timer? _coversFlush;
   void _onCoversUpdated() {
-    // 封面提取是异步 fire-and-forget，测试/生命周期切换时容器可能已
-    // dispose，此时再写 state 会抛 "Ref after it has been disposed"
     if (!ref.mounted) return;
-    state = state.copyWith(importedSongs: List<Song>.from(state.importedSongs));
-    ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
+    _coversFlush?.cancel();
+    _coversFlush = Timer(_coversFlushInterval, () {
+      if (!ref.mounted) return;
+      state = state.copyWith(importedSongs: List<Song>.from(state.importedSongs));
+      ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
+    });
   }
 
   /// 来源过滤开关变化后刷新曲库（allSongs 是 getter，需重建 state 触发监听）
@@ -128,6 +137,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
 
   @override
   LibraryState build() {
+    ref.onDispose(() => _coversFlush?.cancel());
     return const LibraryState();
   }
 

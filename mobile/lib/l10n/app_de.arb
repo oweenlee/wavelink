@@ -157,6 +157,7 @@
   "nasConnectionFailed": "Verbindung fehlgeschlagen",
   "nasConnectionFailedTitle": "NAS-Verbindung fehlgeschlagen",
   "nasCheckHint": "Stelle sicher, dass Telefon und Computer im selben Wi-Fi sind und die NAS-Adresse korrekt ist.",
+  "nasLocalNetworkRetry": "Beim ersten Verbinden wird um die Berechtigung für „Lokales Netzwerk“ gefragt — bitte erlauben, automatischer Retry läuft…",
   "nasCopy": "Kopieren",
   "nasShares": "Freigaben: {shares}",
   "nasImportedSongs": "NAS verbunden · {count} Lieder importiert",

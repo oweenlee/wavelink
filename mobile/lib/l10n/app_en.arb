@@ -157,6 +157,7 @@
   "nasConnectionFailed": "Connection failed",
   "nasConnectionFailedTitle": "NAS connection failed",
   "nasCheckHint": "Make sure your phone and computer are on the same Wi-Fi, and the NAS address is correct.",
+  "nasLocalNetworkRetry": "First connection prompts for 'Local Network' permission — tap Allow, retrying automatically…",
   "nasCopy": "Copy",
   "nasShares": "Shares: {shares}",
   "nasImportedSongs": "NAS connected · imported {count} songs",

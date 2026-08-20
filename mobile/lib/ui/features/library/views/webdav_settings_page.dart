@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import '../../../../data/services/preferences_service.dart';
 import '../../../../data/services/webdav_service.dart';
 import '../../../../l10n/app_localizations.dart';
@@ -79,18 +80,52 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
       _testing = true;
       _status = '';
     });
-    final error = await WebdavService.testConnection(
-      baseUrl: _urlCtrl.text.trim(),
-      path: _pathCtrl.text.trim(),
-      username: _userCtrl.text.trim(),
-      password: _passCtrl.text,
-    );
+    final error = await _verifyConnection();
     if (!mounted) return;
     setState(() {
       _testing = false;
       _status = error == null ? 'ok' : 'fail';
       _errorMsg = error ?? '';
     });
+  }
+
+  /// 验证连接（读当前表单值，与保存无关）。含 iOS 首次安装"本地网络"
+  /// 权限未授权时的自动重试：系统在首次发起局域网连接时弹权限框，授权前
+  /// 点"测试连接"会被直接阻断，第一次必然失败——提示用户点"允许"并
+  /// 延迟重试一次。返回 null 表示成功，否则错误文案。
+  Future<String?> _verifyConnection() async {
+    final baseUrl = _urlCtrl.text.trim();
+    final path = _pathCtrl.text.trim();
+    final username = _userCtrl.text.trim();
+    final password = _passCtrl.text;
+    var error = await WebdavService.testConnection(
+      baseUrl: baseUrl,
+      path: path,
+      username: username,
+      password: password,
+    );
+    if (error != null && WebdavService.isLocalNetworkBlocked) {
+      if (!mounted) return error;
+      final l10n = AppLocalizations.of(context);
+      Fluttertoast.showToast(
+        msg: l10n.nasLocalNetworkRetry,
+        gravity: ToastGravity.BOTTOM,
+        timeInSecForIosWeb: 3,
+        fontSize: 13,
+        backgroundColor: AppTheme.accentFallback,
+        textColor: AppTheme.textPrimary,
+      );
+      // 留出权限弹窗的操作时间再重试
+      await Future.delayed(const Duration(milliseconds: 2500));
+      if (!mounted) return error;
+      error = await WebdavService.testConnection(
+        baseUrl: baseUrl,
+        path: path,
+        username: username,
+        password: password,
+      );
+    }
+    return error;
   }
 
   Future<void> _save() async {
@@ -103,6 +138,17 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
       final validation = _validate();
       if (validation != null) {
         setState(() => _status = validation);
+        return;
+      }
+      // 保存前自动验证（含 iOS 本地网络权限重试）：连不通就不保存，
+      // 避免保存了错误配置后后台扫描静默失败、用户以为已配好。
+      final error = await _verifyConnection();
+      if (!mounted) return;
+      if (error != null) {
+        setState(() {
+          _status = 'fail';
+          _errorMsg = error;
+        });
         return;
       }
       await PreferencesService.instance.setWebdavConfig(

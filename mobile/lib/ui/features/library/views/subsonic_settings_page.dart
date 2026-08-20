@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import '../../../../data/services/preferences_service.dart';
 import '../../../../data/services/subsonic_service.dart';
 import '../../../../l10n/app_localizations.dart';
@@ -71,18 +72,11 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
       setState(() => _status = validation);
       return;
     }
-    final url = _urlCtrl.text.trim();
-    final user = _userCtrl.text.trim();
-    final pass = _passCtrl.text;
     setState(() {
       _testing = true;
       _status = '';
     });
-    final error = await SubsonicService.testConnection(
-      baseUrl: url,
-      username: user,
-      password: pass,
-    );
+    final error = await _verifyConnection();
     if (!mounted) return;
     setState(() {
       _testing = false;
@@ -91,8 +85,45 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
     });
   }
 
+  /// 验证连接（读当前表单值，与保存无关）。含 iOS 首次安装"本地网络"
+  /// 权限未授权时的自动重试：仅填局域网 IP 时系统会在首次发起连接时弹
+  /// 权限框，授权前会被直接阻断，第一次必然失败——提示用户点"允许"并
+  /// 延迟重试一次。返回 null 表示成功，否则错误文案。
+  Future<String?> _verifyConnection() async {
+    final url = _urlCtrl.text.trim();
+    final user = _userCtrl.text.trim();
+    final pass = _passCtrl.text;
+    var error = await SubsonicService.testConnection(
+      baseUrl: url,
+      username: user,
+      password: pass,
+    );
+    if (error != null && SubsonicService.isLocalNetworkBlocked) {
+      if (!mounted) return error;
+      final l10n = AppLocalizations.of(context);
+      Fluttertoast.showToast(
+        msg: l10n.nasLocalNetworkRetry,
+        gravity: ToastGravity.BOTTOM,
+        timeInSecForIosWeb: 3,
+        fontSize: 13,
+        backgroundColor: AppTheme.accentFallback,
+        textColor: AppTheme.textPrimary,
+      );
+      // 留出权限弹窗的操作时间再重试
+      await Future.delayed(const Duration(milliseconds: 2500));
+      if (!mounted) return error;
+      error = await SubsonicService.testConnection(
+        baseUrl: url,
+        username: user,
+        password: pass,
+      );
+    }
+    return error;
+  }
+
   Future<void> _save() async {
     FocusScope.of(context).unfocus();
+    if (_saving) return;
     final validation = _validate();
     if (validation != null) {
       setState(() => _status = validation);
@@ -102,6 +133,18 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
     final user = _userCtrl.text.trim();
     final pass = _passCtrl.text;
     setState(() => _saving = true);
+    // 保存前自动验证（含 iOS 本地网络权限重试）：连不通就不保存，
+    // 避免保存了错误配置后扫描失败、用户以为已配好。
+    final error = await _verifyConnection();
+    if (!mounted) return;
+    if (error != null) {
+      setState(() {
+        _saving = false;
+        _status = 'fail';
+        _errorMsg = error;
+      });
+      return;
+    }
     await PreferencesService.instance.setSubsonicConfig(
       baseUrl: url,
       username: user,
