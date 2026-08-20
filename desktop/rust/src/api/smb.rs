@@ -288,18 +288,30 @@ pub async fn smb_list_shares() -> Result<Vec<SmbShareInfo>, String> {
 ///
 /// 同时在读取池的每条连接上挂载，保证并行下载可用。#[frb]
 pub async fn smb_connect_share(share_name: String) -> Result<(), String> {
-    let mut guard = SESSION.lock().await;
-    let sess = guard.as_mut().ok_or("not connected")?;
-    let tree = connect_share_with_timeout(&mut sess.client, &share_name).await?;
-    sess.tree = Some(tree);
-    drop(guard);
-
-    let mut pool = POOL.lock().await;
-    for s in pool.iter_mut() {
-        if let Ok(t) = connect_share_with_timeout(&mut s.client, &share_name).await {
-            s.tree = Some(t);
+    // 主会话挂载：失败则清空旧 tree，避免残留上一个 share 的挂载
+    // （切盘后仍读到旧 share / not found）。
+    {
+        let mut guard = SESSION.lock().await;
+        let sess = guard.as_mut().ok_or("not connected")?;
+        match connect_share_with_timeout(&mut sess.client, &share_name).await {
+            Ok(tree) => sess.tree = Some(tree),
+            Err(e) => {
+                sess.tree = None;
+                return Err(e);
+            }
         }
     }
+
+    // 读取池逐条挂载：取走 Vec 在锁外 await，避免持 POOL 锁跨多连接超时
+    // （8×10s）阻塞所有池 I/O；单条失败清空其 tree，不残留旧 share。
+    let mut pool = std::mem::take(&mut *POOL.lock().await);
+    for s in pool.iter_mut() {
+        match connect_share_with_timeout(&mut s.client, &share_name).await {
+            Ok(t) => s.tree = Some(t),
+            Err(_) => s.tree = None,
+        }
+    }
+    *POOL.lock().await = pool;
     Ok(())
 }
 
@@ -316,18 +328,27 @@ pub async fn smb_list_directory(path: String) -> Result<Vec<SmbDirEntry>, String
         Some(mut sess) => {
             ensure_pooled_tree(&mut sess).await;
             let r = if let Some(tree) = sess.tree.as_mut() {
-                sess.client.list_directory(tree, &path).await.map_err(err_str)
+                tokio::time::timeout(IO_READ_TIMEOUT, sess.client.list_directory(tree, &path))
+                    .await
+                    .map_err(|_| "list_directory timeout (10s)".to_string())?
+                    .map_err(err_str)
             } else {
                 Err("no share connected".to_string())
             };
-            POOL.lock().await.push(sess);
+            // 仅成功回池；失败（超时/死连接）丢弃，避免污染后续请求
+            if r.is_ok() {
+                POOL.lock().await.push(sess);
+            }
             r
         }
         None => {
             let mut guard = SESSION.lock().await;
             let sess = guard.as_mut().ok_or("not connected")?;
             let tree = sess.tree.as_mut().ok_or("no share connected")?;
-            sess.client.list_directory(tree, &path).await.map_err(err_str)
+            tokio::time::timeout(IO_READ_TIMEOUT, sess.client.list_directory(tree, &path))
+                .await
+                .map_err(|_| "list_directory timeout (10s)".to_string())?
+                .map_err(err_str)
         }
     }?;
     drop(permit);

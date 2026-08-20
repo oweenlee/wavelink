@@ -463,6 +463,14 @@ class PlayerController {
     // 7. 删除磁盘缓存目录（仅副本，安全）
     await _clearCacheDirs();
 
+    // 广播播放状态变化：clearAllData 已重置 _playing/_position/_duration/
+    // _queueIndex，必须同步 emit 对应流，否则传输栏仍显示旧曲在播放、进度条
+    // 停在旧位置、且 currentTrack 不刷新（点播放变 no-op，只能重启恢复）。
+    _playingSC.add(_playing);
+    _positionSC.add(_position);
+    _durationSC.add(_duration);
+    _indexSC.add(_queueIndex);
+
     // 广播曲库变化，UI 刷新为空库
     _librarySC.add(null);
   }

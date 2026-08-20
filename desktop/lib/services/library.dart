@@ -158,6 +158,11 @@ Future<_CueExpansion> _expandCueSheets(List<File> cueFiles) async {
 
 /// 并发池解析音频文件（顺序与入参一致）。
 Future<List<Track>> _parseTracksConcurrent(List<File> files) async {
+  // 空列表（空目录 / 全为 cue 镜像被排除）直接返回，避免
+  // _metadataConcurrency.clamp(1, 0) 因 lower>upper 抛 ArgumentError，
+  // 与 scanFolder「为空返回空列表」约定一致（见 L29-30）。
+  if (files.isEmpty) return <Track>[];
+
   final results = List<Track?>.filled(files.length, null);
   var next = 0;
   Future<void> worker() async {

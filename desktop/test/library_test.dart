@@ -59,6 +59,13 @@ void main() {
       expect(tracks, isEmpty);
     });
 
+    test('empty folder returns empty list without throwing', () async {
+      // 回归：空目录（或全为 cue 镜像被排除）曾因
+      // _metadataConcurrency.clamp(1, 0) 抛 ArgumentError 导致扫描崩溃。
+      final tracks = await scanFolder(tmp.path);
+      expect(tracks, isEmpty);
+    });
+
     test('sorts by artist then title', () async {
       writeFile('B - 2.flac');
       writeFile('A - 2.flac');

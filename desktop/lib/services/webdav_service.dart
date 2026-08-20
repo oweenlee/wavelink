@@ -420,7 +420,8 @@ class WebdavService {
   ) async {
     final url = fullUrlFor(davPath);
     if (url == null) return false;
-    final partFiles = <File>[];
+    // 索引数组：按分片下标落位（非闭包完成顺序），保证拼接顺序正确。
+    final partFiles = List<File?>.filled(_parallelChunks, null);
     try {
       final total = await frb_webdav.engineWebdavFileSize(
         url: url,
@@ -446,13 +447,16 @@ class WebdavService {
             if (data.isEmpty) throw StateError('分片 $i 读取为空');
             final part = File('${tmpFile.path}.$i');
             await part.writeAsBytes(data, flush: true);
-            partFiles.add(part);
+            partFiles[i] = part;
           }(),
       ]);
       final sink = tmpFile.openWrite();
       try {
         var written = 0;
-        for (final part in partFiles) {
+        // 严格按分片索引 0..n-1 顺序拼接，避免并发完成顺序导致的错位/损坏。
+        for (var i = 0; i < _parallelChunks; i++) {
+          final part = partFiles[i];
+          if (part == null) continue;
           await sink.addStream(part.openRead());
           written += await part.length();
           onProgress?.call(written, size);
@@ -466,6 +470,7 @@ class WebdavService {
       return false;
     } finally {
       for (final part in partFiles) {
+        if (part == null) continue;
         try {
           if (await part.exists()) await part.delete();
         } catch (_) {}
