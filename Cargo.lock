@@ -3256,6 +3256,7 @@ dependencies = [
  "encoding_rs",
  "flutter_rust_bridge",
  "hex",
+ "hound",
  "lofty",
  "md-5 0.10.6",
  "reqwest",
