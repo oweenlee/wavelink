@@ -1542,8 +1542,13 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
             builder: (context, c) {
               final w = c.maxWidth;
               // 窄窗口逐级隐藏次要元素（对齐主流播放器做法：核心控制始终可见，
-              // 优先隐藏音量条 → 歌曲信息 → 迷你封面 → 随机/循环）
-              final showVolumeSlider = w >= 660;
+              // 优先隐藏音量条 → 歌曲信息 → 迷你封面 → 随机/循环）。
+              // 注意：传输栏横跨整个窗口宽度（与侧栏 Row 平级，home.dart:291），
+              // 并非「减去侧栏后的剩余」。左信息用 Flexible 可收缩（文字 ellipsis
+              // 截断），中心控件与右端为固定宽；音量条需约 120px，故延后到
+              // w>=760（左信息可收缩、中心+右端约 306px，760-34 padding-306≈420
+              // 仍有余量）才显示，避免窄窗口横向溢出。
+              final showVolumeSlider = w >= 760;
               final showLeftInfo = w >= 540;
               final showCover = w >= 380;
               final showMode = w >= 420;
@@ -1562,28 +1567,29 @@ class _TransportBarState extends ConsumerState<_TransportBar> {
                     ],
                     if (showLeftInfo) ...[
                       Flexible(
-                        child: SizedBox(
-                          width: 200,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(t?.title ?? l10n.nowPlayingEmpty,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                      color: _onSurface, fontSize: 13)),
-                              Text(t?.artist ?? '',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                      color: _onSurfaceVariant, fontSize: 11.5)),
-                            ],
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(t?.title ?? l10n.nowPlayingEmpty,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: _onSurface, fontSize: 13)),
+                            Text(t?.artist ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: _onSurfaceVariant, fontSize: 11.5)),
+                          ],
                         ),
                       ),
                     ],
                     // Center: controls
+                    // 中心控件为固定最小宽（4×IconButton 48 + 播放 42 + 间隙），
+                    // 用 flex:3 保证它在窄窗口分配上优先于左信息，避免被挤溢出；
+                    // 左信息 Flexible 仍可收缩并以 ellipsis 截断。
                     Expanded(
+                      flex: 3,
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -1977,10 +1983,12 @@ class _MediaCard extends StatelessWidget {
 }
 
 /// 计算响应式网格列数与单元宽度（列数 2–8，基础单元格 180px）。
-(int, double) _gridMetrics(double maxWidth) {
+/// [hPad] 为 GridView 自身左右内边距之和（列表视图为 40，详情页专辑网格为 0），
+/// 必须参与计算，否则 cellW 会大于 GridView 实际分配到的单元宽，导致卡片高于单元而溢出。
+(int, double) _gridMetrics(double maxWidth, {double hPad = 0}) {
   const gap = 16.0;
   final cols = ((maxWidth + gap) / (180 + gap)).floor().clamp(2, 8);
-  final cellW = (maxWidth - gap * (cols - 1)) / cols;
+  final cellW = ((maxWidth - hPad) - gap * (cols - 1)) / cols;
   return (cols, cellW);
 }
 
@@ -2060,7 +2068,7 @@ class _ArtistsViewState extends ConsumerState<_ArtistsView> {
                 )
               : LayoutBuilder(
                   builder: (context, constraints) {
-                    final (cols, cellW) = _gridMetrics(constraints.maxWidth);
+                    final (cols, cellW) = _gridMetrics(constraints.maxWidth, hPad: 40);
                     return GridView.builder(
                       controller: _scroll,
                       padding: const EdgeInsets.fromLTRB(20, 6, 20, 20),
@@ -2170,7 +2178,7 @@ class _AlbumsViewState extends ConsumerState<_AlbumsView> {
                 )
               : LayoutBuilder(
                   builder: (context, constraints) {
-                    final (cols, cellW) = _gridMetrics(constraints.maxWidth);
+                    final (cols, cellW) = _gridMetrics(constraints.maxWidth, hPad: 40);
                     return GridView.builder(
                       controller: _scroll,
                       padding: const EdgeInsets.fromLTRB(20, 6, 20, 20),
