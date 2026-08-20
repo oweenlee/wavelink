@@ -18,6 +18,12 @@ import 'ui/core/widgets/brand_splash.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 封面内存缓存调大：曲库动辄上千首，Flutter 默认 ImageCache（1000 张/100MB）
+  // 在快速滚动时频繁 LRU 逐出，导致封面反复重新解码、滚动时闪现占位色块。
+  PaintingBinding.instance.imageCache
+    ..maximumSize = 2000
+    ..maximumSizeBytes = 256 << 20;
+
   // 分级日志落盘（ring buffer，诊断页可查看/清空）。
   // 尽早初始化，把启动阶段的日志也捕获下来。
   await Log.init();

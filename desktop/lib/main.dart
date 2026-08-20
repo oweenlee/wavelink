@@ -24,6 +24,13 @@ class _AppWindowListener with WindowListener {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 封面内存缓存调大：曲库动辄上千首，Flutter 默认 ImageCache（1000 张/100MB）
+  // 在快速滚动时频繁 LRU 逐出，导致封面反复重新解码、滚动时闪现占位色块。
+  // 桌面端列表窗口更大，一次可见封面更多，给足内存。
+  PaintingBinding.instance.imageCache
+    ..maximumSize = 3000
+    ..maximumSizeBytes = 384 << 20;
+
   await windowManager.ensureInitialized();
   const options = WindowOptions(
     size: Size(920, 660),
