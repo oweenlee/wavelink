@@ -11,7 +11,6 @@ use audio_core::EngineConfig;
 use flutter_rust_bridge::frb;
 use once_cell::sync::OnceCell;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// 引擎句柄无锁容器：渲染回调读取路径（with_engine）用 ArcSwap 原子 load，
@@ -24,9 +23,9 @@ static EVENT_RX: OnceCell<Mutex<Option<crossbeam_channel::Receiver<EngineEvent>>
 static CURRENT_PATH: Mutex<String> = Mutex::new(String::new());
 static LAST_ERROR: Mutex<String> = Mutex::new(String::new());
 static CURRENT_QUEUE: Mutex<Vec<String>> = Mutex::new(Vec::new());
-static EVENT_OCCURRED: AtomicBool = AtomicBool::new(false);
-static LAST_EVENT_KIND: Mutex<String> = Mutex::new(String::new());
-// 事件队列：每次 poll 弹出一个，避免 while 循环丢事件
+// 事件队列：每次 poll 弹出一个，避免 while 循环丢事件。
+// 加一个上限防止极端情况下无限增长（实际事件率低，仅作防御）。
+const MAX_EVENT_QUEUE: usize = 128;
 static EVENT_QUEUE: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 
 #[derive(Default)]
@@ -100,7 +99,6 @@ pub fn engine_init_ex(
     }
     // 清空旧事件队列
     EVENT_QUEUE.lock().unwrap().clear();
-    EVENT_OCCURRED.store(false, Ordering::Release);
     Ok(())
 }
 
@@ -174,18 +172,17 @@ pub fn engine_poll_events() -> Option<String> {
 }
 
 fn push_event(kind: &str) {
-    *LAST_EVENT_KIND.lock().unwrap() = kind.to_string();
-    EVENT_OCCURRED.store(true, Ordering::Release);
-    EVENT_QUEUE.lock().unwrap().push_back(kind.to_string());
+    let mut queue = EVENT_QUEUE.lock().unwrap();
+    if queue.len() >= MAX_EVENT_QUEUE {
+        queue.pop_front();
+    }
+    queue.push_back(kind.to_string());
 }
 
-/// 检查是否有新的事件发生并返回事件类型
+/// 检查是否有新的事件发生并返回事件类型。
+/// 与 [engine_poll_events] 共用同一个 FIFO 队列，避免“只保留最后一个事件”。
 pub fn engine_take_event() -> Option<String> {
-    if EVENT_OCCURRED.swap(false, Ordering::AcqRel) {
-        Some(LAST_EVENT_KIND.lock().unwrap().clone())
-    } else {
-        None
-    }
+    engine_poll_events()
 }
 
 /// 主动推送引擎错误事件（非引擎线程/流式喂流 task 用）。
@@ -243,7 +240,17 @@ pub fn engine_prev() {
 // ── DSP 控制 ──
 
 pub fn engine_set_peq_band(index: u32, freq: f32, gain_db: f32, q: f32) {
-    with_engine(|h| h.set_peq_band(index as usize, PeqBand { freq, gain_db, q, ..Default::default() }));
+    with_engine(|h| {
+        h.set_peq_band(
+            index as usize,
+            PeqBand {
+                freq,
+                gain_db,
+                q,
+                ..Default::default()
+            },
+        )
+    });
 }
 
 pub fn engine_apply_preset(preset_name: String) {
@@ -286,7 +293,9 @@ pub fn engine_set_speed(speed: f32) {
 ///   本方法使引擎输出速率与设备一致
 /// - Android：无会话协商，Dart 直接以文件速率调用；Oboe 内部先试
 ///   Exclusive（设备允许即真 bit-perfect），失败回退 Shared
+///
 /// 命令走 FIFO 通道，在同一首播放之前发送即可保证先于 play 生效。
+///
 /// 若速率 == 文件速率则不重采样（bit-perfect）。
 pub fn engine_set_output_sample_rate(rate: u32) {
     with_engine(|h| h.set_output_sample_rate(rate));

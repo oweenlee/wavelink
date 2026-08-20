@@ -40,10 +40,6 @@ Future<void> initRust() async {
 
 // ── 解码 ──
 
-Future<decode.DecodeResult> decodeFile(String path) {
-  return decode.decodeFile(path: path);
-}
-
 Future<decode.DecodeResult> decodeDsdFile(String path) {
   return decode.decodeDsdFile(path: path);
 }
@@ -93,28 +89,6 @@ Future<Uint8List> getCoverBytes(String path) {
 /// 读取 ReplayGain 响度归一化增益值
 Future<meta.ReplayGainResult> readReplaygain(String path) {
   return meta.readReplaygain(path: path);
-}
-
-// ── 流式解码 ──
-
-/// 创建流式解码器（可选 seek_secs：从指定秒数开始解码）
-Future<decode.StreamDecoder> streamDecoderCreate(
-  String path, {
-  double? seekSecs,
-}) {
-  return decode.streamDecoderCreate(path: path, seekSecs: seekSecs);
-}
-
-/// 获取下一块解码数据
-Future<decode.DecodeChunk?> streamDecoderNextChunk(
-  decode.StreamDecoder decoder,
-) {
-  return decode.streamDecoderNextChunk(decoder: decoder);
-}
-
-/// 停止流式解码
-Future<void> streamDecoderStop(decode.StreamDecoder decoder) {
-  return decode.streamDecoderStop(decoder: decoder);
 }
 
 // ── CUE 分轨 ──
@@ -212,13 +186,11 @@ Future<int> webdavFileSize({
   required String url,
   required String username,
   required String password,
-}) async =>
-    (await webdav.engineWebdavFileSize(
-      url: url,
-      username: username,
-      password: password,
-    ))
-        .toInt();
+}) async => (await webdav.engineWebdavFileSize(
+  url: url,
+  username: username,
+  password: password,
+)).toInt();
 
 /// 读取 WebDAV 远端文件指定区间 `[offset, offset+maxLen)`（并发分片下载原语）。
 Future<Uint8List> webdavDownloadRange({

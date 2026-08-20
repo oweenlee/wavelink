@@ -17,17 +17,21 @@ const IO_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 /// 封面/歌词提取单次读取的上限（防服务器忽略 Range 返回全文时拉满整曲）。
 const RANGE_READ_CAP: u64 = 4 * 1024 * 1024;
 
+/// 喂流首块通知通道类型（避免在函数签名里写超长类型）。
+type FirstNotify = Option<
+    std::sync::Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<(), String>>>>>,
+>;
+
 /// 全局复用的 HTTP client：reqwest::Client 线程安全，跨请求复用连接池
 /// （keep-alive），避免封面批处理每首歌重复 TLS/TCP 握手。
 fn http_client() -> Result<&'static reqwest::Client, String> {
     static CLIENT: once_cell::sync::OnceCell<reqwest::Client> = once_cell::sync::OnceCell::new();
-    CLIENT
-        .get_or_try_init(|| {
-            reqwest::Client::builder()
-                .connect_timeout(IO_READ_TIMEOUT)
-                .build()
-                .map_err(err_str)
-        })
+    CLIENT.get_or_try_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(IO_READ_TIMEOUT)
+            .build()
+            .map_err(err_str)
+    })
 }
 
 fn err_str<E: std::fmt::Display>(e: E) -> String {
@@ -125,7 +129,10 @@ fn build_digest_auth(
     let nonce = params.get("nonce").ok_or("digest 缺 nonce")?;
     let qop = params.get("qop").cloned().unwrap_or_default();
     let opaque = params.get("opaque").cloned().unwrap_or_default();
-    let algorithm = params.get("algorithm").cloned().unwrap_or_else(|| "MD5".to_string());
+    let algorithm = params
+        .get("algorithm")
+        .cloned()
+        .unwrap_or_else(|| "MD5".to_string());
 
     let cnonce = random_hex(16);
     let nc = "00000001";
@@ -224,7 +231,10 @@ async fn webdav_get(
         let auth_header = if www_lower.contains("digest") {
             let section = digest_challenge_section(&www);
             let params = parse_www_authenticate(section);
-            let uri = reqwest::Url::parse(url).map_err(err_str)?.path().to_string();
+            let uri = reqwest::Url::parse(url)
+                .map_err(err_str)?
+                .path()
+                .to_string();
             build_digest_auth(username, password, &params, "GET", &uri)?
         } else if www_lower.contains("basic") {
             build_basic_auth(username, password)
@@ -248,7 +258,10 @@ async fn webdav_get(
                 .map(|v| v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
             if is_stale && www2.to_lowercase().contains("digest") {
-                let uri = reqwest::Url::parse(url).map_err(err_str)?.path().to_string();
+                let uri = reqwest::Url::parse(url)
+                    .map_err(err_str)?
+                    .path()
+                    .to_string();
                 let auth2 = build_digest_auth(username, password, &params2, "GET", &uri)?;
                 let resp3 = send_get(client, url, Some(&auth2), extra).await?;
                 return Ok(resp3);
@@ -269,9 +282,7 @@ async fn feed_webdav_to_core(
     username: &str,
     password: &str,
     cache_final_path: Option<&str>,
-    first_notify: Option<
-        std::sync::Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<(), String>>>>>,
-    >,
+    first_notify: FirstNotify,
 ) -> Result<(), String> {
     // .part.stream.<unique> 路径：与 Dart 侧 downloadToLocal 的 ".part" 隔离，
     // 避免 seek 时两个写者（Rust 喂流 / Dart 全量下载）交错误写同一临时
@@ -284,7 +295,7 @@ async fn feed_webdav_to_core(
     let result: Result<(), String> = async {
         let client = http_client()?;
 
-        let mut resp = webdav_get(&client, url, username, password, &[]).await?;
+        let mut resp = webdav_get(client, url, username, password, &[]).await?;
         if !resp.status().is_success() {
             return Err(format!("HTTP {}: {url}", resp.status()));
         }
@@ -293,9 +304,10 @@ async fn feed_webdav_to_core(
             return Err(format!("remote file is empty (size 0): {url}"));
         }
 
-        // 并行写 .part 缓存（覆盖式写入，确保干净）
+        // 并行写 .part 缓存（覆盖式写入，确保干净）。
+        // 用 tokio::fs 代替 std::fs，避免在 async task 里阻塞线程。
         let mut cache_file = match part_path {
-            Some(p) => Some(std::fs::File::create(p).map_err(err_str)?),
+            Some(p) => Some(tokio::fs::File::create(p).await.map_err(err_str)?),
             None => None,
         };
 
@@ -327,8 +339,8 @@ async fn feed_webdav_to_core(
             }
             // 并行写缓存
             if let Some(f) = cache_file.as_mut() {
-                use std::io::Write;
-                f.write_all(&chunk).map_err(err_str)?;
+                use tokio::io::AsyncWriteExt;
+                f.write_all(&chunk).await.map_err(err_str)?;
             }
             received += chunk.len() as u64;
         }
@@ -340,13 +352,13 @@ async fn feed_webdav_to_core(
         // 读尽：通知 EOF 并落缓存（完整读到文件末尾）
         handle.signal_eof();
         if let Some(f) = cache_file.as_mut() {
-            use std::io::Write;
-            f.flush().map_err(err_str)?;
+            use tokio::io::AsyncWriteExt;
+            f.flush().await.map_err(err_str)?;
         }
         drop(cache_file);
         if let Some(part) = part_path {
             if let Some(final_path) = cache_final_path {
-                std::fs::rename(part, final_path).map_err(err_str)?;
+                tokio::fs::rename(part, final_path).await.map_err(err_str)?;
             }
         }
         Ok(())
@@ -377,15 +389,10 @@ pub async fn engine_play_webdav_stream(
     // （无 content_length 时 core 无法估算流式播放总时长，进度条 max 不准）。
     // engine_webdav_file_size 用 Range: bytes=0-0 探测，10s 超时；
     // 失败不阻塞播放（传 None 降级为粗估）。
-    let content_length = engine_webdav_file_size(
-        url.clone(),
-        username.clone(),
-        password.clone(),
-    )
-    .await
-    .ok();
-    let handle =
-        crate::api::engine::engine_start_stream(format_hint, content_length)?;
+    let content_length = engine_webdav_file_size(url.clone(), username.clone(), password.clone())
+        .await
+        .ok();
+    let handle = crate::api::engine::engine_start_stream(format_hint, content_length)?;
     // 首块喂流成功信号：喂流 task 写入第一块后通知，主函数据此确认流已启动
     let (first_tx, first_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let first_tx = Arc::new(std::sync::Mutex::new(Some(first_tx)));
@@ -452,14 +459,12 @@ pub async fn engine_webdav_file_size(
                 }
             }
         }
-        resp.content_length().ok_or_else(|| {
-            format!("WebDAV 服务器未提供文件大小且不支持 Range: {url}")
-        })?
+        resp.content_length()
+            .ok_or_else(|| format!("WebDAV 服务器未提供文件大小且不支持 Range: {url}"))?
     } else {
         // 忽略 Range 返回 200：直接取 Content-Length
-        resp.content_length().ok_or_else(|| {
-            format!("WebDAV 服务器未提供文件大小且不支持 Range: {url}")
-        })?
+        resp.content_length()
+            .ok_or_else(|| format!("WebDAV 服务器未提供文件大小且不支持 Range: {url}"))?
     };
     // 显式归还连接（Range 0-0 的 1 字节 body 无需读完）：
     // 显式 drop 比等作用域结束更明确，避免连接被 drain 逻辑拖住
@@ -482,7 +487,10 @@ pub async fn engine_webdav_download_range(
     }
     let client = http_client()?;
     let end = offset + max_len - 1;
-    let extra = vec![(reqwest::header::RANGE.as_str(), format!("bytes={offset}-{end}"))];
+    let extra = vec![(
+        reqwest::header::RANGE.as_str(),
+        format!("bytes={offset}-{end}"),
+    )];
     let mut resp = webdav_get(client, &url, &username, &password, &extra).await?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}: {url}", resp.status()));

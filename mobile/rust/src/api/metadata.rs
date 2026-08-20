@@ -38,14 +38,16 @@ pub fn get_cover_bytes(path: String) -> Result<Vec<u8>, String> {
 fn extract_cover_lofty(path: &Path) -> Result<Vec<u8>, String> {
     use lofty::file::TaggedFileExt;
 
-    let tagged_file = lofty::read_from_path(path)
-        .map_err(|e| format!("lofty 读取失败: {e}"))?;
+    let tagged_file = lofty::read_from_path(path).map_err(|e| format!("lofty 读取失败: {e}"))?;
 
     // 遍历所有标签，取第一张有效封面
     for tag in tagged_file.tags() {
         for pic in tag.pictures() {
             let pic_type = pic.pic_type();
-            if matches!(pic_type, lofty::picture::PictureType::CoverFront | lofty::picture::PictureType::Media) {
+            if matches!(
+                pic_type,
+                lofty::picture::PictureType::CoverFront | lofty::picture::PictureType::Media
+            ) {
                 let data = pic.data();
                 if !data.is_empty() {
                     return Ok(data.to_vec());
@@ -88,9 +90,7 @@ fn mp3_tag_summary(path: &Path) -> String {
         path.extension().and_then(|e| e.to_str()),
         Some(ext) if ext.eq_ignore_ascii_case("mp3")
     ) {
-        return format!(
-            "非 MP3 格式（无 ID3v2 属正常），lofty 未解析到封面"
-        );
+        return "非 MP3 格式（无 ID3v2 属正常），lofty 未解析到封面".to_string();
     }
     use std::io::Read;
     let mut f = match std::fs::File::open(path) {

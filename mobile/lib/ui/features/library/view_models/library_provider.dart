@@ -12,6 +12,7 @@ import '../../../core/providers/repositories.dart';
 import '../../playback/view_models/queue_provider.dart';
 import 'cover_service.dart';
 import '../../../../data/services/log.dart';
+import '../../../../data/services/stable_hash.dart';
 
 /// copyWith 哨兵值：区分「未传入」与「显式传 null 清空」
 const _unset = Object();
@@ -123,7 +124,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
     _coversFlush?.cancel();
     _coversFlush = Timer(_coversFlushInterval, () {
       if (!ref.mounted) return;
-      state = state.copyWith(importedSongs: List<Song>.from(state.importedSongs));
+      state = state.copyWith(
+        importedSongs: List<Song>.from(state.importedSongs),
+      );
       ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
     });
   }
@@ -221,9 +224,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
         limit: _recentMax,
       );
       if (!ref.mounted) return;
-      final byId = {
-        for (final s in state.importedSongs) s.id: s,
-      };
+      final byId = {for (final s in state.importedSongs) s.id: s};
       final songs = <Song>[];
       for (final r in recent) {
         final s = byId[r.songId];
@@ -242,9 +243,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
       song,
       ...state.recentPlayed.where((s) => s.id != song.id),
     ];
-    state = state.copyWith(
-      recentPlayed: recent.take(_recentMax).toList(),
-    );
+    state = state.copyWith(recentPlayed: recent.take(_recentMax).toList());
   }
 
   // ── 导入与扫描 ──
@@ -470,8 +469,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
         // 连接成功 ≠ 共享可读/含音频
         nasImportError: ok
             ? null
-            : SmbService.lastError ??
-                  '共享中没有找到音频文件，请检查共享路径是否正确',
+            : SmbService.lastError ?? '共享中没有找到音频文件，请检查共享路径是否正确',
       );
     } on NASImportCancelled {
       // 用户主动取消，静默结束
@@ -592,10 +590,10 @@ class LibraryNotifier extends Notifier<LibraryState> {
       song.lyricsPath,
       // NAS 远端歌词的本地缓存（.lrc_cache/）
       if (song.smbPath != null && song.smbPath!.isNotEmpty)
-        '${appDir.path}/.lrc_cache/${song.smbPath.hashCode}.lrc',
+        '${appDir.path}/.lrc_cache/${stableHash(song.smbPath!)}.lrc',
       // WebDAV 下载缓存（{davPath.hashCode}_{name}，与 webdav_service 命名一致）
       if (song.davPath != null && song.davPath!.isNotEmpty)
-        '${appDir.path}/.webdav_cache/${song.davPath!.hashCode}_${song.davPath!.split('/').last}',
+        '${appDir.path}/.webdav_cache/${stableHash(song.davPath!)}_${song.davPath!.split('/').last}',
     ]) {
       if (p == null || !p.startsWith(sandboxPrefix)) continue;
       final f = File(p);
@@ -763,8 +761,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
   /// 删除播放列表（按名字）
   Future<void> deletePlaylist(String name) async {
     final prefs = ref.read(preferencesRepositoryProvider);
-    final data = Map<String, List<String>>.from(prefs.playlists)
-      ..remove(name);
+    final data = Map<String, List<String>>.from(prefs.playlists)..remove(name);
     await prefs.setPlaylists(data);
     state = state.copyWith(); // 触发 UI 刷新播放列表区域
   }

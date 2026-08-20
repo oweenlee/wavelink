@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../../data/services/log.dart';
 import '../../../../data/services/smb_service.dart';
+import '../../../../data/services/stable_hash.dart';
 import '../../../../data/services/webdav_service.dart';
 import '../../../../domain/models/song.dart';
 import '../../../core/providers/repositories.dart';
@@ -77,9 +78,11 @@ class CoverService {
         final progressed = await _extractNasPass(pending);
         // 封面+元数据都已就绪的从队列剔除；连续 3 轮无进展
         //（真无封面且文件无标签）也剔除，避免无限重试
-        _nasQueue.removeWhere((s) =>
-            (s.coverUrl != null && !_needsMetadataFor(s)) ||
-            (_nasFailCount[s.id] ?? 0) >= 3);
+        _nasQueue.removeWhere(
+          (s) =>
+              (s.coverUrl != null && !_needsMetadataFor(s)) ||
+              (_nasFailCount[s.id] ?? 0) >= 3,
+        );
         // 每轮结束即刷新：已解析的封面及时上屏（历史问题：只在全部
         // 完成/放弃后刷一次，数百首歌要等几分钟 UI 才更新）
         onCoversUpdated?.call();
@@ -92,7 +95,10 @@ class CoverService {
         } else {
           idleRounds++;
           if (idleRounds >= 8) {
-            Log.w('Cover', '封面提取连续无进展，暂停续跑（剩余 ${pendingNasCovers(_nasQueue).length}）');
+            Log.w(
+              'Cover',
+              '封面提取连续无进展，暂停续跑（剩余 ${pendingNasCovers(_nasQueue).length}）',
+            );
             break;
           }
           // 播放让路/熔断冷却/失败后：等 15s 再续（播放间隙自动补齐）
@@ -112,8 +118,7 @@ class CoverService {
     var progressed = false;
     // 批内是否存在 SMB 歌：SMB 有连接数限制/熔断/会话探活需要让路与
     // 前置检查；WebDAV 走 reqwest 无此限制，直接提取即可。
-    final hasSmb =
-        songs.any((s) => s.smbPath != null && s.smbPath!.isNotEmpty);
+    final hasSmb = songs.any((s) => s.smbPath != null && s.smbPath!.isNotEmpty);
     // 轮大小：SMB 受限 8 首/轮；纯 WebDAV 放开（并发 6）提速
     final roundSize = hasSmb ? 8 : 24;
     for (var i = 0; i < songs.length; i += roundSize) {
@@ -141,25 +146,28 @@ class CoverService {
       // 纯 WebDAV 走 reqwest 无连接数限制，放开到 6 提速。
       final groupSize = hasSmb ? _smbCoverGroupSize : 6;
       for (var j = 0; j < batch.length; j += groupSize) {
-        final subEnd =
-            (j + groupSize > batch.length) ? batch.length : j + groupSize;
+        final subEnd = (j + groupSize > batch.length)
+            ? batch.length
+            : j + groupSize;
         final sub = batch.sublist(j, subEnd);
         // 按源分流：SMB 走 SmbService（含熔断计数），WebDAV 走
         // WebdavService（Range 读头）。返回是否有进展（拿到封面或
         // 回填了元数据），只盯 coverUrl 会把"无封面但元数据已回填"
         // 的歌误判为失败。
-        final results = await Future.wait(sub.map((s) {
-          if (s.smbPath != null && s.smbPath!.isNotEmpty) {
-            return SmbService.fetchRemoteCover(s);
-          }
-          if (s.davPath != null && s.davPath!.isNotEmpty) {
-            return WebdavService.fetchRemoteCover(s);
-          }
-          // STRM 歌：按 Resolver 落地的目标走对应源提取
-          return s.targetKind == 'smb'
-              ? SmbService.fetchRemoteCover(s)
-              : WebdavService.fetchRemoteCover(s);
-        }));
+        final results = await Future.wait(
+          sub.map((s) {
+            if (s.smbPath != null && s.smbPath!.isNotEmpty) {
+              return SmbService.fetchRemoteCover(s);
+            }
+            if (s.davPath != null && s.davPath!.isNotEmpty) {
+              return WebdavService.fetchRemoteCover(s);
+            }
+            // STRM 歌：按 Resolver 落地的目标走对应源提取
+            return s.targetKind == 'smb'
+                ? SmbService.fetchRemoteCover(s)
+                : WebdavService.fetchRemoteCover(s);
+          }),
+        );
         for (var k = 0; k < sub.length; k++) {
           final s = sub[k];
           if (results[k]) {
@@ -209,22 +217,26 @@ class CoverService {
         i,
         i + batchSize > pending.length ? pending.length : i + batchSize,
       );
-      await Future.wait(batch.map((song) async {
-        final cacheFile = File('${cacheDir.path}/${song.path!.hashCode}.jpg');
-        if (await cacheFile.exists()) {
-          song.coverUrl = cacheFile.path;
-          changed = true;
-          return;
-        }
-        try {
-          final bytes = await engineRepo.getCoverBytes(song.path!);
-          await cacheFile.writeAsBytes(bytes);
-          song.coverUrl = cacheFile.path;
-          changed = true;
-        } catch (e) {
-          Log.e('Cover', '提取封面失败: $e');
-        }
-      }));
+      await Future.wait(
+        batch.map((song) async {
+          final cacheFile = File(
+            '${cacheDir.path}/${stableHash(song.path!)}.jpg',
+          );
+          if (await cacheFile.exists()) {
+            song.coverUrl = cacheFile.path;
+            changed = true;
+            return;
+          }
+          try {
+            final bytes = await engineRepo.getCoverBytes(song.path!);
+            await cacheFile.writeAsBytes(bytes);
+            song.coverUrl = cacheFile.path;
+            changed = true;
+          } catch (e) {
+            Log.e('Cover', '提取封面失败: $e');
+          }
+        }),
+      );
     }
     if (changed) onCoversUpdated?.call();
   }
@@ -233,14 +245,16 @@ class CoverService {
   /// 缺封面，或元数据仍是扫描期占位值（album/artist/时长需回填）。
   /// 支持 SMB（smbPath）与 WebDAV（davPath）两个源。
   static List<Song> pendingNasCovers(List<Song> songs) => songs
-      .where((s) =>
-          ((s.smbPath != null && s.smbPath!.isNotEmpty) ||
-              (s.davPath != null && s.davPath!.isNotEmpty) ||
-              // STRM 歌：Resolver 已落地 smb/dav 目标 → 参与封面提取
-              (s.isStrm &&
-                  (s.targetKind == 'smb' || s.targetKind == 'dav'))) &&
-          s.path == null &&
-          (s.coverUrl == null || _needsMetadataFor(s)))
+      .where(
+        (s) =>
+            ((s.smbPath != null && s.smbPath!.isNotEmpty) ||
+                (s.davPath != null && s.davPath!.isNotEmpty) ||
+                // STRM 歌：Resolver 已落地 smb/dav 目标 → 参与封面提取
+                (s.isStrm &&
+                    (s.targetKind == 'smb' || s.targetKind == 'dav'))) &&
+            s.path == null &&
+            (s.coverUrl == null || _needsMetadataFor(s)),
+      )
       .toList();
 
   /// 按源判断元数据是否仍为扫描期占位值（SMB/WebDAV 各自占位常量不同）。

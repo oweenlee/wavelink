@@ -9,8 +9,8 @@ use smb2::rpc::srvsvc::ShareInfo;
 use smb2::ClientConfig;
 use tokio::sync::{Mutex, Semaphore};
 
-use audio_core::stream::StreamHandle;
 use crate::frb_generated::StreamSink;
+use audio_core::stream::StreamHandle;
 
 /// 读取连接池大小：多条独立 SMB 连接并行下载，打满 Wi-Fi 带宽
 const READ_POOL_SIZE: usize = 8;
@@ -28,6 +28,11 @@ const KEEPALIVE_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_s
 /// 包一层 10s 超时把白等压缩到三分之一，超时连接丢弃不回池
 /// （避免残留响应污染后续请求），Dart 侧重试链路重建后重试。
 const IO_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// 喂流首块通知通道类型（避免在函数签名里写超长类型）。
+type FirstNotify = Option<
+    std::sync::Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<(), String>>>>>,
+>;
 
 /// 一次 SMB 会话：底层连接 + 已挂载的共享（tree）
 struct SmbSession {
@@ -98,10 +103,7 @@ async fn connect_with_timeout(params: &ConnectParams) -> Result<SmbClient, Strin
 }
 
 /// 带超时挂载共享：同上，connect_share 在死连接/NAS 拒绝时同样会挂。
-async fn connect_share_with_timeout(
-    client: &mut SmbClient,
-    share: &str,
-) -> Result<Tree, String> {
+async fn connect_share_with_timeout(client: &mut SmbClient, share: &str) -> Result<Tree, String> {
     tokio::time::timeout(IO_READ_TIMEOUT, client.connect_share(share))
         .await
         .map_err(|_| "connect_share timeout (10s)".to_string())?
@@ -172,14 +174,16 @@ pub async fn smb_connect(
     for _ in 0..READ_POOL_SIZE {
         let params = params.clone();
         handles.push(tokio::spawn(async move {
-            tokio::time::timeout(POOL_CONNECT_TIMEOUT, SmbClient::connect(params.to_config()))
-                .await
+            tokio::time::timeout(POOL_CONNECT_TIMEOUT, SmbClient::connect(params.to_config())).await
         }));
     }
     let mut pool = Vec::new();
     for h in handles {
         if let Ok(Ok(Ok(c))) = h.await {
-            pool.push(SmbSession { client: c, tree: None });
+            pool.push(SmbSession {
+                client: c,
+                tree: None,
+            });
         }
     }
     *POOL.lock().await = pool;
@@ -209,11 +213,9 @@ pub async fn smb_keepalive() -> bool {
         if let Some(sess) = guard.as_mut() {
             match sess.tree.as_mut() {
                 Some(tree) => {
-                    let probe = tokio::time::timeout(
-                        KEEPALIVE_PROBE_TIMEOUT,
-                        sess.client.fs_info(tree),
-                    )
-                    .await;
+                    let probe =
+                        tokio::time::timeout(KEEPALIVE_PROBE_TIMEOUT, sess.client.fs_info(tree))
+                            .await;
                     if matches!(probe, Err(_) | Ok(Err(_))) {
                         healthy = false;
                     }
@@ -240,11 +242,7 @@ pub async fn smb_keepalive() -> bool {
     };
     for s in taken_pool.iter_mut() {
         if let Some(tree) = s.tree.as_mut() {
-            let probe = tokio::time::timeout(
-                KEEPALIVE_PROBE_TIMEOUT,
-                s.client.fs_info(tree),
-            )
-            .await;
+            let probe = tokio::time::timeout(KEEPALIVE_PROBE_TIMEOUT, s.client.fs_info(tree)).await;
             if matches!(probe, Err(_) | Ok(Err(_))) {
                 healthy = false;
             }
@@ -270,11 +268,11 @@ pub async fn smb_disconnect() {
 pub async fn smb_list_shares() -> Result<Vec<SmbShareInfo>, String> {
     let mut guard = SESSION.lock().await;
     let sess = guard.as_mut().ok_or("not connected")?;
-    let shares: Vec<ShareInfo> = sess
-        .client
-        .list_shares()
-        .await
-        .map_err(err_str)?;
+    let shares: Vec<ShareInfo> =
+        match tokio::time::timeout(IO_READ_TIMEOUT, sess.client.list_shares()).await {
+            Ok(r) => r.map_err(err_str)?,
+            Err(_) => return Err("response timeout (10s)".to_string()),
+        };
     Ok(shares
         .into_iter()
         .map(|s| SmbShareInfo {
@@ -316,18 +314,31 @@ pub async fn smb_list_directory(path: String) -> Result<Vec<SmbDirEntry>, String
         Some(mut sess) => {
             ensure_pooled_tree(&mut sess).await;
             let r = if let Some(tree) = sess.tree.as_mut() {
-                sess.client.list_directory(tree, &path).await.map_err(err_str)
+                match tokio::time::timeout(IO_READ_TIMEOUT, sess.client.list_directory(tree, &path))
+                    .await
+                {
+                    Ok(r) => r.map_err(err_str),
+                    Err(_) => Err("response timeout (10s)".to_string()),
+                }
             } else {
                 Err("no share connected".to_string())
             };
-            POOL.lock().await.push(sess);
+            // 成功才回池：失败/超时的连接可能已死，避免污染后续请求
+            if r.is_ok() {
+                POOL.lock().await.push(sess);
+            }
             r
         }
         None => {
             let mut guard = SESSION.lock().await;
             let sess = guard.as_mut().ok_or("not connected")?;
             let tree = sess.tree.as_mut().ok_or("no share connected")?;
-            sess.client.list_directory(tree, &path).await.map_err(err_str)
+            match tokio::time::timeout(IO_READ_TIMEOUT, sess.client.list_directory(tree, &path))
+                .await
+            {
+                Ok(r) => r.map_err(err_str),
+                Err(_) => Err("response timeout (10s)".to_string()),
+            }
         }
     }?;
     drop(permit);
@@ -399,10 +410,7 @@ pub async fn smb_read_file(path: String) -> Result<Vec<u8>, String> {
 /// 表现为下载得到 0 字节。独占后每路流一条独立链路，互不干扰；
 /// 并发上限仍由 POOL_SEM 控制。每块 512KB 推送一次，Dart 端逐块
 /// 追加写入，避免整文件跨 FFI 一次性拷贝。
-pub async fn smb_read_file_stream(
-    path: String,
-    sink: StreamSink<Vec<u8>>,
-) -> Result<(), String> {
+pub async fn smb_read_file_stream(path: String, sink: StreamSink<Vec<u8>>) -> Result<(), String> {
     let permit = acquire_pool_permit().await?;
     // from_pool：池连接用完归还；临时新建的用完 drop 关闭，不进池
     let (mut sess, from_pool) = match POOL.lock().await.pop() {
@@ -418,7 +426,13 @@ pub async fn smb_read_file_stream(
                 .ok_or("no share connected")?;
             let mut client = connect_with_timeout(&params).await?;
             let tree = connect_share_with_timeout(&mut client, &share).await?;
-            (SmbSession { client, tree: Some(tree) }, false)
+            (
+                SmbSession {
+                    client,
+                    tree: Some(tree),
+                },
+                false,
+            )
         }
     };
     ensure_pooled_tree(&mut sess).await;
@@ -428,15 +442,13 @@ pub async fn smb_read_file_stream(
         // open 阶段包超时：死连接上 CREATE 会挂满 crate 30s，
         // 10s 快速失败让播放下载的 Dart 重试链路尽早重建。
         // （后续分块读暂不逐块包超时，避免大文件误杀）
-        let reader = match tokio::time::timeout(
-            IO_READ_TIMEOUT,
-            sess.client.open_file_reader(tree, &path),
-        )
-        .await
-        {
-            Ok(r) => r.map_err(err_str)?,
-            Err(_) => return Err("open timeout (10s)".to_string()),
-        };
+        let reader =
+            match tokio::time::timeout(IO_READ_TIMEOUT, sess.client.open_file_reader(tree, &path))
+                .await
+            {
+                Ok(r) => r.map_err(err_str)?,
+                Err(_) => return Err("open timeout (10s)".to_string()),
+            };
         let total = reader.size();
         if total == 0 {
             // 空流（CREATE 返回 EndOfFile=0）：明确报错而非静默成功，
@@ -450,20 +462,16 @@ pub async fn smb_read_file_stream(
             // 分块读也包超时：死连接上 READ 同样挂满 crate 30s（open 阶段
             // 的 10s 只挡住了建句柄，读第一块时连接可能刚被回收）。逐块
             // 10s 快速失败，让 Dart 重试链路尽早重建，不白等 30s。
-            let data = match tokio::time::timeout(
-                IO_READ_TIMEOUT,
-                reader.read_at(offset, CHUNK),
-            )
-            .await
-            {
-                Ok(d) => d.map_err(err_str)?,
-                Err(_) => {
-                    let _ = reader.close().await;
-                    return Err(format!(
-                        "read timeout (10s) at offset {offset}/{total}: {path}"
-                    ));
-                }
-            };
+            let data =
+                match tokio::time::timeout(IO_READ_TIMEOUT, reader.read_at(offset, CHUNK)).await {
+                    Ok(d) => d.map_err(err_str)?,
+                    Err(_) => {
+                        let _ = reader.close().await;
+                        return Err(format!(
+                            "read timeout (10s) at offset {offset}/{total}: {path}"
+                        ));
+                    }
+                };
             let n = data.len() as u64;
             if n == 0 {
                 return Err(format!("unexpected EOF at offset {offset}/{total}: {path}"));
@@ -501,7 +509,13 @@ pub async fn smb_read_tail(path: String, max_len: u64) -> Result<Vec<u8>, String
                 .ok_or("no share connected")?;
             let mut client = connect_with_timeout(&params).await?;
             let tree = connect_share_with_timeout(&mut client, &share).await?;
-            (SmbSession { client, tree: Some(tree) }, false)
+            (
+                SmbSession {
+                    client,
+                    tree: Some(tree),
+                },
+                false,
+            )
         }
     };
     ensure_pooled_tree(&mut sess).await;
@@ -510,7 +524,11 @@ pub async fn smb_read_tail(path: String, max_len: u64) -> Result<Vec<u8>, String
         let tree = sess.tree.as_ref().ok_or("no share connected")?;
         // 全程包超时：与 smb_read_head 一致，死连接 10s 快速失败
         match tokio::time::timeout(IO_READ_TIMEOUT, async {
-            let reader = sess.client.open_file_reader(tree, &path).await.map_err(err_str)?;
+            let reader = sess
+                .client
+                .open_file_reader(tree, &path)
+                .await
+                .map_err(err_str)?;
             let size = reader.size();
             let offset = size.saturating_sub(max_len);
             let data = reader.read_at(offset, max_len).await.map_err(err_str)?;
@@ -553,7 +571,13 @@ pub async fn smb_read_head(path: String, max_len: u64) -> Result<Vec<u8>, String
                 .ok_or("no share connected")?;
             let mut client = connect_with_timeout(&params).await?;
             let tree = connect_share_with_timeout(&mut client, &share).await?;
-            (SmbSession { client, tree: Some(tree) }, false)
+            (
+                SmbSession {
+                    client,
+                    tree: Some(tree),
+                },
+                false,
+            )
         }
     };
     ensure_pooled_tree(&mut sess).await;
@@ -563,7 +587,11 @@ pub async fn smb_read_head(path: String, max_len: u64) -> Result<Vec<u8>, String
         // 全程包超时：封面批量提取踩到死连接时 10s 快速失败，
         // 不再白等 crate 硬编码的 30s（此前 6 个任务各等满 30s）
         match tokio::time::timeout(IO_READ_TIMEOUT, async {
-            let reader = sess.client.open_file_reader(tree, &path).await.map_err(err_str)?;
+            let reader = sess
+                .client
+                .open_file_reader(tree, &path)
+                .await
+                .map_err(err_str)?;
             let data = reader.read_at(0, max_len).await.map_err(err_str)?;
             // 显式关闭句柄释放服务端资源（直接 drop 会泄漏句柄）
             let _ = reader.close().await;
@@ -608,7 +636,13 @@ pub async fn smb_read_file_range(
                 .ok_or("no share connected")?;
             let mut client = connect_with_timeout(&params).await?;
             let tree = connect_share_with_timeout(&mut client, &share).await?;
-            (SmbSession { client, tree: Some(tree) }, false)
+            (
+                SmbSession {
+                    client,
+                    tree: Some(tree),
+                },
+                false,
+            )
         }
     };
     ensure_pooled_tree(&mut sess).await;
@@ -616,7 +650,11 @@ pub async fn smb_read_file_range(
     let result: Result<Vec<u8>, String> = async {
         let tree = sess.tree.as_ref().ok_or("no share connected")?;
         match tokio::time::timeout(IO_READ_TIMEOUT, async {
-            let reader = sess.client.open_file_reader(tree, &path).await.map_err(err_str)?;
+            let reader = sess
+                .client
+                .open_file_reader(tree, &path)
+                .await
+                .map_err(err_str)?;
             let data = reader.read_at(offset, max_len).await.map_err(err_str)?;
             // 显式关闭句柄释放服务端资源（直接 drop 会泄漏句柄）
             let _ = reader.close().await;
@@ -642,11 +680,15 @@ pub async fn smb_file_size(path: String) -> Result<u64, String> {
     let mut guard = SESSION.lock().await;
     let sess = guard.as_mut().ok_or("not connected")?;
     let tree = sess.tree.as_mut().ok_or("no share connected")?;
-    let entries: Vec<DirectoryEntry> = sess
-        .client
-        .list_directory(tree, &path)
-        .await
-        .map_err(err_str)?;
+    let entries: Vec<DirectoryEntry> = match tokio::time::timeout(
+        IO_READ_TIMEOUT,
+        sess.client.list_directory(tree, &path),
+    )
+    .await
+    {
+        Ok(r) => r.map_err(err_str)?,
+        Err(_) => return Err("response timeout (10s)".to_string()),
+    };
     entries
         .into_iter()
         .find(|e| !e.is_directory)
@@ -675,8 +717,7 @@ pub async fn engine_play_smb_stream(
     // （无 content_length 时 core 无法估算流式播放总时长，进度条 max 不准）。
     // smb_file_size 走 list_directory，10s 超时；失败不阻塞播放（传 None 降级为粗估）。
     let content_length = smb_file_size(smb_path.clone()).await.ok();
-    let handle =
-        crate::api::engine::engine_start_stream(format_hint, content_length)?;
+    let handle = crate::api::engine::engine_start_stream(format_hint, content_length)?;
     // 首块喂流成功信号：喂流 task 写入第一块后通知，主函数据此确认流已启动
     let (first_tx, first_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let first_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(first_tx)));
@@ -705,12 +746,7 @@ pub async fn engine_play_smb_stream(
         }
     });
     // 同步等首块喂流结果（probe 有数据 → ready 达成），最多等 OPEN_TIMEOUT
-    match tokio::time::timeout(
-        IO_READ_TIMEOUT,
-        first_rx,
-    )
-    .await
-    {
+    match tokio::time::timeout(IO_READ_TIMEOUT, first_rx).await {
         Ok(Ok(Ok(()))) => Ok(()),
         Ok(Ok(Err(e))) => Err(format!("首块喂流失败: {e}")),
         Ok(Err(_)) => Err("喂流 task 未返回结果".to_string()),
@@ -725,9 +761,7 @@ async fn feed_stream_to_core(
     handle: &StreamHandle,
     smb_path: &str,
     cache_final_path: Option<&str>,
-    first_notify: Option<
-        std::sync::Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<(), String>>>>>,
-    >,
+    first_notify: FirstNotify,
 ) -> Result<(), String> {
     // 获取池 permit：不无限等待。池被占满（如批量封面提取并发）时直接
     // 新建独立临时连接喂流，保证「点歌出声」不被后台任务阻塞。
@@ -744,7 +778,13 @@ async fn feed_stream_to_core(
                 .ok_or("no share connected")?;
             let mut client = connect_with_timeout(&params).await?;
             let tree = connect_share_with_timeout(&mut client, &share).await?;
-            (SmbSession { client, tree: Some(tree) }, false)
+            (
+                SmbSession {
+                    client,
+                    tree: Some(tree),
+                },
+                false,
+            )
         }
     };
     ensure_pooled_tree(&mut sess).await;
@@ -778,10 +818,11 @@ async fn feed_stream_to_core(
             return Err(format!("remote file is empty (size 0): {smb_path}"));
         }
 
-        // 并行写 .part 缓存（覆盖式写入，确保干净）
+        // 并行写 .part 缓存（覆盖式写入，确保干净）。
+        // 用 tokio::fs 代替 std::fs，避免在 async task 里阻塞线程。
         let mut cache_file = match part_path {
             Some(p) => {
-                let f = std::fs::File::create(p).map_err(err_str)?;
+                let f = tokio::fs::File::create(p).await.map_err(err_str)?;
                 Some(f)
             }
             None => None,
@@ -791,23 +832,21 @@ async fn feed_stream_to_core(
         const CHUNK: u64 = 512 * 1024;
         while offset < total {
             // 分块读也包 10s 超时：死连接上 READ 快速失败，不白等 crate 30s
-            let data = match tokio::time::timeout(
-                IO_READ_TIMEOUT,
-                reader.read_at(offset, CHUNK),
-            )
-            .await
-            {
-                Ok(d) => d.map_err(err_str)?,
-                Err(_) => {
-                    let _ = reader.close().await;
-                    return Err(format!(
-                        "read timeout (10s) at offset {offset}/{total}: {smb_path}"
-                    ));
-                }
-            };
+            let data =
+                match tokio::time::timeout(IO_READ_TIMEOUT, reader.read_at(offset, CHUNK)).await {
+                    Ok(d) => d.map_err(err_str)?,
+                    Err(_) => {
+                        let _ = reader.close().await;
+                        return Err(format!(
+                            "read timeout (10s) at offset {offset}/{total}: {smb_path}"
+                        ));
+                    }
+                };
             let n = data.len() as u64;
             if n == 0 {
-                return Err(format!("unexpected EOF at offset {offset}/{total}: {smb_path}"));
+                return Err(format!(
+                    "unexpected EOF at offset {offset}/{total}: {smb_path}"
+                ));
             }
             // 喂给 core：流被关闭（切歌/stop）时 write 返回 0，停止拉取
             let written = handle.write(&data);
@@ -825,8 +864,8 @@ async fn feed_stream_to_core(
             }
             // 并行写缓存
             if let Some(f) = cache_file.as_mut() {
-                use std::io::Write;
-                f.write_all(&data).map_err(err_str)?;
+                use tokio::io::AsyncWriteExt;
+                f.write_all(&data).await.map_err(err_str)?;
             }
             offset += n;
         }
@@ -834,13 +873,13 @@ async fn feed_stream_to_core(
         let _ = reader.close().await;
         handle.signal_eof();
         if let Some(f) = cache_file.as_mut() {
-            use std::io::Write;
-            f.flush().map_err(err_str)?;
+            use tokio::io::AsyncWriteExt;
+            f.flush().await.map_err(err_str)?;
         }
         drop(cache_file);
         if let Some(part) = part_path {
             if let Some(final_path) = cache_final_path {
-                std::fs::rename(part, final_path).map_err(err_str)?;
+                tokio::fs::rename(part, final_path).await.map_err(err_str)?;
             }
         }
         Ok(())
@@ -866,24 +905,27 @@ async fn feed_stream_to_core(
 fn cleanup_stale_part_stream(cache_final_path: Option<&str>, current: Option<&str>) {
     use std::sync::OnceLock;
     static DONE: OnceLock<()> = OnceLock::new();
-    if DONE.get().is_some() {
-        return;
-    }
-    let Some(final_path) = cache_final_path else { return };
-    let Some(dir) = std::path::Path::new(final_path).parent() else { return };
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    let Some(final_path) = cache_final_path else {
         return;
     };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name.contains(".part.stream.")
-            && current.map(|c| c != name.as_ref()).unwrap_or(true)
-        {
-            let _ = std::fs::remove_file(entry.path());
+    let Some(dir) = std::path::Path::new(final_path).parent() else {
+        return;
+    };
+    // get_or_init 会阻塞并发调用者直到首次清扫完成；并发 task 只有在
+    // 首次清扫结束后才能继续创建自己的 .part.stream.*，避免互删对方文件。
+    let _ = DONE.get_or_init(|| {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.contains(".part.stream.") && current.map(|c| c != name.as_ref()).unwrap_or(true)
+            {
+                let _ = std::fs::remove_file(entry.path());
+            }
         }
-    }
-    let _ = DONE.set(());
+    });
 }
 
 /// 简易伪随机 hex 串（缓存临时文件唯一后缀用）：时间播种的 LCG +

@@ -149,7 +149,7 @@ impl EngineState {
             crossfeed_enabled: true,
             noise_shaping_enabled: false,
             limiter_enabled: true,
-            dither_enabled: true,
+            dither_enabled: false,
         }
     }
 
@@ -452,7 +452,7 @@ impl EngineState {
         // 且预取/曲终判断按虚高位置误触发。
         // 流式 seek 时则从 seek 目标位置起播（交错样本计数）。
         let seek_samples = seek_secs
-            .map(|s| (s * self.config.sample_rate as f64) as u64 * self.config.channels as u64)
+            .map(|s| (s * self.output_sample_rate as f64) as u64 * self.config.channels as u64)
             .unwrap_or(0);
         self.position.store(seek_samples, Ordering::SeqCst);
         // 时长同样清零：避免 engine_duration_secs 返回旧曲时长
@@ -763,6 +763,9 @@ impl EngineState {
             Some(o) => o,
             None => {
                 error!("seek 后输出设备未初始化");
+                // 已经 spawn 了新 consumer/decoder，不能直接 return 泄漏线程。
+                stop_flag.store(true, Ordering::SeqCst);
+                decoder.stop();
                 return;
             }
         };
@@ -773,6 +776,10 @@ impl EngineState {
             }
             _ => {
                 error!("seek 后解码失败: {}", entry.audio_file);
+                // 同上：失败分支必须停止刚启动的 consumer/decoder，
+                // 否则 stop_flag 从未置位，线程会挂到进程退出。
+                stop_flag.store(true, Ordering::SeqCst);
+                decoder.stop();
                 let _ = self.internal_event_tx.send(EngineEvent::Error(format!(
                     "seek 后解码失败: {}",
                     entry.audio_file
@@ -1260,7 +1267,7 @@ pub(crate) mod tests {
             crossfeed_enabled: true,
             noise_shaping_enabled: false,
             limiter_enabled: true,
-            dither_enabled: true,
+            dither_enabled: false,
         };
         (s, rx)
     }

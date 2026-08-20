@@ -4,6 +4,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../domain/models/song.dart';
 import 'log.dart';
+import 'stable_hash.dart';
 
 /// 缓存清理：统计与删除曲库中无引用的缓存文件。
 ///
@@ -37,9 +38,7 @@ class CacheCleaner {
   }
 
   /// 收集当前曲库引用的所有沙盒文件路径（引用集合）。
-  static Future<Set<String>> collectReferencedFiles(
-    List<Song> songs,
-  ) async {
+  static Future<Set<String>> collectReferencedFiles(List<Song> songs) async {
     final appDir = await getApplicationDocumentsDirectory();
     final prefix = '${appDir.path}/';
     final refs = <String>{};
@@ -53,11 +52,13 @@ class CacheCleaner {
       add(s.lyricsPath);
       if (s.smbPath != null && s.smbPath!.isNotEmpty) {
         // NAS 远端歌词本地缓存，与 smb_service 命名一致
-        add('$prefix.lrc_cache/${s.smbPath.hashCode}.lrc');
+        add('$prefix.lrc_cache/${stableHash(s.smbPath!)}.lrc');
       }
       if (s.davPath != null && s.davPath!.isNotEmpty) {
         // WebDAV 下载缓存，与 webdav_service 命名一致
-        add('$prefix.webdav_cache/${s.davPath!.hashCode}_${s.davPath!.split('/').last}');
+        add(
+          '$prefix.webdav_cache/${stableHash(s.davPath!)}_${s.davPath!.split('/').last}',
+        );
       }
     }
     return refs;

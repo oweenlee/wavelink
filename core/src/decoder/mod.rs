@@ -25,8 +25,8 @@ use tracing::{debug, error, info, warn};
 use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedOut, WindowFunction};
 
 use crate::dsd;
-use crate::EngineEvent;
 use crate::error::EngineError;
+use crate::EngineEvent;
 
 /// 解码器输出 channel 容量（帧数），利用 crossbeam 背压阻塞避免内存无限增长
 const DECODE_CHANNEL_CAPACITY: usize = 8;
@@ -645,6 +645,20 @@ fn run(
     // 跟踪最后发送帧的 pts，EOF 冲刷重采样器残余时用
     let mut last_pts = 0.0f64;
 
+    // end_secs 截止：按源采样率帧数做样本级截断（不能只靠 packet 起始 pts）。
+    let max_output_frames: Option<u64> = if let Some(end) = end_secs {
+        let start = seek_pos.unwrap_or(0.0);
+        let dur = end - start;
+        if dur > 0.0 {
+            Some((dur * src_rate as f64) as u64)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let mut output_frames: u64 = 0;
+
     loop {
         if stop_rx.try_recv().is_ok() {
             break;
@@ -716,6 +730,22 @@ fn run(
         // 声道混音（支持 5.1/7.1 正确 downmix）
         let mixed = mix_channels(&interleaved, in_ch, out_ch);
 
+        // end_secs 样本级截断：即使 packet 起始早于 end，也只保留 end 前的样本。
+        let mixed = if let Some(max_frames) = max_output_frames {
+            let remaining = max_frames.saturating_sub(output_frames);
+            let allowed_samples = remaining as usize * out_ch;
+            if mixed.len() > allowed_samples {
+                mixed[..allowed_samples].to_vec()
+            } else {
+                mixed
+            }
+        } else {
+            mixed
+        };
+        if mixed.is_empty() {
+            break;
+        }
+
         // rubato 异步 SRC + 发送
         let pts = packet.pts.get() as f64 / src_rate as f64;
         last_pts = resample_and_send(
@@ -729,6 +759,12 @@ fn run(
             &tx,
             &stop_rx,
         );
+        output_frames += (mixed.len() / out_ch) as u64;
+        if let Some(max_frames) = max_output_frames {
+            if output_frames >= max_frames {
+                break;
+            }
+        }
     }
     flush_resampler(
         &mut rubato_resampler,
@@ -989,8 +1025,7 @@ fn run_from_stream(
                         if !settled
                             && (dur_est.is_none()
                                 || big_shift
-                                || now.duration_since(dur_est_sent)
-                                    >= Duration::from_millis(3000))
+                                || now.duration_since(dur_est_sent) >= Duration::from_millis(3000))
                         {
                             let _ = event_tx.send(EngineEvent::DurationSecs(est));
                             dur_est = Some(est);

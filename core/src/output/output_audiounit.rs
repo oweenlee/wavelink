@@ -32,6 +32,8 @@ pub struct AudioOutputUnit {
     channels: u32,
     buffer_ms: u32,
     sample_format: SampleFormat,
+    /// render callback 的 user_data 指针（Box::into_raw 得来，Drop 释放）。
+    render_ctx: *mut RenderContext,
 }
 
 unsafe impl Send for AudioOutputUnit {}
@@ -92,6 +94,11 @@ impl Drop for AudioOutputUnit {
             coreaudio_sys::AudioOutputUnitStop(self.unit);
             coreaudio_sys::AudioUnitUninitialize(self.unit);
             coreaudio_sys::AudioComponentInstanceDispose(self.unit);
+            // 释放 render callback 的 Box，避免每次 open 泄漏一份 RenderContext。
+            if !self.render_ctx.is_null() {
+                drop(Box::from_raw(self.render_ctx));
+                self.render_ctx = std::ptr::null_mut();
+            }
         }
     }
 }
@@ -137,10 +144,9 @@ extern "C" fn render_callback(
 
         match ctx.sample_format {
             SampleFormat::F32 => {
-                // 直接写入 AudioBufferList（可能是非交错）
-                let mut offset = 0;
-                for i in 0..buf_list.mNumberBuffers as usize {
-                    let buf = &mut buf_list.mBuffers[i];
+                if buf_list.mNumberBuffers <= 1 {
+                    // 单 buffer：按交错 PCM 直接填充。
+                    let buf = &mut buf_list.mBuffers[0];
                     let data = std::slice::from_raw_parts_mut(
                         buf.mData as *mut f32,
                         buf.mDataByteSize as usize / 4,
@@ -150,7 +156,28 @@ extern "C" fn render_callback(
                         ctx.inner.underrun_count.fetch_add(1, Ordering::Relaxed);
                         data[n..].fill(0.0);
                     }
-                    offset += data.len();
+                } else {
+                    // 多 buffer：CoreAudio 非交错 per-channel 布局。
+                    // 先从交错 ringbuf 读出完整帧，再按声道解交织写入各 buffer。
+                    ctx.tmp_buf.resize(total_samples.max(64), 0.0);
+                    let n = guard.pop_slice(&mut ctx.tmp_buf[..total_samples]);
+                    if n < total_samples {
+                        ctx.inner.underrun_count.fetch_add(1, Ordering::Relaxed);
+                        ctx.tmp_buf[n..total_samples].fill(0.0);
+                    }
+                    for i in 0..buf_list.mNumberBuffers as usize {
+                        if i >= ch {
+                            break;
+                        }
+                        let buf = &mut buf_list.mBuffers[i];
+                        let data = std::slice::from_raw_parts_mut(
+                            buf.mData as *mut f32,
+                            buf.mDataByteSize as usize / 4,
+                        );
+                        for (dst, src) in data.iter_mut().zip(ctx.tmp_buf[i..].iter().step_by(ch)) {
+                            *dst = *src;
+                        }
+                    }
                 }
             }
             SampleFormat::I16 | SampleFormat::I32 => {
@@ -425,6 +452,7 @@ pub(crate) fn open_inner(
             channels,
             buffer_ms,
             sample_format,
+            render_ctx: ctx_ptr,
         };
 
         Ok((output, producer, inner, sample_rate))

@@ -58,6 +58,9 @@ impl EngineState {
         self.next_entry = None;
         self.consumer_stop = None;
         self.dsp = None;
+        // 当前恢复逻辑固定按 PCM 重建输出/解码器；若不清掉 DoP 标记，
+        // 后续 seek 仍会走 DoP 分支，以错误的速率重启解码。
+        self.dop_active = false;
 
         // 丢弃旧输出
         self.output = None;
@@ -88,6 +91,7 @@ impl EngineState {
                     } else {
                         error!("设备恢复失败，无法重新打开输出: {e}");
                         self.emit(EngineEvent::Error(format!("音频设备恢复失败: {e}")));
+                        self.emit(EngineEvent::PlaybackStopped);
                         return;
                     }
                 }
@@ -96,7 +100,10 @@ impl EngineState {
         // 循环末尾失败分支已 return，此处 Some 必然成立；仍用 let-else 兜底，
         // 避免未来改动重试逻辑时把 unwrap 变成潜在 panic 点。
         let Some((output, prod, inner, actual_rate)) = open_result else {
-            self.emit(EngineEvent::Error("音频设备恢复失败：无可用输出设备".into()));
+            self.emit(EngineEvent::Error(
+                "音频设备恢复失败：无可用输出设备".into(),
+            ));
+            self.emit(EngineEvent::PlaybackStopped);
             return;
         };
         self.output_inner = Some(inner);
@@ -121,6 +128,7 @@ impl EngineState {
             Err(e) => {
                 error!("设备恢复后解码失败: {e}");
                 self.emit(EngineEvent::Error(format!("设备恢复后解码失败: {e}")));
+                self.emit(EngineEvent::PlaybackStopped);
                 return;
             }
         };
@@ -172,6 +180,8 @@ impl EngineState {
             Some(o) => o,
             None => {
                 error!("设备恢复：输出创建后丢失");
+                self.emit(EngineEvent::Error("设备恢复：输出创建后丢失".into()));
+                self.emit(EngineEvent::PlaybackStopped);
                 return;
             }
         };
@@ -184,6 +194,8 @@ impl EngineState {
             }
             _ => {
                 error!("设备恢复后消费者启动超时");
+                self.emit(EngineEvent::Error("设备恢复后消费者启动超时".into()));
+                self.emit(EngineEvent::PlaybackStopped);
             }
         }
     }

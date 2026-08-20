@@ -13,6 +13,7 @@ import 'lrc_codec.dart';
 import 'log.dart';
 import 'preferences_service.dart';
 import 'rust_service.dart' as rs;
+import 'stable_hash.dart';
 import 'strm_resolver.dart';
 
 /// SMB 直挂服务
@@ -208,14 +209,15 @@ class SmbService {
     required String password,
     String domain = '',
     int port = 445,
-  }) =>
-      _inGate(() => _connectImpl(
-        host: host,
-        username: username,
-        password: password,
-        domain: domain,
-        port: port,
-      ));
+  }) => _inGate(
+    () => _connectImpl(
+      host: host,
+      username: username,
+      password: password,
+      domain: domain,
+      port: port,
+    ),
+  );
 
   static Future<bool> _connectImpl({
     required String host,
@@ -228,7 +230,8 @@ class SmbService {
     if (_scanning && _connected) return true;
     // 连接前网络检测：无网络直接给明确提示，不甩 "No route to host" 原始错误
     final connectivity = await Connectivity().checkConnectivity();
-    if (connectivity.isEmpty || connectivity.contains(ConnectivityResult.none)) {
+    if (connectivity.isEmpty ||
+        connectivity.contains(ConnectivityResult.none)) {
       _connected = false;
       _connectedHost = null;
       lastError = '未连接网络：请先连上 Wi-Fi（需与 NAS 同一局域网）';
@@ -279,14 +282,16 @@ class SmbService {
   /// iOS 本地网络权限无 API 可查（被拒时系统直接阻断连接，报
   /// No route to host 等），只能引导去设置开启。
   static String _friendlyConnectError(String raw) {
-    if (raw.contains('No route to host') || raw.contains('Network is unreachable')) {
+    if (raw.contains('No route to host') ||
+        raw.contains('Network is unreachable')) {
       return Platform.isIOS
           ? '$raw\n\n无法到达主机：请确认 iPhone 已连上与 NAS 同一局域网的 Wi-Fi；'
-            '若首次连接弹出过“本地网络”权限提示请点允许，'
-            '若之前拒绝过，请到 设置 > 隐私与安全性 > 本地网络 中开启 WaveLink。'
+                '若首次连接弹出过“本地网络”权限提示请点允许，'
+                '若之前拒绝过，请到 设置 > 隐私与安全性 > 本地网络 中开启 WaveLink。'
           : '$raw\n\n无法到达主机：请确认手机与 NAS 在同一局域网。';
     }
-    if (raw.toLowerCase().contains('timed out') || raw.toLowerCase().contains('timeout')) {
+    if (raw.toLowerCase().contains('timed out') ||
+        raw.toLowerCase().contains('timeout')) {
       return '$raw\n\n连接超时：请确认 NAS 已开机、SMB/文件共享已开启，且手机与 NAS 在同一局域网。';
     }
     return raw;
@@ -303,7 +308,8 @@ class SmbService {
   ) async {
     final base = _friendlyConnectError(raw);
     final lower = raw.toLowerCase();
-    final isNetworkish = lower.contains('no route to host') ||
+    final isNetworkish =
+        lower.contains('no route to host') ||
         lower.contains('network is unreachable') ||
         lower.contains('timed out') ||
         lower.contains('timeout');
@@ -501,7 +507,9 @@ class SmbService {
       for (final entry in entries) {
         // 防御：跳过 "."/".."（Rust 层已过滤，此处兜底）
         if (entry.name == '.' || entry.name == '..') continue;
-        final childPath = relPath.isEmpty ? entry.name : '$relPath/${entry.name}';
+        final childPath = relPath.isEmpty
+            ? entry.name
+            : '$relPath/${entry.name}';
         if (entry.isDir) {
           dirs.add(childPath);
         } else if (_isAudio(entry.name) || _isStrm(entry.name)) {
@@ -532,6 +540,7 @@ class SmbService {
           results[i] = await _smbFileToSong(f.$1, f.$2, f.$3);
         }
       }
+
       await Future.wait(List.generate(8, (_) => worker()));
       for (final s in results) {
         if (s != null) {
@@ -576,14 +585,13 @@ class SmbService {
       try {
         final text = await readRemoteText(smbPath);
         if (text != null) {
-          target =
-              parseStrmContent(text, fromWebdav: false, strmPath: smbPath);
+          target = parseStrmContent(text, fromWebdav: false, strmPath: smbPath);
         }
       } catch (e) {
         Log.w('SMB', 'STRM 解析失败 ($smbPath): $e');
       }
       final song = Song(
-        id: 'smb_${smbPath.hashCode}',
+        id: 'smb_${stableHash(smbPath)}',
         title: parsed.title,
         artist: parsed.artist ?? artistPlaceholder,
         album: albumPlaceholder,
@@ -605,7 +613,7 @@ class SmbService {
     // 元数据（album/artist/时长）由后台封面服务 fetchRemoteCover
     // 读取远端文件头回填。
     return Song(
-      id: 'smb_${smbPath.hashCode}',
+      id: 'smb_${stableHash(smbPath)}',
       title: parsed.title,
       artist: parsed.artist ?? artistPlaceholder,
       album: albumPlaceholder,
@@ -657,8 +665,7 @@ class SmbService {
       if (_coverFailStreak >= _coverFailThreshold) {
         Log.w('SMB', '封面提取达到熔断阈值，本批剩余封面跳过');
         // 冷却 60s：让死会话自愈/重建期间不再反复踩雷
-        _coverCooldownUntil =
-            DateTime.now().add(const Duration(seconds: 60));
+        _coverCooldownUntil = DateTime.now().add(const Duration(seconds: 60));
         return false;
       }
       if (!await _retryReady(gen)) {
@@ -688,18 +695,24 @@ class SmbService {
       changed = true;
     }
     final artist = meta.artist;
-    if (song.artist == artistPlaceholder && artist != null && artist.isNotEmpty) {
+    if (song.artist == artistPlaceholder &&
+        artist != null &&
+        artist.isNotEmpty) {
       song.artist = artist;
       changed = true;
     }
     if (song.durationEstimated && meta.durationSecs > 0) {
-      song.duration =
-          Duration(milliseconds: (meta.durationSecs * 1000).round());
+      song.duration = Duration(
+        milliseconds: (meta.durationSecs * 1000).round(),
+      );
       song.durationEstimated = false;
       changed = true;
     }
     if (changed) {
-      Log.v('SMB', '元数据回填 (${song.title}): album=${song.album}, artist=${song.artist}');
+      Log.v(
+        'SMB',
+        '元数据回填 (${song.title}): album=${song.album}, artist=${song.artist}',
+      );
     }
     return changed;
   }
@@ -780,7 +793,7 @@ class SmbService {
           Log.v(
             'SMB',
             '封面提取：头/尾均无封面标签 ($smbPath, head=${head.length}B, '
-            'tail=${tail.length}B)',
+                'tail=${tail.length}B)',
           );
           // 仅当元数据仍未从片段回填（如 M4A，moov 在尾部无法从 head/tail
           // 片段解析）才整文件下载兜底。FLAC/MP3/OGG 的封面与元数据都在
@@ -826,8 +839,9 @@ class SmbService {
         if (!await coversDir.exists()) {
           await coversDir.create(recursive: true);
         }
-        final coverFile =
-            File('${coversDir.path}/smb_${smbPath.hashCode}.jpg');
+        final coverFile = File(
+          '${coversDir.path}/smb_${stableHash(smbPath)}.jpg',
+        );
         await coverFile.writeAsBytes(meta.coverBytes);
         song.coverUrl = coverFile.path;
         song.hasCover = true;
@@ -853,18 +867,21 @@ class SmbService {
     // 必须保留真实音频扩展名：lofty/symphonia 按扩展名探测格式，
     // 未知后缀会直接探测失败，封面静默丢失（历史 bug：用 .head）
     final ext = smbPath.split('.').last.toLowerCase();
-    final headFile = File('${headDir.path}/${smbPath.hashCode}.$ext');
+    final headFile = File('${headDir.path}/${stableHash(smbPath)}.$ext');
     await headFile.writeAsBytes(bytes);
     try {
       final meta = await rs.readMetadata(headFile.path);
       // 元数据回填：解析出的 album/artist/时长此前只用来提封面就被丢弃，
       // 现在顺手覆盖占位值（幂等：已有真实值不动），无封面也生效。
       _backfillMetadata(song, meta);
-      if (meta.hasCover && meta.coverBytes.isNotEmpty && song.coverUrl == null) {
+      if (meta.hasCover &&
+          meta.coverBytes.isNotEmpty &&
+          song.coverUrl == null) {
         final coversDir = Directory('${appDir.path}/.covers');
         if (!await coversDir.exists()) await coversDir.create(recursive: true);
-        final coverFile =
-            File('${coversDir.path}/smb_${smbPath.hashCode}.jpg');
+        final coverFile = File(
+          '${coversDir.path}/smb_${stableHash(smbPath)}.jpg',
+        );
         await coverFile.writeAsBytes(meta.coverBytes);
         song.coverUrl = coverFile.path;
         song.hasCover = true;
@@ -947,7 +964,7 @@ class SmbService {
       final cacheDir = Directory('${appDir.path}/.smb_cache');
       if (!await cacheDir.exists()) return null;
       final name = smbPath.split('/').last;
-      final localFile = File('${cacheDir.path}/${smbPath.hashCode}_$name');
+      final localFile = File('${cacheDir.path}/${stableHash(smbPath)}_$name');
       if (await localFile.exists() && await localFile.length() > 0) {
         return localFile.path;
       }
@@ -967,7 +984,7 @@ class SmbService {
       final cacheDir = Directory('${appDir.path}/.smb_cache');
       if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
       final name = smbPath.split('/').last;
-      return '${cacheDir.path}/${smbPath.hashCode}_$name';
+      return '${cacheDir.path}/${stableHash(smbPath)}_$name';
     } catch (e) {
       Log.e('SMB', '缓存目标路径计算失败: $e');
       return null;
@@ -981,7 +998,7 @@ class SmbService {
       final cacheDir = Directory('${appDir.path}/.smb_cache');
       if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
       final name = smbPath.split('/').last;
-      final localFile = File('${cacheDir.path}/${smbPath.hashCode}_$name');
+      final localFile = File('${cacheDir.path}/${stableHash(smbPath)}_$name');
       if (await localFile.exists() && await localFile.length() > 0) {
         return localFile.path;
       }
@@ -1028,8 +1045,11 @@ class SmbService {
       final total = await smb.smbFileSize(path: smbPath);
       if (total <= BigInt.zero) return false;
       final size = total.toInt();
+      // 大文件直接走顺序流式下载，避免 4 个 1/4 文件大小的分片同时进 Dart
+      // 堆造成内存峰值（DSD/hi-res 尤其明显）。
+      if (size > 50 * 1024 * 1024) return false;
       final chunkSize = (size + _parallelChunks - 1) ~/ _parallelChunks;
-      final partFiles = <File>[];
+      final parts = List<File?>.filled(_parallelChunks, null);
       try {
         await Future.wait([
           for (var i = 0; i < _parallelChunks; i++)
@@ -1056,22 +1076,29 @@ class SmbService {
                 if (await part.exists()) await part.delete();
                 rethrow;
               }
-              partFiles.add(part);
+              parts[i] = part;
             }(),
         ]);
-        // 按序拼接所有分片到最终临时文件
+        // 按编号顺序拼接所有分片，避免并发完成顺序导致错位。
         final sink = tmpFile.openWrite();
         try {
-          for (final part in partFiles) {
-            await sink.addStream(part.openRead());
+          for (final part in parts) {
+            if (part != null) {
+              await sink.addStream(part.openRead());
+            }
           }
         } finally {
           await sink.close();
         }
+        // 完整性校验：拼接结果必须等于远端文件大小，短读/截断不能进入正式缓存。
+        if (await tmpFile.length() != size) {
+          if (await tmpFile.exists()) await tmpFile.delete();
+          return false;
+        }
         return true;
       } finally {
-        for (final part in partFiles) {
-          if (await part.exists()) await part.delete();
+        for (final part in parts) {
+          if (part != null && await part.exists()) await part.delete();
         }
       }
     } catch (e) {

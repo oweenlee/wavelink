@@ -12,6 +12,7 @@ import 'log.dart';
 import 'lrc_codec.dart';
 import 'preferences_service.dart';
 import 'rust_service.dart' as rs;
+import 'stable_hash.dart';
 import 'strm_resolver.dart';
 import '../../src/rust/api/metadata.dart' show MetadataResult;
 
@@ -62,7 +63,8 @@ class WebdavService {
   static String? get rootPath => PreferencesService.instance.webdavPath;
 
   /// WebDAV 认证凭据（流式播放 Rust 侧需要）
-  static String get username => PreferencesService.instance.webdavUsername ?? '';
+  static String get username =>
+      PreferencesService.instance.webdavUsername ?? '';
   static String get password => PreferencesService.instance.webdavPassword;
 
   /// 是否有配置（baseUrl 非空即视为已配置）
@@ -92,7 +94,7 @@ class WebdavService {
       final cacheDir = Directory('${appDir.path}/.webdav_cache');
       if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
       final name = davPath.split('/').last;
-      return '${cacheDir.path}/${davPath.hashCode}_$name';
+      return '${cacheDir.path}/${stableHash(davPath)}_$name';
     } catch (e) {
       Log.e('WebDAV', 'cacheTargetFor failed: $e');
       return null;
@@ -137,7 +139,8 @@ class WebdavService {
   }) async {
     // 连接前网络检测：无网络直接给明确提示（与 SMB 对齐），不甩底层异常
     final connectivity = await Connectivity().checkConnectivity();
-    if (connectivity.isEmpty || connectivity.contains(ConnectivityResult.none)) {
+    if (connectivity.isEmpty ||
+        connectivity.contains(ConnectivityResult.none)) {
       lastError = '未连接网络：请先连上 Wi-Fi（如需访问局域网/公网服务器）';
       return lastError;
     }
@@ -293,14 +296,13 @@ class WebdavService {
       try {
         final text = await readRemoteText(path);
         if (text != null) {
-          target =
-              parseStrmContent(text, fromWebdav: true, strmPath: path);
+          target = parseStrmContent(text, fromWebdav: true, strmPath: path);
         }
       } catch (e) {
         Log.w('WebDAV', 'STRM 解析失败 ($path): $e');
       }
       final song = Song(
-        id: 'dav_${path.hashCode}',
+        id: 'dav_${stableHash(path)}',
         title: parsed.title,
         artist: artistPlaceholder,
         album: albumPlaceholder,
@@ -318,7 +320,7 @@ class WebdavService {
     }
     final parsed = ImportService.parseArtistTitle(name);
     return Song(
-      id: 'dav_${path.hashCode}',
+      id: 'dav_${stableHash(path)}',
       title: parsed.title,
       artist: artistPlaceholder,
       album: albumPlaceholder,
@@ -403,17 +405,20 @@ class WebdavService {
     final headDir = Directory('${appDir.path}/.dav_head');
     if (!await headDir.exists()) await headDir.create(recursive: true);
     final ext = davPath.split('.').last.toLowerCase();
-    final headFile = File('${headDir.path}/${davPath.hashCode}.$ext');
+    final headFile = File('${headDir.path}/${stableHash(davPath)}.$ext');
     await headFile.writeAsBytes(bytes);
     try {
       final meta = await rs.readMetadata(headFile.path);
       // 元数据回填：解析出的 album/artist/时长顺手覆盖占位值（幂等）
       _backfillMetadata(song, meta);
-      if (meta.hasCover && meta.coverBytes.isNotEmpty && song.coverUrl == null) {
+      if (meta.hasCover &&
+          meta.coverBytes.isNotEmpty &&
+          song.coverUrl == null) {
         final coversDir = Directory('${appDir.path}/.covers');
         if (!await coversDir.exists()) await coversDir.create(recursive: true);
-        final coverFile =
-            File('${coversDir.path}/dav_${davPath.hashCode}.jpg');
+        final coverFile = File(
+          '${coversDir.path}/dav_${stableHash(davPath)}.jpg',
+        );
         await coverFile.writeAsBytes(meta.coverBytes);
         song.coverUrl = coverFile.path;
         song.hasCover = true;
@@ -435,12 +440,15 @@ class WebdavService {
       song.album = album;
     }
     final artist = meta.artist;
-    if (song.artist == artistPlaceholder && artist != null && artist.isNotEmpty) {
+    if (song.artist == artistPlaceholder &&
+        artist != null &&
+        artist.isNotEmpty) {
       song.artist = artist;
     }
     if (song.durationEstimated && meta.durationSecs > 0) {
-      song.duration =
-          Duration(milliseconds: (meta.durationSecs * 1000).round());
+      song.duration = Duration(
+        milliseconds: (meta.durationSecs * 1000).round(),
+      );
       song.durationEstimated = false;
     }
   }
@@ -494,7 +502,7 @@ class WebdavService {
       final cacheDir = Directory('${appDir.path}/.webdav_cache');
       if (!await cacheDir.exists()) return null;
       final name = davPath.split('/').last;
-      final localFile = File('${cacheDir.path}/${davPath.hashCode}_$name');
+      final localFile = File('${cacheDir.path}/${stableHash(davPath)}_$name');
       if (await localFile.exists() && await localFile.length() > 0) {
         Log.d('WebDAV', '缓存命中: $name');
         return localFile.path;
@@ -537,7 +545,7 @@ class WebdavService {
       final cacheDir = Directory('${appDir.path}/.webdav_cache');
       if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
       final name = davPath.split('/').last;
-      final localFile = File('${cacheDir.path}/${davPath.hashCode}_$name');
+      final localFile = File('${cacheDir.path}/${stableHash(davPath)}_$name');
       if (await localFile.exists() && await localFile.length() > 0) {
         Log.d('WebDAV', '下载前缓存命中: $name');
         return localFile.path;
@@ -594,7 +602,7 @@ class WebdavService {
   ) async {
     final url = fullUrlFor(davPath);
     if (url == null) return false;
-    final partFiles = <File>[];
+    final parts = List<File?>.filled(_parallelChunks, null);
     try {
       final total = await rs.webdavFileSize(
         url: url,
@@ -603,6 +611,8 @@ class WebdavService {
       );
       if (total <= 0) return false;
       final size = total.toInt();
+      // 大文件直接走顺序下载，避免多个大分片同时驻留 Dart 堆。
+      if (size > 50 * 1024 * 1024) return false;
       final chunkSize = (size + _parallelChunks - 1) ~/ _parallelChunks;
       await Future.wait([
         for (var i = 0; i < _parallelChunks; i++)
@@ -628,13 +638,14 @@ class WebdavService {
               } catch (_) {}
               rethrow;
             }
-            partFiles.add(part);
+            parts[i] = part;
           }(),
       ]);
       final sink = tmpFile.openWrite();
       try {
         var written = 0;
-        for (final part in partFiles) {
+        for (final part in parts) {
+          if (part == null) continue;
           await sink.addStream(part.openRead());
           written += await part.length();
           onProgress?.call(written, size);
@@ -642,12 +653,18 @@ class WebdavService {
       } finally {
         await sink.close();
       }
+      // 完整性校验：拼接结果必须等于远端文件大小。
+      if (await tmpFile.length() != size) {
+        if (await tmpFile.exists()) await tmpFile.delete();
+        return false;
+      }
       return true;
     } catch (e) {
       Log.w('WebDAV', '并发分片下载失败，回退顺序下载 ($davPath): $e');
       return false;
     } finally {
-      for (final part in partFiles) {
+      for (final part in parts) {
+        if (part == null) continue;
         try {
           if (await part.exists()) await part.delete();
         } catch (_) {}

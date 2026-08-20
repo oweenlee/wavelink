@@ -93,8 +93,8 @@ class DspNotifier extends Notifier<DspState> {
   }
 
   // TPDF 抖动/噪声整形不在移动端暴露：双端输出均为 F32（iOS source node /
-  // Android Oboe F32 流），无整数截断环节，抖动无量化可去相关。引擎管线
-  // 默认 dither 开，故 applyDsp 仍显式下发关闭（见下）。
+  // Android Oboe F32 流），无整数截断环节，抖动无量化可去相关。引擎默认
+  // 已关闭 dither；这里仍显式下发关闭以兼容旧引擎/防止未来默认变更。
 
   // ── AutoEQ 耳机校正 ──
 
@@ -212,7 +212,7 @@ class DspNotifier extends Notifier<DspState> {
       await engineRepo.setStereoWidener(on && dsp.widener, 0.5);
       await engineRepo.setLimiter(on && dsp.limiter);
       // 抖动/噪声整形在移动端恒关（F32 输出无整数截断，见上方注释）；
-      // 引擎管线默认 dither 开，必须显式关闭，避免白叠加 ~-138dB 噪声
+      // 显式关闭以兼容旧引擎/防止默认变更
       await engineRepo.setDither(false);
       await engineRepo.setNoiseShaping(false);
       await engineRepo.setAutoEq(autoEq);

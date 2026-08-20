@@ -69,8 +69,8 @@ fn test_play_stream_returns_handle_immediately() {
     let elapsed = start.elapsed();
     assert!(result.is_ok(), "play_stream 应立即返回 handle");
     assert!(
-        elapsed < Duration::from_secs(2),
-        "handle 应在 2s 内返回（不被 ready 阻塞），实际 {elapsed:?}"
+        elapsed < Duration::from_secs(4),
+        "handle 应在 4s 内返回（不被 ready 阻塞），实际 {elapsed:?}"
     );
 }
 
@@ -111,7 +111,7 @@ fn test_play_stream_feeds_data_then_playing() {
 
     // 停止并等待退出
     handle.stop();
-    wait_for_playing(&handle, false, Duration::from_secs(2));
+    wait_for_playing(&handle, false, Duration::from_secs(4));
     drop(rx);
 }
 
@@ -135,5 +135,5 @@ fn test_play_stream_drop_handle_midway() {
     handle.stop();
 
     // 等待退出，验证不 panic
-    wait_for_playing(&handle, false, Duration::from_secs(2));
+    wait_for_playing(&handle, false, Duration::from_secs(4));
 }

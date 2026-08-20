@@ -76,11 +76,18 @@ impl CorrectionConfig {
             "harman_tilt" => rc::TargetCurve::HarmanTilt,
             other => return Err(format!("未知目标曲线: {other}（flat / harman_tilt）")),
         };
-        if !(64..=65536).contains(&self.taps) || self.taps % 2 != 0 {
+        if !(64..=65536).contains(&self.taps) || !self.taps.is_multiple_of(2) {
             return Err(format!("taps 需为 64..=65536 的偶数，当前 {}", self.taps));
         }
-        if !self.freq_min.is_finite() || !self.freq_max.is_finite() || self.freq_min <= 0.0 || self.freq_max <= self.freq_min {
-            return Err(format!("无效频率范围: {}..{} Hz", self.freq_min, self.freq_max));
+        if !self.freq_min.is_finite()
+            || !self.freq_max.is_finite()
+            || self.freq_min <= 0.0
+            || self.freq_max <= self.freq_min
+        {
+            return Err(format!(
+                "无效频率范围: {}..{} Hz",
+                self.freq_min, self.freq_max
+            ));
         }
         Ok(rc::CorrectionConfig {
             target,
@@ -89,7 +96,11 @@ impl CorrectionConfig {
             null_limit_db: self.null_limit_db,
             freq_range: (self.freq_min, self.freq_max),
             psycho_weighting: self.psycho_weighting,
-            smoothing_octave: if self.smoothing_octave > 0.0 { self.smoothing_octave } else { 1.0 / 6.0 },
+            smoothing_octave: if self.smoothing_octave > 0.0 {
+                self.smoothing_octave
+            } else {
+                1.0 / 6.0
+            },
             headroom_db: self.headroom_db,
         })
     }
@@ -101,7 +112,10 @@ pub fn parse_rew_text(text: String) -> Result<Vec<FreqPoint>, String> {
     let pts = rc::parse_rew_txt(&text)?;
     Ok(pts
         .into_iter()
-        .map(|p| FreqPoint { freq: p.freq, level_db: p.level_db })
+        .map(|p| FreqPoint {
+            freq: p.freq,
+            level_db: p.level_db,
+        })
         .collect())
 }
 
@@ -125,7 +139,10 @@ pub fn generate_room_correction(
         points: report.points,
         measured: measured
             .into_iter()
-            .map(|p| FreqPoint { freq: p.freq, level_db: p.level_db })
+            .map(|p| FreqPoint {
+                freq: p.freq,
+                level_db: p.level_db,
+            })
             .collect(),
     })
 }

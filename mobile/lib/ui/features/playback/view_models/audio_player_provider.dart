@@ -17,6 +17,7 @@ import '../../../../data/repositories/audio_engine_repository.dart';
 import '../../../../data/services/rust_service.dart'
     show AnalyzeResult, readMetadata;
 import '../../../../data/services/strm_resolver.dart';
+import '../../../../data/services/stable_hash.dart';
 import '../../../core/providers/repositories.dart';
 import '../backends/playback_backend.dart';
 import '../../settings/view_models/dsp_provider.dart';
@@ -203,9 +204,14 @@ class PlayerNotifier extends Notifier<PlayerState> {
     state = state.copyWith(bitPerfect: v);
   }
 
-  /// 播放中切换 bit-perfect 时立即重新协调速率：否则只有下一曲的起播
-  /// 链路才会重协商，当前曲会停留在旧速率（开关看似没生效）。
+  /// 播放中切换 bit-perfect：当前曲的解码/consumer 已在旧速率下启动，
+  /// 中途重建输出流会造成产出/拉取速率失配。因此播放中只更新偏好，
+  /// 速率协调统一留到下一曲起播链路（_playCurrent 会按需 _negotiateOutputRate）。
   void reapplyBitPerfect() {
+    if (_engineLoaded) {
+      Log.d('Audio', '播放中切换 bit-perfect：当前曲保持原速率，下一曲生效');
+      return;
+    }
     unawaited(_negotiateOutputRate());
   }
 
@@ -477,6 +483,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
     if (_playingFromStream) {
       _currentFileRate = 0;
       if (token == _playToken) {
+        // 流式源没有本地标签，必须清掉上一首本地歌遗留的 ReplayGain，
+        // 否则 core 的 pending_replaygain_db 会原样套用到流式歌曲。
+        await _applyReplayGain(null);
         // 排空积压引擎事件：SMB 流式启动失败会在 core 留下 error/stopped
         // 事件（3s ready 超时机制），期间 isPlaying=false 时 _tick 不轮询，
         // 事件积压；若不排空，本次播放成功后会被当作"当前曲曲终"误切歌
@@ -732,10 +741,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
   /// 按曲目标签应用 ReplayGain 响度归一化（切歌时逐首调用）。
   /// 开关关闭或无标签：增益置 0、峰值清除（引擎行为回到原始响度）。
   /// track 标签优先，其次 album（与桌面端一致）。
-  Future<void> _applyReplayGain(String path) async {
+  Future<void> _applyReplayGain(String? path) async {
     final enabled = ref.read(preferencesRepositoryProvider).replayGain;
     try {
-      if (!enabled) {
+      // 流式播放/无本地路径：没有可读取的标签，复位到原始响度。
+      if (path == null || !enabled) {
         await _engineRepo.setReplaygainGain(0);
         await _engineRepo.setReplaygainPeak(null);
         return;
@@ -1131,6 +1141,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
             _streamErrorHandling = false;
             if (cached != null) {
               // 下载成功 → 以本地文件路径重播当前曲（复用完整装载流程）
+              // 这里也要重新应用当前曲的 ReplayGain，避免沿用之前本地歌/流式残留值。
+              _lastResolvedPath = cached;
+              await _applyReplayGain(cached);
               await _backend.play(cached);
               // 清积压事件（断流的 stopped 可能还在通道里）再恢复播放，
               // 避免被误当曲终切歌；同时清幽灵窗口（已恢复正常播放）
@@ -1440,7 +1453,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final cacheFile = File(
-        '${appDir.path}/.lrc_cache/${smbPath.hashCode}.lrc',
+        '${appDir.path}/.lrc_cache/${stableHash(smbPath)}.lrc',
       );
       if (await cacheFile.exists()) {
         final parsed = parseLrc(await cacheFile.readAsString());
@@ -1471,7 +1484,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final cacheFile = File(
-        '${appDir.path}/.lrc_cache/${davPath.hashCode}.lrc',
+        '${appDir.path}/.lrc_cache/${stableHash(davPath)}.lrc',
       );
       if (await cacheFile.exists()) {
         final parsed = parseLrc(await cacheFile.readAsString());
@@ -1585,7 +1598,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
       final sink = cacheFile.openWrite();
       var written = 0;
       try {
-        await for (final chunk in streamed.stream) {
+        // body 读取也需要超时：只给 TTFB 30s 的话，服务端发完 header 后
+        // 不再吐数据仍会无限挂起。
+        await for (final chunk in streamed.stream.timeout(
+          const Duration(seconds: 30),
+        )) {
           sink.add(chunk);
           written += chunk.length;
         }
@@ -1653,7 +1670,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
     if (!song.hasCover || song.path == null) return;
     if (song.coverUrl != null) return;
     final appDir = await getApplicationDocumentsDirectory();
-    final cacheFile = File('${appDir.path}/.covers/${song.path!.hashCode}.jpg');
+    final cacheFile = File(
+      '${appDir.path}/.covers/${stableHash(song.path!)}.jpg',
+    );
     if (await cacheFile.exists()) {
       song.coverUrl = cacheFile.path;
       state = state.copyWith(); // 封面就绪，触发 UI 刷新

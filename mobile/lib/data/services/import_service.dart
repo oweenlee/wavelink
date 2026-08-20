@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
@@ -11,6 +10,7 @@ import 'media_store_channel.dart';
 import 'subsonic_service.dart';
 import 'smb_service.dart';
 import 'webdav_service.dart';
+import 'stable_hash.dart';
 import 'log.dart';
 
 /// 音乐文件导入服务
@@ -239,7 +239,7 @@ class ImportService {
         if (meta.hasCover && meta.coverBytes.isNotEmpty) {
           try {
             final cacheFile = File(
-              '${cacheDir.path}/${song.path!.hashCode}.jpg',
+              '${cacheDir.path}/${stableHash(song.path!)}.jpg',
             );
             await cacheFile.writeAsBytes(meta.coverBytes);
             song.coverUrl = cacheFile.path;
@@ -278,7 +278,7 @@ class ImportService {
           if (meta.hasCover && meta.coverBytes.isNotEmpty) {
             try {
               final cacheFile = File(
-                '${cacheDir.path}/${file.path.hashCode}.jpg',
+                '${cacheDir.path}/${stableHash(file.path)}.jpg',
               );
               await cacheFile.writeAsBytes(meta.coverBytes);
               coverUrl = cacheFile.path;
@@ -288,7 +288,7 @@ class ImportService {
           }
 
           song = Song(
-            id: 'imp_${_stableHash(file.path)}',
+            id: 'imp_${stableHash(file.path)}',
             title: title,
             artist: artist,
             album: albumName,
@@ -325,16 +325,6 @@ class ImportService {
     return name.replaceAll(RegExp(r'\.[^.]+$'), '');
   }
 
-  /// FNV-1a 64-bit hash，比 Dart hashCode 碰撞概率低得多
-  static String _stableHash(String input) {
-    var hash = 0xcbf29ce484222325;
-    for (final byte in utf8.encode(input)) {
-      hash ^= byte;
-      hash = (hash * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF;
-    }
-    return hash.toRadixString(16).padLeft(16, '0');
-  }
-
   /// 按文件大小估算时长（仅 NAS 等无法读取元数据时的占位）。
   /// [pathOrName] 用于按扩展名区分码率假设；不取整分钟，返回秒级 Duration。
   static Duration estimateDuration(int fileSizeBytes, String? pathOrName) {
@@ -348,8 +338,7 @@ class ImportService {
   /// 兼容 `01. Artist - Title` 轨道号前缀。解析不到艺术家时返回 null。
   static ({String? artist, String title}) parseArtistTitle(String name) {
     // 去掉开头的轨道号（"01 " / "01- " / "01. " 等）
-    final t =
-        name.replaceFirst(RegExp(r'^\d{1,3}\s*[.。\-]\s*'), '');
+    final t = name.replaceFirst(RegExp(r'^\d{1,3}\s*[.。\-]\s*'), '');
     final sep = t.indexOf(' - ');
     if (sep > 0) {
       final artist = t.substring(0, sep).trim();
@@ -407,7 +396,7 @@ class ImportService {
     final title = name.replaceAll(RegExp(r'\.[^.]+$'), '');
     final parsed = parseArtistTitle(title);
     return Song(
-      id: 'imp_${_stableHash(file.path)}',
+      id: 'imp_${stableHash(file.path)}',
       title: parsed.title,
       artist: parsed.artist ?? '未知艺术家',
       album: '导入的音乐',
@@ -435,7 +424,9 @@ class ImportService {
       try {
         final bytes = await rs.getCoverBytes(song.path!);
         if (bytes.isNotEmpty) {
-          final cacheFile = File('${cacheDir.path}/${song.path!.hashCode}.jpg');
+          final cacheFile = File(
+            '${cacheDir.path}/${stableHash(song.path!)}.jpg',
+          );
           await cacheFile.writeAsBytes(bytes);
           song.coverUrl = cacheFile.path;
           song.hasCover = true;
@@ -451,7 +442,9 @@ class ImportService {
     try {
       final bytes = await MediaStoreChannel.getArtwork(pid);
       if (bytes != null && bytes.isNotEmpty) {
-        final cacheFile = File('${cacheDir.path}/${song.path!.hashCode}.jpg');
+        final cacheFile = File(
+          '${cacheDir.path}/${stableHash(song.path!)}.jpg',
+        );
         await cacheFile.writeAsBytes(bytes);
         song.coverUrl = cacheFile.path;
         song.hasCover = true;

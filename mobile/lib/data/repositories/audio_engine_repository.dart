@@ -78,9 +78,6 @@ class AudioEngineRepository {
   Future<void> stop() => rs.engineStop();
   Future<void> seek(double posSecs) => rs.engineSeek(posSecs);
 
-  /// 从引擎 ringbuf 读取交错立体声 PCM（Android 流式播放拉取用）
-  Future<Float32List> readPcm(int frames) => rs.engineReadSamplesFrames(frames);
-
   /// 设置引擎输出采样率（下次播放生效，iOS bit-perfect 协调用）
   Future<void> setOutputSampleRate(int rate) =>
       rs.engineSetOutputSampleRate(rate: rate);
@@ -216,7 +213,8 @@ class AudioEngineRepository {
       final file = await _analysisCacheFile(path);
       if (file == null || !await file.exists()) return null;
       final mtimeMs = (await File(path).lastModified()).millisecondsSinceEpoch;
-      final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      final data =
+          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
       // 音频文件内容已变化（路径复用但 mtime 不同）→ 缓存作废重算
       if (data['mtimeMs'] != mtimeMs) return null;
       return rs.AnalyzeResult(

@@ -132,7 +132,7 @@ impl DspPipeline {
             limiter: TruePeakLimiter::new(channels, 0.0),
             dither: Dither::new(channels, bits, 1.0),
             limiter_enabled: true,
-            dither_enabled: true,
+            dither_enabled: false,
             volume: volume.clamp(0.0, 2.0),
             post_clip_enabled: volume > 1.0,
             sample_rate: sr,

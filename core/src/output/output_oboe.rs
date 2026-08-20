@@ -468,16 +468,10 @@ impl AudioOutput for AudioOutputOboe {
         let old = self.buffer_ms;
         self.buffer_ms = ms;
         info!("Oboe 缓冲调整: {}ms → {}ms", old, ms);
-        // 重建 ringbuf + stream 以应用新缓冲大小
-        let buf_samples =
-            (self.sample_rate as f32 * ms as f32 / 1000.0) as usize * self.channels as usize;
-        let rb = HeapRb::<f32>::new(buf_samples.max(64));
-        let (_prod, new_cons) = rb.split();
-        {
-            let mut guard = self.inner.consumer.lock();
-            guard.clear();
-            *guard = new_cons;
-        }
+        // 注意：不能在这里用 let (_prod, new_cons) = rb.split() 替换 consumer。
+        // 正在运行的 consumer 线程持有旧 producer，原地丢弃 producer 会让它继续
+        // 写进无人读取的旧 ringbuf，输出永久停滞。ringbuf 大小留到下次起播/seek
+        // 的 swap_consumer 再生效；这里只重建 stream（不换 producer/consumer）。
         if let Err(e) = rebuild_stream(self) {
             error!("Oboe 重建 stream 失败 (缓冲调整): {}", e);
             self.buffer_ms = old; // 回退
