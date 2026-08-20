@@ -31,8 +31,9 @@ class WebdavService {
   static wd.Client? _client;
   static String? _clientKey;
 
-  /// 扫描进行中标记：期间禁止重复扫描（与 mobile 一致）。
-  static bool _scanning = false;
+  /// 进行中的扫描 future：扫描中再次触发则共享结果，而非静默返回空
+  /// （此前 `if (_scanning) return const []` 让对话框显示「0 首」误导用户）。
+  static Future<List<Track>>? _inFlightScan;
 
   /// 进行中的下载（按 davPath 去重），并发调用共享同一次下载。
   static final Map<String, Future<String?>> _downloading = {};
@@ -127,11 +128,26 @@ class WebdavService {
 
   /// 递归扫描音频文件，按 [onBatch] 增量回调（每 20 首一批）。
   /// 返回全量结果（调用方据此 prune 旧索引）。
+  ///
+  /// 防重入：已有扫描在进行时等待其完成并共享结果（此前静默返回空列表，
+  /// 对话框显示「0 首」误导用户）。
   static Future<List<Track>> scanWebdav({
     void Function(List<Track> batch)? onBatch,
   }) async {
-    if (_scanning) return const [];
-    _scanning = true;
+    final inflight = _inFlightScan;
+    if (inflight != null) return inflight;
+    final f = _scanWebdavNow(onBatch: onBatch);
+    _inFlightScan = f;
+    try {
+      return await f;
+    } finally {
+      if (identical(_inFlightScan, f)) _inFlightScan = null;
+    }
+  }
+
+  static Future<List<Track>> _scanWebdavNow({
+    void Function(List<Track> batch)? onBatch,
+  }) async {
     lastError = null;
     final root = rootPath ?? '';
     List<Track> tracks;
@@ -162,8 +178,6 @@ class WebdavService {
     } catch (e) {
       lastError = '$e';
       tracks = const [];
-    } finally {
-      _scanning = false;
     }
     if (onBatch != null && tracks.isNotEmpty) {
       for (var i = 0; i < tracks.length; i += 20) {
@@ -430,6 +444,12 @@ class WebdavService {
       );
       if (total <= BigInt.zero) return false;
       final size = total.toInt();
+      // 大文件不分片：每片 = size/4 整块进 Dart 堆，几百 MB 的 DSD/hi-res
+      // 会造成内存尖峰；50MB 以上直接回退顺序流式下载（与 mobile 对齐）。
+      if (size > 50 * 1024 * 1024) {
+        debugPrint('[WebdavService] 文件过大（$size B），跳过并行分片改用顺序下载');
+        return false;
+      }
       final chunkSize = (size + _parallelChunks - 1) ~/ _parallelChunks;
       await Future.wait([
         for (var i = 0; i < _parallelChunks; i++)
@@ -463,6 +483,15 @@ class WebdavService {
         }
       } finally {
         await sink.close();
+      }
+      // 完整性校验：拼接结果必须等于远端文件大小，短读/截断不能进入
+      // 正式缓存（否则下次播放命中截断文件）。不符先删掉拼接物，再返回
+      // false 回退顺序下载（read2File 重写 tmpFile）。
+      if (await tmpFile.length() != size) {
+        debugPrint(
+            '[WebdavService] 分片拼接长度不符（${await tmpFile.length()}/$size B），回退顺序下载');
+        await tmpFile.delete();
+        return false;
       }
       return true;
     } catch (e) {

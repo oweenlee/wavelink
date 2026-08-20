@@ -207,11 +207,17 @@ class PlayerController {
 
     // 恢复曲库：网络音源靠 SQLite 跨重启存活（直接读回）；本地文件夹保持
     // 每次启动重扫（与现状一致，且首次运行也会把本地曲库写入 DB）。
+    final swDb = Stopwatch()..start();
     await TrackRepository.init();
     try {
       final dbTracks = await TrackRepository.getAll();
       if (dbTracks.isNotEmpty) {
         addLibraryFiles(dbTracks);
+        debugPrint(
+            '[perf] DB 曲库恢复 ${dbTracks.length} 首: ${swDb.elapsedMilliseconds}ms');
+        // DB 恢复后立即广播：UI 提前显示曲库与封面（此前要等全部文件夹
+        // 扫完才广播一次，大曲库开场长时间空白，列表“显得慢”）。
+        _librarySC.add(null);
         // 补提网络源封面：封面文件可能在缓存清理/历史操作中丢失，
         // 后台快速路径（已缓存直接写回）+ 缺失才远程提取，不阻塞启动。
         final remote =
@@ -223,6 +229,7 @@ class PlayerController {
     }
     if (_folders.isNotEmpty) {
       for (final folder in _folders) {
+        final swFolder = Stopwatch()..start();
         final scanned = await scanFolder(folder);
         addLibraryFiles(scanned);
         try {
@@ -230,15 +237,51 @@ class PlayerController {
         } catch (e) {
           _reportError('曲库写入失败，扫描结果可能未保存', e);
         }
-        // 后台提取本地封面（不阻塞 init；完成后广播刷新）
+        debugPrint('[perf] 扫描 $folder: ${scanned.length} 首, '
+            '${swFolder.elapsedMilliseconds}ms');
+        // 每个文件夹扫完立即广播（此前等全部结束才显示一次）
+        _librarySC.add(null);
+        // 扫描期已直接落盘封面并回填 coverUrl（library.dart _seedCover），
+        // 此处仅补漏（扫描中标签读取失败的文件），后台执行不阻塞 UI。
         extractCoversFor(scanned);
       }
-      _librarySC.add(null);
     }
     // 恢复上次的播放队列/曲目/进度（曲库已在上面就绪）
     await _restorePlayback();
     // 曲库就绪后清理孤儿缓存（本地文件夹重扫 + 源差集同步均已落库）
     await _cleanOrphanCaches();
+    // 首次启动时的缩略图回填：老缓存封面（升级前落盘）没有缩略图，
+    // 后台限并发补齐，确保列表滚动也吃到缩略图收益（会话内仅执行一次）。
+    unawaited(_backfillCoverThumbs());
+  }
+
+  /// 会话级缩略图回填：扫描曲库中已带封面但缺缩略图的曲目，限并发生成。
+  /// 每张只读一次原图再编码，之后的启动全是 existsSync 快速跳过。
+  /// hasSource ?? 不需要：仅处理 coverUrl 为本地缓存文件的（网络 URL 无缩略图）。
+  static bool _thumbSwept = false;
+
+  Future<void> _backfillCoverThumbs() async {
+    if (_thumbSwept) return;
+    _thumbSwept = true;
+    final files = _library
+        .map((t) => t.coverUrl)
+        .whereType<String>()
+        .where((u) => !u.startsWith('http://') && !u.startsWith('https://'))
+        .map(File.new)
+        .toList();
+    if (files.isEmpty) return;
+    var i = 0;
+    final sw = Stopwatch()..start();
+    Future<void> worker() async {
+      while (i < files.length) {
+        final f = files[i++];
+        await CoverCache.instance.ensureThumb(f);
+      }
+    }
+
+    await Future.wait(List.generate(4, (_) => worker()));
+    debugPrint('[perf] 缩略图回填: ${files.length} 张, '
+        '${sw.elapsedMilliseconds}ms');
   }
 
   /// 恢复音频输出与 DSP 设置（prefs 键与设置页一致）；引擎未加载则跳过。
@@ -345,7 +388,15 @@ class PlayerController {
       map[t.id] = t;
     }
     for (final t in tracks) {
-      map[t.id] = t;
+      // 扫描重建的 Track 实例常不带封面（引擎未加载/标签读取失败时）；
+      // 库里（含 DB 恢复）的旧实例可能已有 coverUrl：保留旧值，避免每次
+      // 启动扫描后封面被清掉、再等提取管线重新关联（灰阶闪现的元凶之一）。
+      final old = map[t.id];
+      if (old != null && t.coverUrl == null && old.coverUrl != null) {
+        map[t.id] = t.copyWith(coverUrl: old.coverUrl);
+      } else {
+        map[t.id] = t;
+      }
     }
     _library = map.values.toList();
     _queueBase = _library;
@@ -502,14 +553,24 @@ class PlayerController {
 
   // ---- 封面提取（本地文件）----
 
+  /// 会话内已确认无内嵌封面的本地曲目（提取失败过）：
+  /// 扫描期已读过一次元数据确认无封面，再重复提取纯浪费 FFI + IO。
+  final Set<String> _coverMissing = {};
+
   /// 为本地/NAS 曲目批量提取封面（后台、限并发）。已缓存或已带 coverUrl 的跳过。
   /// 不阻塞调用方；提取成功写回 [Track.coverUrl] 并广播 libraryStream 增量刷新。
   void extractCoversFor(List<Track> tracks) {
-    final pending = tracks
-        .where((t) =>
-            (t.source == TrackSource.local || t.source == TrackSource.nas) &&
-            t.coverUrl == null)
-        .toList();
+    final pending = tracks.where((t) {
+      if (t.source == TrackSource.subsonic) {
+        // Subsonic 封面是远程 URL（含会过期的鉴权 token），必须下载到本地缓存，
+        // 否则数小时后 token 失效 → 封面 401。故即使已有 coverUrl 也要走提取
+        // （下载后 _applyCoverUrl 会把 coverUrl 换成本地路径）。仅配置了才取。
+        return SubsonicService.isConfigured;
+      }
+      return (t.source == TrackSource.local || t.source == TrackSource.nas) &&
+          t.coverUrl == null &&
+          !_coverMissing.contains(t.id);
+    }).toList();
     if (pending.isEmpty) return;
     unawaited(_runCoverExtraction(pending));
   }
@@ -536,15 +597,26 @@ class PlayerController {
     Future<void> worker() async {
       while (i < todo.length) {
         final t = todo[i++];
-        final path = t.source == TrackSource.nas
-            ? await cache.extractNas(t)
-            : await cache.extractLocal(t);
-        if (path != null) _applyCoverUrl(t, path);
+        final path = switch (t.source) {
+          TrackSource.nas => await cache.extractNas(t),
+          TrackSource.subsonic => await cache.extractSubsonic(t),
+          _ => await cache.extractLocal(t),
+        };
+        if (path != null) {
+          _applyCoverUrl(t, path);
+        } else if (t.source == TrackSource.local) {
+          // 会话级负缓存：确认无封面后本会话不再重复提取。
+          _coverMissing.add(t.id);
+        }
       }
     }
 
     const concurrency = 4;
+    final sw = Stopwatch()..start();
     await Future.wait(List.generate(concurrency, (_) => worker()));
+    debugPrint(
+        '[perf] 封面提取完成: ${todo.length} 首, ${sw.elapsedMilliseconds}ms '
+        '(并发 $concurrency)');
     _librarySC.add(null);
   }
 
@@ -822,6 +894,15 @@ class PlayerController {
       debugPrint('[_playWebdav] fullUrl null for $davPath');
       return;
     }
+    // 缓存命中：本地直播，不再重新从远端拉流
+    // （兑现「边下边播读完 rename 成正式缓存、下次播放秒起」的承诺）。
+    final cached = await WebdavService.cachedLocalPath(davPath);
+    if (cached != null) {
+      _streaming = false;
+      await _engine!.play(cached);
+      _setPlaying(true);
+      return;
+    }
     final cache = await WebdavService.cachePathFor(davPath);
     final err = await _engine!.playWebdavStream(
       url: url,
@@ -844,6 +925,10 @@ class PlayerController {
       _setPlaying(true);
     } else {
       debugPrint('[_playWebdav] 回退下载失败: $davPath');
+      // 流已停 + 下载失败：引擎静默。不复位的话 _playing 残留上一首的 true，
+      // UI 显示"播放中"但无声。
+      _streaming = false;
+      _setPlaying(false);
     }
   }
 
@@ -851,6 +936,14 @@ class PlayerController {
     final smbPath = t.remotePath;
     if (smbPath == null) {
       debugPrint('[_playNas] remotePath null for ${t.id}');
+      return;
+    }
+    // 缓存命中：本地直播（兑现边下边播缓存承诺，免去保活/重连/拉流）。
+    final cached = await NasService.cachedLocalPath(smbPath);
+    if (cached != null) {
+      _streaming = false;
+      await _engine!.play(cached);
+      _setPlaying(true);
       return;
     }
     // 播放前确保 SMB 会话存活（扫描后可能已超时/断开）。
@@ -878,6 +971,9 @@ class PlayerController {
       _setPlaying(true);
     } else {
       debugPrint('[_playNas] 回退下载失败: $smbPath');
+      // 同 [_playWebdav]：流已停 + 下载失败，必须复位播放态。
+      _streaming = false;
+      _setPlaying(false);
     }
   }
 
@@ -948,6 +1044,14 @@ class PlayerController {
   }
 
   Future<void> _playStrmSmb(String smbPath) async {
+    // 缓存命中：本地直播（SMB 目标曾边下边播过则秒起）。
+    final cached = await NasService.cachedLocalPath(smbPath);
+    if (cached != null) {
+      _streaming = false;
+      await _engine!.play(cached);
+      _setPlaying(true);
+      return;
+    }
     final connErr = await NasService.connect();
     if (connErr != null) debugPrint('[_playStrmSmb] connect failed: $connErr');
     final cache = await NasService.cachePathFor(smbPath);
@@ -970,6 +1074,8 @@ class PlayerController {
       _setPlaying(true);
     } else {
       debugPrint('[_playStrmSmb] 回退下载失败: $smbPath');
+      _streaming = false;
+      _setPlaying(false);
     }
   }
 
@@ -977,6 +1083,14 @@ class PlayerController {
     final url = WebdavService.fullUrlFor(davPath);
     if (url == null) {
       debugPrint('[_playStrmDav] fullUrl null: $davPath');
+      return;
+    }
+    // 缓存命中：本地直播（与 [_playWebdav] 同构）。
+    final cached = await WebdavService.cachedLocalPath(davPath);
+    if (cached != null) {
+      _streaming = false;
+      await _engine!.play(cached);
+      _setPlaying(true);
       return;
     }
     final cache = await WebdavService.cachePathFor(davPath);
@@ -1001,6 +1115,8 @@ class PlayerController {
       _setPlaying(true);
     } else {
       debugPrint('[_playStrmDav] 回退下载失败: $davPath');
+      _streaming = false;
+      _setPlaying(false);
     }
   }
 
@@ -1032,8 +1148,12 @@ class PlayerController {
   }
 
   Future<void> _loadLyrics(Track t) async {
+    final id = t.id;
     final lines = await loadLyricsFor(t);
-    _lyricsSC.add(lines);
+    // 竞态守卫：快速切歌时旧请求晚到，若已切到别的曲则丢弃，避免覆盖新歌词；
+    // dispose 后 _lyricsSC 已关闭，add 会抛 StateError，需先判 isClosed。
+    if (id != currentTrack?.id) return;
+    if (!_lyricsSC.isClosed) _lyricsSC.add(lines);
   }
 
   Future<void> togglePlay() async {

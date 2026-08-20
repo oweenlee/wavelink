@@ -125,24 +125,15 @@ StrmTarget? parseStrmContent(
 
 /// 从 URL 提取音频扩展名（带点，如 `.flac`）；识别不到返回 `.audio`。
 /// 播放缓存文件名与 STRM 目标分类共用。
+///
+/// 复用 [audioExtensions]（scan_helpers）而非维护第二份硬编码列表，
+/// 避免遗漏（此前缺 `.alac`/`.aif`，导致这两类 URL 型 strm 被误判为
+/// `.audio` 直接丢弃）。
 String strmExtFromUrl(String url) {
   final uri = Uri.tryParse(url);
   if (uri == null) return '.audio';
   final path = uri.path.toLowerCase();
-  for (final ext in [
-    '.flac',
-    '.wav',
-    '.mp3',
-    '.aac',
-    '.ogg',
-    '.m4a',
-    '.opus',
-    '.dsf',
-    '.dff',
-    '.aiff',
-    '.ape',
-    '.wv',
-  ]) {
+  for (final ext in audioExtensions) {
     if (path.endsWith(ext)) return ext;
   }
   return '.audio';

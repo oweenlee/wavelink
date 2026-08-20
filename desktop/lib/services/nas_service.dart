@@ -53,6 +53,10 @@ class NasService {
   /// 已连接时先用 [keepalive] 探测会话是否仍存活（Dart 侧的 [_state] 是缓存，
   /// 可能因超时/后台/临时测试断开而陈旧），不健康则强制重建。这能避免
   /// 「状态显示已连接，实际 Rust SESSION 已清空」导致的 `not connected` 误报。
+  ///
+  /// 并发调用时**等待进行中的连接完成**而非当成成功返回：此前
+  /// `_state==connecting` 直接 `return null`，调用方（scan 等）会在连接真正
+  /// 建立前就发 SMB 请求 → 误报失败。
   static Future<String?> connect() async {
     if (!isConfigured) return 'NAS 未配置（需 host + share）';
     if (_state == NasConnectionState.connected) {
@@ -64,7 +68,20 @@ class NasService {
       debugPrint('[NasService.connect] cached connected but session dead, reconnect');
       _setState(NasConnectionState.disconnected);
     }
-    if (_state == NasConnectionState.connecting) return null;
+    final inflight = _connecting;
+    if (inflight != null) return inflight;
+    final f = _doConnect();
+    _connecting = f;
+    try {
+      return await f;
+    } finally {
+      if (identical(_connecting, f)) _connecting = null;
+    }
+  }
+
+  static Future<String?>? _connecting;
+
+  static Future<String?> _doConnect() async {
     _setState(NasConnectionState.connecting);
     try {
       final c = NetworkSourceConfig.instance;
@@ -191,7 +208,26 @@ class NasService {
   /// 目录遍历**并行化**：同一层的子目录用 [Future.wait] 并发列出，
   /// 实际并发数由 Rust 侧 SMB 读取池（10 条连接）限流。相比原先的
   /// 逐目录串行递归，大共享（成百上千目录）扫描速度提升一个数量级。
+  ///
+  /// 防重入：已有扫描在进行时等待其完成并共享结果（此前无 guarding，
+  /// 双击/重复触发会并发扫两份，且第二次在连接建立前就失败误报）。
   static Future<List<Track>> scan({
+    void Function(List<Track> batch)? onBatch,
+  }) async {
+    final inflight = _scanning;
+    if (inflight != null) return inflight;
+    final f = _scanNow(onBatch: onBatch);
+    _scanning = f;
+    try {
+      return await f;
+    } finally {
+      if (identical(_scanning, f)) _scanning = null;
+    }
+  }
+
+  static Future<List<Track>>? _scanning;
+
+  static Future<List<Track>> _scanNow({
     void Function(List<Track> batch)? onBatch,
   }) async {
     final err = await connect();
@@ -387,10 +423,9 @@ class NasService {
     }
   }
 
-  /// 回退：整曲读入本地缓存后由引擎播放（边下边播失败时使用）。
-  static Future<String?> downloadToLocal(Track track) async {
-    final smbPath = track.remotePath;
-    if (smbPath == null) return null;
+  /// 缓存命中检查（存在且非空即命中）；命名规则与 [cachePathFor] 一致。
+  /// 供播放前短路：已缓存的歌本地直播，不再重新从远端拉流。
+  static Future<String?> cachedLocalPath(String smbPath) async {
     try {
       final target = await cachePathFor(smbPath);
       if (target == null) return null;
@@ -398,19 +433,30 @@ class NasService {
       if (await localFile.exists() && await localFile.length() > 0) {
         return localFile.path;
       }
-      final bytes = await frb_smb.smbReadFile(path: smbPath);
-      if (bytes.isEmpty) return null;
-      await localFile.writeAsBytes(bytes, flush: true);
-      return localFile.path;
+      return null;
     } catch (e) {
       lastError = '$e';
       return null;
     }
   }
 
+  /// 回退：整曲流式读入本地缓存（512KB 分块，不整曲进内存），
+  /// 先写 `.part` 再原子改名——中断/失败不留下半截缓存被后续误命中。
+  /// 完整性校验：以远端实时大小为准（曲库 fileSize 可能过期，仅作兼容回退），
+  /// 短读/截断直接丢弃，避免"坏缓存永久命中"。
+  static Future<String?> downloadToLocal(Track track) {
+    final smbPath = track.remotePath;
+    if (smbPath == null) return Future.value(null);
+    return _downloadToLocal(smbPath, track.fileSize);
+  }
+
   /// 按 smb 路径回退下载（STRM 的 smb 目标无完整 [Track]，用路径版）。
-  /// 命中已有缓存则直接返回，逻辑与 [downloadToLocal] 一致。
-  static Future<String?> downloadToLocalPath(String smbPath) async {
+  /// 逻辑与 [downloadToLocal] 一致。
+  static Future<String?> downloadToLocalPath(String smbPath) =>
+      _downloadToLocal(smbPath, null);
+
+  static Future<String?> _downloadToLocal(String smbPath, int? sizeHint) async {
+    File? tmpFile;
     try {
       final target = await cachePathFor(smbPath);
       if (target == null) return null;
@@ -418,12 +464,44 @@ class NasService {
       if (await localFile.exists() && await localFile.length() > 0) {
         return localFile.path;
       }
-      final bytes = await frb_smb.smbReadFile(path: smbPath);
-      if (bytes.isEmpty) return null;
-      await localFile.writeAsBytes(bytes, flush: true);
+      tmpFile = File('${localFile.path}.part');
+      final sink = tmpFile.openWrite();
+      var written = 0;
+      try {
+        await for (final chunk in frb_smb.smbReadFileStream(path: smbPath)) {
+          sink.add(chunk);
+          written += chunk.length;
+        }
+      } finally {
+        await sink.close();
+      }
+      if (written == 0) {
+        await tmpFile.delete();
+        return null;
+      }
+      // 完整性校验：优先远端实时大小（扫描期 fileSize 在远端文件变更后会
+      // 过期，仅作探测失败时的兼容回退）。
+      int? expected;
+      try {
+        expected = (await frb_smb.smbFileSize(path: smbPath)).toInt();
+      } catch (_) {
+        expected = sizeHint;
+      }
+      if (expected != null && expected > 0 && written != expected) {
+        debugPrint(
+            '[NasService] 下载不完整（$written/${expected}B），丢弃: $smbPath');
+        await tmpFile.delete();
+        return null;
+      }
+      await tmpFile.rename(localFile.path);
       return localFile.path;
     } catch (e) {
       lastError = '$e';
+      if (tmpFile != null) {
+        try {
+          if (await tmpFile.exists()) await tmpFile.delete();
+        } catch (_) {}
+      }
       return null;
     }
   }

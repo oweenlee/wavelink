@@ -49,8 +49,11 @@ final libraryProvider = StreamProvider<Object>(
     (ref) => ref.watch(playerControllerProvider).libraryStream.map((_) => Object()));
 
 /// 网络音源配置变化（保存凭据 / 切换展示开关时广播），供侧栏刷新状态。
-final networkConfigProvider = StreamProvider<void>(
-    (ref) => NetworkSourceConfig.instance.onChange);
+/// 与上方 favorites/library 等「纯通知」流一致：map 成每次新分配的 Object
+/// 强制每回都通知，避免 Riverpod 因 AsyncData(null) 相等而跳过 rebuild
+/// （L38-41 注释描述的同一类 bug，本 provider 此前漏修）。
+final networkConfigProvider = StreamProvider<Object>(
+    (ref) => NetworkSourceConfig.instance.onChange.map((_) => Object()));
 
 /// NAS 连接状态流（disconnected/connecting/connected/error）。
 final nasStateProvider = StreamProvider<NasConnectionState>(

@@ -270,11 +270,11 @@ pub async fn smb_disconnect() {
 pub async fn smb_list_shares() -> Result<Vec<SmbShareInfo>, String> {
     let mut guard = SESSION.lock().await;
     let sess = guard.as_mut().ok_or("not connected")?;
-    let shares: Vec<ShareInfo> = sess
-        .client
-        .list_shares()
-        .await
-        .map_err(err_str)?;
+    let shares: Vec<ShareInfo> =
+        match tokio::time::timeout(IO_READ_TIMEOUT, sess.client.list_shares()).await {
+            Ok(r) => r.map_err(err_str)?,
+            Err(_) => return Err("response timeout (10s)".to_string()),
+        };
     Ok(shares
         .into_iter()
         .map(|s| SmbShareInfo {
@@ -657,16 +657,20 @@ pub async fn smb_read_file_range(
     result
 }
 
-/// 远端文件大小（扫描时判断是否有变化，避免重复下载）#[frb]
+/// 远端文件大小（下载完整性校验用）#[frb]
 pub async fn smb_file_size(path: String) -> Result<u64, String> {
     let mut guard = SESSION.lock().await;
     let sess = guard.as_mut().ok_or("not connected")?;
     let tree = sess.tree.as_mut().ok_or("no share connected")?;
-    let entries: Vec<DirectoryEntry> = sess
-        .client
-        .list_directory(tree, &path)
-        .await
-        .map_err(err_str)?;
+    let entries: Vec<DirectoryEntry> = match tokio::time::timeout(
+        IO_READ_TIMEOUT,
+        sess.client.list_directory(tree, &path),
+    )
+    .await
+    {
+        Ok(r) => r.map_err(err_str)?,
+        Err(_) => return Err("response timeout (10s)".to_string()),
+    };
     entries
         .into_iter()
         .find(|e| !e.is_directory)

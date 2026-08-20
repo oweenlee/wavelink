@@ -58,8 +58,14 @@ class FakeEngine extends Engine {
   Future<int> outputSampleRate() async => 48000;
 
   @override
-  Future<String?> reinitialize({bool exclusiveMode = false}) async {
+  Future<String?> reinitialize({
+    bool exclusiveMode = false,
+    bool? bitPerfect,
+    bool? autoSampleRate,
+  }) async {
     reinitializedExclusive = exclusiveMode;
+    if (bitPerfect != null) calls['bitPerfect'] = bitPerfect;
+    if (autoSampleRate != null) calls['autoSampleRate'] = autoSampleRate;
     return null;
   }
 

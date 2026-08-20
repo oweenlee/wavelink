@@ -404,24 +404,40 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 key: const Key('sw_bitperfect'),
                 icon: LucideIcons.shieldCheck,
                 title: 'Bit-Perfect 直通',
-                description: '绕过采样率转换与 DSP，原始信号直出',
-                trailing: _accentSwitch(_bitPerfect, (v) {
+                description: '绕过采样率转换与 DSP，原始信号直出；切换将重启引擎',
+                trailing: _accentSwitch(_bitPerfect, (v) async {
                   setState(() {
                     _bitPerfect = v;
                     _saveBool('engine.bitPerfect', v);
                   });
+                  // 立即重初始化使开关生效（此前仅落盘，用户以为生效实际没有）
+                  final messenger = ScaffoldMessenger.of(context);
+                  final err = await engine?.reinitialize(bitPerfect: v);
+                  if (err != null && mounted) {
+                    messenger.showSnackBar(
+                        SnackBar(content: Text('Bit-Perfect 切换失败：$err')));
+                  }
+                  _refreshSr();
                 }),
               ),
               SettingTile(
                 key: const Key('sw_autosr'),
                 icon: LucideIcons.refreshCw,
                 title: '自动采样率',
-                description: '按源文件采样率自动切换输出',
-                trailing: _accentSwitch(_autoSampleRate, (v) {
+                description: '按源文件采样率自动切换输出；切换将重启引擎',
+                trailing: _accentSwitch(_autoSampleRate, (v) async {
                   setState(() {
                     _autoSampleRate = v;
                     _saveBool('engine.autoSampleRate', v);
                   });
+                  // 立即重初始化使开关生效（此前仅落盘，用户以为生效实际没有）
+                  final messenger = ScaffoldMessenger.of(context);
+                  final err = await engine?.reinitialize(autoSampleRate: v);
+                  if (err != null && mounted) {
+                    messenger.showSnackBar(
+                        SnackBar(content: Text('自动采样率切换失败：$err')));
+                  }
+                  _refreshSr();
                 }),
               ),
               SettingTile(
@@ -853,6 +869,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       );
 
   /// 统一下拉框。
+  ///
+  /// 值不在候选项时回退 null（显示 hint），避免 DropdownButton 构建期抛
+  /// "exactly one item with value" 断言（设备拔出 / prefs 残留旧值等场景）。
   Widget _dropdown<T>({
     required T? value,
     required List<DropdownMenuItem<T>> items,
@@ -860,19 +879,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     String? hint,
     Key? key,
     double width = 200,
-  }) =>
-      SizedBox(
-        width: width,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: AppTheme.s3,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppTheme.highlightStrong),
-          ),
-          child: DropdownButton<T>(
+  }) {
+    final T? safeValue = (value != null && items.any((i) => i.value == value))
+        ? value
+        : null;
+    return SizedBox(
+      width: width,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: AppTheme.s3,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppTheme.highlightStrong),
+        ),
+        child: DropdownButton<T>(
             key: key,
-            value: value,
+            value: safeValue,
             isExpanded: true,
             underline: const SizedBox.shrink(),
             icon: const Icon(LucideIcons.chevronDown,
@@ -887,6 +909,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
       );
+  }
 
   /// 带等宽读数的滑块行（SettingTile.child 用）。
   Widget _sliderWithLabel({

@@ -9,11 +9,13 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:path/path.dart' as p;
 
 import '../core/theme.dart';
+import '../core/app_anim.dart';
 import '../l10n/app_localizations.dart';
 import '../models/track.dart';
 import '../screens/network_dialogs.dart';
 import 'settings.dart';
 import '../services/cover.dart';
+import '../services/cover_cache.dart';
 import '../services/lyrics.dart';
 import '../services/network_source_config.dart';
 import '../services/player_controller.dart';
@@ -898,12 +900,17 @@ class _LibraryView extends ConsumerWidget {
                 itemBuilder: (c, i) {
                   final t = tracks[i];
                   final selected = t.id == currentId;
-                  return _TrackRow(
-                    player: player,
-                    track: t,
-                    index: i,
-                    selected: selected,
-                    onPlay: onPlay,
+                  // 列表入场交错动画（与 mobile AppAnim 同规格）：
+                  // 仅前 11 项生效，懒加载回收重建不重播。
+                  return AppAnim.listEntrance(
+                    _TrackRow(
+                      player: player,
+                      track: t,
+                      index: i,
+                      selected: selected,
+                      onPlay: onPlay,
+                    ),
+                    i,
                   );
                 },
               );
@@ -1750,21 +1757,35 @@ class CoverArt extends StatelessWidget {
     // 默认 Image(image:) 构造不接受，故此处分别构造。
     final fallback = _gradientFallback(radius);
     final cacheW = cacheWidth;
-    return isRemote
-        ? Image.network(
-            url,
-            key: ValueKey(url),
-            fit: BoxFit.cover,
-            cacheWidth: cacheW,
-            errorBuilder: (_, _, _) => fallback,
-          )
-        : Image.file(
-            File(url),
-            key: ValueKey(url),
-            fit: BoxFit.cover,
-            cacheWidth: cacheW,
-            errorBuilder: (_, _, _) => fallback,
-          );
+    if (isRemote) {
+      return Image.network(
+        url,
+        key: ValueKey(url),
+        fit: BoxFit.cover,
+        cacheWidth: cacheW,
+        errorBuilder: (_, _, _) => fallback,
+      );
+    }
+    final full = Image.file(
+      File(url),
+      key: ValueKey(url),
+      fit: BoxFit.cover,
+      cacheWidth: cacheW,
+      errorBuilder: (_, _, _) => fallback,
+    );
+    // 小尺寸场景优先读 320px 缩略图（CoverCache 落盘 `<原图>.thumb.jpg`）：
+    // 每行首显从整读 1~5MB 原图降为 ~30-60KB，千首曲库滚动不再磁盘峰值。
+    // 缩略图缺失（老缓存/回填未完成）经 errorBuilder 回退原图显示。
+    if (size <= CoverCache.thumbSize) {
+      return Image.file(
+        File(CoverCache.thumbPathFor(url)),
+        key: ValueKey('thumb:$url'),
+        fit: BoxFit.cover,
+        cacheWidth: cacheW,
+        errorBuilder: (_, _, _) => full,
+      );
+    }
+    return full;
   }
 
   Widget _gradientFallback(double radius) {
@@ -2392,12 +2413,15 @@ class _ArtistDetail extends ConsumerWidget {
               _sectionTitle(l10n.allTracks),
               const SizedBox(height: 8),
               ...artist.tracks.asMap().entries.map(
-                    (e) => _TrackRow(
-                      player: player,
-                      track: e.value,
-                      index: e.key,
-                      selected: e.value.id == player.currentTrack?.id,
-                      onPlay: (i) => player.playFrom(artist.tracks, i),
+                    (e) => AppAnim.listEntrance(
+                      _TrackRow(
+                        player: player,
+                        track: e.value,
+                        index: e.key,
+                        selected: e.value.id == player.currentTrack?.id,
+                        onPlay: (i) => player.playFrom(artist.tracks, i),
+                      ),
+                      e.key,
                     ),
                   ),
             ],
@@ -2456,12 +2480,15 @@ class _AlbumDetail extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
             children: tracks.asMap().entries.map(
-                  (e) => _TrackRow(
-                    player: player,
-                    track: e.value,
-                    index: e.key,
-                    selected: e.value.id == player.currentTrack?.id,
-                    onPlay: (i) => player.playFrom(tracks, i),
+                  (e) => AppAnim.listEntrance(
+                    _TrackRow(
+                      player: player,
+                      track: e.value,
+                      index: e.key,
+                      selected: e.value.id == player.currentTrack?.id,
+                      onPlay: (i) => player.playFrom(tracks, i),
+                    ),
+                    e.key,
                   ),
                 ).toList(),
           ),

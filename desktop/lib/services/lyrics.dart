@@ -103,28 +103,40 @@ Future<List<LyricLine>> loadLyricsFor(Track t) async {
   }
 }
 
-/// NAS(SMB) 远端歌词：与音频同目录同名的 .lrc/.LRC，全部读取并解码。
+/// NAS(SMB) 远端歌词：与音频同目录同名的 .lrc/.LRC，两个扩展名并行探测
+/// （SMB 多 RTT 协议，串行探测多一个往返延迟），命中即解码返回。
 Future<String?> fetchNasLyrics(String smbPath) async {
   // 确保 SMB 会话可用（内部 keepalive 探测，不健康则重建）
   if (await NasService.connect() != null) return null;
   final base = smbPath.replaceFirst(RegExp(r'\.[^.]+$'), '');
-  for (final ext in const ['.lrc', '.LRC']) {
-    try {
-      final bytes = await frb_smb.smbReadFile(path: '$base$ext');
-      if (bytes.isEmpty) continue;
-      return decodeLrcBytes(bytes);
-    } catch (_) {
-      // 文件不存在 / 读取失败：尝试下一个扩展名
-    }
+  final results = await Future.wait([
+    for (final ext in const ['.lrc', '.LRC']) _tryReadNasLrc('$base$ext'),
+  ]);
+  for (final r in results) {
+    if (r != null) return r;
   }
   return null;
 }
 
-/// WebDAV 远端歌词：与音频同目录同名的 .lrc/.LRC，全量读取并解码。
+Future<String?> _tryReadNasLrc(String path) async {
+  try {
+    final bytes = await frb_smb.smbReadFile(path: path);
+    if (bytes.isEmpty) return null;
+    return decodeLrcBytes(bytes);
+  } catch (_) {
+    // 文件不存在 / 读取失败：尝试下一个扩展名
+    return null;
+  }
+}
+
+/// WebDAV 远端歌词：与音频同目录同名的 .lrc/.LRC，并行探测命中即解码。
 Future<String?> fetchWebdavLyrics(String davPath) async {
   final base = davPath.replaceFirst(RegExp(r'\.[^.]+$'), '');
-  for (final ext in const ['.lrc', '.LRC']) {
-    final bytes = await WebdavService.readRemoteBytes('$base$ext');
+  final results = await Future.wait([
+    for (final ext in const ['.lrc', '.LRC'])
+      WebdavService.readRemoteBytes('$base$ext'),
+  ]);
+  for (final bytes in results) {
     if (bytes == null || bytes.isEmpty) continue;
     return decodeLrcBytes(bytes);
   }
@@ -132,6 +144,8 @@ Future<String?> fetchWebdavLyrics(String davPath) async {
 }
 
 /// 远程歌词缓存读写：命中缓存直接解析，否则拉取并落盘。
+/// 负结果同样落盘（.none 标记文件）：无歌词的曲目无需每次播放都重复
+/// 打网络往返，缓存目录下几百个小标记文件无内存/IO 负担。
 Future<List<LyricLine>> _loadCachedOrFetch(
   String key,
   Future<String?> Function() fetch,
@@ -140,12 +154,22 @@ Future<List<LyricLine>> _loadCachedOrFetch(
     final appDir = await getApplicationDocumentsDirectory();
     final cacheFile =
         File('${appDir.path}/.lrc_cache/${fnv1a(key)}.lrc');
+    final noneMarker = File('${cacheFile.path}.none');
+    // 负缓存：曾确认远端无歌词，直接返回空（重启后依然生效）。
+    if (await noneMarker.exists()) return const [];
     if (await cacheFile.exists()) {
       final parsed = parseLrc(await cacheFile.readAsString());
       if (parsed.isNotEmpty) return parsed;
     }
     final text = await fetch();
-    if (text == null || text.trim().isEmpty) return const [];
+    if (text == null || text.trim().isEmpty) {
+      try {
+        final dir = cacheFile.parent;
+        if (!await dir.exists()) await dir.create(recursive: true);
+        await noneMarker.writeAsString('');
+      } catch (_) {}
+      return const [];
+    }
     final parsed = parseLrc(text);
     if (parsed.isNotEmpty) {
       final dir = cacheFile.parent;

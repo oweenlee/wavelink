@@ -41,3 +41,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "fs"] 
 [lints.rust]
 # FRB 宏会注入 cfg(frb_expand) 条件，需在清单中声明以免 unexpected_cfgs 告警
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(frb_expand)"] }
+
+[dev-dependencies]
+# 冒烟测试用：生成正弦 WAV 驱动真实输出
+hound = "3"

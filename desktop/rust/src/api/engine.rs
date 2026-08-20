@@ -44,11 +44,19 @@ pub(crate) fn engine_start_stream(
     content_length: Option<u64>,
     seek_secs: Option<f64>,
 ) -> Result<StreamHandle, String> {
-    let engine = ENGINE.lock().unwrap();
-    engine
-        .as_ref()
-        .map(|(h, _)| h.play_stream_sync(format_hint, content_length, seek_secs))
-        .ok_or_else(|| "引擎未初始化".to_string())?
+    // 先把 handle clone 出锁再调用：play_stream_sync 会阻塞等待引擎 ack
+    // （stop_playback join + 输出重建，最坏 1~3s）。持锁期间 poll_event /
+    // 位置查询全部阻塞 → 起播瞬间事件轮询卡顿。mobile 用 ArcSwap 规避
+    // 同问题，这里 clone 出锁即可（EngineHandle 本就 Clone）。
+    let handle = {
+        let engine = ENGINE.lock().unwrap();
+        engine
+            .as_ref()
+            .map(|(h, _)| h.clone())
+            .ok_or_else(|| "引擎未初始化".to_string())?
+    };
+    handle
+        .play_stream_sync(format_hint, content_length, seek_secs)
         .map_err(|e| e.to_string())
 }
 

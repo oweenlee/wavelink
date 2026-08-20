@@ -175,11 +175,17 @@ class Engine {
     return err;
   }
 
-  /// 重新初始化引擎（用于独占模式实时切换）：先 deinit 再按启动参数 init。
+  /// 重新初始化引擎（用于独占模式 / Bit-Perfect / 自动采样率实时切换）：
+  /// 先 deinit 再按启动参数 init。
   ///
-  /// 保留启动时实际生效的采样率/声道/缓冲/crossfade/bitPerfect 等配置，
-  /// 仅切换 [exclusiveMode]。代价是切换瞬间停播（符合设置项语义）。
-  Future<String?> reinitialize({bool exclusiveMode = false}) async {
+  /// 保留启动时实际生效的采样率/声道/缓冲/crossfade 等配置；[bitPerfect] /
+  /// [autoSampleRate] / [exclusiveMode] 可传覆盖值（不传则沿用快照），
+  /// 使设置页开关真正生效而非仅落盘。代价是切换瞬间停播（符合设置项语义）。
+  Future<String?> reinitialize({
+    bool exclusiveMode = false,
+    bool? bitPerfect,
+    bool? autoSampleRate,
+  }) async {
     await frb.wavelinkDeinit();
     _inited = false;
     _pollTimer?.cancel();
@@ -187,11 +193,11 @@ class Engine {
       sampleRate: _sampleRate,
       channels: _channels,
       bufferMs: _bufferMs,
-      bitPerfect: _bitPerfect,
+      bitPerfect: bitPerfect ?? _bitPerfect,
       exclusiveMode: exclusiveMode,
       outputDevice: _outputDevice,
       crossfadeMs: _crossfadeMs,
-      autoSampleRate: _autoSampleRate,
+      autoSampleRate: autoSampleRate ?? _autoSampleRate,
     );
   }
 
@@ -260,8 +266,12 @@ class Engine {
       frb.wavelinkRemoveFromQueue(index: index);
 
   /// 设置输出设备（Phase 2 设备选择 UI 预留，当前未接线）。
-  Future<void> setOutputDevice(String? name) =>
-      frb.wavelinkSetOutputDevice(name: name);
+  /// 同步更新 [_outputDevice] 快照，避免 reinitialize（切独占模式）时
+  /// 用启动值静默覆盖用户已改的设备选择。
+  Future<void> setOutputDevice(String? name) {
+    _outputDevice = name;
+    return frb.wavelinkSetOutputDevice(name: name);
+  }
 
   Future<double> positionSecs() => frb.wavelinkPositionSecs();
   Future<double> durationSecs() => frb.wavelinkDurationSecs();
@@ -336,9 +346,12 @@ class Engine {
   /// 实际输出采样率（Hz）
   Future<int> outputSampleRate() => frb.wavelinkGetOutputSampleRate();
 
-  /// 设置输出采样率（下次播放生效）
-  Future<void> setOutputSampleRate(int rate) =>
-      frb.wavelinkSetOutputSampleRate(rate: rate);
+  /// 设置输出采样率（下次播放生效）。同步更新 [_sampleRate] 快照，
+  /// 避免 reinitialize（切独占模式）时用启动值静默覆盖用户已改的采样率。
+  Future<void> setOutputSampleRate(int rate) {
+    _sampleRate = rate;
+    return frb.wavelinkSetOutputSampleRate(rate: rate);
+  }
 
   Future<void> setPeqBand(int index, double freq, double gainDb, double q) =>
       frb.wavelinkSetPeqBand(index: index, freq: freq, gainDb: gainDb, q: q);

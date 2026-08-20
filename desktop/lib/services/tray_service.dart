@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
@@ -70,7 +71,21 @@ class TrayService with TrayListener {
       case 'next':
         player.next();
       case 'quit':
-        windowManager.destroy();
+        unawaited(_quit());
     }
+  }
+
+  /// 完整退出：先移除托盘图标再销毁窗口，最后显式退出进程。
+  ///
+  /// 仅 `windowManager.destroy()` 在部分平台不结束进程且托盘图标残留
+  /// （进程变成无窗口的「僵尸」），故补 [trayManager.destroy] 与 [exit]。
+  Future<void> _quit() async {
+    try {
+      await trayManager.destroy();
+    } catch (_) {}
+    try {
+      await windowManager.destroy();
+    } catch (_) {}
+    exit(0);
   }
 }

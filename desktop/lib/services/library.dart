@@ -201,6 +201,7 @@ Future<Track?> _parseTrack(File file) async {
   int? trackNumber;
   Duration? durationHint;
   String? lyricsText;
+  String? coverUrl;
 
   try {
     final meta = await frb_metadata.readMetadata(path: file.path);
@@ -221,10 +222,11 @@ Future<Track?> _parseTrack(File file) async {
     if (meta.lyrics != null && meta.lyrics!.trim().isNotEmpty) {
       lyricsText = meta.lyrics;
     }
-    // 顺手落盘封面字节：readMetadata 已返回封面，省掉后台提取二次解析。
-    // 失败不影响扫描（后台 extractCoversFor 会兜底再提一次）。
+    // 顺手落盘封面字节：readMetadata 已返回封面，省掉后台提取二次解析；
+    // 直接回填 coverUrl，扫描完成曲目即带封面（无需再等提取管线跑一轮，
+    // 也避免每次启动扫描把 DB 恢复的封面清掉后闪现灰阶）。
     if (meta.hasCover && meta.coverBytes.isNotEmpty) {
-      await _seedCover(file.path, meta.coverBytes);
+      coverUrl = await _seedCover(file.path, meta.coverBytes);
     }
   } catch (e) {
     // 引擎未加载（测试/缺 dylib）或文件解析失败：降级文件名规则。
@@ -241,19 +243,21 @@ Future<Track?> _parseTrack(File file) async {
     lyricsText: lyricsText,
     durationHint: durationHint,
     trackNumber: trackNumber,
+    coverUrl: coverUrl,
   );
 }
 
 /// 将扫描期已读到的封面字节直接写入封面缓存（键与 CoverCache 一致：
-/// fnv1a(filePath)）。path_provider 在测试环境不可用 → 静默跳过。
-Future<void> _seedCover(String filePath, List<int> bytes) async {
+/// fnv1a(filePath)），返回缓存路径供回填 Track.coverUrl。
+/// path_provider 在测试环境不可用 → 返回 null（后台提取管线会兜底）。
+Future<String?> _seedCover(String filePath, List<int> bytes) async {
   try {
     final probe = Track(id: filePath, title: '', artist: '', filePath: filePath);
-    final out = File(await CoverCache.instance.cacheFilePathFor(probe));
-    if (!await out.exists()) {
-      await out.writeAsBytes(bytes);
-    }
+    // 统一写入封面缓存（原图 + 320px 缩略图），失败返回 null（后台提取与其兑底）。
+    return await CoverCache.instance
+        .writeCover(probe, Uint8List.fromList(bytes));
   } catch (_) {
     // 缓存落盘失败不影响扫描结果
+    return null;
   }
 }

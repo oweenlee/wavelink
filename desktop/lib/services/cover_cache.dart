@@ -1,6 +1,9 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
+import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -9,6 +12,7 @@ import '../src/rust/api/cover.dart' as frb_cover;
 import '../src/rust/api/smb.dart' as frb_smb;
 import 'nas_service.dart';
 import 'stable_hash.dart';
+import 'subsonic_service.dart';
 
 /// 本地封面缓存与提取。
 ///
@@ -35,6 +39,13 @@ class CoverCache {
   String _keyFor(Track t) =>
       t.filePath != null ? fnv1a(t.filePath!) : t.id;
 
+  /// 缩略图目标边长（px）：列表行/网格卡共用同一张，≤该尺寸的 UI 均读缩略图，
+  /// 大图场景（正在播放页等）仍读原图。JPEG quality 80，平均 ~30-60KB。
+  static const int thumbSize = 320;
+
+  /// 缩略图文件路径（命名派生：`<原图路径>.thumb.jpg`，避免模型/DB 变更）。
+  static String thumbPathFor(String fullPath) => '$fullPath.thumb.jpg';
+
   /// 纯路径推导（不检查是否存在）：`<缓存目录>/<键>.jpg`。
   ///
   /// 确定性：相同 `(track, 文档目录)` → 相同输出，是跨进程重启命中缓存的前提。
@@ -49,6 +60,58 @@ class CoverCache {
     return f.existsSync() ? f.path : null;
   }
 
+  /// 写入封面缓存（原图 + 320px JPEG 缩略图），返回缓存路径。
+  /// 统一入口：扫描期种子（library.dart）与三个 extract* 都走这里，
+  /// 保证新落盘的封面都带缩略图；原图已存在只补缩略图。
+  /// 失败（解码异常/编码异常）静默：UI 侧 errorBuilder 回退原图。
+  Future<String?> writeCover(Track probe, Uint8List bytes) async {
+    try {
+      final out = File(await cacheFilePathFor(probe));
+      if (!await out.exists()) {
+        await out.writeAsBytes(bytes);
+      }
+      // 直接复用内存 bytes 生成缩略图，避免刚写完又读一遍原图。
+      await ensureThumb(out, bytes: bytes);
+      return out.path;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 确保 [fullFile] 有缩略图；已存在直接返回。
+  /// 缩略图只读一次原图（~1-3MB）后经原生解码到 320px 再 JPEG 编码。
+  /// `.part` + rename 原子落盘：失败不留下损坏的 .thumb.jpg 被误判"已生成"。
+  Future<void> ensureThumb(File fullFile, {Uint8List? bytes}) async {
+    final thumbFile = File(thumbPathFor(fullFile.path));
+    if (await thumbFile.exists()) return;
+    try {
+      final data = bytes ?? await fullFile.readAsBytes();
+      if (data.isEmpty) return;
+      final codec = await ui.instantiateImageCodec(
+        data,
+        // 只给 targetWidth：同时给宽高会强制拉伸到精确尺寸（非等比缩放）；
+        // 单独给宽度则等比缩放（封面基本为方形，等比缩放到 320 宽即可）。
+        targetWidth: thumbSize,
+      );
+      final frame = await codec.getNextFrame();
+      if (frame.image.width == 0 || frame.image.height == 0) return;
+      final raw = await frame.image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (raw == null) return;
+      final decoded = img.Image.fromBytes(
+        width: frame.image.width,
+        height: frame.image.height,
+        bytes: raw.buffer,
+        order: img.ChannelOrder.rgba,
+      );
+      final jpg = img.encodeJpg(decoded, quality: 80);
+      final part = File('${thumbFile.path}.part');
+      await part.writeAsBytes(jpg, flush: true);
+      await part.rename(thumbFile.path);
+    } catch (_) {
+      // 解码/编码失败：缩略图可无，UI 回退原图。
+    }
+  }
+
   /// 为本地曲目提取并缓存封面；成功返回本地路径，失败/无封面返回 null。
   /// 已缓存则直接返回，避免重复 FFI 提取。
   Future<String?> extractLocal(Track t) async {
@@ -58,8 +121,7 @@ class CoverCache {
     try {
       final bytes = await frb_cover.getCoverBytes(path: t.filePath!);
       if (bytes.isEmpty) return null;
-      await out.writeAsBytes(bytes);
-      return out.path;
+      return writeCover(t, bytes);
     } catch (_) {
       // 无封面 / 解析失败：静默降级为灰阶占位
       return null;
@@ -85,19 +147,39 @@ class CoverCache {
           path: t.remotePath!, maxLen: maxLen);
       final headCover = await _coverFromBytes(head);
       if (headCover != null) {
-        await out.writeAsBytes(headCover);
-        return out.path;
+        return writeCover(t, headCover);
       }
       final tail = await frb_smb.smbReadTail(
           path: t.remotePath!, maxLen: maxLen);
       final tailCover = await _coverFromBytes(tail);
       if (tailCover != null) {
-        await out.writeAsBytes(tailCover);
-        return out.path;
+        return writeCover(t, tailCover);
       }
       return null;
     } catch (_) {
       // 拉取/解析失败：静默降级为灰阶占位
+      return null;
+    }
+  }
+
+  /// 为 Subsonic 曲目下载并缓存封面：Subsonic 封面是远程 URL（含会过期的
+  /// 鉴权 token），必须下载到本地缓存，否则数小时后 token 失效 → 封面 401。
+  /// 用 [SubsonicService.coverUrlFor] 取最新鉴权地址。已缓存则直接返回。
+  /// 封面是 JPEG 小文件，直接整读进内存（与 extractLocal/extractNas 一致）。
+  Future<String?> extractSubsonic(Track t) async {
+    final url = SubsonicService.coverUrlFor(t);
+    if (url == null) return null;
+    final out = File(await cacheFilePathFor(t));
+    if (await out.exists()) return out.path;
+    try {
+      final resp = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 30));
+      if (resp.statusCode != 200) return null;
+      if (resp.bodyBytes.isEmpty) return null;
+      return writeCover(t, Uint8List.fromList(resp.bodyBytes));
+    } catch (_) {
+      // 网络/解析失败：静默降级为灰阶占位
       return null;
     }
   }

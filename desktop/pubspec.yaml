@@ -56,6 +56,8 @@ dependencies:
   path: ^1.9.1
   file_selector: ^1.0.3
   flutter_rust_bridge: 2.13.0-beta.5
+  image: ^4.5.4               # 封面缩略图 JPEG 编码（列表滚动降低原图磁盘 IO）
+  flutter_animate: ^4.5.2     # 列表入场交错动画（与 mobile 同规格同版本）
 
 dev_dependencies:
   flutter_test:
