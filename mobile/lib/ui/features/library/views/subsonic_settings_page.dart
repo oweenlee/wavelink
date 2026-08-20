@@ -25,6 +25,7 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
   bool _testing = false;
   bool _saving = false;
   String _status = ''; // '' | 'ok' | 'fail' | 'empty' | 'invalid'
+  String _errorMsg = ''; // 测试失败时的分类提示（服务层返回）
 
   @override
   void initState() {
@@ -77,7 +78,7 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
       _testing = true;
       _status = '';
     });
-    final ok = await SubsonicService.testConnection(
+    final error = await SubsonicService.testConnection(
       baseUrl: url,
       username: user,
       password: pass,
@@ -85,7 +86,8 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
     if (!mounted) return;
     setState(() {
       _testing = false;
-      _status = ok ? 'ok' : 'fail';
+      _status = error == null ? 'ok' : 'fail';
+      _errorMsg = error ?? '';
     });
   }
 
@@ -239,6 +241,8 @@ class _SubsonicSettingsPageState extends ConsumerState<SubsonicSettingsPage> {
                     ? l10n.subsonicEnterUrl
                     : _status == 'invalid'
                     ? l10n.webdavInvalidUrl
+                    : _errorMsg.isNotEmpty
+                    ? _errorMsg
                     : l10n.subsonicFailed,
                 style: TextStyle(
                   color: _status == 'ok' ? AppTheme.success : AppTheme.danger,

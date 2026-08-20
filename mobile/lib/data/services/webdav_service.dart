@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:webdav_client/webdav_client.dart' as wd;
 import '../../domain/models/song.dart';
@@ -122,6 +123,12 @@ class WebdavService {
     String username = '',
     String password = '',
   }) async {
+    // 连接前网络检测：无网络直接给明确提示（与 SMB 对齐），不甩底层异常
+    final connectivity = await Connectivity().checkConnectivity();
+    if (connectivity.isEmpty || connectivity.contains(ConnectivityResult.none)) {
+      lastError = '未连接网络：请先连上 Wi-Fi（如需访问局域网/公网服务器）';
+      return lastError;
+    }
     final sw = Stopwatch()..start();
     Log.i(
       'WebDAV',
@@ -143,13 +150,36 @@ class WebdavService {
       );
       return null;
     } catch (e) {
-      lastError = '$e';
+      lastError = _friendlyTestError(e);
       Log.e(
         'WebDAV',
-        'testConnection failed (${sw.elapsedMilliseconds}ms): $e',
+        'testConnection failed (${sw.elapsedMilliseconds}ms): $lastError',
       );
       return lastError;
     }
+  }
+
+  /// 测试连接失败分类：把底层异常（SocketException/超时/HTTP 状态码）
+  /// 映射成可操作的提示。网络不通、URL 指向错误、凭据错误是三类常见原因。
+  static String _friendlyTestError(Object e) {
+    final s = e.toString();
+    final lower = s.toLowerCase();
+    if (lower.contains('refused') ||
+        lower.contains('no route to host') ||
+        lower.contains('unreachable') ||
+        lower.contains('failed host lookup')) {
+      return '无法连接服务器（$s）\n请确认地址与端口正确、服务器已开启 WebDAV 服务，且设备已连上可访问该服务器的网络。';
+    }
+    if (lower.contains('timeout') || lower.contains('timed out')) {
+      return '连接超时（$s）\n请确认服务器已开机、WebDAV 服务已开启，并检查网络是否可达该服务器。';
+    }
+    if (lower.contains('401') || lower.contains('403')) {
+      return '凭据被拒绝（HTTP 401/403）：请检查用户名与密码是否正确。';
+    }
+    if (lower.contains('404') || lower.contains('405')) {
+      return '服务器响应异常（HTTP $s）\n请确认 URL 指向的是 WebDAV 根路径（通常为 /dav/ 或 /remote.php/dav/）。';
+    }
+    return '连接失败（$s）\n请检查 URL、端口、用户名密码是否正确。';
   }
 
   /// 递归扫描音频文件，按 [onBatch] 增量回调（缓冲 20 首）。

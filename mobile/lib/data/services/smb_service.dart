@@ -242,7 +242,7 @@ class SmbService {
       Log.e('SMB', 'connect failed: $e');
       _connected = false;
       _connectedHost = null;
-      lastError = _friendlyConnectError('$e');
+      lastError = await _diagnoseConnectError(host, port, '$e');
       return false;
     }
   }
@@ -263,6 +263,40 @@ class SmbService {
       return '$raw\n\n连接超时：请确认 NAS 已开机、SMB/文件共享已开启，且手机与 NAS 在同一局域网。';
     }
     return raw;
+  }
+
+  /// 连接失败后的补充诊断：仅对"网络路径类"错误（不可达/超时）做一次
+  /// TCP 探测（3s 超时），区分"端口不可达（网络路径问题）"与"端口可达
+  /// 但 SMB 握手失败（服务/凭据问题）"，让提示更精准。凭据等非网络类
+  /// 错误直接返回原分类，不额外等待。
+  static Future<String> _diagnoseConnectError(
+    String host,
+    int port,
+    String raw,
+  ) async {
+    final base = _friendlyConnectError(raw);
+    final lower = raw.toLowerCase();
+    final isNetworkish = lower.contains('no route to host') ||
+        lower.contains('network is unreachable') ||
+        lower.contains('timed out') ||
+        lower.contains('timeout');
+    if (!isNetworkish) return base;
+    Socket? socket;
+    try {
+      socket = await Socket.connect(
+        host,
+        port,
+        timeout: const Duration(seconds: 3),
+      );
+      return '$base\n\n补充诊断：$host:$port 端口可达，但 SMB 握手失败——'
+          '请确认 NAS 已开启 SMB/文件共享服务；若服务端口不是 $port，'
+          '请在端口栏填写正确的端口。';
+    } catch (_) {
+      return '$base\n\n补充诊断：$host:$port 端口不可达——请确认手机与 NAS '
+          '在同一局域网、NAS 已开机，且路由器/防火墙未拦截 $port 端口。';
+    } finally {
+      socket?.destroy();
+    }
   }
 
   static Future<bool> connectShare(String shareName) async {

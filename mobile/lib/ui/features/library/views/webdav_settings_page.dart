@@ -27,6 +27,7 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
   bool _testing = false;
   bool _saving = false;
   String _status = ''; // '' | 'ok' | 'fail' | 'empty' | 'invalid'
+  String _errorMsg = ''; // 测试失败时的分类提示（服务层返回）
 
   @override
   void initState() {
@@ -88,6 +89,7 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
     setState(() {
       _testing = false;
       _status = error == null ? 'ok' : 'fail';
+      _errorMsg = error ?? '';
     });
   }
 
@@ -252,6 +254,8 @@ class _WebdavSettingsPageState extends ConsumerState<WebdavSettingsPage> {
                     ? l10n.webdavEnterUrl
                     : _status == 'invalid'
                     ? l10n.webdavInvalidUrl
+                    : _errorMsg.isNotEmpty
+                    ? _errorMsg
                     : l10n.subsonicFailed,
                 style: TextStyle(
                   color: _status == 'ok' ? AppTheme.success : AppTheme.danger,

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../domain/models/song.dart';
@@ -34,12 +35,18 @@ class SubsonicService {
     }
   }
 
-  /// 连接测试：ping 服务器并校验凭据，成功返回 true
-  static Future<bool> testConnection({
+  /// 连接测试：ping 服务器并校验凭据。返回 null 表示成功，否则返回
+  /// 分类后的可操作错误提示（网络不通 / 超时 / 凭据 / 地址等）。
+  static Future<String?> testConnection({
     required String baseUrl,
     required String username,
     required String password,
   }) async {
+    // 连接前网络检测：无网络直接给明确提示（与 SMB 对齐），不甩底层异常
+    final connectivity = await Connectivity().checkConnectivity();
+    if (connectivity.isEmpty || connectivity.contains(ConnectivityResult.none)) {
+      return '未连接网络：请先连上 Wi-Fi（如需访问局域网/公网服务器）';
+    }
     try {
       final url = baseUrl.replaceAll(RegExp(r'/+$'), '');
       final uri = Uri.parse('$url/rest/ping').replace(
@@ -53,14 +60,51 @@ class SubsonicService {
       final resp = await http
           .get(uri, headers: {'Accept': 'application/json'})
           .timeout(const Duration(seconds: 10));
-      if (resp.statusCode != 200) return false;
+      if (resp.statusCode != 200) return _friendlyHttpStatus(resp.statusCode);
       final json = jsonDecode(resp.body);
       final status = json['subsonic-response']?['status'] as String?;
-      return status == 'ok';
+      if (status != 'ok') {
+        final err = json['subsonic-response']?['error']?['message'] as String?;
+        return err != null
+            ? '服务器返回错误：$err'
+            : '服务器响应异常（status=$status）';
+      }
+      return null;
     } catch (e) {
       Log.e('Subsonic', 'ping failed: $e');
-      return false;
+      return _friendlyTestError(e);
     }
+  }
+
+  /// HTTP 状态码分类提示。
+  static String _friendlyHttpStatus(int code) {
+    if (code == 401 || code == 403) {
+      return '凭据被拒绝（HTTP $code）：请检查用户名与密码是否正确。';
+    }
+    if (code == 404) {
+      return '地址不存在（HTTP 404）：请确认服务器地址正确'
+          '（应为 Subsonic/Navidrome 根地址，含协议与端口）。';
+    }
+    if (code >= 500) {
+      return '服务器内部错误（HTTP $code）：服务器可能正在维护或异常，请稍后再试。';
+    }
+    return '服务器返回 HTTP $code，请检查地址是否正确。';
+  }
+
+  /// 网络层异常分类提示。
+  static String _friendlyTestError(Object e) {
+    final s = e.toString();
+    final lower = s.toLowerCase();
+    if (lower.contains('refused') ||
+        lower.contains('no route to host') ||
+        lower.contains('unreachable') ||
+        lower.contains('failed host lookup')) {
+      return '无法连接服务器（$s）\n请确认地址与端口正确、服务器已开机，且设备网络可访问该服务器。';
+    }
+    if (lower.contains('timeout') || lower.contains('timed out')) {
+      return '连接超时（$s）\n请确认服务器已开机、可远程访问，并检查网络是否可达。';
+    }
+    return '连接失败（$s）\n请检查服务器地址、端口、用户名密码是否正确。';
   }
 
   static void configure({
