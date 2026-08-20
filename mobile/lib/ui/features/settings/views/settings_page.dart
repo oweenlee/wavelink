@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../../../../data/services/cache_cleaner.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/wl_toggle.dart';
+import '../../library/view_models/library_provider.dart';
 import '../../playback/view_models/playback_controller.dart';
 import '../../playback/view_models/audio_player_provider.dart';
 import '../view_models/dsp_provider.dart';
@@ -87,6 +89,8 @@ class SettingsPage extends StatelessWidget {
     // 主题项已移除：原来是无 onTap 的装饰行（点了没反应），仅深色主题，
     // 与其伪装成功能项不如不展示。
     addSection(l10n.settingsAppearance, [(_) => const _CoverBlurRow()]);
+
+    addSection(l10n.settingsStorage, [(_) => const _CacheRow()]);
 
     addSection(l10n.language, [(_) => const _LanguageItem()]);
 
@@ -251,6 +255,81 @@ class _CoverBlurRow extends ConsumerWidget {
       label: l10n.coverBlur,
       value: value,
       onChanged: (v) => ref.read(playbackControllerProvider).setCoverBlur(v),
+    );
+  }
+}
+
+/// 清理缓存行：展示四类缓存目录总占用，点击后弹确认框，删除曲库
+/// 无引用的缓存文件（正在播放/使用的封面与下载不受影响）。
+class _CacheRow extends ConsumerStatefulWidget {
+  const _CacheRow();
+
+  @override
+  ConsumerState<_CacheRow> createState() => _CacheRowState();
+}
+
+class _CacheRowState extends ConsumerState<_CacheRow> {
+  String _size = '';
+  bool _clearing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final bytes = await CacheCleaner.computeCacheBytes();
+    if (!mounted) return;
+    setState(() => _size = CacheCleaner.formatBytes(bytes));
+  }
+
+  Future<void> _confirmClear() async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceDark,
+        title: Text(l10n.clearCache),
+        content: Text(l10n.clearCacheConfirm(_size)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              l10n.clearCache,
+              style: const TextStyle(color: AppTheme.danger),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _clearing = true);
+    final songs = ref.read(libraryProvider).importedSongs;
+    final refs = await CacheCleaner.collectReferencedFiles(songs);
+    final freed = await CacheCleaner.clearUnreferencedCache(refs);
+    if (!mounted) return;
+    setState(() => _clearing = false);
+    await _refresh();
+    Fluttertoast.showToast(
+      msg: freed == 0
+          ? l10n.clearCacheNone
+          : l10n.clearCacheDone(CacheCleaner.formatBytes(freed)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return _SettingItem(
+      icon: _clearing ? LucideIcons.loader : LucideIcons.trash2,
+      label: l10n.clearCache,
+      trailing: _clearing ? '…' : _size,
+      onTap: _clearing ? null : _confirmClear,
     );
   }
 }
