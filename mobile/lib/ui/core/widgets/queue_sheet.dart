@@ -144,6 +144,9 @@ class _QueueCover extends StatelessWidget {
             Image.file(
               f,
               fit: BoxFit.cover,
+              // 36px 行缩略图按 ~90px 解码（与曲库行 SongCoverArt 的 cacheWidth
+              // 同一策略），避免队列每次打开都全尺寸解码封面
+              cacheWidth: 90,
               errorBuilder: (_, _, _) => const CoverPlaceholder(size: 36),
             )
           else
