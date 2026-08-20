@@ -156,9 +156,16 @@ pub(crate) fn run_engine(
                         Ok(EngineCommand::SetDitherEnabled(enabled)) => state.set_dither_enabled(enabled),
                         Ok(EngineCommand::SetPlayMode(mode)) => state.set_play_mode(mode),
                         Ok(EngineCommand::SetOutputDevice(dev, ack)) => {
-                            if state.config.output_device.as_deref() != Some(&dev) {
-                                info!("输出设备切换: {dev}（下次播放生效）");
-                                state.config.output_device = Some(dev);
+                            // 空字符串 = 系统默认设备（宿主层用空串表达 None）。
+                            // 必须归一化为 None：Some("") 流入 open() 时设备名
+                            // 查找失败 → 后端级联回退到 Headless → 静默无声。
+                            let dev = if dev.trim().is_empty() { None } else { Some(dev) };
+                            if state.config.output_device != dev {
+                                info!(
+                                    "输出设备切换: {}（下次播放生效）",
+                                    dev.as_deref().unwrap_or("系统默认")
+                                );
+                                state.config.output_device = dev;
                             }
                             if let Some(tx) = ack {
                                 let _ = tx.send(Ok(()));
