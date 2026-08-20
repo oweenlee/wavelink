@@ -21,6 +21,7 @@ import '../services/player_providers.dart';
 import '../services/subsonic_service.dart';
 import '../services/webdav_service.dart';
 import '../widgets/spectrum_visualizer.dart';
+import '../services/media_index.dart';
 
 // 单色板来自 core/theme.dart（与 ThemeData 同源）；别名仅为缩短引用。
 const _surface = kSurface;
@@ -134,6 +135,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _selectView(String mode) => setState(() => _viewMode = mode);
 
+  /// 中间区按 viewMode 分派：艺术家 / 专辑索引与详情走新媒体视图，
+  /// 其余（all / favorites / pl / src / 搜索）仍走原有曲库视图。
+  Widget _centerView(List<Track> visible) {
+    if (_viewMode == 'artists') {
+      return _ArtistsView(
+        player: player,
+        onOpenArtist: (k) => _selectView('artist:$k'),
+      );
+    }
+    if (_viewMode == 'albums') {
+      return _AlbumsView(
+        player: player,
+        onOpenAlbum: (k) => _selectView('album:$k'),
+      );
+    }
+    if (_viewMode.startsWith('artist:')) {
+      final key = _viewMode.substring(7);
+      return _ArtistDetail(
+        player: player,
+        artistKey: key,
+        onOpenAlbum: (k) => _selectView('album:$k'),
+        onBack: () => _selectView('artists'),
+      );
+    }
+    if (_viewMode.startsWith('album:')) {
+      final key = _viewMode.substring(6);
+      return _AlbumDetail(
+        player: player,
+        albumKey: key,
+        onBack: () => _selectView('albums'),
+      );
+    }
+    return _LibraryView(
+      player: player,
+      tracks: visible,
+      title: _viewTitle,
+      query: _query,
+      onQuery: (v) => setState(() => _query = v),
+      sort: _sort,
+      onSort: (v) => setState(() => _sort = v),
+      searchFocus: _searchFocus,
+      searchCtrl: _searchCtrl,
+      onPlay: (i) => player.playFrom(visible, i),
+      onAddFolder: _addFolder,
+    );
+  }
+
   void _focusSearch() => _searchFocus.requestFocus();
 
   /// 选择本地音乐文件夹并加入曲库（路径由 PlayerController 持久化）。
@@ -211,34 +259,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   Expanded(
                     child: LayoutBuilder(
                       builder: (context, c) {
-                        // 侧栏 220 + 列表最小 340 + 播放面板 340：宽度不足时
-                        // 隐藏右侧播放面板（对齐 Spotify 窄窗口只留侧栏+列表）
-                        final showNowPlaying = c.maxWidth >= 900;
+                        final w = c.maxWidth;
+                        // 三级响应式断点（对齐主流桌面播放器窗口适配）：
+                        //  <720      → 侧栏收缩为图标条、隐藏播放面板（compact）
+                        //  720–1000  → 完整侧栏 + 列表，无播放面板
+                        //  >=1000    → 完整侧栏 + 列表 + 播放面板
+                        final compact = w < 720;
+                        final showNowPlaying = w >= 1000;
+                        final sidebarW =
+                            compact ? 60.0 : (w > 1400 ? 240.0 : 220.0);
+                        final npW = w > 1400 ? 360.0 : 320.0;
                         return Row(
                           children: [
                             _Sidebar(
                               player: player,
                               viewMode: _viewMode,
+                              compact: compact,
+                              width: sidebarW,
                               onSelect: _selectView,
                               onCreate: _createPlaylist,
                               onAddFolder: _addFolder,
                             ),
-                            Expanded(
-                              child: _LibraryView(
-                                player: player,
-                                tracks: visible,
-                                title: _viewTitle,
-                                query: _query,
-                                onQuery: (v) => setState(() => _query = v),
-                                sort: _sort,
-                                onSort: (v) => setState(() => _sort = v),
-                                searchFocus: _searchFocus,
-                                searchCtrl: _searchCtrl,
-                                onPlay: (i) => player.playFrom(visible, i),
-                                onAddFolder: _addFolder,
-                              ),
-                            ),
-                            if (showNowPlaying) _NowPlaying(player: player),
+                            Expanded(child: _centerView(visible)),
+                            if (showNowPlaying)
+                              _NowPlaying(player: player, width: npW),
                           ],
                         );
                       },
@@ -312,6 +356,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 class _Sidebar extends ConsumerWidget {
   final PlayerController player;
   final String viewMode;
+  final bool compact;
+  final double width;
   final ValueChanged<String> onSelect;
   final VoidCallback onCreate;
   final VoidCallback onAddFolder;
@@ -319,6 +365,8 @@ class _Sidebar extends ConsumerWidget {
   const _Sidebar({
     required this.player,
     required this.viewMode,
+    this.compact = false,
+    this.width = 220,
     required this.onSelect,
     required this.onCreate,
     required this.onAddFolder,
@@ -333,8 +381,51 @@ class _Sidebar extends ConsumerWidget {
     ref.watch(networkConfigProvider);
     ref.watch(nasStateProvider);
     final l10n = AppLocalizations.of(context);
+    // compact 模式：侧栏收缩为图标条（Tooltip 悬浮提示，无文字标签 / 分区 /
+    // 播放列表），对齐 Spotify 窄窗口折叠侧栏，最大化横向空间。
+    if (compact) {
+      return Container(
+        width: width,
+        decoration: const BoxDecoration(
+          color: _surface,
+          border: Border(right: BorderSide(color: _border)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 16),
+            _compactItem(context, LucideIcons.music, l10n.sidebarLibrary,
+                () => onSelect('all'), viewMode == 'all'),
+            _compactItem(context, LucideIcons.heart, l10n.sidebarFavorites,
+                () => onSelect('favorites'), viewMode == 'favorites'),
+            _compactItem(context, LucideIcons.mic, l10n.sidebarArtists,
+                () => onSelect('artists'), viewMode == 'artists'),
+            _compactItem(context, LucideIcons.disc, l10n.sidebarAlbums,
+                () => onSelect('albums'), viewMode == 'albums'),
+            _compactItem(context, LucideIcons.globe, 'WebDAV',
+                () => onSelect('src:webdav'), viewMode == 'src:webdav'),
+            _compactItem(context, LucideIcons.server, 'NAS',
+                () => onSelect('src:nas'), viewMode == 'src:nas'),
+            _compactItem(context, LucideIcons.radio, 'Subsonic',
+                () => onSelect('src:subsonic'), viewMode == 'src:subsonic'),
+            const Spacer(),
+            _compactItem(
+              context,
+              LucideIcons.settings,
+              l10n.settingsTitle,
+              () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                    builder: (_) => SettingsScreen(player: player)),
+              ),
+              false,
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      );
+    }
     return Container(
-      width: 220,
+      width: width,
       decoration: const BoxDecoration(
         color: _surface,
         border: Border(right: BorderSide(color: _border)),
@@ -373,6 +464,18 @@ class _Sidebar extends ConsumerWidget {
                 : '${player.favoriteIds.length}',
             active: viewMode == 'favorites',
             onTap: () => onSelect('favorites'),
+          ),
+          _NavItem(
+            icon: LucideIcons.mic,
+            label: l10n.sidebarArtists,
+            active: viewMode == 'artists',
+            onTap: () => onSelect('artists'),
+          ),
+          _NavItem(
+            icon: LucideIcons.disc,
+            label: l10n.sidebarAlbums,
+            active: viewMode == 'albums',
+            onTap: () => onSelect('albums'),
           ),
           Padding(
             padding: EdgeInsets.fromLTRB(20, 18, 20, 6),
@@ -467,6 +570,34 @@ class _Sidebar extends ConsumerWidget {
   }
 
 
+
+  /// compact 侧栏的单个图标项（Tooltip + 选中态左侧 accent 色条）。
+  Widget _compactItem(BuildContext context, IconData icon, String tooltip,
+      VoidCallback onTap, bool active) {
+    final accent = AccentScope.of(context);
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: active ? _surface2 : Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            width: double.infinity,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              border: Border(
+                left: BorderSide(
+                    color: active ? accent : Colors.transparent, width: 3),
+              ),
+            ),
+            child: Icon(icon,
+                size: 19, color: active ? accent : AppTheme.textTertiary),
+          ),
+        ),
+      ),
+    );
+  }
 
   void _openNetwork(BuildContext context, TrackSource source) {
     showDialog<void>(
@@ -1093,7 +1224,8 @@ class _FavoriteButton extends ConsumerWidget {
 
 class _NowPlaying extends ConsumerWidget {
   final PlayerController player;
-  const _NowPlaying({required this.player});
+  final double width;
+  const _NowPlaying({required this.player, this.width = 320});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1103,7 +1235,7 @@ class _NowPlaying extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final track = player.currentTrack;
     return Container(
-      width: 340,
+      width: width,
       decoration: const BoxDecoration(
         color: _surface,
         border: Border(left: BorderSide(color: _border)),
@@ -1676,4 +1808,657 @@ String _fmt(Duration d) {
   final m = d.inMinutes;
   final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
   return '$m:$s';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 艺术家 / 专辑 媒体库视图（派生自 player.library，纯展示，不触碰引擎 / core）
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 列表 / 详情页共用的顶部工具条：搜索框 + 排序 + 标题 + 计数。
+class _ViewHeader extends StatelessWidget {
+  final String title;
+  final String countLabel;
+  final String query;
+  final TextEditingController queryCtrl;
+  final ValueChanged<String> onQuery;
+  final int sort;
+  final ValueChanged<int> onSort;
+  final String sortLabel1;
+  final String sortLabel2;
+  const _ViewHeader({
+    required this.title,
+    required this.countLabel,
+    required this.query,
+    required this.queryCtrl,
+    required this.onQuery,
+    required this.sort,
+    required this.onSort,
+    required this.sortLabel1,
+    required this.sortLabel2,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: _surface,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: _border),
+                  ),
+                  child: Row(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 12),
+                        child: Icon(LucideIcons.search,
+                            size: 18, color: AppTheme.textTertiary),
+                      ),
+                      Expanded(
+                        child: TextField(
+                          controller: queryCtrl,
+                          onChanged: onQuery,
+                          style: const TextStyle(color: _onSurface, fontSize: 13.5),
+                          decoration: InputDecoration(
+                            border: InputBorder.none,
+                            hintText: l10n.searchHint,
+                            hintStyle: const TextStyle(color: _onSurfaceVariant),
+                            contentPadding: const EdgeInsets.only(bottom: 2),
+                          ),
+                        ),
+                      ),
+                      if (query.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(LucideIcons.x,
+                              size: 16, color: AppTheme.textTertiary),
+                          onPressed: () {
+                            queryCtrl.clear();
+                            onQuery('');
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              PopupMenuButton<int>(
+                color: _surface,
+                icon: const Icon(LucideIcons.arrowDownUp,
+                    size: 18, color: AppTheme.textTertiary),
+                tooltip: l10n.tooltipSort,
+                onSelected: onSort,
+                itemBuilder: (c) => [
+                  PopupMenuItem(value: 0, child: _SortItem(l10n.sortDefault)),
+                  PopupMenuItem(value: 1, child: _SortItem(sortLabel1)),
+                  PopupMenuItem(value: 2, child: _SortItem(sortLabel2)),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(title,
+                  style: const TextStyle(
+                      color: _onSurface, fontSize: 15, fontWeight: FontWeight.w600)),
+              const SizedBox(width: 8),
+              Text(countLabel,
+                  style: const TextStyle(color: _onSurfaceVariant, fontSize: 12)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 媒体网格卡：封面 + 标题 + 副标题。
+class _MediaCard extends StatelessWidget {
+  final String seed;
+  final String? coverUrl;
+  final double coverSize;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  const _MediaCard({
+    required this.seed,
+    this.coverUrl,
+    required this.coverSize,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: coverSize,
+              height: coverSize,
+              child: CoverArt(
+                key: ValueKey('card-$seed'),
+                seed: seed,
+                coverUrl: coverUrl,
+                size: coverSize,
+                rounded: true,
+              ),
+            ),
+            const SizedBox(height: 7),
+            Text(title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: _onSurface, fontSize: 13, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 2),
+            Text(subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: _onSurfaceVariant, fontSize: 11.5)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 计算响应式网格列数与单元宽度（列数 2–8，基础单元格 180px）。
+(int, double) _gridMetrics(double maxWidth) {
+  const gap = 16.0;
+  final cols = ((maxWidth + gap) / (180 + gap)).floor().clamp(2, 8);
+  final cellW = (maxWidth - gap * (cols - 1)) / cols;
+  return (cols, cellW);
+}
+
+/// 艺术家索引视图：响应式网格 + 搜索 + 排序 + 无限滚动懒加载。
+class _ArtistsView extends ConsumerStatefulWidget {
+  final PlayerController player;
+  final ValueChanged<String> onOpenArtist;
+  const _ArtistsView({required this.player, required this.onOpenArtist});
+
+  @override
+  ConsumerState<_ArtistsView> createState() => _ArtistsViewState();
+}
+
+class _ArtistsViewState extends ConsumerState<_ArtistsView> {
+  final _queryCtrl = TextEditingController();
+  final _scroll = ScrollController();
+  static const _pageSize = 60;
+  String _query = '';
+  int _sort = 0;
+  int _loaded = _pageSize;
+  int _total = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _queryCtrl.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 240 &&
+        _loaded < _total) {
+      setState(() => _loaded = (_loaded + _pageSize).clamp(0, _total));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.watch(libraryProvider);
+    final l10n = AppLocalizations.of(context);
+    final idx = MediaIndex.build(widget.player.library);
+    var list = MediaIndex.filterArtists(idx.artists, _query);
+    list = MediaIndex.sortArtists(list, _sort);
+    _total = list.length;
+    if (_loaded > _total) _loaded = _total;
+    final shown = list.take(_loaded).toList();
+    return Column(
+      children: [
+        _ViewHeader(
+          title: l10n.viewArtists,
+          countLabel: l10n.artistCount(list.length),
+          query: _query,
+          queryCtrl: _queryCtrl,
+          onQuery: (v) => setState(() {
+            _query = v;
+            _loaded = _pageSize;
+          }),
+          sort: _sort,
+          onSort: (v) => setState(() => _sort = v),
+          sortLabel1: l10n.sortByName,
+          sortLabel2: l10n.sortByCount,
+        ),
+        Expanded(
+          child: shown.isEmpty
+              ? Center(
+                  child: Text(
+                    _query.isEmpty ? l10n.noArtists : l10n.noMatch,
+                    style: const TextStyle(color: _onSurfaceVariant),
+                  ),
+                )
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final (cols, cellW) = _gridMetrics(constraints.maxWidth);
+                    return GridView.builder(
+                      controller: _scroll,
+                      padding: const EdgeInsets.fromLTRB(20, 6, 20, 20),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: cols,
+                        mainAxisSpacing: 16,
+                        crossAxisSpacing: 16,
+                        childAspectRatio: cellW / (cellW + 52),
+                      ),
+                      itemCount: shown.length,
+                      itemBuilder: (_, i) {
+                        final a = shown[i];
+                        final name =
+                            a.name.isEmpty ? l10n.artistUnknown : a.name;
+                        return _MediaCard(
+                          seed: a.name.isEmpty ? 'unknown-artist' : a.name,
+                          coverUrl: a.coverUrl,
+                          coverSize: cellW,
+                          title: name,
+                          subtitle: l10n.albumCount(a.albums.length),
+                          onTap: () =>
+                              widget.onOpenArtist(a.name.isEmpty ? '' : a.name),
+                        );
+                      },
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 专辑索引视图：与艺术家视图对称。
+class _AlbumsView extends ConsumerStatefulWidget {
+  final PlayerController player;
+  final ValueChanged<String> onOpenAlbum;
+  const _AlbumsView({required this.player, required this.onOpenAlbum});
+
+  @override
+  ConsumerState<_AlbumsView> createState() => _AlbumsViewState();
+}
+
+class _AlbumsViewState extends ConsumerState<_AlbumsView> {
+  final _queryCtrl = TextEditingController();
+  final _scroll = ScrollController();
+  static const _pageSize = 60;
+  String _query = '';
+  int _sort = 0;
+  int _loaded = _pageSize;
+  int _total = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _queryCtrl.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 240 &&
+        _loaded < _total) {
+      setState(() => _loaded = (_loaded + _pageSize).clamp(0, _total));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.watch(libraryProvider);
+    final l10n = AppLocalizations.of(context);
+    final idx = MediaIndex.build(widget.player.library);
+    var list = MediaIndex.filterAlbums(idx.albums, _query);
+    list = MediaIndex.sortAlbums(list, _sort);
+    _total = list.length;
+    if (_loaded > _total) _loaded = _total;
+    final shown = list.take(_loaded).toList();
+    return Column(
+      children: [
+        _ViewHeader(
+          title: l10n.viewAlbums,
+          countLabel: l10n.albumCount(list.length),
+          query: _query,
+          queryCtrl: _queryCtrl,
+          onQuery: (v) => setState(() {
+            _query = v;
+            _loaded = _pageSize;
+          }),
+          sort: _sort,
+          onSort: (v) => setState(() => _sort = v),
+          sortLabel1: l10n.sortByName,
+          sortLabel2: l10n.sortByCount,
+        ),
+        Expanded(
+          child: shown.isEmpty
+              ? Center(
+                  child: Text(
+                    _query.isEmpty ? l10n.noAlbums : l10n.noMatch,
+                    style: const TextStyle(color: _onSurfaceVariant),
+                  ),
+                )
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final (cols, cellW) = _gridMetrics(constraints.maxWidth);
+                    return GridView.builder(
+                      controller: _scroll,
+                      padding: const EdgeInsets.fromLTRB(20, 6, 20, 20),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: cols,
+                        mainAxisSpacing: 16,
+                        crossAxisSpacing: 16,
+                        childAspectRatio: cellW / (cellW + 52),
+                      ),
+                      itemCount: shown.length,
+                      itemBuilder: (_, i) {
+                        final al = shown[i];
+                        final name =
+                            al.name.isEmpty ? l10n.albumUnknown : al.name;
+                        return _MediaCard(
+                          seed: al.key,
+                          coverUrl: al.coverUrl,
+                          coverSize: cellW,
+                          title: name,
+                          subtitle: al.artist.isEmpty
+                              ? l10n.artistUnknown
+                              : al.artist,
+                          onTap: () => widget.onOpenAlbum(al.key),
+                        );
+                      },
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 专辑网格（用于艺术家详情页内的作品集）。
+class _AlbumGrid extends StatelessWidget {
+  final List<AlbumGroup> albums;
+  final AppLocalizations l10n;
+  final ValueChanged<String> onOpenAlbum;
+  const _AlbumGrid({
+    required this.albums,
+    required this.l10n,
+    required this.onOpenAlbum,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final (cols, cellW) = _gridMetrics(constraints.maxWidth);
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cols,
+            mainAxisSpacing: 16,
+            crossAxisSpacing: 16,
+            childAspectRatio: cellW / (cellW + 52),
+          ),
+          itemCount: albums.length,
+          itemBuilder: (_, i) {
+            final al = albums[i];
+            final name = al.name.isEmpty ? l10n.albumUnknown : al.name;
+            return _MediaCard(
+              seed: al.key,
+              coverUrl: al.coverUrl,
+              coverSize: cellW,
+              title: name,
+              subtitle: al.artist.isEmpty ? l10n.artistUnknown : al.artist,
+              onTap: () => onOpenAlbum(al.key),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+Widget _sectionTitle(String label) => Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Text(label,
+          style: const TextStyle(
+              color: _onSurface, fontSize: 14, fontWeight: FontWeight.w600)),
+    );
+
+Widget _detailEmpty(AppLocalizations l10n) => Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(LucideIcons.searchX,
+              size: 44, color: AppTheme.textTertiary),
+          const SizedBox(height: 14),
+          Text(l10n.noMatch,
+              style: const TextStyle(color: _onSurfaceVariant)),
+        ],
+      ),
+    );
+
+/// 详情页头部：返回 + 封面 + 标题/副标题 + 可选操作（如播放整张）。
+class _DetailHeader extends StatelessWidget {
+  final String? coverUrl;
+  final String seed;
+  final String title;
+  final String subtitle;
+  final VoidCallback onBack;
+  final Widget? action;
+  const _DetailHeader({
+    required this.coverUrl,
+    required this.seed,
+    required this.title,
+    required this.subtitle,
+    required this.onBack,
+    this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          IconButton(
+            icon: const Icon(LucideIcons.arrowLeft,
+                size: 20, color: AppTheme.textTertiary),
+            tooltip: '返回',
+            onPressed: onBack,
+          ),
+          const SizedBox(width: 4),
+          CoverArt(seed: seed, coverUrl: coverUrl, size: 120, rounded: true),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 6),
+                Text(title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontFamily: 'SpaceGrotesk',
+                        color: _onSurface,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.3)),
+                const SizedBox(height: 6),
+                Text(subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: _onSurfaceVariant, fontSize: 13.5)),
+                if (action != null) ...[
+                  const SizedBox(height: 12),
+                  action!,
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 艺术家详情：头部 + 专辑网格 + 全部曲目列表。
+class _ArtistDetail extends ConsumerWidget {
+  final PlayerController player;
+  final String artistKey;
+  final ValueChanged<String> onOpenAlbum;
+  final VoidCallback onBack;
+  const _ArtistDetail({
+    required this.player,
+    required this.artistKey,
+    required this.onOpenAlbum,
+    required this.onBack,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(libraryProvider);
+    ref.watch(currentIndexProvider);
+    final l10n = AppLocalizations.of(context);
+    final idx = MediaIndex.build(player.library);
+    final artist = idx.artistByName(artistKey);
+    if (artist == null) return _detailEmpty(l10n);
+    final name = artist.name.isEmpty ? l10n.artistUnknown : artist.name;
+    return Column(
+      children: [
+        _DetailHeader(
+          coverUrl: artist.coverUrl,
+          seed: artist.name.isEmpty ? 'unknown-artist' : artist.name,
+          title: name,
+          subtitle:
+              '${l10n.albumCount(artist.albums.length)} · ${l10n.trackCount(artist.tracks.length)}',
+          onBack: onBack,
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+            children: [
+              if (artist.albums.isNotEmpty) ...[
+                _sectionTitle(l10n.sidebarAlbums),
+                const SizedBox(height: 10),
+                _AlbumGrid(
+                  albums: artist.albums,
+                  l10n: l10n,
+                  onOpenAlbum: onOpenAlbum,
+                ),
+                const SizedBox(height: 22),
+              ],
+              _sectionTitle(l10n.allTracks),
+              const SizedBox(height: 8),
+              ...artist.tracks.asMap().entries.map(
+                    (e) => _TrackRow(
+                      player: player,
+                      track: e.value,
+                      index: e.key,
+                      selected: e.value.id == player.currentTrack?.id,
+                      onPlay: (i) => player.playFrom(artist.tracks, i),
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 专辑详情：头部（含「播放整张」）+ 按音轨号排序的曲目列表。
+class _AlbumDetail extends ConsumerWidget {
+  final PlayerController player;
+  final String albumKey;
+  final VoidCallback onBack;
+  const _AlbumDetail({
+    required this.player,
+    required this.albumKey,
+    required this.onBack,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(libraryProvider);
+    ref.watch(currentIndexProvider);
+    final l10n = AppLocalizations.of(context);
+    final idx = MediaIndex.build(player.library);
+    final album = idx.albumByKey(albumKey);
+    if (album == null) return _detailEmpty(l10n);
+    final name = album.name.isEmpty ? l10n.albumUnknown : album.name;
+    final artistName =
+        album.artist.isEmpty ? l10n.artistUnknown : album.artist;
+    final tracks = album.orderedTracks;
+    final accent = AccentScope.of(context);
+    return Column(
+      children: [
+        _DetailHeader(
+          coverUrl: album.coverUrl,
+          seed: album.key,
+          title: name,
+          subtitle: '$artistName · ${l10n.trackCount(tracks.length)}',
+          onBack: onBack,
+          action: FilledButton.icon(
+            onPressed: () => player.playFrom(tracks, 0),
+            icon: const Icon(LucideIcons.play, size: 16),
+            label: Text(l10n.playAlbum),
+            style: FilledButton.styleFrom(
+              backgroundColor: accent,
+              foregroundColor: accent.onAccent,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+            children: tracks.asMap().entries.map(
+                  (e) => _TrackRow(
+                    player: player,
+                    track: e.value,
+                    index: e.key,
+                    selected: e.value.id == player.currentTrack?.id,
+                    onPlay: (i) => player.playFrom(tracks, i),
+                  ),
+                ).toList(),
+          ),
+        ),
+      ],
+    );
+  }
 }

@@ -82,5 +82,33 @@
   "dlgTitleLocal": "Local",
   "simulated": "Simulated",
   "settingsTitle": "Settings",
-  "settingsData": "Data"
+  "settingsData": "Data",
+  "sidebarArtists": "Artists",
+  "sidebarAlbums": "Albums",
+  "viewArtists": "Artists",
+  "viewAlbums": "Albums",
+  "artistUnknown": "Unknown Artist",
+  "albumUnknown": "Unknown Album",
+  "sortByName": "By name",
+  "sortByCount": "By count",
+  "allTracks": "All Tracks",
+  "noArtists": "No matching artists",
+  "noAlbums": "No matching albums",
+  "playAlbum": "Play Album",
+  "artistCount": "{count} artists",
+  "albumCount": "{count} albums",
+  "@artistCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@albumCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

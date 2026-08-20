@@ -117,5 +117,33 @@
   "dlgTitleLocal": "本地",
   "simulated": "模拟",
   "settingsTitle": "设置",
-  "settingsData": "数据"
+  "settingsData": "数据",
+  "sidebarArtists": "艺术家",
+  "sidebarAlbums": "专辑",
+  "viewArtists": "艺术家",
+  "viewAlbums": "专辑",
+  "artistUnknown": "未知艺术家",
+  "albumUnknown": "未知专辑",
+  "sortByName": "按名称",
+  "sortByCount": "按数量",
+  "allTracks": "全部曲目",
+  "noArtists": "没有匹配的艺术家",
+  "noAlbums": "没有匹配的专辑",
+  "playAlbum": "播放专辑",
+  "artistCount": "{count} 位艺术家",
+  "albumCount": "{count} 张专辑",
+  "@artistCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@albumCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }
