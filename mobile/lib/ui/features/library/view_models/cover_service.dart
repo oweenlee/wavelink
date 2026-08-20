@@ -24,6 +24,11 @@ class CoverService {
   /// 封面就绪回调（上层刷新 UI + 持久化曲库）
   final VoidCallback? onCoversUpdated;
 
+  /// SMB 封面提取组内并发：历史 4 曾触发 NAS 连接数限制整批超时，
+  /// 但彼时每任务临时新建连接、无池约束；现 Rust 侧有 8 连接池 + 信号量，
+  /// 4 并发安全。若 NAS 对并发连接敏感，调回 2。
+  static const _smbCoverGroupSize = 4;
+
   /// NAS 远端封面/元数据批量提取（并发 2），完成后回调刷新。
   /// 失败静默：封面保持纯色占位，不影响曲库。
   /// 每批前先探活：发现死连接先重建，避免整批请求同时踩
@@ -80,9 +85,10 @@ class CoverService {
         onCoversUpdated?.call();
         if (progressed) {
           idleRounds = 0;
-          // 有进展：仅短暂防抖立即续跑。历史 bug：无条件等 15s，
-          // 700 首歌回填要 350 轮 × 15s ≈ 90 分钟，专辑分组迟迟不出现
-          await Future.delayed(const Duration(milliseconds: 300));
+          // 有进展：立即续跑，不再额外等待。历史 bug：无条件等 15s，
+          // 700 首歌回填要 350 轮 × 15s ≈ 90 分钟；后改为 300ms 防抖，
+          // 但数百首歌每轮 8 首仍有 60+ 轮 × 300ms ≈ 20s 纯空等。
+          // 每轮内本就有网络往返耗时，无需叠加防抖延迟。
         } else {
           idleRounds++;
           if (idleRounds >= 8) {
@@ -127,9 +133,13 @@ class CoverService {
       }
       final end = (i + roundSize > songs.length) ? songs.length : i + roundSize;
       final batch = songs.sublist(i, end);
-      // 组内并发：SMB 受限（2，历史 4 并发曾触发 NAS 连接数限制整批
-      // 超时）；纯 WebDAV 走 reqwest 无连接数限制，放开到 6 提速。
-      final groupSize = hasSmb ? 2 : 6;
+      // 组内并发：SMB 用 4。历史 4 并发曾触发 NAS 连接数限制整批超时，
+      // 但彼时每任务临时新建连接、无池约束；现 Rust 侧已有 8 连接池 +
+      // 信号量保护（smb.rs READ_POOL_SIZE=8 / POOL_SEM_PERMITS=10），
+      // 4 并发封面 + 1 播放流 ≤ 池容量。若你的 NAS 对并发连接仍敏感，
+      // 调回 2 即可（见 [_smbCoverGroupSize]）。
+      // 纯 WebDAV 走 reqwest 无连接数限制，放开到 6 提速。
+      final groupSize = hasSmb ? _smbCoverGroupSize : 6;
       for (var j = 0; j < batch.length; j += groupSize) {
         final subEnd =
             (j + groupSize > batch.length) ? batch.length : j + groupSize;

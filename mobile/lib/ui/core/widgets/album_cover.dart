@@ -18,6 +18,10 @@ class WlCover extends StatelessWidget {
   final Widget? overlay; // 叠加层（NOW 角标、均衡器等）
   final Widget? placeholder; // 自定义降级占位（首字母 / 图标）
 
+  /// 显式解码宽度（px）：width/height 未知（无限大，如网格内 Expanded
+  /// 撑开）时按此值缩放解码，避免整张封面全尺寸解码拖慢列表。
+  final int? imageCacheWidth;
+
   const WlCover({
     super.key,
     this.coverUrl,
@@ -27,6 +31,7 @@ class WlCover extends StatelessWidget {
     this.height,
     this.overlay,
     this.placeholder,
+    this.imageCacheWidth,
   });
 
   @override
@@ -59,10 +64,13 @@ class WlCover extends StatelessWidget {
               Image.file(
                 File(coverUrl!),
                 fit: BoxFit.cover,
-                // 缩略图：按展示尺寸解码缩放，避免 4K 封面整图进内存
-                cacheWidth: width != null && width!.isFinite
-                    ? (width! * 2.5).round().clamp(128, 1024)
-                    : null,
+                // 缩略图：按展示尺寸解码缩放，避免 4K 封面整图进内存。
+                // 尺寸未知（width 无限大，如网格内 Expanded 撑开）时由
+                // 调用方显式传 imageCacheWidth。
+                cacheWidth: imageCacheWidth ??
+                    (width != null && width!.isFinite
+                        ? (width! * 2.5).round().clamp(128, 1024)
+                        : null),
                 errorBuilder: (context, error, stackTrace) => _fallback(),
               )
             else
@@ -197,6 +205,9 @@ class SongCoverArt extends StatelessWidget {
                 Image.file(
                   coverFile,
                   fit: BoxFit.cover,
+                  // 40px 行缩略图按 100px 解码，避免整张封面全尺寸解码
+                  //（常 1000~2000px）拖慢列表滚动/刷新
+                  cacheWidth: 100,
                   errorBuilder: (_, _, _) => const CoverPlaceholder(size: 40),
                 ),
                 if (isPlaying)

@@ -596,6 +596,9 @@ class _AlbumsTab extends ConsumerWidget {
                     borderRadius: 10,
                     width: double.infinity,
                     height: double.infinity,
+                    // 网格 cell 由 Expanded 撑开、尺寸未知，显式按 ~360px
+                    // 解码缩放，避免整张封面全尺寸解码
+                    imageCacheWidth: 360,
                     overlay: isPlayingAlbum
                         ? Align(
                             alignment: Alignment.bottomRight,

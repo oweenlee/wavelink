@@ -45,6 +45,19 @@ class SmbService {
   static int _coverFailStreak = 0;
   static const int _coverFailThreshold = 3;
 
+  /// 缓存的 Documents 目录：封面提取热路径每次 getApplicationDocumentsDirectory()
+  /// 都是一次原生通道调用（单首歌提取 3~5 次，几百首累积数秒），
+  /// 进程内路径恒定，首次获取后复用。iOS 重装后容器路径变化不涉及进程内场景。
+  static Directory? _documentsDir;
+
+  static Future<Directory> _getDocumentsDir() async {
+    final cached = _documentsDir;
+    if (cached != null) return cached;
+    final dir = await getApplicationDocumentsDirectory();
+    _documentsDir = dir;
+    return dir;
+  }
+
   /// 封面熔断冷却：达到熔断阈值后暂停封面提取一段时间，
   /// 避免死会话上批间无冷却反复刷超时（历史日志：连续 4 轮
   /// 封面批每轮都 10s 超时熔断，期间播放/下载被连接竞争拖垮）。
@@ -794,7 +807,7 @@ class SmbService {
       // 与读头路径一致：顺手回填占位元数据（无封面也生效）
       _backfillMetadata(song, meta);
       if (meta.hasCover && meta.coverBytes.isNotEmpty) {
-        final appDir = await getApplicationDocumentsDirectory();
+        final appDir = await _getDocumentsDir();
         final coversDir = Directory('${appDir.path}/.covers');
         if (!await coversDir.exists()) {
           await coversDir.create(recursive: true);
@@ -820,7 +833,7 @@ class SmbService {
     String smbPath,
     List<int> bytes,
   ) async {
-    final appDir = await getApplicationDocumentsDirectory();
+    final appDir = await _getDocumentsDir();
     final headDir = Directory('${appDir.path}/.smb_head');
     if (!await headDir.exists()) await headDir.create(recursive: true);
     // 必须保留真实音频扩展名：lofty/symphonia 按扩展名探测格式，
