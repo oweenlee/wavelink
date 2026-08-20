@@ -58,7 +58,6 @@ class LibraryState {
 
   /// 曲库可见歌曲：按来源开关过滤（关闭的来源不在曲库展示）。
   /// 队列/收藏/播放不受影响（各自独立数据源）。
-  /// 队列/收藏/播放不受影响（各自独立数据源）。
   List<Song> get allSongs {
     final prefs = PreferencesService.instance;
     return importedSongs.where((s) => prefs.showSource(s.source)).toList();

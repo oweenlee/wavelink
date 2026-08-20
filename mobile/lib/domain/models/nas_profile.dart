@@ -31,8 +31,12 @@ class NasProfile {
     final h = host.trim();
     final s = share.trim();
     if (s.isEmpty) return h;
-    final shareName = s.split('/').first;
-    return '$h · $shareName';
+    // 前导斜杠（/Music）会使 split('/').first 为空，跳过空段取真实共享名
+    final shareName = s.split('/').firstWhere(
+          (p) => p.isNotEmpty,
+          orElse: () => '',
+        );
+    return shareName.isEmpty ? h : '$h · $shareName';
   }
 
   /// 判断是否与另一配置指向同一连接目标（忽略凭据）

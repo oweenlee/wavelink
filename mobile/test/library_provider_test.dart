@@ -38,6 +38,50 @@ Song _localSong(String id) => Song(
   path: '/tmp/$id.flac',
 );
 
+/// WebDAV 远端索引歌（davPath）
+Song _webdavSong(String id) => Song(
+  id: id,
+  title: id,
+  artist: 'artist',
+  album: 'album',
+  duration: const Duration(seconds: 100),
+  dominantColor: const Color(0xFF000000),
+  davPath: 'Music/$id.flac',
+);
+
+/// Subsonic 流式歌（streamUrl）
+Song _subsonicSong(String id) => Song(
+  id: id,
+  title: id,
+  artist: 'artist',
+  album: 'album',
+  duration: const Duration(seconds: 100),
+  dominantColor: const Color(0xFF000000),
+  streamUrl: 'https://sub.example/rest/stream?id=$id',
+);
+
+/// Apple Music 同步歌（ipod-library:// 路径）
+Song _appleMusicSong(String id) => Song(
+  id: id,
+  title: id,
+  artist: 'artist',
+  album: 'album',
+  duration: const Duration(seconds: 100),
+  dominantColor: const Color(0xFF000000),
+  path: 'ipod-library://item/item$id?id=$id',
+);
+
+/// 文件导入歌（id 前缀 imp_）
+Song _importedSong(String id) => Song(
+  id: 'imp_$id',
+  title: id,
+  artist: 'artist',
+  album: 'album',
+  duration: const Duration(seconds: 100),
+  dominantColor: const Color(0xFF000000),
+  path: '/tmp/$id.flac',
+);
+
 void main() {
   setUp(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
@@ -143,11 +187,32 @@ void main() {
   });
 
   group('LibraryNotifier 曲库过滤', () {
-    test('allSongs 按来源开关过滤（NAS 关闭时隐藏）', () async {
-      await PreferencesService.instance.setShowNas(false);
-      final n = seed(buildContainer(), [_nasSong('a'), _localSong('b')]);
-      final ids = n.state.allSongs.map((s) => s.id).toList();
-      check(ids).deepEquals(['b']);
+    test('allSongs 按各来源开关过滤（六种来源逐一验证）', () async {
+      final p = PreferencesService.instance;
+      final songs = [
+        _nasSong('nas'),
+        _webdavSong('dav'),
+        _subsonicSong('sub'),
+        _appleMusicSong('am'),
+        _importedSong('imp'),
+        _localSong('loc'),
+      ];
+      final toggles = <(String, Future<void> Function(bool))>[
+        ('nas', p.setShowNas),
+        ('dav', p.setShowWebdav),
+        ('sub', p.setShowSubsonic),
+        ('am', p.setShowAppleMusic),
+        ('imp_imp', p.setShowImported),
+        ('loc', p.setShowLocal),
+      ];
+      for (final (hiddenId, setter) in toggles) {
+        await setter(false);
+        final n = seed(buildContainer(), songs);
+        final ids = n.state.allSongs.map((s) => s.id).toList();
+        check(ids)
+            .deepEquals(songs.map((s) => s.id).where((id) => id != hiddenId).toList());
+        await setter(true); // 复位，避免影响后续来源
+      }
     });
 
     test('restoreCachedSongs 注入后全部可见（默认全开）', () {

@@ -4,11 +4,11 @@ WaveLink 移动端播放器（Android + iOS），与桌面端共享 [audio-core]
 
 ## 功能特性
 
-- **多音乐源**：NAS/SMB、WebDAV、Subsonic、本地导入、Apple Music，STRM 指针文件（含跨源解析）
-- **离线播放**：收藏歌曲自动后台静默下载（多源分流 + 并发闸门），缓存可复用
+- **多音乐源**：NAS/SMB、WebDAV、Subsonic、本地导入、Apple Music，STRM 指针文件（含跨源解析）；NAS 支持多配置档案保存与切换（切换/删除时自动清理旧曲库）
+- **播放缓存与断点续播**：播放时自动缓存（SMB 边下边播落盘、WebDAV 整曲下载、Subsonic 流式），重启后恢复上次队列与进度；设置内可一键清理无引用的缓存（封面/下载/歌词）
 - **音质增强**：EQ + 自动调音（AutoEQ）、房间校正（REW 曲线生成 FIR 滤波器应用到 DSP）、耳机校正
-- **歌词**：LRC 解析与滚动歌词，远端歌词支持 GBK 解码
-- **多语言**：中文 / 日本語 / English（手动锁定或跟随系统）
+- **歌词**：LRC 解析与滚动歌词，远端歌词支持 GBK 解码；播放历史与「最近播放」列表（SQLite 持久化）
+- **多语言**：中文 / English / 日本語 / 한국어 / Deutsch（手动锁定或跟随系统）
 - **平台能力**：锁屏/远控（MediaSession / MPRemoteCommandCenter）、媒体通知展开歌词行、前台服务、音频焦点与中断处理
 
 ## 架构
@@ -49,7 +49,7 @@ cargo test --manifest-path rust/Cargo.toml  # Rust 侧数据通路测试
 | `lib/data` | repositories + services（Rust 服务门面、平台通道、NAS 源） |
 | `lib/domain` | 领域模型 |
 | `lib/ui` | core（主题/路由/共享组件）+ features（library/playback/settings） |
-| `lib/l10n` | ARB 本地化资源 + 生成的 Localizations（zh/ja/en） |
+| `lib/l10n` | ARB 本地化资源 + 生成的 Localizations（zh/en/ja/ko/de） |
 | `lib/src/rust` | FRB 生成代码，勿手改 |
 | `rust/src/api` | FRB 扫描的 API 模块 |
 | `rust/src/ffi.rs` | 不被 FRB 扫描的 JNI/C 回调（裸指针参数） |
