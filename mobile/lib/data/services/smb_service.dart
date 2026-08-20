@@ -24,6 +24,13 @@ class SmbService {
 
   static bool _connected = false;
 
+  /// 当前会话连接的服务器目标（connect 成功时记录；断开/清空）。
+  /// 用于判断会话与已保存配置是否一致：用户"测试连接"过别的服务器
+  /// 但未保存时，会话目标会与激活配置不同，此时需重建会话再扫描，
+  /// 避免用错服务器扫目录/提取封面。
+  static String? _connectedHost;
+  static int _connectedPort = 445;
+
   /// 当前已挂载的共享名（connectShare 成功时记录；会话重建/断开时清空）。
   /// 避免每次下载重复挂载 tree。
   static String? _mountedShare;
@@ -118,6 +125,11 @@ class SmbService {
 
   static bool get isConnected => _connected;
 
+  /// 当前会话是否连接的是 [host]:[port] 目标。会话可能因"测试连接
+  /// 别的服务器后未保存"而与激活配置不一致，导入前需据此判定重建。
+  static bool matchesTarget({required String host, required int port}) =>
+      _connected && _connectedHost == host && _connectedPort == port;
+
   /// 当前已挂载的共享名（connectShare 成功时记录；会话重建/断开时清空）。
   /// 共享级状态：仅服务器连通不足以判断 NAS 可用，读文件需共享已挂载。
   static String? get mountedShare => _mountedShare;
@@ -205,6 +217,7 @@ class SmbService {
     final connectivity = await Connectivity().checkConnectivity();
     if (connectivity.isEmpty || connectivity.contains(ConnectivityResult.none)) {
       _connected = false;
+      _connectedHost = null;
       lastError = '未连接网络：请先连上 Wi-Fi（需与 NAS 同一局域网）';
       return false;
     }
@@ -217,6 +230,8 @@ class SmbService {
         domain: domain,
       );
       _connected = true;
+      _connectedHost = host;
+      _connectedPort = port;
       // 会话重建后 tree 被重置，需重新 connectShare 才能读文件
       _mountedShare = null;
       _sessionGen++;
@@ -226,6 +241,7 @@ class SmbService {
     } catch (e) {
       Log.e('SMB', 'connect failed: $e');
       _connected = false;
+      _connectedHost = null;
       lastError = _friendlyConnectError('$e');
       return false;
     }
@@ -351,6 +367,7 @@ class SmbService {
     }
     stopKeepalive();
     _connected = false;
+    _connectedHost = null;
     _mountedShare = null;
     _sessionGen++;
   });

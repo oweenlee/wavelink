@@ -480,12 +480,16 @@ class LibraryNotifier extends Notifier<LibraryState> {
       nasImportError: null,
     );
     try {
-      if (!SmbService.isConnected) {
-        final prefs = PreferencesService.instance;
-        final host = prefs.nasHost;
-        if (host == null || host.isEmpty) {
-          throw const FormatException('NAS host not configured');
-        }
+      final prefs = PreferencesService.instance;
+      final host = prefs.nasHost;
+      if (host == null || host.isEmpty) {
+        throw const FormatException('NAS host not configured');
+      }
+      // 会话目标与激活配置不一致时重建：用户"测试连接"过别的服务器
+      // 但未保存时，SmbService 会话仍是旧目标，直接用会扫错目录，
+      // 封面提取也会用错服务器。
+      if (!SmbService.isConnected ||
+          !SmbService.matchesTarget(host: host, port: prefs.nasPort)) {
         final ok = await SmbService.connect(
           host: host,
           port: prefs.nasPort,
@@ -678,6 +682,32 @@ class LibraryNotifier extends Notifier<LibraryState> {
     _persistFavorites();
     Log.i('Library', 'NAS 同步：移除 ${gone.length} 首 NAS 已删除的歌曲');
     unawaited(Future.wait(gone.map(_deleteSandboxFiles)));
+  }
+
+  /// 更换 NAS 服务器时清除所有旧 NAS（SMB）歌曲：移除曲库条目与收藏，
+  /// 删除沙盒内下载缓存/封面/歌词文件。仅处理 source==nas 的歌，
+  /// 其他来源（WebDAV/Subsonic/本地）不受影响。返回被清除的数量。
+  Future<int> clearNasSongs() async {
+    // NAS 数据源更换：重置封面提取上下文（清队列/失败计数），
+    // 避免旧服务器的歌被旧提取循环误处理、失败计数按 id（不含
+    // 服务器指纹）跨配置残留导致新歌封面被直接放弃提取。
+    _covers.resetForConfigChange();
+    final nas = state.importedSongs
+        .where((s) => s.source == SongSource.nas)
+        .toList();
+    if (nas.isEmpty) return 0;
+    final ids = {for (final s in nas) s.id};
+    state = state.copyWith(
+      importedSongs: state.importedSongs
+          .where((s) => !ids.contains(s.id))
+          .toList(),
+      favoriteIds: {...state.favoriteIds}..removeAll(ids),
+    );
+    ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
+    _persistFavorites();
+    Log.i('Library', 'NAS 更换：清除 ${nas.length} 首旧 NAS 歌曲');
+    unawaited(Future.wait(nas.map(_deleteSandboxFiles)));
+    return nas.length;
   }
 
   /// 音乐服务器（Subsonic）同步清理：把服务器上已不存在的歌曲移出曲库

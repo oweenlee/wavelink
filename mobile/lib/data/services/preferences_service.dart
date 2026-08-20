@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../domain/models/nas_profile.dart';
 import '../../domain/models/song.dart';
 import 'log.dart';
 
@@ -265,6 +268,7 @@ class PreferencesService {
   static const _kNasShare = 'nas_share';
   static const _kNasUsername = 'nas_username';
   static const _kNasPassword = 'nas_password';
+  static const _kNasProfiles = 'nas_profiles';
 
   String? get nasType => _prefs.getString(_kNasType);
   String? get nasHost => _prefs.getString(_kNasHost);
@@ -272,6 +276,66 @@ class PreferencesService {
   String? get nasShare => _prefs.getString(_kNasShare);
   String? get nasUsername => _prefs.getString(_kNasUsername);
   String get nasPassword => _prefs.getString(_kNasPassword) ?? '';
+
+  /// 已保存的 NAS 配置档案列表（底部历史配置展示用）。
+  /// 激活字段（nasHost 等）与列表中的某一条对应；列表按保存时间倒序。
+  List<NasProfile> get nasProfiles {
+    final raw = _prefs.getString(_kNasProfiles);
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      final list = decoded
+          .map((e) => NasProfile.fromJson(e as Map<String, Object?>))
+          .toList();
+      list.sort((a, b) => b.savedAt.compareTo(a.savedAt));
+      return list;
+    } catch (e) {
+      Log.e('Prefs', 'NAS 配置档案解码失败: $e');
+      return [];
+    }
+  }
+
+  /// 当前激活的配置档案（与激活字段对齐），无配置时为 null。
+  NasProfile? get activeNasProfile {
+    final host = nasHost;
+    if (host == null || host.isEmpty) return null;
+    return NasProfile(
+      host: host,
+      port: nasPort,
+      share: nasShare ?? '',
+      username: nasUsername ?? '',
+      password: nasPassword,
+      type: nasType,
+      savedAt: DateTime.now(),
+    );
+  }
+
+  /// 写入/更新配置档案：同一 id（同服务器同共享路径）覆盖更新，
+  /// 否则追加。返回落库后的档案。
+  Future<NasProfile> upsertNasProfile(NasProfile p) async {
+    final profiles = nasProfiles;
+    final idx = profiles.indexWhere((x) => x.id == p.id);
+    if (idx >= 0) {
+      profiles[idx] = p;
+    } else {
+      profiles.add(p);
+    }
+    await _prefs.setString(
+      _kNasProfiles,
+      jsonEncode(profiles.map((x) => x.toJson()).toList()),
+    );
+    return p;
+  }
+
+  /// 删除配置档案。仅移除列表条目，不动激活字段与曲库数据
+  ///（是否连带清理曲库由调用方决定，见 NAS 设置页删除流程）。
+  Future<void> removeNasProfile(String id) async {
+    final profiles = nasProfiles.where((x) => x.id != id).toList();
+    await _prefs.setString(
+      _kNasProfiles,
+      jsonEncode(profiles.map((x) => x.toJson()).toList()),
+    );
+  }
 
   Future<void> setNasConfig({
     String? type,
@@ -287,6 +351,20 @@ class PreferencesService {
     if (share != null) await _prefs.setString(_kNasShare, share);
     if (username != null) await _prefs.setString(_kNasUsername, username);
     if (password != null) await _prefs.setString(_kNasPassword, password);
+
+    // 同步落一份到配置档案（底部历史配置用）
+    if (host != null && host.trim().isNotEmpty) {
+      final profile = NasProfile(
+        host: host,
+        port: port ?? nasPort,
+        share: share ?? nasShare ?? '',
+        username: username ?? nasUsername ?? '',
+        password: password ?? nasPassword,
+        type: type ?? nasType,
+        savedAt: DateTime.now(),
+      );
+      await upsertNasProfile(profile);
+    }
   }
 
   Future<void> clearNasConfig() async {

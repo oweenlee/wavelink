@@ -5,6 +5,9 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../../data/services/preferences_service.dart';
 import '../../../../data/services/smb_service.dart';
+import '../../../../data/services/log.dart';
+import '../../../../domain/models/nas_profile.dart';
+import '../../../../domain/models/song.dart';
 import '../../../../l10n/app_localizations.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import '../../../core/theme/app_theme.dart';
@@ -187,32 +190,250 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
     );
   }
 
+  /// 检测到 NAS 连接目标（地址/端口/共享路径）变更且曲库已有旧 NAS 歌曲时，
+  /// 弹出确认对话框：确认后清除旧 NAS 的曲库条目与下载缓存，避免更换服务器
+  /// 后列表残留旧内容。仅改用户名/密码不算更换服务器，不弹窗。
+  Future<bool> _confirmReplaceNas(int count) async {
+    final l10n = AppLocalizations.of(context);
+    final accent = AccentScope.of(context);
+    final res = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceDark,
+        title: Text(
+          l10n.nasChangedTitle,
+          style: const TextStyle(color: AppTheme.textPrimary),
+        ),
+        content: Text(
+          l10n.nasChangedBody(count),
+          style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              l10n.cancel,
+              style: const TextStyle(color: AppTheme.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              l10n.confirm,
+              style: TextStyle(color: accent),
+            ),
+          ),
+        ],
+      ),
+    );
+    return res ?? false;
+  }
+
   Future<void> _saveAndConnect() async {
     FocusScope.of(context).unfocus();
+    final l10n = AppLocalizations.of(context);
+    final prefs = PreferencesService.instance;
+    final newHost = _hostCtrl.text.trim();
+    final newPort = int.tryParse(_portCtrl.text.trim()) ?? 445;
+    final newShare = _shareCtrl.text.trim();
+
+    if (newHost.isEmpty) {
+      Fluttertoast.showToast(
+        msg: l10n.nasEnterHost,
+        gravity: ToastGravity.BOTTOM,
+        fontSize: 13,
+        backgroundColor: AppTheme.danger,
+        textColor: AppTheme.textPrimary,
+      );
+      return;
+    }
+
+    // 检测连接目标是否更换（首次配置不弹窗；仅改凭据不算更换）
+    final oldHost = prefs.nasHost ?? '';
+    final oldPort = prefs.nasPort;
+    final oldShare = prefs.nasShare ?? '';
+    final serverChanged = oldHost.isNotEmpty &&
+        (newHost != oldHost || newPort != oldPort || newShare != oldShare);
+
+    if (serverChanged) {
+      final nasCount = ref
+          .read(libraryProvider)
+          .importedSongs
+          .where((s) => s.source == SongSource.nas)
+          .length;
+      if (nasCount > 0) {
+        final confirmed = await _confirmReplaceNas(nasCount);
+        if (!confirmed || !mounted) return;
+        // 清除旧 NAS 曲库条目与缓存（失败不阻断保存）
+        try {
+          await ref.read(libraryProvider.notifier).clearNasSongs();
+        } catch (e) {
+          Log.e('NAS', '清除旧 NAS 歌曲失败: $e');
+        }
+      }
+    }
+
     await PreferencesService.instance.setNasConfig(
       type: _nasType,
-      host: _hostCtrl.text.trim(),
-      port: int.tryParse(_portCtrl.text.trim()) ?? 445,
-      share: _shareCtrl.text.trim(),
+      host: newHost,
+      port: newPort,
+      share: newShare,
       username: _userCtrl.text.trim(),
       password: _passCtrl.text,
     );
 
     // 触发后台导入（fire-and-forget，不阻塞页面）：
     // 立即返回曲库，导入进度在曲库页顶部展示，可随时取消。
-    final host = _hostCtrl.text.trim();
-    final share = _shareCtrl.text.trim();
-    if (host.isNotEmpty && share.isNotEmpty) {
-      ref.read(libraryProvider.notifier).startNasImport(share);
+    if (newShare.isNotEmpty) {
+      ref.read(libraryProvider.notifier).startNasImport(newShare);
     }
 
-    if (mounted) context.pop(true);
+    if (!mounted) return;
+    setState(() {}); // 刷新底部历史配置（新增/更新时间戳）
+    Fluttertoast.showToast(
+      msg: l10n.nasSaved,
+      gravity: ToastGravity.BOTTOM,
+      fontSize: 13,
+      backgroundColor: AppTheme.ok,
+      textColor: AppTheme.textPrimary,
+    );
+  }
+
+  /// 点击底部已保存配置：填充上方输入框，并切换为该配置的数据源。
+  /// 与当前激活配置不同时，确认后清除旧 NAS 歌曲并导入该配置。
+  Future<void> _applyProfile(NasProfile p) async {
+    final l10n = AppLocalizations.of(context);
+    _hostCtrl.text = p.host;
+    _portCtrl.text = '${p.port}';
+    _shareCtrl.text = p.share;
+    _userCtrl.text = p.username;
+    _passCtrl.text = p.password;
+    _nasType = p.type;
+    setState(() {});
+
+    final prefs = PreferencesService.instance;
+    final active = prefs.activeNasProfile;
+    final isActive = active != null && active.id == p.id;
+    // 已是当前配置：仅填充表单，不切换
+    if (isActive) return;
+
+    final nasCount = ref
+        .read(libraryProvider)
+        .importedSongs
+        .where((s) => s.source == SongSource.nas)
+        .length;
+    if (nasCount > 0) {
+      final confirmed = await _confirmReplaceNas(nasCount);
+      if (!confirmed || !mounted) return;
+      try {
+        await ref.read(libraryProvider.notifier).clearNasSongs();
+      } catch (e) {
+        Log.e('NAS', '切换清除旧 NAS 歌曲失败: $e');
+      }
+    }
+
+    await prefs.setNasConfig(
+      type: p.type,
+      host: p.host,
+      port: p.port,
+      share: p.share,
+      username: p.username,
+      password: p.password,
+    );
+    if (p.share.isNotEmpty) {
+      ref.read(libraryProvider.notifier).startNasImport(p.share);
+    }
+    if (!mounted) return;
+    setState(() {});
+    Fluttertoast.showToast(
+      msg: l10n.nasSwitched(p.displayName),
+      gravity: ToastGravity.BOTTOM,
+      fontSize: 13,
+      backgroundColor: AppTheme.ok,
+      textColor: AppTheme.textPrimary,
+    );
+  }
+
+  Future<bool> _confirmDeleteProfile({required bool isActive, required int count}) async {
+    final l10n = AppLocalizations.of(context);
+    final res = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceDark,
+        title: Text(
+          l10n.nasProfileDeleteTitle,
+          style: const TextStyle(color: AppTheme.textPrimary),
+        ),
+        content: Text(
+          isActive
+              ? l10n.nasProfileDeleteBodyActive(count)
+              : l10n.nasProfileDeleteBodyIdle,
+          style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              l10n.cancel,
+              style: const TextStyle(color: AppTheme.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              l10n.nasProfileDeleteTitle,
+              style: TextStyle(color: AppTheme.danger),
+            ),
+          ),
+        ],
+      ),
+    );
+    return res ?? false;
+  }
+
+  /// 删除配置：同时清除其相关数据。删除的是「当前使用」配置时，
+  /// 连同曲库中所有 NAS 歌曲与下载缓存一并清除，并清空激活字段。
+  Future<void> _deleteProfile(NasProfile p) async {
+    final prefs = PreferencesService.instance;
+    final active = prefs.activeNasProfile;
+    final isActive = active != null && active.id == p.id;
+    final nasCount = ref
+        .read(libraryProvider)
+        .importedSongs
+        .where((s) => s.source == SongSource.nas)
+        .length;
+
+    final confirmed = await _confirmDeleteProfile(
+      isActive: isActive,
+      count: nasCount,
+    );
+    if (!confirmed || !mounted) return;
+
+    await prefs.removeNasProfile(p.id);
+    if (isActive) {
+      // 删除激活配置：清曲库 NAS 数据 + 激活字段 + 表单
+      try {
+        await ref.read(libraryProvider.notifier).clearNasSongs();
+      } catch (e) {
+        Log.e('NAS', '删除配置清除 NAS 歌曲失败: $e');
+      }
+      await prefs.clearNasConfig();
+      _hostCtrl.clear();
+      _portCtrl.text = '445';
+      _shareCtrl.clear();
+      _userCtrl.clear();
+      _passCtrl.clear();
+      _nasType = null;
+    }
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
     final l10n = AppLocalizations.of(context);
+    final profiles = PreferencesService.instance.nasProfiles;
+    final activeNasId = PreferencesService.instance.activeNasProfile?.id;
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
@@ -344,6 +565,125 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
                 ),
               ),
             ],
+            const SizedBox(height: 24),
+            // ── 已保存的配置（点击填充输入框并切换数据源） ──
+            Text(
+              l10n.nasSavedProfiles,
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (profiles.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  l10n.nasProfilesEmpty,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              )
+            else
+              for (final p in profiles) ...[
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceDark,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: p.id == activeNasId
+                          ? AppTheme.textSecondary
+                          : AppTheme.highlight,
+                      width: p.id == activeNasId ? 1.2 : 0.5,
+                    ),
+                  ),
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => _applyProfile(p),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+                        child: Row(
+                          children: [
+                            Icon(
+                              LucideIcons.server,
+                              size: 18,
+                              color: AppTheme.textSecondary,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          p.displayName,
+                                          style: const TextStyle(
+                                            color: AppTheme.textPrimary,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (p.id == activeNasId) ...[
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 1,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: accent,
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            l10n.nasProfileActive,
+                                            style: const TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${p.username.isEmpty ? '—' : p.username}'
+                                    ' · :${p.port}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                LucideIcons.trash2,
+                                size: 18,
+                                color: AppTheme.danger,
+                              ),
+                              onPressed: () => _deleteProfile(p),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
           ],
         ),
       ),
