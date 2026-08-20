@@ -37,7 +37,7 @@ class DetailHeader extends StatelessWidget {
           IconButton(
             icon: const Icon(LucideIcons.arrowLeft,
                 size: 20, color: AppTheme.textTertiary),
-            tooltip: '返回',
+            tooltip: AppLocalizations.of(context).detailBack,
             onPressed: onBack,
           ),
           const SizedBox(width: 4),

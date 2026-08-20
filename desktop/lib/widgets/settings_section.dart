@@ -2,28 +2,44 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../core/theme.dart';
+import '../l10n/app_localizations.dart';
 
 // ═══════════════════════════ 设置页内容框架 ═══════════════════════════
 //
 // 自 screens/settings.dart 迁出：分区元信息、内容区（页头 + 横幅 + 内容）
 // 与引擎状态胶囊。`sec_${key}` / 引擎胶囊 Key 供 widget 测试定位。
+// 标题/副标题按分区 key 从 l10n 解析（与移动端一致，禁止硬编码文案）。
 
-/// 导航分类元信息（图标 + 标题 + 副标题 + 测试 Key 前缀）。
+/// 导航分类元信息（测试 Key 前缀 + 图标）。
 class SettingsSectionMeta {
   final String key;
-  final String title;
   final IconData icon;
-  final String subtitle;
-  const SettingsSectionMeta(this.key, this.title, this.icon, this.subtitle);
+  const SettingsSectionMeta(this.key, this.icon);
 }
 
 /// 设置页全部分区（顺序即导航顺序）。
 const kSettingsSections = <SettingsSectionMeta>[
-  SettingsSectionMeta('general', '通用', LucideIcons.settings, '语言与数据管理'),
-  SettingsSectionMeta('audio', '音频输出', LucideIcons.volume2, '设备选择与采样率'),
-  SettingsSectionMeta('dsp', 'DSP 效果', LucideIcons.slidersHorizontal, '实时音频处理链'),
-  SettingsSectionMeta('diag', '诊断', LucideIcons.activity, '引擎运行指标'),
+  SettingsSectionMeta('general', LucideIcons.settings),
+  SettingsSectionMeta('audio', LucideIcons.volume2),
+  SettingsSectionMeta('dsp', LucideIcons.slidersHorizontal),
+  SettingsSectionMeta('diag', LucideIcons.activity),
 ];
+
+/// 分区标题（按 key 解析 l10n）。
+String settingsSectionTitle(AppLocalizations l, String key) => switch (key) {
+      'general' => l.settingsSectionGeneral,
+      'audio' => l.settingsSectionAudio,
+      'dsp' => l.settingsSectionDsp,
+      _ => l.settingsSectionDiag,
+    };
+
+/// 分区副标题（按 key 解析 l10n）。
+String settingsSectionSubtitle(AppLocalizations l, String key) => switch (key) {
+      'general' => l.settingsSectionGeneralSub,
+      'audio' => l.settingsSectionAudioSub,
+      'dsp' => l.settingsSectionDspSub,
+      _ => l.settingsSectionDiagSub,
+    };
 
 /// 引擎健康度胶囊（页头与侧栏底部共用）。
 class EnginePill extends StatelessWidget {
@@ -32,6 +48,7 @@ class EnginePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final color = ready ? AppTheme.ok : AppTheme.warn;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -52,7 +69,7 @@ class EnginePill extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 7),
-          Text(ready ? '引擎就绪' : '引擎未加载',
+          Text(ready ? l.settingsEngineReady : l.settingsEngineNotReady,
               style: TextStyle(
                   color: color, fontSize: 11, fontWeight: FontWeight.w600)),
         ],
@@ -106,6 +123,7 @@ class _PageHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
+    final l = AppLocalizations.of(context);
     return Row(
       children: [
         Container(
@@ -122,11 +140,11 @@ class _PageHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(section.title,
+              Text(settingsSectionTitle(l, section.key),
                   key: Key('sec_${section.key}'),
                   style: WlText.display(fontSize: 22)),
               const SizedBox(height: 2),
-              Text(section.subtitle,
+              Text(settingsSectionSubtitle(l, section.key),
                   style: const TextStyle(
                       color: AppTheme.textSecondary, fontSize: 12)),
             ],
@@ -144,6 +162,7 @@ class _EngineNullBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -152,14 +171,14 @@ class _EngineNullBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppTheme.warn.withAlpha(0x40)),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(LucideIcons.alertCircle, size: 16, color: AppTheme.warn),
-          SizedBox(width: 10),
+          const Icon(LucideIcons.alertCircle, size: 16, color: AppTheme.warn),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
-              '音频引擎未加载（缺少动态库），DSP / 设备设置不可用。',
-              style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+              l.settingsEngineNullBanner,
+              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
             ),
           ),
         ],

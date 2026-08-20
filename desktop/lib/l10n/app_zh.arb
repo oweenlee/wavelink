@@ -52,6 +52,7 @@
   "libraryEmpty": "曲库为空",
   "addFolderToStart": "添加本地音乐文件夹开始播放",
   "noMatch": "没有匹配的曲目",
+  "detailBack": "返回",
   "sortDefault": "默认顺序",
   "sortByTitle": "按标题",
   "sortByArtist": "按艺人",
@@ -145,5 +146,162 @@
         "type": "int"
       }
     }
-  }
+  },
+  "settingsSectionGeneral": "通用",
+  "settingsSectionGeneralSub": "语言与数据管理",
+  "settingsSectionAudio": "音频输出",
+  "settingsSectionAudioSub": "设备选择与采样率",
+  "settingsSectionDsp": "DSP 效果",
+  "settingsSectionDspSub": "实时音频处理链",
+  "settingsSectionDiag": "诊断",
+  "settingsSectionDiagSub": "引擎运行指标",
+  "settingsBrandSubtitle": "设置 SETTINGS",
+  "settingsEngineReady": "引擎就绪",
+  "settingsEngineNotReady": "引擎未加载",
+  "settingsEngineNullBanner": "音频引擎未加载（缺少动态库），DSP / 设备设置不可用。",
+  "settingsGroupLanguage": "界面语言",
+  "settingsGroupLanguageDesc": "选择应用界面的显示语言",
+  "settingsDisplayLanguage": "显示语言",
+  "settingsDisplayLanguageDesc": "更改后立即生效",
+  "settingsGroupData": "数据管理",
+  "settingsGroupDataDesc": "管理本地曲库与缓存数据",
+  "settingsClearAll": "清空所有数据",
+  "settingsClearAllDesc": "删除全部曲库、收藏与播放列表（不可恢复）",
+  "settingsGroupOutputDevice": "输出设备",
+  "settingsGroupOutputDeviceDesc": "选择音频输出设备与独占模式",
+  "settingsDevice": "设备",
+  "settingsSystemDefaultOutput": "系统默认输出",
+  "settingsSystemDefault": "系统默认",
+  "settingsCurrentStatus": "当前状态",
+  "settingsMode": "模式",
+  "settingsModeExclusive": "独占",
+  "settingsModeShared": "共享",
+  "settingsSampleRate": "采样率",
+  "settingsExclusiveWasapi": "WASAPI 独占模式",
+  "settingsExclusiveHog": "Hog Mode 独占模式",
+  "settingsExclusiveDesc": "独占音频设备，切换将重启引擎",
+  "settingsExclusiveFailed": "独占模式切换失败：{err}",
+  "@settingsExclusiveFailed": {
+    "placeholders": {
+      "err": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsGroupSampleRateDesc": "设置输出采样率（下次播放生效）",
+  "settingsOutputSampleRate": "输出采样率 (Hz)",
+  "settingsSrHint": "常用值：44100（CD）、48000、96000、192000",
+  "settingsApply": "应用",
+  "settingsGroupAdvanced": "高级",
+  "settingsGroupAdvancedDesc": "Bit-Perfect、自动采样率与无缝切换",
+  "settingsBitPerfect": "Bit-Perfect 直通",
+  "settingsBitPerfectDesc": "绕过采样率转换与 DSP，原始信号直出；切换将重启引擎",
+  "settingsBitPerfectFailed": "Bit-Perfect 切换失败：{err}",
+  "@settingsBitPerfectFailed": {
+    "placeholders": {
+      "err": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAutoSr": "自动采样率",
+  "settingsAutoSrDesc": "按源文件采样率自动切换输出；切换将重启引擎",
+  "settingsAutoSrFailed": "自动采样率切换失败：{err}",
+  "@settingsAutoSrFailed": {
+    "placeholders": {
+      "err": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsCrossfade": "曲间无缝 Crossfade",
+  "settingsCrossfadeDesc": "下一首启动生效",
+  "settingsOff": "关闭",
+  "settingsGroupSpatial": "空间效果",
+  "settingsGroupSpatialDesc": "立体声展宽与跨馈处理",
+  "settingsStereoWiden": "立体声展宽",
+  "settingsStereoWidenDesc": "扩展立体声声场宽度",
+  "settingsWidenWidth": "展宽宽度",
+  "settingsCrossfeed": "跨馈 (Crossfeed)",
+  "settingsCrossfeedDesc": "耳机听感模拟音箱串扰，减少疲劳",
+  "settingsGroupDynamics": "动态处理",
+  "settingsGroupDynamicsDesc": "限幅、抖动与噪声整形",
+  "settingsLimiter": "真峰值限幅 (Limiter)",
+  "settingsLimiterDesc": "防止削波失真",
+  "settingsDither": "抖动 (Dither)",
+  "settingsDitherDesc": "低位深输出时降低量化噪声",
+  "settingsNoiseShaping": "噪声整形 (Noise Shaping)",
+  "settingsNoiseShapingDesc": "将量化噪声推向高频不可闻区",
+  "settingsGroupGainSpeed": "增益与速度",
+  "settingsGroupGainSpeedDesc": "ReplayGain 增益补偿与播放速度",
+  "settingsReplayGain": "ReplayGain 增益",
+  "settingsReplayGainDesc": "音量标准化补偿",
+  "settingsPlaybackSpeed": "播放速度",
+  "settingsPlaybackSpeedDesc": "变速播放（不改音高）",
+  "settingsGroupEq": "均衡器",
+  "settingsGroupEqDesc": "EQ 预设与 AutoEQ 耳机校正",
+  "settingsEqPreset": "EQ 预设",
+  "settingsEqPresetDesc": "选择预设均衡器曲线",
+  "settingsAutoEqModel": "AutoEQ 耳机型号",
+  "settingsAutoEqDisabled": "未启用 AutoEQ 校正",
+  "settingsPick": "选择",
+  "settingsAutoEqOff": "关闭 AutoEQ",
+  "settingsAutoEqApplied": "已应用 AutoEQ：{model}",
+  "@settingsAutoEqApplied": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsGroupRoom": "房间校正",
+  "settingsGroupRoomDesc": "载入 FIR 脉冲响应或从 REW 测量生成",
+  "settingsFirIr": "FIR 脉冲响应 (.wav)",
+  "settingsNotLoaded": "未载入",
+  "settingsLoad": "载入",
+  "settingsClear": "清除",
+  "settingsRewGenerate": "从 REW 生成校正 IR",
+  "settingsRewGenerateDesc": "导入 REW 频响测量文本 (.txt) 自动生成",
+  "settingsGenerate": "生成",
+  "settingsRewFile": "REW 测量",
+  "settingsRewNoPoints": "REW 文件解析失败：无有效测量点",
+  "settingsRewGenerated": "已生成校正 IR（{points} 点测量，{gain} dB）",
+  "@settingsRewGenerated": {
+    "placeholders": {
+      "points": {
+        "type": "int"
+      },
+      "gain": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsGenerateFailed": "生成失败：{e}",
+  "@settingsGenerateFailed": {
+    "placeholders": {
+      "e": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsEngineStatus": "引擎状态",
+  "settingsReady": "就绪",
+  "settingsGroupRuntime": "运行详情",
+  "settingsGroupRuntimeDesc": "当前播放路径与最后错误信息",
+  "settingsCurrentTrack": "当前曲目",
+  "settingsLastError": "最后错误",
+  "settingsNone": "无",
+  "settingsAutoRefresh": "自动刷新",
+  "settingsAutoRefreshDesc": "每 2 秒自动更新诊断数据",
+  "settingsRefreshNow": "立即刷新",
+  "eqPresetFlat": "平坦",
+  "eqPresetRock": "摇滚",
+  "eqPresetPop": "流行",
+  "eqPresetDance": "舞曲",
+  "eqPresetClassical": "古典",
+  "eqPresetSoft": "柔和",
+  "eqPresetFullBass": "重低音",
+  "eqPresetFullTreble": "重高音",
+  "eqPresetTechno": "电子",
+  "eqPresetVocals": "人声"
 }

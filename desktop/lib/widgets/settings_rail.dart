@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../core/theme.dart';
+import '../l10n/app_localizations.dart';
 import 'settings_section.dart';
 
 // ═══════════════════════════ 设置页左侧导航栏 ═══════════════════════════
 //
 // 自 screens/settings.dart 迁出。`nav_${key}` / `settings_back` Key
-// 供 widget 测试定位。
+// 供 widget 测试定位。分区标题经 [settingsSectionTitle] 从 l10n 解析。
 
 /// 设置页左侧导航栏：品牌区 + 分区导航 + 底部引擎状态。
 class SettingsRail extends StatelessWidget {
@@ -24,6 +25,7 @@ class SettingsRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
+    final l = AppLocalizations.of(context);
     return Container(
       width: 240,
       decoration: const BoxDecoration(
@@ -57,18 +59,18 @@ class SettingsRail extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Column(
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('WaveLink',
+                    const Text('WaveLink',
                         style: TextStyle(
                             fontFamily: 'SpaceGrotesk',
                             fontWeight: FontWeight.w700,
                             fontSize: 15,
                             color: AppTheme.textPrimary,
                             letterSpacing: -0.3)),
-                    Text('设置 SETTINGS',
-                        style: TextStyle(
+                    Text(l.settingsBrandSubtitle,
+                        style: const TextStyle(
                             color: AppTheme.textTertiary,
                             fontSize: 10,
                             letterSpacing: 0.8)),
@@ -88,8 +90,8 @@ class SettingsRail extends StatelessWidget {
                 return _RailItem(
                   key: Key('nav_${m.key}'),
                   icon: m.icon,
-                  label: m.title,
-                  subtitle: m.subtitle,
+                  label: settingsSectionTitle(l, m.key),
+                  subtitle: settingsSectionSubtitle(l, m.key),
                   active: i == activeIndex,
                   accent: accent,
                   onTap: () => onSelect(i),

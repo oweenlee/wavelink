@@ -255,7 +255,7 @@ class Sidebar extends ConsumerWidget {
   void _openSettings(BuildContext context) {
     Navigator.push(
       context,
-      MaterialPageRoute<void>(builder: (_) => SettingsScreen(player: player)),
+      MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
     );
   }
 

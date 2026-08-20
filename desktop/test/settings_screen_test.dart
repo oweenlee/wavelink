@@ -8,12 +8,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:local_music_player/l10n/app_localizations.dart';
 import 'package:local_music_player/screens/settings.dart';
+import 'package:local_music_player/services/player_providers.dart';
 import 'package:local_music_player/services/engine.dart';
 import 'package:local_music_player/services/network_source_config.dart';
 import 'package:local_music_player/services/player_controller.dart';
 
 /// 测试用 MaterialApp 外壳：同 widget_test.dart，必须注册本地化 delegate。
-Widget _testApp(Widget child) => ProviderScope(
+/// 设置页经 provider 取播放控制器，这里用假实例覆盖。
+Widget _testApp(Widget child, PlayerController player) => ProviderScope(
+      overrides: [playerControllerProvider.overrideWithValue(player)],
       child: MaterialApp(
         locale: const Locale('zh'),
         localizationsDelegates: const [
@@ -31,7 +34,7 @@ Widget _testApp(Widget child) => ProviderScope(
 /// 避免内容区滚动导致 tap 命中不到（DSP 区较高，1100px 可整屏容纳）。
 Future<void> _pumpSettings(WidgetTester tester, PlayerController player) async {
   await tester.binding.setSurfaceSize(const Size(980, 1100));
-  await tester.pumpWidget(_testApp(SettingsScreen(player: player)));
+  await tester.pumpWidget(_testApp(const SettingsScreen(), player));
   await tester.pumpAndSettle();
 }
 
@@ -215,7 +218,8 @@ void main() {
 
       await tester.tap(find.byKey(const Key('preset_dropdown')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('rock').last);
+      // preset 下拉显示翻译名（测试 locale = zh）
+      await tester.tap(find.text('摇滚').last);
       await tester.pumpAndSettle();
       expect(fake.calls['applyPreset'], 'rock');
     });
@@ -311,11 +315,9 @@ void main() {
 
       await tester.tap(find.widgetWithText(OutlinedButton, '清空所有数据'));
       await tester.pumpAndSettle();
-      expect(
-        find.text('将删除全部曲库、收藏与播放列表，且不可恢复。'),
-        findsOneWidget,
-      );
-      await tester.tap(find.widgetWithText(TextButton, '清空'));
+      // 确认对话框与全局清空流程共用文案（clearAllConfirmBody）
+      expect(find.textContaining('此操作不可撤销'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, '确认清空'));
       await tester.pumpAndSettle();
       expect(player.clearAllCalled, isTrue);
     });
