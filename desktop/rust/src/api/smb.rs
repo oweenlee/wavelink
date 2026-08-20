@@ -933,3 +933,90 @@ fn random_hex(len: usize) -> String {
     }
     out[..len].to_string()
 }
+
+#[cfg(test)]
+mod nas_cover_diag {
+    use super::*;
+
+    /// NAS 封面链路诊断（真实网络）：
+    /// 连接 → 挂载 → 列目录 → 逐首 read_head(4MB) → lofty 解析。
+    /// 运行：
+    ///   WAVELINK_NAS_HOST=192.168.110.117 WAVELINK_NAS_USER=qin \
+    ///   WAVELINK_NAS_PASS=qrmac WAVELINK_NAS_SHARE=music \
+    ///   cargo test -p wavelink_desktop --lib nas_cover_diag -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore = "真实 NAS 网络诊断"]
+    async fn nas_cover_diag() {
+        let host = std::env::var("WAVELINK_NAS_HOST").unwrap();
+        let user = std::env::var("WAVELINK_NAS_USER").unwrap_or_default();
+        let pass = std::env::var("WAVELINK_NAS_PASS").unwrap_or_default();
+        let share = std::env::var("WAVELINK_NAS_SHARE").unwrap_or_default();
+        let path = std::env::var("WAVELINK_NAS_PATH").unwrap_or_default();
+
+        let params = ConnectParams {
+            addr: format!("{host}:445"),
+            username: user.clone(),
+            password: pass.clone(),
+            domain: String::new(),
+        };
+        smb_connect(host.clone(), 445, user, pass, String::new())
+            .await
+            .expect("smb_connect");
+        smb_connect_share(share).await.expect("smb_connect_share");
+        eprintln!("[diag] 连接 + 挂载 OK（读取池 {} 条）", POOL.lock().await.len());
+
+        let entries = match smb_list_directory(path.clone()).await {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("[diag] list FAIL: {e}");
+                return;
+            }
+        };
+        eprintln!("[diag] list OK: {} entries", entries.len());
+
+        let mut n = 0usize;
+        for e in entries.iter().filter(|e| !e.is_dir) {
+            let p = if path.is_empty() {
+                e.name.clone()
+            } else {
+                format!("{path}/{}", e.name)
+            };
+            let t0 = std::time::Instant::now();
+            match smb_read_head(p.clone(), 4 * 1024 * 1024).await {
+                Ok(data) => {
+                    let ms = t0.elapsed().as_millis();
+                    use lofty::file::TaggedFileExt;
+                    let mut reader = std::io::Cursor::new(data.clone());
+                    let parsed: Result<lofty::file::TaggedFile, lofty::error::LoftyError> =
+                        match lofty::probe::Probe::new(&mut reader).guess_file_type() {
+                            Ok(probe) => probe.read(),
+                            Err(e) => Err(e.into()),
+                        };
+                    match parsed {
+                        Ok(tagged) => {
+                            let cover: Option<usize> = tagged
+                                .tags()
+                                .iter()
+                                .flat_map(|t| t.pictures())
+                                .next()
+                                .map(|p| p.data().len());
+                            eprintln!(
+                                "[diag] {p}: head={}B {ms}ms cover={:?}",
+                                data.len(),
+                                cover
+                            );
+                        }
+                        Err(e2) => {
+                            eprintln!("[diag] {p}: head={}B {ms}ms PARSE FAIL: {e2}", data.len());
+                        }
+                    }
+                }
+                Err(e2) => eprintln!("[diag] {p}: READ_HEAD FAIL: {e2}"),
+            }
+            n += 1;
+            if n >= 12 {
+                break;
+            }
+        }
+    }
+}
