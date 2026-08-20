@@ -102,6 +102,10 @@ class LibraryState {
 class LibraryNotifier extends Notifier<LibraryState> {
   bool _isScanning = false;
 
+  /// 启动收藏恢复（_loadFavoritesFromDb）期间若用户已写过收藏，置 true，
+  /// 使恢复结果作废，避免把已移除/清除的收藏 merge 回来。
+  bool _favoritesTouched = false;
+
   /// 收藏离线下载并发闸门：限制同时在途的远端下载数，
   /// 避免一次收藏大量歌曲时打满 NAS 连接（历史教训：4 并发
   /// 曾触发 NAS 连接数限制导致整批超时）。超出的排队等待。
@@ -287,7 +291,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
   }
 
   void _persistFavorites() {
-    // 收藏持久化走 SQLite：增量表写入，避免 SharedPreferences 整表覆写
+    // 标记启动加载期间发生过用户写入：load 完成后需以本次写入为准，丢弃旧表结果。
+    _favoritesTouched = true;
+    // 收藏持久化走 SQLite：增量差集写入，只动增删的行，已收藏行保留原时间。
     unawaited(LibraryCacheService.saveFavorites(state.favoriteIds));
   }
 
@@ -301,6 +307,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
     try {
       final favorites = await LibraryCacheService.loadFavorites();
       if (!ref.mounted) return;
+      // 竞态防御：启动读库期间用户已 toggle/清除过收藏（_favoritesTouched），
+      // 此时 DB 已含最新写入，旧表结果 merge 会把已移除的收藏复活，直接丢弃。
+      if (_favoritesTouched) return;
       state = state.copyWith(favoriteIds: {...state.favoriteIds, ...favorites});
     } catch (e) {
       Log.e('Library', '收藏恢复失败: $e');
@@ -669,6 +678,7 @@ class LibraryNotifier extends Notifier<LibraryState> {
     state = state.copyWith(
       importedSongs: state.importedSongs.where((s) => s.id != song.id).toList(),
       favoriteIds: {...state.favoriteIds}..remove(song.id),
+      recentPlayed: state.recentPlayed.where((s) => s.id != song.id).toList(),
     );
     ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
     _persistFavorites();
@@ -732,6 +742,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
           .where((s) => !goneIds.contains(s.id))
           .toList(),
       favoriteIds: {...state.favoriteIds}..removeAll(goneIds),
+      recentPlayed: state.recentPlayed
+          .where((s) => !goneIds.contains(s.id))
+          .toList(),
     );
     ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
     _persistFavorites();
@@ -757,6 +770,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
           .where((s) => !ids.contains(s.id))
           .toList(),
       favoriteIds: {...state.favoriteIds}..removeAll(ids),
+      recentPlayed: state.recentPlayed
+          .where((s) => !ids.contains(s.id))
+          .toList(),
     );
     ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
     _persistFavorites();
@@ -780,6 +796,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
           .where((s) => !goneIds.contains(s.id))
           .toList(),
       favoriteIds: {...state.favoriteIds}..removeAll(goneIds),
+      recentPlayed: state.recentPlayed
+          .where((s) => !goneIds.contains(s.id))
+          .toList(),
     );
     ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
     _persistFavorites();
@@ -814,6 +833,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
           .where((s) => !goneIds.contains(s.id))
           .toList(),
       favoriteIds: {...state.favoriteIds}..removeAll(goneIds),
+      recentPlayed: state.recentPlayed
+          .where((s) => !goneIds.contains(s.id))
+          .toList(),
     );
     ref.read(songRepositoryProvider).setCachedSongs(state.importedSongs);
     _persistFavorites();

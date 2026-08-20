@@ -31,7 +31,7 @@ class LibraryCacheService {
   /// 对应迁移语句（onCreate 建的是最新结构，老库走 onUpgrade 逐级升级）。
   /// v2：新增 favorites 表（收藏从 SharedPreferences 迁入）。
   /// v3：新增 play_history 表（播放历史/最近播放）。
-  static const int dbVersion = 3;
+  static const int dbVersion = 4;
 
   static Database? _db;
   static bool _initDone = false;
@@ -94,6 +94,7 @@ class LibraryCacheService {
         ''');
         await db.execute(_createFavoritesSql);
         await db.execute(_createPlayHistorySql);
+        await db.execute(_createPlayHistoryIndexSql);
       },
     );
     // 首次打开：若存在旧 JSON 缓存且库内无数据，迁移后删除。
@@ -109,17 +110,22 @@ class LibraryCacheService {
     )
   ''';
 
-  /// play_history 表 DDL：每次实际开始播放插入一行（保留重复播放），
-  /// 读取时按 song_id 去重取最近一次。
+  /// play_history 表 DDL：每首歌只留一行（song_id 主键），重复播放
+  /// 用 INSERT OR REPLACE 覆盖 played_at，表大小恒等于被播过的歌数。
+  /// 将来若要做"播放次数统计"，再改回多行 + 清理策略。
   static const _createPlayHistorySql = '''
     CREATE TABLE play_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      song_id TEXT NOT NULL,
+      song_id TEXT PRIMARY KEY,
       played_at INTEGER NOT NULL
     )
   ''';
 
-  /// 逐级迁移：switch 不 break，保证跨多版本的老库依次应用每一步迁移。
+  /// 最近播放按 played_at 倒序读取，排序列建索引避免全表扫描。
+  static const _createPlayHistoryIndexSql =
+      'CREATE INDEX IF NOT EXISTS idx_play_history_played_at '
+      'ON play_history(played_at)';
+
+  /// 逐级迁移：每个版本一个 if，保证跨多版本的老库依次应用每一步迁移。
   static Future<void> _onUpgrade(
     Database db,
     int oldVersion,
@@ -130,6 +136,12 @@ class LibraryCacheService {
     }
     if (oldVersion < 3) {
       await db.execute(_createPlayHistorySql);
+    }
+    // v4：play_history 由"多行追加"改为"每歌一行 upsert"，重建表。
+    if (oldVersion < 4) {
+      await db.execute('DROP TABLE IF EXISTS play_history');
+      await db.execute(_createPlayHistorySql);
+      await db.execute(_createPlayHistoryIndexSql);
     }
   }
 
@@ -207,19 +219,30 @@ class LibraryCacheService {
     }
   }
 
-  /// 收藏全量保存（覆盖式替换，与 [saveSongs] 语义一致），事务保证原子性。
+  /// 收藏增量保存：与旧表对比做差集，只删移除的、只插新增的；
+  /// 已存在的行不动，created_at 保留首次收藏时间（备用排序可用）。
+  /// 事务保证原子性；失败静默记录。
   static Future<void> saveFavorites(Set<String> ids) async {
     try {
       final db = await _database;
       await db.transaction((txn) async {
-        await txn.delete('favorites');
+        final existing = await txn.query(
+          'favorites',
+          columns: ['song_id'],
+        );
+        final existingIds = {
+          for (final r in existing) r['song_id'] as String,
+        };
         final batch = txn.batch();
         final now = DateTime.now().millisecondsSinceEpoch;
-        for (final id in ids) {
+        for (final id in existingIds.difference(ids)) {
+          batch.delete('favorites', where: 'song_id = ?', whereArgs: [id]);
+        }
+        for (final id in ids.difference(existingIds)) {
           batch.insert(
             'favorites',
             {'song_id': id, 'created_at': now},
-            conflictAlgorithm: ConflictAlgorithm.replace,
+            conflictAlgorithm: ConflictAlgorithm.ignore,
           );
         }
         await batch.commit(noResult: true);
@@ -229,7 +252,7 @@ class LibraryCacheService {
     }
   }
 
-  /// 记录一次播放（每次开始播放插一行，保留重复播放的真实历史）。
+  /// 记录一次播放（每歌一行 upsert，覆盖 played_at）。
   /// 失败静默（播放不因历史记录失败而中断）。
   static Future<void> recordPlay(String songId) async {
     try {
@@ -237,22 +260,21 @@ class LibraryCacheService {
       await db.insert('play_history', {
         'song_id': songId,
         'played_at': DateTime.now().millisecondsSinceEpoch,
-      });
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
     } catch (e) {
       Log.e('LibraryCache', '播放历史写入失败: $e');
     }
   }
 
-  /// 最近播放的歌曲 id 列表（按歌去重，仅保留每首最近一次播放时间，倒序）。
+  /// 最近播放的歌曲 id 列表（每歌最近一次播放时间，倒序）。
   static Future<List<({String songId, int playedAt})>> loadRecentPlayed({
     int limit = 50,
   }) async {
     try {
       final db = await _database;
       final rows = await db.rawQuery(
-        'SELECT song_id, MAX(played_at) AS played_at '
-        'FROM play_history GROUP BY song_id '
-        'ORDER BY played_at DESC LIMIT ?',
+        'SELECT song_id, played_at '
+        'FROM play_history ORDER BY played_at DESC LIMIT ?',
         [limit],
       );
       return rows

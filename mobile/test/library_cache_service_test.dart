@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:checks/checks.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:wavelink_mobile/data/services/library_cache_service.dart';
 import 'package:wavelink_mobile/domain/models/song.dart';
 
@@ -162,18 +163,26 @@ void main() {
   });
 
   group('播放历史', () {
-    test('recordPlay 后按歌去重倒序返回', () async {
+    test('recordPlay 按歌 upsert 倒序返回', () async {
       await LibraryCacheService.recordPlay('a');
       await Future<void>.delayed(const Duration(milliseconds: 5));
       await LibraryCacheService.recordPlay('b');
       await Future<void>.delayed(const Duration(milliseconds: 5));
-      await LibraryCacheService.recordPlay('a'); // 重复播放：保留最新一条
+      await LibraryCacheService.recordPlay('a'); // 重复播放：覆盖 played_at
 
       final recent = await LibraryCacheService.loadRecentPlayed();
       check(recent.map((r) => r.songId)).deepEquals(['a', 'b']);
       final a = recent.firstWhere((r) => r.songId == 'a');
       final b = recent.firstWhere((r) => r.songId == 'b');
-      check(a.playedAt).isGreaterThan(b.playedAt);
+      check(a.playedAt >= b.playedAt).isTrue();
+    });
+
+    test('重复播放同一首歌只保留一行（表大小不随播放次数增长）', () async {
+      await LibraryCacheService.recordPlay('loop');
+      await LibraryCacheService.recordPlay('loop');
+      await LibraryCacheService.recordPlay('loop');
+      final recent = await LibraryCacheService.loadRecentPlayed();
+      check(recent.map((r) => r.songId)).deepEquals(['loop']);
     });
 
     test('limit 生效', () async {
@@ -181,6 +190,33 @@ void main() {
       await LibraryCacheService.recordPlay('x2');
       final recent = await LibraryCacheService.loadRecentPlayed(limit: 1);
       check(recent.map((r) => r.songId)).deepEquals(['x2']);
+    });
+  });
+
+  group('收藏增量保存', () {
+    test('新增收藏时已存在行保留原 created_at，不重置', () async {
+      await LibraryCacheService.saveFavorites({'a'});
+      final db = await openDatabase('$docs/library.db');
+      final t0 = (await db.query(
+        'favorites',
+        where: "song_id = 'a'",
+      ))
+          .single['created_at'] as int;
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await LibraryCacheService.saveFavorites({'a', 'b'});
+      final rows = await db.query('favorites');
+      final a = rows.singleWhere((r) => r['song_id'] == 'a');
+      final b = rows.singleWhere((r) => r['song_id'] == 'b');
+      check(a['created_at']).equals(t0); // 已存在行时间不被重置
+      check((b['created_at'] as int) >= t0).isTrue();
+      await db.close();
+    });
+
+    test('移除的收藏被删除，新收藏被写入', () async {
+      await LibraryCacheService.saveFavorites({'a', 'b'});
+      await LibraryCacheService.saveFavorites({'b', 'c'});
+      final loaded = await LibraryCacheService.loadFavorites();
+      check(loaded).deepEquals({'b', 'c'});
     });
   });
 }

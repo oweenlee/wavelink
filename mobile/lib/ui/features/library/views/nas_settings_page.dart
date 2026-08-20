@@ -381,7 +381,7 @@ class _NasSettingsPageState extends ConsumerState<NasSettingsPage> {
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(
-              l10n.nasProfileDeleteTitle,
+              l10n.delete,
               style: TextStyle(color: AppTheme.danger),
             ),
           ),

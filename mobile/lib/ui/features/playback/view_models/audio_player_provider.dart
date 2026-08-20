@@ -330,19 +330,19 @@ class PlayerNotifier extends Notifier<PlayerState> {
   void playSong(Song song) {
     final previous = state.currentSong;
     state = state.copyWith(currentSong: song, position: 0.0);
-    _playCurrent(fallbackSong: previous);
+    _playCurrent(fallbackSong: previous, recordPlayback: true);
     saveResume();
-    // 播放历史持久化 + 最近播放列表同步（fire-and-forget，失败不影响播放）
-    unawaited(LibraryCacheService.recordPlay(song.id));
-    onSongStarted?.call(song);
   }
 
   /// [fallbackSong]：切歌时传入旧曲。若新歌路径解析失败（SMB 下载失败/
   /// 文件不存在等），引擎根本没切歌（还在播 [fallbackSong]），此时回滚 UI
   /// 恢复旧曲，避免"底部横条变了但声音没变"的错位。
+  /// [recordPlayback]：仅新歌播放（playSong）为 true，在真正出声后写播放
+  /// 历史并回调最近播放；resume/续播场景不重复记录，解析失败回滚也不记录。
   Future<void> _playCurrent({
     double initialSeekMs = 0,
     Song? fallbackSong,
+    bool recordPlayback = false,
   }) async {
     final song = state.currentSong;
     if (song == null) return;
@@ -574,6 +574,12 @@ class PlayerNotifier extends Notifier<PlayerState> {
       await _drainEngineEvents();
       _ghostStreamUntilMs = 0;
       state = state.copyWith(isPlaying: true);
+      // 播放历史持久化 + 最近播放同步：放在真正出声之后（fire-and-forget，
+      // 失败不影响播放）。此处已过 token 守卫且未回滚，记录的一定是实际在播的歌。
+      if (recordPlayback) {
+        unawaited(LibraryCacheService.recordPlay(song.id));
+        onSongStarted?.call(song);
+      }
       _startProgressTimer();
       await _nativeAudio.play(sampleRate: _nativeOutRate);
       _updateLockScreenMetadata();
