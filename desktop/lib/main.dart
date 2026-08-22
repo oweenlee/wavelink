@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -75,6 +77,32 @@ Future<void> main() async {
 
   final tray = TrayService(container);
   await tray.init();
+
+  // macOS Dock 菜单（右键图标：播放/暂停 + 下一首）：
+  // 推送播放态给原生刷新标题；接收原生控制动作回传。
+  if (Platform.isMacOS) {
+    const dock = MethodChannel('wavelink/dock');
+    void pushPlaying(bool playing) {
+      dock.invokeMethod('setPlaying', playing).catchError((_) {});
+    }
+
+    container.listen(
+      playerProvider.select((s) => s.playing),
+      (_, playing) => pushPlaying(playing),
+    );
+    // 初始态同步（启动即播放的恢复场景）
+    pushPlaying(container.read(playerProvider).playing);
+    dock.setMethodCallHandler((call) async {
+      final player = container.read(playerProvider.notifier);
+      switch (call.method) {
+        case 'togglePlay':
+          await player.togglePlay();
+        case 'next':
+          await player.next();
+      }
+      return null;
+    });
+  }
 }
 
 /// 去掉桌面端滚动到边界时的发光/拉伸回弹（Material 默认在移动端有蓝色 overscroll
