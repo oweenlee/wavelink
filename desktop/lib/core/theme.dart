@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 /// WaveLink 设计令牌（与 mobile `ui/core/theme/app_theme.dart` 对齐）
@@ -145,13 +147,17 @@ ThemeData buildAppTheme() {
       overlayShape: const RoundSliderOverlayShape(overlayRadius: 0),
       overlayColor: AppTheme.highlight,
     ),
+    // 滚动条按平台分化：macOS 惯例是细 overlay 条（不占布局、低调），
+    // Windows 惯例是常显宽条易抓取。
     scrollbarTheme: ScrollbarThemeData(
-      thickness: WidgetStateProperty.all(8),
+      thickness: WidgetStateProperty.all(
+          Platform.isMacOS ? 6 : 8),
       radius: const Radius.circular(4),
-      thumbColor: WidgetStateProperty.all(AppTheme.textTertiary.withAlpha(120)),
+      thumbColor: WidgetStateProperty.all(AppTheme.textTertiary.withAlpha(
+          Platform.isMacOS ? 90 : 120)),
       trackColor: WidgetStateProperty.all(Colors.transparent),
-      crossAxisMargin: 2,
-      mainAxisMargin: 2,
+      crossAxisMargin: Platform.isMacOS ? 1 : 2,
+      mainAxisMargin: Platform.isMacOS ? 2 : 2,
     ),
     textSelectionTheme: TextSelectionThemeData(
       cursorColor: AppTheme.textPrimary,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
@@ -59,7 +60,11 @@ Future<void> main() async {
   // 侧栏在 runApp 后即构建并读取凭据，PlayerNotifier.init 也会用到。
   await NetworkSourceConfig.init();
 
-  runApp(UncontrolledProviderScope(container: container, child: const MyApp()));
+  // _MacAppMenu：macOS 原生菜单栏（⌘Q/关于），其余平台为空壳直通
+  runApp(UncontrolledProviderScope(
+    container: container,
+    child: const _MacAppMenu(child: MyApp()),
+  ));
 
   // 初始化失败不崩溃：记录日志，曲库/引擎就绪通知靠 player 内部错误流兜底。
   try {
@@ -93,6 +98,7 @@ class MyApp extends ConsumerWidget {
     final deviceLocale = PlatformDispatcher.instance.locale;
     final locale = LocaleNotifier.resolve(mode, deviceLocale);
     return MaterialApp(
+      navigatorKey: _MacAppMenu.navKey,
       title: 'WaveLink',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
@@ -105,8 +111,59 @@ class MyApp extends ConsumerWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: LocaleNotifier.supported,
-      // SplashGate：品牌启动图遮蔽 player.init 异步初始化窗口
       home: const SplashGate(child: HomeScreen()),
+    );
+  }
+}
+
+/// macOS 原生应用菜单（App Menu）：补齐 ⌘Q 退出、关于面板。
+/// （文本编辑组快捷键 ⌘C/⌘V/⌘A 由 Flutter 文本框默认处理，无需菜单项。）
+/// Windows/Linux 不构建（PlatformMenuBar 在非 Apple 平台为空实现）。
+class _MacAppMenu extends StatelessWidget {
+  final Widget child;
+  const _MacAppMenu({required this.child});
+
+  /// 关于面板需 context 弹窗，MaterialApp 挂此 key 供回调取 Navigator。
+  static final GlobalKey<NavigatorState> navKey =
+      GlobalKey<NavigatorState>();
+
+  @override
+  Widget build(BuildContext context) {
+    return PlatformMenuBar(
+      menus: [
+        const PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(label: '关于 WaveLink', onSelected: _showAbout),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
+              label: '退出 WaveLink',
+              shortcut:
+                  const SingleActivator(LogicalKeyboardKey.keyQ, meta: true),
+              // 托盘 preventClose 只拦窗口 X，⌘Q 必须真销毁
+              onSelected: () => windowManager.destroy(),
+            ),
+          ],
+        ),
+      ],
+      child: child,
+    );
+  }
+
+  static void _showAbout() {
+    final ctx = navKey.currentContext;
+    if (ctx == null) return;
+    showAboutDialog(
+      context: ctx,
+      applicationName: 'WaveLink',
+      applicationVersion: '1.0.0',
+      applicationIcon: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Image.asset('assets/splash/logo.png', width: 48, height: 48),
+      ),
+      children: const [Text('本地 / 网络音乐播放器 · hi-res 音频引擎')],
     );
   }
 }
