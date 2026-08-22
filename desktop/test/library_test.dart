@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:local_music_player/models/track.dart';
 import 'package:local_music_player/services/library.dart';
 
 void main() {
@@ -92,6 +93,33 @@ void main() {
       expect(tracks.length, 1);
       expect(tracks.single.isCueTrack, isFalse);
       expect(tracks.single.filePath, endsWith('ArtistA - Song1.wav'));
+    });
+
+    test('onBatch 增量回调：分批下发且不重不漏（大文件夹首屏不等待）', () async {
+      // 回归：600 首文件夹曾等全部解析完才一次性出现列表（点击后数秒空白）。
+      // 现每攒满一批（32 首）就回调一次，调用方据此边扫边入库。
+      for (var i = 0; i < 70; i++) {
+        writeFile('A${i % 7} - Song${i.toString().padLeft(3, '0')}.flac');
+      }
+      final batches = <List<Track>>[];
+      final tracks = await scanFolder(tmp.path, onBatch: batches.add);
+
+      final collected = batches.expand((b) => b).toList();
+      expect(collected.length, 70, reason: '批次总和应等于全部曲目');
+      expect(collected.map((t) => t.id).toSet().length, 70,
+          reason: '跨批次不得重复');
+      expect(batches.length, greaterThanOrEqualTo(3),
+          reason: '70 首 / 批 32 → 至少 3 批（含尾部余数批次）');
+      expect(tracks.length, 70);
+      expect(collected.map((t) => t.id).toSet(),
+          tracks.map((t) => t.id).toSet());
+    });
+
+    test('onBatch 为 null 时行为与旧版一致（兼容现有调用方）', () async {
+      writeFile('A - 1.flac');
+      writeFile('B - 2.flac');
+      final tracks = await scanFolder(tmp.path);
+      expect(tracks.length, 2);
     });
   });
 }

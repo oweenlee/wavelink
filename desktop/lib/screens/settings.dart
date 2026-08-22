@@ -60,7 +60,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final engineNull = ref.read(playerControllerProvider).engine == null;
+    final engineNull = !ref.watch(playerProvider.select((s) => s.engineReady));
     final audio = ref.watch(audioSettingsProvider);
 
     // SR 输入框回显持久化值（restore / apply 后同步）。
@@ -810,7 +810,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
     if (ok == true) {
-      await ref.read(playerControllerProvider).clearAllData();
+      await ref.read(playerProvider.notifier).clearAllData();
       if (mounted) {
         messenger.showSnackBar(SnackBar(content: Text(l.snackAllCleared)));
       }

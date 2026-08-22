@@ -19,7 +19,7 @@ import 'strm_resolver.dart';
 ///
 /// 基于 [wd.Client]（basic/digest/匿名自动协商）访问远程 WebDAV 目录，
 /// 递归扫描音频建索引，返回 [Track]（[TrackSource.webdav]）。
-/// 播放策略由 PlayerController 决定：优先 Rust 边下边播
+/// 播放策略由 PlayerNotifier 决定：优先 Rust 边下边播
 /// （[frb_webdav.enginePlayWebdavStream]），失败回退本服务的
 /// [downloadToLocal] 全量缓存。
 ///

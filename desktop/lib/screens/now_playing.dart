@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/app_anim.dart';
 import '../core/format.dart';
 import '../core/theme.dart';
 import '../l10n/app_localizations.dart';
 import '../models/track.dart';
 import '../services/lyrics.dart';
-import '../services/player_controller.dart';
+import '../services/player_notifier.dart';
 import '../services/player_providers.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/wl_slider.dart';
@@ -22,17 +23,15 @@ const _border = kBorder;
 /// 桌面形态为常驻侧栏）：封面 + 标题/艺术家 + 分析徽章 + 频谱 +
 /// 进度条 + 歌词滚动。
 class NowPlaying extends ConsumerWidget {
-  final PlayerController player;
+  final PlayerNotifier player;
   final double width;
   const NowPlaying({super.key, required this.player, this.width = 320});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // watch libraryProvider 让封面异步提取完成后面板也能刷新
-    ref.watch(currentIndexProvider);
-    ref.watch(libraryProvider);
+    // watch currentTrack：切歌 / 封面异步提取写回 state 后面板都能刷新
+    final track = ref.watch(playerProvider.select((s) => s.currentTrack));
     final l10n = AppLocalizations.of(context);
-    final track = player.currentTrack;
     return Container(
       width: width,
       decoration: const BoxDecoration(
@@ -66,18 +65,20 @@ class NowPlaying extends ConsumerWidget {
                     color: _onSurfaceVariant, fontSize: 13)),
             const SizedBox(height: 10),
             // BPM/Key 分析徽章（播放时后台分析，完成后经 analysisStream 刷新）
-            StreamBuilder<String>(
-              stream: player.analysisStream,
-              builder: (context, _) =>
-                  _AnalysisTags(player: player, track: track),
+            RepaintBoundary(
+              child: StreamBuilder<String>(
+                stream: player.analysisStream,
+                builder: (context, _) =>
+                    _AnalysisTags(player: player, track: track),
+              ),
             ),
             const SizedBox(height: 14),
             // 实时频谱（引擎 spectrum 事件驱动；暂停后自然衰减到零）
-            SpectrumVisualizer(player: player, height: 36),
+            RepaintBoundary(child: SpectrumVisualizer(player: player, height: 36)),
             const SizedBox(height: 12),
-            _Progress(player: player),
+            RepaintBoundary(child: _Progress(player: player)),
             const SizedBox(height: 12),
-            Expanded(child: _Lyrics(player: player)),
+            RepaintBoundary(child: Expanded(child: _Lyrics(player: player))),
           ],
         ),
       ),
@@ -86,9 +87,9 @@ class NowPlaying extends ConsumerWidget {
 }
 
 /// BPM / Key 分析徽章（对齐 mobile 播放页 _Tags）。无结果（未分析完/失败）
-/// 时渲染为空，不占位；分析完成经 [PlayerController.analysisStream] 触发重建。
+/// 时渲染为空，不占位；分析完成经 [PlayerNotifier.analysisStream] 触发重建。
 class _AnalysisTags extends StatelessWidget {
-  final PlayerController player;
+  final PlayerNotifier player;
   final Track? track;
   const _AnalysisTags({required this.player, required this.track});
 
@@ -117,7 +118,7 @@ class _AnalysisTags extends StatelessWidget {
 }
 
 class _Progress extends ConsumerStatefulWidget {
-  final PlayerController player;
+  final PlayerNotifier player;
   const _Progress({required this.player});
 
   @override
@@ -132,8 +133,8 @@ class _ProgressState extends ConsumerState<_Progress> {
   @override
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
-    final pos = ref.watch(positionProvider).value ?? Duration.zero;
-    final dur = ref.watch(durationProvider).value ?? Duration.zero;
+    final pos = ref.watch(playerProvider.select((s) => s.position));
+    final dur = ref.watch(playerProvider.select((s) => s.duration));
     final max = dur.inMilliseconds.toDouble();
     final shown = _dragMs ??
         (max > 0 ? pos.inMilliseconds.toDouble().clamp(0.0, max) : 0.0);
@@ -166,7 +167,7 @@ class _ProgressState extends ConsumerState<_Progress> {
 }
 
 class _Lyrics extends ConsumerStatefulWidget {
-  final PlayerController player;
+  final PlayerNotifier player;
   const _Lyrics({required this.player});
 
   @override
@@ -189,17 +190,19 @@ class _LyricsState extends ConsumerState<_Lyrics> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final lines = ref.watch(lyricsProvider).value ?? const <LyricLine>[];
+    final lines =
+        ref.watch(playerProvider.select((s) => s.lyrics)) ?? const <LyricLine>[];
     if (lines.isEmpty) {
       return Center(
         child: Text(l10n.noLyrics,
             style: const TextStyle(color: _onSurfaceVariant, fontSize: 13)),
       );
     }
-    final pos = ref.watch(positionProvider).value ?? Duration.zero;
+    final pos = ref.watch(playerProvider.select((s) => s.position));
     final active = activeLyricIndex(lines, pos);
 
     // 当前行变化时平滑滚动至居中位置
+    // 尊重系统 reduced-motion 偏好：禁用动画时瞬移
     if (active != _lastActive) {
       _lastActive = active;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -207,11 +210,16 @@ class _LyricsState extends ConsumerState<_Lyrics> {
         final viewport = _ctrl.position.viewportDimension;
         final target =
             active * _lineH - (viewport - _lineH) / 2;
-        _ctrl.animateTo(
-          target.clamp(0.0, _ctrl.position.maxScrollExtent),
-          duration: const Duration(milliseconds: 350),
-          curve: Curves.easeOutCubic,
-        );
+        final clamped = target.clamp(0.0, _ctrl.position.maxScrollExtent);
+        if (MediaQuery.of(context).disableAnimations) {
+          _ctrl.jumpTo(clamped);
+        } else {
+          _ctrl.animateTo(
+            clamped,
+            duration: AppAnim.normal,
+            curve: AppAnim.curve,
+          );
+        }
       });
     }
 

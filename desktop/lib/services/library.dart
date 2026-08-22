@@ -27,8 +27,15 @@ const int _metadataConcurrency = 8;
 ///    （引擎未加载/测试环境亦同，保证扫描永远可用）。
 ///
 /// 目录不存在 / 不可读 / 为空时返回空列表，由 UI 展示空库提示并引导用户
-/// 「添加音乐文件夹」（用户添加的文件夹由 PlayerController 持久化）。
-Future<List<Track>> scanFolder(String folderPath) async {
+/// 「添加音乐文件夹」（用户添加的文件夹由 PlayerNotifier 持久化）。
+///
+/// [onBatch] 为可选进度回调：标签解析每攒满一批（32 首）即调用一次，
+/// 供调用方增量并入曲库。数百首的大文件夹不必等全部解析完（数秒）才
+/// 一次性出现列表，首屏随扫描进度逐批填充。
+Future<List<Track>> scanFolder(
+  String folderPath, {
+  void Function(List<Track> batch)? onBatch,
+}) async {
   final dir = Directory(folderPath);
   if (!await dir.exists()) return const [];
 
@@ -58,17 +65,19 @@ Future<List<Track>> scanFolder(String folderPath) async {
   final files = audioFiles
       .where((f) => !cueResult.imagePaths.contains(_normKey(f.path)))
       .toList();
-  final tracks = await _parseTracksConcurrent(files);
+  final tracks = await _parseTracksConcurrent(files, onBatch: onBatch);
 
   tracks.addAll(cueResult.tracks);
-  tracks.sort(_libraryOrder);
+  tracks.sort(libraryOrder);
   return tracks;
 }
 
 /// 曲库排序：艺人 → 专辑 → 音轨号 → 标题。
 /// 真实标签入库后按专辑聚拢、碟内按音轨号排列；无专辑/音轨号时退化为
 /// 原有的 艺人→标题 顺序（空字符串/0 参与比较，行为兼容）。
-int _libraryOrder(Track a, Track b) {
+/// 公开供 PlayerNotifier 增量入库后整库重排（扫描批次是解析完成顺序，
+/// 并非规范顺序，最终需按此比较器归位）。
+int libraryOrder(Track a, Track b) {
   var c = a.artist.compareTo(b.artist);
   if (c != 0) return c;
   c = (a.album ?? '').compareTo(b.album ?? '');
@@ -156,25 +165,47 @@ Future<_CueExpansion> _expandCueSheets(List<File> cueFiles) async {
 
 // ── 标签增强 ──
 
+/// 一批向调用方增量下发的解析曲目数（`addFolder` 用它边扫边并入曲库，
+/// 让数百首的文件夹首屏不等全部解析完就出现）。
+const int _scanBatchSize = 32;
+
 /// 并发池解析音频文件（顺序与入参一致）。
-Future<List<Track>> _parseTracksConcurrent(List<File> files) async {
+/// [onBatch] 非空时，每攒满 [_scanBatchSize] 首即调用一次（解析完成顺序，
+/// 非排序顺序），供调用方增量展示；全部完成时把余数批次也 flush 出去。
+Future<List<Track>> _parseTracksConcurrent(
+  List<File> files, {
+  void Function(List<Track> batch)? onBatch,
+}) async {
   // 空列表（空目录 / 全为 cue 镜像被排除）直接返回，避免
   // _metadataConcurrency.clamp(1, 0) 因 lower>upper 抛 ArgumentError，
   // 与 scanFolder「为空返回空列表」约定一致（见 L29-30）。
   if (files.isEmpty) return <Track>[];
 
   final results = List<Track?>.filled(files.length, null);
+  final acc = <Track>[];
   var next = 0;
+
+  void flush() {
+    if (onBatch == null || acc.isEmpty) return;
+    onBatch(List.of(acc));
+    acc.clear();
+  }
+
   Future<void> worker() async {
     while (true) {
       final i = next++;
       if (i >= files.length) return;
-      results[i] = await _parseTrack(files[i]);
+      final t = await _parseTrack(files[i]);
+      results[i] = t;
+      if (t == null) continue;
+      acc.add(t);
+      if (acc.length >= _scanBatchSize) flush();
     }
   }
 
   final pool = _metadataConcurrency.clamp(1, files.length);
   await Future.wait(List.generate(pool, (_) => worker()));
+  flush();
   return results.whereType<Track>().toList();
 }
 

@@ -8,7 +8,7 @@ import '../models/track.dart';
 import '../src/rust/api/smb.dart' as frb_smb;
 import '../services/nas_service.dart';
 import '../services/network_source_config.dart';
-import '../services/player_controller.dart';
+import '../services/player_notifier.dart';
 import '../services/subsonic_service.dart';
 import '../services/webdav_service.dart';
 
@@ -19,7 +19,7 @@ import '../services/webdav_service.dart';
 /// 不落盘测试（NAS）走临时握手。样式沿用桌面端单色板（无彩色强调）。
 class NetworkConfigDialog extends ConsumerStatefulWidget {
   final TrackSource source;
-  final PlayerController player;
+  final PlayerNotifier player;
   const NetworkConfigDialog({
     super.key,
     required this.source,

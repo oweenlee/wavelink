@@ -76,13 +76,13 @@ ThemeData buildAppTheme() {
         fontSize: 15,
         fontWeight: FontWeight.w400,
         color: AppTheme.textPrimary,
-        height: 1.4,
+        height: 1.5, // 1.4 → 1.5 长文本阅读更舒适（UX #72）
       ),
       bodyMedium: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w400,
         color: AppTheme.textSecondary,
-        height: 1.3,
+        height: 1.45,
       ),
       bodySmall: TextStyle(
         fontSize: 11,

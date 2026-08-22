@@ -7,7 +7,7 @@ import '../core/theme.dart';
 import '../core/format.dart';
 import '../l10n/app_localizations.dart';
 import '../models/track.dart';
-import '../services/player_controller.dart';
+import '../services/player_notifier.dart';
 import '../services/player_providers.dart';
 import 'cover_art.dart';
 import 'dialogs.dart';
@@ -23,7 +23,7 @@ const _border = kBorder;
 /// 封面（当前曲目叠加播放指示器遮罩）+ 标题/艺术家 + 时长 + 来源徽章 +
 /// 收藏 + 更多菜单。
 class TrackRow extends StatelessWidget {
-  final PlayerController player;
+  final PlayerNotifier player;
   final Track track;
   final int index;
 
@@ -231,13 +231,13 @@ class _TrackCover extends StatelessWidget {
 }
 
 class _FavoriteButton extends ConsumerWidget {
-  final PlayerController player;
+  final PlayerNotifier player;
   final Track track;
   const _FavoriteButton({required this.player, required this.track});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(favoritesProvider);
+    ref.watch(playerProvider.select((s) => s.favoriteIds));
     final fav = player.isFavorite(track);
     return IconButton(
       icon: Icon(

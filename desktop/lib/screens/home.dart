@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme.dart';
 import '../l10n/app_localizations.dart';
 import '../models/track.dart';
-import '../services/player_controller.dart';
+import '../services/player_notifier.dart';
 import '../services/player_providers.dart';
 import '../widgets/dialogs.dart';
 import 'library_view.dart';
@@ -32,13 +32,13 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  late final PlayerController player;
+  late final PlayerNotifier player;
   StreamSubscription<String>? _errorSub;
 
   @override
   void initState() {
     super.initState();
-    player = ref.read(playerControllerProvider);
+    player = ref.read(playerProvider.notifier);
     // 持久化/导入等失败统一走 errorStream → SnackBar（此前静默 debugPrint，
     // 用户对「曲库写入失败」毫无感知）。mounted 守卫避免 dispose 后弹窗。
     _errorSub = player.errorStream.listen((message) {
@@ -67,21 +67,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   List<Track> get _baseList {
+    final st = ref.read(playerProvider);
     if (_viewMode == 'favorites') {
-      return player.library
-          .where((t) => player.favoriteIds.contains(t.id))
+      return st.library
+          .where((t) => st.favoriteIds.contains(t.id))
           .toList();
     }
     if (_viewMode.startsWith('pl:')) {
       final id = _viewMode.substring(3);
-      final pl = player.playlists.where((p) => p.id == id).firstOrNull;
+      final pl = st.playlists.where((p) => p.id == id).firstOrNull;
       if (pl != null) return player.tracksOfPlaylist(pl);
     }
     if (_viewMode.startsWith('src:')) {
       final src = _viewMode.substring(4);
-      return player.library.where((t) => t.source.name == src).toList();
+      return st.library.where((t) => t.source.name == src).toList();
     }
-    return player.library;
+    return st.library;
   }
 
   List<Track> get _visible {
@@ -108,7 +109,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (_viewMode == 'favorites') return l10n.viewFavorites;
     if (_viewMode.startsWith('pl:')) {
       final id = _viewMode.substring(3);
-      return player.playlists.where((p) => p.id == id).firstOrNull?.name ??
+      return ref.read(playerProvider).playlists
+              .where((p) => p.id == id)
+              .firstOrNull
+              ?.name ??
           l10n.viewPlaylists;
     }
     if (_viewMode.startsWith('src:')) {
@@ -174,7 +178,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _focusSearch() => _searchFocus.requestFocus();
 
-  /// 选择本地音乐文件夹并加入曲库（路径由 PlayerController 持久化）。
+  /// 选择本地音乐文件夹并加入曲库（路径由 PlayerNotifier 持久化）。
   Future<void> _addFolder() async {
     final dir = await getDirectoryPath();
     if (dir == null) return;
@@ -183,8 +187,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _seekBy(Duration delta) {
-    final max = player.duration;
-    final target = player.position + delta;
+    final st = ref.read(playerProvider);
+    final max = st.duration;
+    final target = st.position + delta;
     player.seek(target < Duration.zero
         ? Duration.zero
         : (max > Duration.zero && target > max ? max : target));
@@ -214,9 +219,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     // 订阅收藏/播放列表/曲库变化，使各视图随状态实时刷新
-    ref.watch(favoritesProvider);
-    ref.watch(playlistsProvider);
-    ref.watch(libraryProvider);
+    ref.watch(playerProvider.select((s) => s.favoriteIds));
+    ref.watch(playerProvider.select((s) => s.playlists));
+    ref.watch(playerProvider.select((s) => s.library));
     final visible = _visible;
     // 当前强调色：Phase 1 与 mobile 一致使用 accentFallback（橙红）；
     // Phase 2 封面提取管线落地后将改为「当前曲目封面主色」（封面主色强调）。

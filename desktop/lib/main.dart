@@ -47,15 +47,15 @@ Future<void> main() async {
   windowManager.addListener(windowListener);
   await windowManager.setPreventClose(true);
 
-  // 单一 ProviderContainer：main 与 UI 共享同一个播放控制器实例，
+  // 单一 ProviderContainer：main 与 UI 共享同一个播放器 provider，
   // 避免 Riverpod Provider 再创建实例导致双实例。
   final container = ProviderContainer();
-  final player = container.read(playerControllerProvider);
+  final player = container.read(playerProvider.notifier);
 
   // 先渲染 UI，再异步初始化（引擎加载 + 持久化文件夹重扫可能耗时数秒，
-  // 阻塞 runApp 会导致大曲库白屏启动；曲库就绪后经 libraryStream 通知 UI）。
+  // 阻塞 runApp 会导致大曲库白屏启动；曲库就绪后经 PlayerState 下发通知 UI）。
   // 网络音源配置（WebDAV/NAS/Subsonic 凭据、展示开关）必须先初始化：
-  // 侧栏在 runApp 后即构建并读取凭据，PlayerController.init 也会用到。
+  // 侧栏在 runApp 后即构建并读取凭据，PlayerNotifier.init 也会用到。
   await NetworkSourceConfig.init();
 
   runApp(UncontrolledProviderScope(container: container, child: const MyApp()));
@@ -67,7 +67,7 @@ Future<void> main() async {
     debugPrint('player.init failed: $e');
   }
 
-  final tray = TrayService(player);
+  final tray = TrayService(container);
   await tray.init();
 }
 

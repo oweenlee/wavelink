@@ -30,10 +30,15 @@ class CoverCache {
   Directory? _dir;
 
   Future<Directory> get _cacheDir async {
-    if (_dir != null) return _dir!;
+    // 目录可能被外部删除（设置页「清空所有数据」删除 .covers）：缓存的
+    // _dir 若已失效必须重建，否则后续 writeCover 写进不存在的父目录直接
+    // 抛 FileSystemException（被静默吞掉）→ 封面永远写不进去，表现为
+    // 「清空数据后重新添加音乐，封面图不展示」。existsSync 是廉价 stat，
+    // 热路径可接受。
+    if (_dir != null && _dir!.existsSync()) return _dir!;
     final appDir = await getApplicationDocumentsDirectory();
     _dir = Directory(p.join(appDir.path, '.covers'));
-    if (!await _dir!.exists()) await _dir!.create(recursive: true);
+    if (!_dir!.existsSync()) await _dir!.create(recursive: true);
     return _dir!;
   }
 

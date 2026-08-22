@@ -60,7 +60,7 @@ class ArtistGroup {
 
 /// 媒体索引（艺术家 / 专辑视图的纯派生数据层）。
 ///
-/// 从 [PlayerController.library]（每次增删 / 封面回填都会换新引用的列表）派生，
+/// 从 [PlayerNotifier.state.library]（每次增删 / 封面回填都会换新引用的列表）派生，
 /// 自身不持有任何可变状态。基于 library 列表引用做单条目缓存：封面批量回填时
 /// 至多重建几十次，开销可忽略。视图层只读不写，可安全共享同一实例。
 class MediaIndex {

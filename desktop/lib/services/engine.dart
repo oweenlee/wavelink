@@ -235,7 +235,7 @@ class Engine {
   Future<void> play(String path) => frb.wavelinkPlay(path: path);
 
   /// 引擎侧整队列播放（Phase 2 gapless 预留，当前 UI 未接线：
-  /// 桌面端队列/循环/随机由 PlayerController 在 Dart 侧管理，引擎逐曲播放）。
+  /// 桌面端队列/循环/随机由 PlayerNotifier 在 Dart 侧管理，引擎逐曲播放）。
   Future<void> playQueue(List<String> paths, {int startIndex = 0}) async {
     final json = jsonEncode(paths);
     if (startIndex == 0) {
@@ -261,7 +261,7 @@ class Engine {
 
   /// 从引擎待播队列移除条目（0=当前曲不允许移除，1=待播第一首）。
   /// CUE 场景：[playQueue] 从分轨起播后，core 会把整碟剩余分轨留在
-  /// 引擎队列；逐个移除交还 Dart 侧队列控制权（见 PlayerController）。
+  /// 引擎队列；逐个移除交还 Dart 侧队列控制权（见 PlayerNotifier）。
   Future<void> removeQueueEntry(int index) =>
       frb.wavelinkRemoveFromQueue(index: index);
 

@@ -6,7 +6,7 @@ import '../core/app_anim.dart';
 import '../core/theme.dart';
 import '../l10n/app_localizations.dart';
 import '../services/media_index.dart';
-import '../services/player_controller.dart';
+import '../services/player_notifier.dart';
 import '../services/player_providers.dart';
 import '../widgets/detail_header.dart';
 import '../widgets/media_card.dart';
@@ -82,7 +82,7 @@ class _ViewHeader extends StatelessWidget {
 
 /// 艺术家索引视图：响应式网格 + 搜索 + 排序 + 无限滚动懒加载。
 class ArtistsView extends ConsumerStatefulWidget {
-  final PlayerController player;
+  final PlayerNotifier player;
   final ValueChanged<String> onOpenArtist;
   const ArtistsView({super.key, required this.player, required this.onOpenArtist});
 
@@ -122,9 +122,9 @@ class _ArtistsViewState extends ConsumerState<ArtistsView> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(libraryProvider);
+    final library = ref.watch(playerProvider.select((s) => s.library));
     final l10n = AppLocalizations.of(context);
-    final idx = MediaIndex.build(widget.player.library);
+    final idx = MediaIndex.build(library);
     var list = MediaIndex.filterArtists(idx.artists, _query);
     list = MediaIndex.sortArtists(list, _sort);
     _total = list.length;
@@ -191,7 +191,7 @@ class _ArtistsViewState extends ConsumerState<ArtistsView> {
 
 /// 专辑索引视图：与艺术家视图对称。
 class AlbumsView extends ConsumerStatefulWidget {
-  final PlayerController player;
+  final PlayerNotifier player;
   final ValueChanged<String> onOpenAlbum;
   const AlbumsView({super.key, required this.player, required this.onOpenAlbum});
 
@@ -231,9 +231,9 @@ class _AlbumsViewState extends ConsumerState<AlbumsView> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(libraryProvider);
+    final library = ref.watch(playerProvider.select((s) => s.library));
     final l10n = AppLocalizations.of(context);
-    final idx = MediaIndex.build(widget.player.library);
+    final idx = MediaIndex.build(library);
     var list = MediaIndex.filterAlbums(idx.albums, _query);
     list = MediaIndex.sortAlbums(list, _sort);
     _total = list.length;
@@ -345,7 +345,7 @@ class _AlbumGrid extends StatelessWidget {
 
 /// 艺术家详情：头部 + 专辑网格 + 全部曲目列表。
 class ArtistDetail extends ConsumerWidget {
-  final PlayerController player;
+  final PlayerNotifier player;
   final String artistKey;
   final ValueChanged<String> onOpenAlbum;
   final VoidCallback onBack;
@@ -359,15 +359,14 @@ class ArtistDetail extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(libraryProvider);
-    ref.watch(currentIndexProvider);
-    final playing = ref.watch(playingProvider).value ?? false;
+    final library = ref.watch(playerProvider.select((s) => s.library));
+    final playing = ref.watch(playerProvider.select((s) => s.playing));
     final l10n = AppLocalizations.of(context);
-    final idx = MediaIndex.build(player.library);
+    final idx = MediaIndex.build(library);
     final artist = idx.artistByName(artistKey);
     if (artist == null) return detailEmpty(l10n);
     final name = artist.name.isEmpty ? l10n.artistUnknown : artist.name;
-    final currentId = player.currentTrack?.id;
+    final currentId = ref.watch(playerProvider.select((s) => s.currentTrack?.id));
     return Column(
       children: [
         DetailHeader(
@@ -417,7 +416,7 @@ class ArtistDetail extends ConsumerWidget {
 
 /// 专辑详情：头部（含「播放整张」）+ 按音轨号排序的曲目列表。
 class AlbumDetail extends ConsumerWidget {
-  final PlayerController player;
+  final PlayerNotifier player;
   final String albumKey;
   final VoidCallback onBack;
   const AlbumDetail({
@@ -429,11 +428,10 @@ class AlbumDetail extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(libraryProvider);
-    ref.watch(currentIndexProvider);
-    final playing = ref.watch(playingProvider).value ?? false;
+    final library = ref.watch(playerProvider.select((s) => s.library));
+    final playing = ref.watch(playerProvider.select((s) => s.playing));
     final l10n = AppLocalizations.of(context);
-    final idx = MediaIndex.build(player.library);
+    final idx = MediaIndex.build(library);
     final album = idx.albumByKey(albumKey);
     if (album == null) return detailEmpty(l10n);
     final name = album.name.isEmpty ? l10n.albumUnknown : album.name;
@@ -441,7 +439,7 @@ class AlbumDetail extends ConsumerWidget {
         album.artist.isEmpty ? l10n.artistUnknown : album.artist;
     final tracks = album.orderedTracks;
     final accent = AccentScope.of(context);
-    final currentId = player.currentTrack?.id;
+    final currentId = ref.watch(playerProvider.select((s) => s.currentTrack?.id));
     return Column(
       children: [
         DetailHeader(

@@ -10,7 +10,7 @@ import 'player_providers.dart';
 // 不可变 State + copyWith + setter「更新状态 → 持久化 → 下发引擎」三步走。
 // 视图（screens/settings.dart）只负责布局与交互反馈，不再持有业务状态。
 //
-// 持久化 key 与 PlayerController.init 的 `_restoreAudioSettings` 同源：
+// 持久化 key 与 PlayerNotifier.init 的 `_restoreAudioSettings` 同源：
 // outputDevice / exclusiveMode / outputSampleRate / engine.*。
 
 /// 音频输出状态。
@@ -71,7 +71,7 @@ class AudioSettingsState {
 
 /// 音频输出设置 Notifier。
 class AudioSettingsNotifier extends Notifier<AudioSettingsState> {
-  Engine? get _engine => ref.read(playerControllerProvider).engine;
+  Engine? get _engine => ref.read(playerProvider.notifier).engine;
 
   @override
   AudioSettingsState build() {

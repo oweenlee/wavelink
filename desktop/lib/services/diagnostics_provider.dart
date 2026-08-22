@@ -35,7 +35,7 @@ class DiagnosticsState {
 
 /// 诊断 Notifier：refresh 拉取引擎指标。
 class DiagnosticsNotifier extends Notifier<DiagnosticsState> {
-  Engine? get _engine => ref.read(playerControllerProvider).engine;
+  Engine? get _engine => ref.read(playerProvider.notifier).engine;
 
   @override
   DiagnosticsState build() => const DiagnosticsState();

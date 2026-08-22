@@ -5,7 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../core/theme.dart';
 import '../l10n/app_localizations.dart';
 import '../models/track.dart';
-import '../services/player_controller.dart';
+import '../services/player_notifier.dart';
 import '../services/player_providers.dart';
 
 // 单色板别名来自 core/theme.dart（与 ThemeData 同源）；别名仅为缩短引用。
@@ -66,10 +66,10 @@ Future<String?> askNameDialog(
 }
 
 /// 「加入播放列表」对话框：既有列表点选 + 新建播放列表。
-/// 列表变化经 [playlistsProvider] 实时刷新。
+/// 列表变化经 playerProvider 的 playlists select 实时刷新。
 Future<void> showAddToPlaylistDialog(
   BuildContext context,
-  PlayerController player,
+  PlayerNotifier player,
   Track track,
 ) async {
   final l10n = AppLocalizations.of(context);
@@ -84,8 +84,7 @@ Future<void> showAddToPlaylistDialog(
         child: Consumer(
           builder: (context, ref, _) {
             // 订阅播放列表变化，使对话框内列表实时刷新
-            ref.watch(playlistsProvider);
-            final pls = player.playlists;
+            final pls = ref.watch(playerProvider.select((s) => s.playlists));
             return ListView(
               shrinkWrap: true,
               children: [
@@ -117,7 +116,7 @@ Future<void> showAddToPlaylistDialog(
                     if (name != null && name.trim().isNotEmpty) {
                       await player.createPlaylist(name.trim());
                       await player.addToPlaylist(
-                          player.playlists.last.id, track.id);
+                          ref.read(playerProvider).playlists.last.id, track.id);
                     }
                   },
                 ),

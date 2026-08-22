@@ -6,7 +6,7 @@ import '../core/theme.dart';
 import '../l10n/app_localizations.dart';
 import '../models/track.dart';
 import '../services/network_source_config.dart';
-import '../services/player_controller.dart';
+import '../services/player_notifier.dart';
 import '../services/player_providers.dart';
 import '../services/subsonic_service.dart';
 import '../services/webdav_service.dart';
@@ -23,7 +23,7 @@ const _onSurfaceVariant = kOnSurfaceVariant;
 /// 曲库 / 收藏 / 艺术家 / 专辑 + 网络音源（含配置/重扫入口）+ 播放列表。
 /// 窄窗口（<720px）由调用方传 [compact] 折叠为图标条。
 class Sidebar extends ConsumerWidget {
-  final PlayerController player;
+  final PlayerNotifier player;
   final String viewMode;
   final bool compact;
   final double width;
@@ -45,9 +45,9 @@ class Sidebar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // 订阅收藏/播放列表/曲库变化以刷新计数与列表
-    ref.watch(favoritesProvider);
-    ref.watch(playlistsProvider);
-    ref.watch(libraryProvider);
+    final favorites = ref.watch(playerProvider.select((s) => s.favoriteIds));
+    final playlists = ref.watch(playerProvider.select((s) => s.playlists));
+    ref.watch(playerProvider.select((s) => s.library));
     ref.watch(networkConfigProvider);
     ref.watch(nasStateProvider);
     final l10n = AppLocalizations.of(context);
@@ -146,9 +146,7 @@ class Sidebar extends ConsumerWidget {
           NavItem(
             icon: LucideIcons.heart,
             label: l10n.sidebarFavorites,
-            trailing: player.favoriteIds.isEmpty
-                ? null
-                : '${player.favoriteIds.length}',
+            trailing: favorites.isEmpty ? null : '${favorites.length}',
             active: viewMode == 'favorites',
             onTap: () => onSelect('favorites'),
           ),
@@ -200,7 +198,7 @@ class Sidebar extends ConsumerWidget {
           ListView(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            children: player.playlists
+            children: playlists
                 .map(
                   (pl) => NavItem(
                     icon: LucideIcons.listMusic,
@@ -303,7 +301,7 @@ class Sidebar extends ConsumerWidget {
   /// 侧边栏直接重扫某网络音源（不进配置对话框），用 SnackBar 反馈结果。
   Future<void> _refreshSource(
     BuildContext context,
-    PlayerController player,
+    PlayerNotifier player,
     TrackSource source,
   ) async {
     final l10n = AppLocalizations.of(context);

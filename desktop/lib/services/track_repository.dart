@@ -109,7 +109,7 @@ class TrackRepository {
       .replaceAll('_', r'\_');
 
   /// 启动恢复：读回全部曲目（网络音源靠此跨重启存活）。
-  /// 失败向上抛异常，由调用方（PlayerController.init）兜底为空库并上报——
+  /// 失败向上抛异常，由调用方（PlayerNotifier.init）兜底为空库并上报——
   /// 本层不再静默吞错（曾因 debugPrint 吞掉导致曲库静默清空且用户无感知）。
   static Future<List<Track>> getAll() async {
     final db = await _database;

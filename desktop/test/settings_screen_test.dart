@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -8,15 +9,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:local_music_player/l10n/app_localizations.dart';
 import 'package:local_music_player/screens/settings.dart';
+import 'package:local_music_player/services/player_notifier.dart';
 import 'package:local_music_player/services/player_providers.dart';
 import 'package:local_music_player/services/engine.dart';
 import 'package:local_music_player/services/network_source_config.dart';
-import 'package:local_music_player/services/player_controller.dart';
 
 /// 测试用 MaterialApp 外壳：同 widget_test.dart，必须注册本地化 delegate。
-/// 设置页经 provider 取播放控制器，这里用假实例覆盖。
-Widget _testApp(Widget child, PlayerController player) => ProviderScope(
-      overrides: [playerControllerProvider.overrideWithValue(player)],
+/// 设置页经 playerProvider 取 Notifier，这里用假实例覆盖（mobile 侧已
+/// 验证 overrideWith 传 Notifier 工厂的姿势在 riverpod 3.4.2 可用）。
+Widget _testApp(Widget child, PlayerNotifier player) => ProviderScope(
+      overrides: [playerProvider.overrideWith(() => player)],
       child: MaterialApp(
         locale: const Locale('zh'),
         localizationsDelegates: const [
@@ -32,7 +34,7 @@ Widget _testApp(Widget child, PlayerController player) => ProviderScope(
 
 /// 把设置页泵入测试视口。主从布局下每个 section 单独挂载，视口高度给足
 /// 避免内容区滚动导致 tap 命中不到（DSP 区较高，1100px 可整屏容纳）。
-Future<void> _pumpSettings(WidgetTester tester, PlayerController player) async {
+Future<void> _pumpSettings(WidgetTester tester, PlayerNotifier player) async {
   await tester.binding.setSurfaceSize(const Size(980, 1100));
   await tester.pumpWidget(_testApp(const SettingsScreen(), player));
   await tester.pumpAndSettle();
@@ -127,12 +129,21 @@ class FakeEngine extends Engine {
   Future<String> currentPath() async => '';
 }
 
-/// 注入假引擎、记录 clearAllData 的假 PlayerController。
-class FakePlayerController extends PlayerController {
-  final Engine _testEngine;
+/// 注入假引擎、记录 clearAllData 的假 PlayerNotifier。
+/// build() 返回 engineReady=true 让设置页认为引擎可用（真实 Notifier
+/// 由 init() 加载动态库后置位；测试直接从 state 起始即为就绪）。
+class FakePlayerNotifier extends PlayerNotifier {
+  final Engine? _testEngine;
   bool clearAllCalled = false;
 
-  FakePlayerController(this._testEngine);
+  FakePlayerNotifier([Engine? testEngine]) : _testEngine = testEngine;
+
+  @override
+  PlayerState build() {
+    // 与基类 build 相同的清理钩子（关闭广播流），state 起始即为引擎就绪
+    ref.onDispose(() => unawaited(dispose()));
+    return const PlayerState(engineReady: true);
+  }
 
   @override
   Engine? get engine => _testEngine;
@@ -151,7 +162,7 @@ void main() {
   group('SettingsScreen', () {
     testWidgets('renders nav + all sections and engine-null hint',
         (tester) async {
-      final player = PlayerController(); // engine 未加载
+      final player = PlayerNotifier(); // engine 未加载 → engineReady=false
       await _pumpSettings(tester, player);
 
       // 导航栏 4 项齐全
@@ -175,7 +186,7 @@ void main() {
 
     testWidgets('DSP toggles call engine methods', (tester) async {
       final fake = FakeEngine();
-      final player = FakePlayerController(fake);
+      final player = FakePlayerNotifier(fake);
       await _pumpSettings(tester, player);
       await _selectSection(tester, 'dsp');
 
@@ -200,7 +211,7 @@ void main() {
 
     testWidgets('sample-rate apply calls setOutputSampleRate', (tester) async {
       final fake = FakeEngine();
-      final player = FakePlayerController(fake);
+      final player = FakePlayerNotifier(fake);
       await _pumpSettings(tester, player);
       await _selectSection(tester, 'audio');
 
@@ -212,7 +223,7 @@ void main() {
 
     testWidgets('EQ preset dropdown applies preset', (tester) async {
       final fake = FakeEngine();
-      final player = FakePlayerController(fake);
+      final player = FakePlayerNotifier(fake);
       await _pumpSettings(tester, player);
       await _selectSection(tester, 'dsp');
 
@@ -226,7 +237,7 @@ void main() {
 
     testWidgets('FIR clear calls clearIr', (tester) async {
       final fake = FakeEngine();
-      final player = FakePlayerController(fake);
+      final player = FakePlayerNotifier(fake);
       await _pumpSettings(tester, player);
       await _selectSection(tester, 'dsp');
 
@@ -240,7 +251,7 @@ void main() {
         (tester) async {
       SharedPreferences.setMockInitialValues({'dsp.crossfeed': true});
       final fake = FakeEngine();
-      final player = FakePlayerController(fake);
+      final player = FakePlayerNotifier(fake);
       await _pumpSettings(tester, player);
       await _selectSection(tester, 'dsp');
 
@@ -266,7 +277,7 @@ void main() {
         (tester) async {
       SharedPreferences.setMockInitialValues({'engine.bitPerfect': true});
       final fake = FakeEngine();
-      final player = FakePlayerController(fake);
+      final player = FakePlayerNotifier(fake);
       await _pumpSettings(tester, player);
       await _selectSection(tester, 'audio');
 
@@ -290,7 +301,7 @@ void main() {
 
     testWidgets('AutoEQ picker selects catalog model', (tester) async {
       final fake = FakeEngine();
-      final player = FakePlayerController(fake);
+      final player = FakePlayerNotifier(fake);
       await _pumpSettings(tester, player);
       await _selectSection(tester, 'dsp');
 
@@ -309,7 +320,7 @@ void main() {
 
     testWidgets('clear-all flow calls player.clearAllData', (tester) async {
       final fake = FakeEngine();
-      final player = FakePlayerController(fake);
+      final player = FakePlayerNotifier(fake);
       await _pumpSettings(tester, player);
       await _selectSection(tester, 'general');
 
@@ -324,7 +335,7 @@ void main() {
 
     testWidgets('exclusive switch shown on Windows and macOS', (tester) async {
       final fake = FakeEngine();
-      final player = FakePlayerController(fake);
+      final player = FakePlayerNotifier(fake);
       await _pumpSettings(tester, player);
       await _selectSection(tester, 'audio');
 

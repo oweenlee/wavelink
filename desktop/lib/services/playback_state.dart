@@ -9,7 +9,7 @@ const String kQueueIds = 'queueIds';
 
 /// 重启续播的持久化快照：当前曲目 id + 播放进度 + 队列顺序。
 ///
-/// 与 [PlayerController] 解耦，纯数据 + 编解码，便于单测。
+/// 与 [PlayerNotifier] 解耦，纯数据 + 编解码，便于单测。
 class PlaybackSnapshot {
   final String trackId;
   final Duration position;

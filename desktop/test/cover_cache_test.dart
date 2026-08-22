@@ -71,4 +71,30 @@ void main() {
       expect(await CoverCache.instance.cachedPathFor(noPath), isNull);
     });
   });
+
+  group('CoverCache 目录被外部删除后仍可写入（clearAllData 回归）', () {
+    test('删除 .covers 目录后 writeCover 能自动重建并成功落盘', () async {
+      // 回归：设置页「清空所有数据」会删除 .covers 目录，但单例缓存了
+      // 旧目录指针，此后 writeCover 写进不存在的父目录抛异常被静默吞掉
+      // → 重新添加音乐后封面永远写不进去（封面图不展示）。
+      final file = File('${docsDir.path}/song_readd.mp3')..createSync();
+      final t = Track(id: 'r1', title: 'R1', artist: 'R1', filePath: file.path);
+
+      final first = await CoverCache.instance.writeCover(
+          t, Uint8List.fromList([0xff, 0xd8, 0xff, 0xd9]));
+      expect(first, isNotNull, reason: '首次写入应成功');
+
+      // 模拟 clearAllData 删除缓存目录
+      final covers = Directory('${docsDir.path}/.covers');
+      expect(await covers.exists(), isTrue);
+      await covers.delete(recursive: true);
+
+      // 目录已删除：缓存指针失效，writeCover 必须能重建目录并重新写入
+      final second = await CoverCache.instance.writeCover(
+          t, Uint8List.fromList([0xff, 0xd8, 0xff, 0xd9]));
+      expect(second, isNotNull, reason: '目录被删后再次写入应自动重建');
+      expect(File(second!).existsSync(), isTrue);
+      expect(second, first, reason: '同 filePath 仍映射到同一缓存路径');
+    });
+  });
 }

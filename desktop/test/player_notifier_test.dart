@@ -1,46 +1,52 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:local_music_player/models/track.dart';
-import 'package:local_music_player/services/player_controller.dart';
+import 'package:local_music_player/services/player_notifier.dart';
+import 'package:local_music_player/services/player_providers.dart';
 
-/// PlayerController 状态机单测（不依赖 Rust 引擎 / SharedPreferences：
+/// PlayerNotifier 状态机单测（不依赖 Rust 引擎 / SharedPreferences：
 /// 引擎未 init 时为 null → 播放调用变 no-op，仅验证纯 Dart 队列逻辑）。
+/// Notifier 的 state 依赖 provider 容器，故经 ProviderContainer 取实例。
 List<Track> mkTracks(int n) => List.generate(
     n,
     (i) => Track(
         id: 't$i', title: 'Track $i', artist: 'A$i', filePath: '/tmp/t$i.flac'));
 
 /// 把模式循环到目标值（off → all → one → off ...）。
-Future<void> setRepeat(PlayerController c, RepeatMode mode) async {
+Future<void> setRepeat(PlayerNotifier c, RepeatMode mode) async {
   for (var i = 0; i < RepeatMode.values.length; i++) {
-    if (c.repeatMode == mode) return;
+    if (c.state.repeatMode == mode) return;
     await c.cycleRepeat();
   }
   throw StateError('unreachable');
 }
 
 void main() {
-  late PlayerController c;
+  late ProviderContainer container;
+  late PlayerNotifier c;
 
   setUp(() {
-    c = PlayerController();
+    container = ProviderContainer();
+    c = container.read(playerProvider.notifier);
+    addTearDown(container.dispose);
   });
 
   group('playFrom / playIndex', () {
     test('sets queue and index, current track follows', () {
       final ts = mkTracks(3);
       c.playFrom(ts, 1);
-      expect(c.currentIndex, 1);
-      expect(c.currentTrack?.id, 't1');
+      expect(c.state.queueIndex, 1);
+      expect(c.state.currentTrack?.id, 't1');
     });
 
     test('shuffle puts the picked track first and keeps all tracks', () async {
       final ts = mkTracks(5);
       await c.toggleShuffle();
       c.playFrom(ts, 3);
-      expect(c.currentIndex, 0);
-      expect(c.currentTrack?.id, 't3');
-      final queueIds = c.queue.map((t) => t.id).toSet();
+      expect(c.state.queueIndex, 0);
+      expect(c.state.currentTrack?.id, 't3');
+      final queueIds = c.state.queue.map((t) => t.id).toSet();
       expect(queueIds.length, 5); // 无丢失、无重复
     });
   });
@@ -50,9 +56,9 @@ void main() {
       final ts = mkTracks(3);
       c.playFrom(ts, 0);
       await c.next();
-      expect(c.currentIndex, 1);
+      expect(c.state.queueIndex, 1);
       await c.next();
-      expect(c.currentIndex, 2);
+      expect(c.state.queueIndex, 2);
     });
 
     test('repeat all wraps to first', () async {
@@ -60,7 +66,7 @@ void main() {
       c.playFrom(ts, 1);
       await setRepeat(c, RepeatMode.all);
       await c.next();
-      expect(c.currentIndex, 0);
+      expect(c.state.queueIndex, 0);
     });
 
     test('repeat one stays on the same track', () async {
@@ -68,22 +74,22 @@ void main() {
       c.playFrom(ts, 1);
       await setRepeat(c, RepeatMode.one);
       await c.next();
-      expect(c.currentIndex, 1);
+      expect(c.state.queueIndex, 1);
     });
 
     test('repeat off stops at the end', () async {
       final ts = mkTracks(2);
       c.playFrom(ts, 1);
-      expect(c.repeatMode, RepeatMode.off);
+      expect(c.state.repeatMode, RepeatMode.off);
       await c.next();
-      expect(c.isPlaying, false);
+      expect(c.state.playing, false);
     });
 
     test('previous goes back one track', () async {
       final ts = mkTracks(3);
       c.playFrom(ts, 2);
       await c.previous();
-      expect(c.currentIndex, 1);
+      expect(c.state.queueIndex, 1);
     });
 
     test('previous within first 3s of a track goes to the prior track',
@@ -91,7 +97,7 @@ void main() {
       final ts = mkTracks(3);
       c.playFrom(ts, 1);
       await c.previous(); // position == 0 (<3s) → 上一首
-      expect(c.currentIndex, 0);
+      expect(c.state.queueIndex, 0);
     });
   });
 
@@ -110,13 +116,13 @@ void main() {
     test('cue 曲目入队/状态机与普通曲目同构（引擎缺失时安全 no-op）', () async {
       final ts = [mkCue(0, 3), mkCue(1, 3), mkCue(2, 3)];
       c.playFrom(ts, 1);
-      expect(c.currentIndex, 1);
-      expect(c.currentTrack!.isCueTrack, isTrue);
+      expect(c.state.queueIndex, 1);
+      expect(c.state.currentTrack!.isCueTrack, isTrue);
       await c.next();
-      expect(c.currentIndex, 2);
+      expect(c.state.queueIndex, 2);
       await c.previous();
       await c.previous(); // 进度为零 → 回上一轨
-      expect(c.currentIndex, 0);
+      expect(c.state.queueIndex, 0);
     });
   });
 
@@ -127,16 +133,16 @@ void main() {
       await c.next(); // index 1
       final extra = mkTracks(1).first;
       c.playNext(extra);
-      expect(c.queue[1].id, 't1'); // 当前曲不动
-      expect(c.queue[2].id, extra.id); // 紧随其后
-      expect(c.queue[3].id, 't2');
+      expect(c.state.queue[1].id, 't1'); // 当前曲不动
+      expect(c.state.queue[2].id, extra.id); // 紧随其后
+      expect(c.state.queue[3].id, 't2');
     });
 
     test('on empty queue starts playing the track', () {
       final t = mkTracks(1).first;
       c.playNext(t);
-      expect(c.currentIndex, 0);
-      expect(c.currentTrack?.id, t.id);
+      expect(c.state.queueIndex, 0);
+      expect(c.state.currentTrack?.id, t.id);
     });
 
     test('shuffle mode: base queue insertion uses the base position',
@@ -148,8 +154,8 @@ void main() {
           Track(id: 'extra', title: 'E', artist: 'E', filePath: '/tmp/e.flac');
       c.playNext(extra);
       // 播放队列：紧跟当前曲目
-      expect(c.queue[0].id, 't2');
-      expect(c.queue[1].id, 'extra');
+      expect(c.state.queue[0].id, 't2');
+      expect(c.state.queue[1].id, 'extra');
       // 基准队列：插在原列表 t2 的后一个位置（而非复用队列下标盲插）
       final baseIds = c.queueBase.map((t) => t.id).toList();
       expect(baseIds.indexOf('extra'), baseIds.indexOf('t2') + 1);
@@ -172,7 +178,7 @@ void main() {
     test('addLibraryFiles dedupes by id', () {
       c.addLibraryFiles(mkTracks(3));
       c.addLibraryFiles(mkTracks(3)); // 同一批再来一次
-      expect(c.library.length, 3);
+      expect(c.state.library.length, 3);
     });
   });
 
@@ -181,15 +187,11 @@ void main() {
       final ts = mkTracks(4);
       c.playFrom(ts, 1);
       await c.toggleShuffle();
-      expect(c.currentTrack?.id, 't1');
-      expect(c.currentIndex, 0);
+      expect(c.state.currentTrack?.id, 't1');
+      expect(c.state.queueIndex, 0);
       await c.toggleShuffle();
-      expect(c.currentTrack?.id, 't1');
-      expect(c.currentIndex, 1);
+      expect(c.state.currentTrack?.id, 't1');
+      expect(c.state.queueIndex, 1);
     });
-  });
-
-  tearDown(() async {
-    await c.dispose();
   });
 }

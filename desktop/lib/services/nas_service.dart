@@ -23,7 +23,7 @@ enum NasConnectionState { disconnected, connecting, connected, error }
 /// 建立会话，再 [scan] 递归列出共享内音频建索引，返回 [Track]
 /// （[TrackSource.nas]，[remotePath] 为共享内相对路径）。
 ///
-/// 播放策略由 PlayerController 决定：优先 Rust 边下边播
+/// 播放策略由 PlayerNotifier 决定：优先 Rust 边下边播
 /// （[frb_smb.enginePlaySmbStream]），失败回退全量下载。
 ///
 /// 连接状态经 [stateStream] 广播，UI 据此显示「已连接 / 连接中 / 错误」。

@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
-import 'player_controller.dart';
+import 'player_notifier.dart';
+import 'player_providers.dart';
 
 /// System tray integration: icon, context menu (show / play-pause / next /
 /// quit), and click-to-toggle behaviour.
@@ -12,10 +14,12 @@ import 'player_controller.dart';
 /// from the bundle, on Windows the file is resolved under `data/flutter_assets`,
 /// so we just pass the registered asset name.
 class TrayService with TrayListener {
-  final PlayerController player;
+  final ProviderContainer container;
+  late final PlayerNotifier _player;
 
-  TrayService(this.player) {
+  TrayService(this.container) {
     trayManager.addListener(this);
+    _player = container.read(playerProvider.notifier);
   }
 
   Future<void> init() async {
@@ -25,13 +29,21 @@ class TrayService with TrayListener {
     await _buildMenu();
 
     // Keep the tray menu label in sync with playback state.
-    player.playingStream.listen((_) => _buildMenu());
-    player.indexStream.listen((_) => _buildMenu());
+    // select 精细订阅：只听 playing / currentTrack，避开 25Hz position 抖动。
+    container.listen(
+      playerProvider.select((s) => s.playing),
+      (_, _) => _buildMenu(),
+    );
+    container.listen(
+      playerProvider.select((s) => s.currentTrack),
+      (_, _) => _buildMenu(),
+    );
   }
 
   Future<void> _buildMenu() async {
-    final label = player.isPlaying ? '暂停' : '播放';
-    final track = player.currentTrack;
+    final st = container.read(playerProvider);
+    final label = st.playing ? '暂停' : '播放';
+    final track = st.currentTrack;
     await trayManager.setContextMenu(
       Menu(items: [
         MenuItem(
@@ -67,9 +79,9 @@ class TrayService with TrayListener {
         windowManager.show();
         windowManager.focus();
       case 'play_pause':
-        player.togglePlay();
+        _player.togglePlay();
       case 'next':
-        player.next();
+        _player.next();
       case 'quit':
         unawaited(_quit());
     }

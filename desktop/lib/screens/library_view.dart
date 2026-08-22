@@ -6,7 +6,7 @@ import '../core/app_anim.dart';
 import '../core/theme.dart';
 import '../l10n/app_localizations.dart';
 import '../models/track.dart';
-import '../services/player_controller.dart';
+import '../services/player_notifier.dart';
 import '../services/player_providers.dart';
 import '../widgets/search_field.dart';
 import '../widgets/track_row.dart';
@@ -19,7 +19,7 @@ const _border = kBorder;
 /// 曲库视图：搜索 + 排序 + 标题/计数 + 歌曲列表（对齐 mobile
 /// `ui/features/library/views/library_page.dart` 的歌曲 Tab 职责）。
 class LibraryView extends ConsumerWidget {
-  final PlayerController player;
+  final PlayerNotifier player;
   final List<Track> tracks;
   final String title;
   final String query;
@@ -49,10 +49,10 @@ class LibraryView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // 订阅当前曲目与播放状态，刷新「正在播放」高亮与封面指示器
-    ref.watch(currentIndexProvider);
-    final playing = ref.watch(playingProvider).value ?? false;
+    final playing = ref.watch(playerProvider.select((s) => s.playing));
     final l10n = AppLocalizations.of(context);
-    final currentId = player.currentTrack?.id;
+    final currentId =
+        ref.watch(playerProvider.select((s) => s.currentTrack?.id));
     return Column(
       children: [
         Padding(
@@ -100,7 +100,7 @@ class LibraryView extends ConsumerWidget {
             builder: (c) {
               if (tracks.isEmpty) {
                 // 整个曲库为空（还没添加过文件夹）：给出引导，而非假数据
-                if (query.isEmpty && player.library.isEmpty) {
+                if (query.isEmpty && ref.watch(playerProvider.select((s) => s.library)).isEmpty) {
                   return Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -137,6 +137,7 @@ class LibraryView extends ConsumerWidget {
                 );
               }
               return ListView.builder(
+                itemExtent: 56, // 固定行高（7+42+7），跳过测量优化性能
                 itemCount: tracks.length,
                 itemBuilder: (c, i) {
                   final t = tracks[i];

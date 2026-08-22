@@ -1,21 +1,23 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme.dart';
-import '../services/player_controller.dart';
+import '../services/player_notifier.dart';
+import '../services/player_providers.dart';
 
 /// 实时频谱可视化（16 频段柱状图）。
 ///
 /// 数据来自引擎 `spectrum` 事件（core 消费线程按音频缓冲推送，
-/// ~25-50Hz），经 [PlayerController.spectrumStream] 广播。
+/// ~25-50Hz），经 [PlayerNotifier.spectrumStream] 广播。
 ///
 /// 渲染策略：内部 Ticker 以帧率驱动 CustomPainter，对目标幅值做
 /// 「快攻慢放」平滑（attack 快、release 缓），暂停/停止后引擎不再
 /// 推送，柱体自然衰减到零而不是瞬间消失。整组件包 RepaintBoundary，
 /// 高频重绘不波及「正在播放」面板其余部分（DESIGN_GUIDE P1 项）。
-class SpectrumVisualizer extends StatefulWidget {
-  final PlayerController player;
+class SpectrumVisualizer extends ConsumerStatefulWidget {
+  final PlayerNotifier player;
   final double height;
 
   const SpectrumVisualizer({
@@ -25,10 +27,11 @@ class SpectrumVisualizer extends StatefulWidget {
   });
 
   @override
-  State<SpectrumVisualizer> createState() => _SpectrumVisualizerState();
+  ConsumerState<SpectrumVisualizer> createState() =>
+      _SpectrumVisualizerState();
 }
 
-class _SpectrumVisualizerState extends State<SpectrumVisualizer>
+class _SpectrumVisualizerState extends ConsumerState<SpectrumVisualizer>
     with SingleTickerProviderStateMixin {
   static const int _bands = 16;
 
@@ -40,7 +43,6 @@ class _SpectrumVisualizerState extends State<SpectrumVisualizer>
 
   late final AnimationController _ticker;
   StreamSubscription<List<double>>? _specSub;
-  StreamSubscription<bool>? _playingSub;
   bool _playing = false;
 
   @override
@@ -53,14 +55,12 @@ class _SpectrumVisualizerState extends State<SpectrumVisualizer>
         _target[i] = i < bands.length ? bands[i].clamp(0.0, 1.0) : 0.0;
       }
     });
-    _playingSub = widget.player.playingStream.listen((p) => _playing = p);
-    _playing = widget.player.isPlaying;
+    _playing = ref.read(playerProvider).playing;
   }
 
   @override
   void dispose() {
     _specSub?.cancel();
-    _playingSub?.cancel();
     _ticker.dispose();
     super.dispose();
   }
@@ -78,6 +78,10 @@ class _SpectrumVisualizerState extends State<SpectrumVisualizer>
 
   @override
   Widget build(BuildContext context) {
+    // 播放态变化只影响衰减目标，无需重建本组件——listen 而非 watch，
+    // 高频 spectrum 数据也走 Stream 直达，均不触发 build。
+    ref.listen(playerProvider.select((s) => s.playing),
+        (_, next) => _playing = next);
     final accent = AccentScope.of(context);
     return RepaintBoundary(
       child: AnimatedBuilder(

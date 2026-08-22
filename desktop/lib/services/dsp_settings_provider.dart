@@ -72,7 +72,7 @@ class DspSettingsState {
 
 /// DSP 效果设置 Notifier。
 class DspSettingsNotifier extends Notifier<DspSettingsState> {
-  Engine? get _engine => ref.read(playerControllerProvider).engine;
+  Engine? get _engine => ref.read(playerProvider.notifier).engine;
 
   @override
   DspSettingsState build() {

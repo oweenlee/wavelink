@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -29,54 +30,147 @@ import 'network_source_config.dart';
 /// Playback loop behaviour.
 enum RepeatMode { off, all, one }
 
-/// Central playback engine + library state.
+/// 播放器 UI 状态（不可变）。
 ///
-/// 音频后端为 Rust `Engine`（经 FFI 桥接 `audio_core`），继承 hi-res / DSP /
-/// bit-perfect 能力。播放顺序（队列 / 随机 / 循环）由本控制器在 Dart 侧管理，
-/// 每首曲目通过 `engine.play(path)` 下发给引擎；曲目自然结束时由引擎的
-/// `stopped` 事件驱动 `next()` 切歌（gapless / 引擎队列为 Phase 2）。
-///
-/// 收藏 / 播放列表 / 音量 / 模式经 shared_preferences 持久化；全部 UI 状态
-/// 通过统一广播流暴露。
-class PlayerController {
-  Engine? _engine;
-  String? _engineInitError;
-  /// 暴露引擎实例给设置页等 UI 直接调用 DSP / 输出配置命令。
-  Engine? get engine => _engine;
+/// 对齐 mobile `audio_player_provider.dart` 的 PlayerState 模式：全部 UI 可见
+/// 数据集中在一个不可变对象，经 Riverpod Notifier 下发；UI 用
+/// `ref.watch(playerProvider.select((s) => s.xxx))` 精细订阅。
+/// 频谱（25-50Hz 连续数据）/ 错误 / 分析完成属于「事件流」而非状态，
+/// 仍走 StreamProvider（见 player_providers.dart）。
+class PlayerState {
+  /// 当前曲库（含本地与网络音源）。
+  final List<Track> library;
+
+  /// 用户添加过的音乐文件夹（持久化，重启后重扫恢复曲库）。
+  final List<String> folders;
+
+  /// 当前播放队列（shuffle 开启时为打乱顺序）。
+  final List<Track> queue;
+
+  /// 队列下标（null = 尚未开始播放，哨兵区分「未传」与「传 null」）。
+  final int? queueIndex;
+
+  final bool playing;
+  final Duration position;
+  final Duration duration;
+
+  final RepeatMode repeatMode;
+  final bool shuffle;
+  final double volume;
+
+  /// 收藏曲目 id 集（外部只读，变更经 Notifier 产生新 Set）。
+  final Set<String> favoriteIds;
+  final List<Playlist> playlists;
+
+  /// 当前曲目歌词（null = 未加载，哨兵区分）。
+  final List<LyricLine>? lyrics;
 
   /// 引擎是否可播放（动态库已加载且初始化成功）。
-  bool get engineReady => _engine != null && _engineInitError == null;
+  final bool engineReady;
 
-  /// 引擎初始化错误信息（null 表示成功或尚未加载）。
-  String? get engineInitError => _engineInitError;
+  /// 引擎初始化错误信息（null 表示成功或尚未加载，哨兵区分）。
+  final String? engineInitError;
+
+  const PlayerState({
+    this.library = const [],
+    this.folders = const [],
+    this.queue = const [],
+    this.queueIndex,
+    this.playing = false,
+    this.position = Duration.zero,
+    this.duration = Duration.zero,
+    this.repeatMode = RepeatMode.off,
+    this.shuffle = false,
+    this.volume = 1.0,
+    this.favoriteIds = const {},
+    this.playlists = const [],
+    this.lyrics,
+    this.engineReady = false,
+    this.engineInitError,
+  });
+
+  /// 当前曲目（队列为空或未开始播放时为 null）。
+  Track? get currentTrack => (queueIndex == null || queue.isEmpty)
+      ? null
+      : queue[queueIndex!.clamp(0, queue.length - 1)];
+
+  static const Object _sentinel = Object();
+
+  PlayerState copyWith({
+    List<Track>? library,
+    List<String>? folders,
+    List<Track>? queue,
+    Object? queueIndex = _sentinel,
+    bool? playing,
+    Duration? position,
+    Duration? duration,
+    RepeatMode? repeatMode,
+    bool? shuffle,
+    double? volume,
+    Set<String>? favoriteIds,
+    List<Playlist>? playlists,
+    Object? lyrics = _sentinel,
+    bool? engineReady,
+    Object? engineInitError = _sentinel,
+  }) {
+    return PlayerState(
+      library: library ?? this.library,
+      folders: folders ?? this.folders,
+      queue: queue ?? this.queue,
+      queueIndex: identical(queueIndex, _sentinel)
+          ? this.queueIndex
+          : queueIndex as int?,
+      playing: playing ?? this.playing,
+      position: position ?? this.position,
+      duration: duration ?? this.duration,
+      repeatMode: repeatMode ?? this.repeatMode,
+      shuffle: shuffle ?? this.shuffle,
+      volume: volume ?? this.volume,
+      favoriteIds: favoriteIds ?? this.favoriteIds,
+      playlists: playlists ?? this.playlists,
+      lyrics: identical(lyrics, _sentinel)
+          ? this.lyrics
+          : lyrics as List<LyricLine>?,
+      engineReady: engineReady ?? this.engineReady,
+      engineInitError: identical(engineInitError, _sentinel)
+          ? this.engineInitError
+          : engineInitError as String?,
+    );
+  }
+}
+
+/// 中央播放引擎 + 曲库状态（Riverpod Notifier 版）。
+///
+/// 音频后端为 Rust `Engine`（经 FFI 桥接 `audio_core`），继承 hi-res / DSP /
+/// bit-perfect 能力。播放顺序（队列 / 随机 / 循环）由本 Notifier 在 Dart 侧
+/// 管理，每首曲目通过 `engine.play(path)` 下发给引擎；曲目自然结束时由引擎
+/// 的 `stopped` 事件驱动 `next()` 切歌（gapless / 引擎队列为 Phase 2）。
+///
+/// 收藏 / 播放列表 / 音量 / 模式经 shared_preferences 持久化；UI 状态全部
+/// 进入 [PlayerState]，UI 经 select 精细订阅（替代旧的 12 路广播流）。
+class PlayerNotifier extends Notifier<PlayerState> {
+  Engine? _engine;
+
+  /// 暴露引擎实例给设置页等 UI 直接调用 DSP / 输出配置命令。
+  /// 测试经子类覆写此 getter 注入 FakeEngine。
+  Engine? get engine => _engine;
 
   /// prefs 实例缓存：init 时加载一次，之后所有持久化走缓存引用。
   /// 为 null（如单元测试未调 init）时持久化静默跳过，不影响内存状态。
   SharedPreferences? _prefs;
 
-  /// 用户添加过的音乐文件夹（持久化，重启后重扫恢复曲库）。
-  List<String> _folders = const [];
-
-  List<Track> _library = const [];
-  List<Track> _queue = const [];
+  /// 基准队列（未打乱的原始顺序，shuffle 关闭时与 queue 相同）。
+  /// 纯内部数据（UI 不消费），不进 State。
   List<Track> _queueBase = const [];
-  int? _queueIndex;
 
-  final Set<String> _favoriteIds = {};
-  List<Playlist> _playlists = const [];
-
-  RepeatMode _repeatMode = RepeatMode.off;
-  bool _shuffle = false;
-  double _volume = 1.0;
+  /// 仅供单测验证「shuffle 下 playNext 按基准队列位置插入」语义。
+  @visibleForTesting
+  List<Track> get queueBase => _queueBase;
 
   // —— 播放续播恢复（重启后接着播）——
   String? _loadedTrackId; // 已加载到引擎的 track id；区分 resume 是「已暂停」还是「从未播放（启动恢复）」
   Duration? _pendingSeek; // 启动恢复时待应用的进度，首次 resume 播放时消费
   DateTime? _lastPersistAt; // 进度落盘节流时间戳
-
-  bool _playing = false;
-  Duration _position = Duration.zero;
-  Duration _duration = Duration.zero;
 
   /// 用户主动停止标记：区分「自然结束」与「手动停止」，避免误触发切歌
   bool _stopRequested = false;
@@ -96,15 +190,8 @@ class PlayerController {
   /// 流式 seek 下载/切换是否进行中（防重入，单飞）
   bool _streamSeekPending = false;
 
-  final _positionSC = StreamController<Duration>.broadcast();
-  final _durationSC = StreamController<Duration>.broadcast();
-  final _playingSC = StreamController<bool>.broadcast();
-  final _indexSC = StreamController<int?>.broadcast();
-  final _lyricsSC = StreamController<List<LyricLine>>.broadcast();
-  final _favoritesSC = StreamController<void>.broadcast();
-  final _playlistsSC = StreamController<void>.broadcast();
-  final _modeSC = StreamController<void>.broadcast();
-  final _librarySC = StreamController<void>.broadcast();
+  // —— 事件流（非 UI 状态，StreamProvider 桥接）——
+
   /// 音频分析完成（广播 trackId）：播放页据此刷新 BPM/Key 徽章。
   final _analysisSC = StreamController<String>.broadcast();
 
@@ -116,72 +203,60 @@ class PlayerController {
   /// 详细异常走 debugPrint（仅 debug 构建），对用户只暴露一句人话。
   final _errorSC = StreamController<String>.broadcast();
 
-  Stream<Duration> get positionStream => _positionSC.stream;
-  Stream<Duration> get durationStream => _durationSC.stream;
-  Stream<bool> get playingStream => _playingSC.stream;
-  Stream<int?> get indexStream => _indexSC.stream;
-  Stream<List<LyricLine>> get lyricsStream => _lyricsSC.stream;
-  Stream<void> get favoritesStream => _favoritesSC.stream;
-  Stream<void> get playlistsStream => _playlistsSC.stream;
-  Stream<void> get modeStream => _modeSC.stream;
   Stream<String> get analysisStream => _analysisSC.stream;
 
   /// 实时频谱事件流（16 频段幅值 0~1）。
   Stream<List<double>> get spectrumStream => _spectrumSC.stream;
 
-  /// 曲库内容变化（添加文件夹 / 启动重扫完成）。UI 订阅以替代 setState 刷新。
-  Stream<void> get libraryStream => _librarySC.stream;
-
   /// 用户可读错误事件（持久化失败等），UI 订阅后弹提示。
   Stream<String> get errorStream => _errorSC.stream;
+
+  @override
+  PlayerState build() {
+    ref.onDispose(() => unawaited(dispose()));
+    return const PlayerState();
+  }
 
   /// 统一错误上报：debugPrint 记录完整异常（诊断用），errorStream 只发
   /// 一句用户能看懂的话（呈现用）。持久化/导入失败不得静默。
   void _reportError(String message, Object e) {
-    debugPrint('PlayerController: $message ($e)');
+    debugPrint('PlayerNotifier: $message ($e)');
     if (!_errorSC.isClosed) _errorSC.add(message);
   }
 
-  List<Track> get library => _library;
-  List<Playlist> get playlists => _playlists;
-  Set<String> get favoriteIds => _favoriteIds;
-  List<String> get folders => _folders;
-
-  /// 当前播放队列（shuffle 开启时为打乱顺序）。
-  List<Track> get queue => _queue;
-
-  /// 基准队列（未打乱的原始顺序，shuffle 关闭时与 [queue] 相同）。
-  List<Track> get queueBase => _queueBase;
-  RepeatMode get repeatMode => _repeatMode;
-  bool get shuffle => _shuffle;
-  double get volume => _volume;
-
-  Track? get currentTrack =>
-      (_queueIndex == null || _queue.isEmpty) ? null : _queue[_queueIndex!];
-  int? get currentIndex => _queueIndex;
-  bool get isPlaying => _playing;
-  Duration get position => _position;
-  Duration get duration => _duration;
-
   Future<void> init() async {
+    var favorites = <String>{...state.favoriteIds};
+    var playlists = state.playlists;
+    var volume = state.volume;
+    var repeatMode = state.repeatMode;
+    var shuffle = state.shuffle;
+    var folders = state.folders;
     try {
       _prefs = await SharedPreferences.getInstance();
-      _favoriteIds.addAll(_prefs!.getStringList('favorites') ?? []);
+      favorites.addAll(_prefs!.getStringList('favorites') ?? []);
       final plJson = _prefs!.getStringList('playlists') ?? [];
-      _playlists = plJson
+      playlists = plJson
           .map((e) => Playlist.fromJson(jsonDecode(e) as Map<String, dynamic>))
           .toList();
-      _volume = (_prefs!.getDouble('volume') ?? 1.0).clamp(0.0, 1.0);
+      volume = (_prefs!.getDouble('volume') ?? 1.0).clamp(0.0, 1.0);
       final rm = _prefs!.getString('repeatMode');
-      _repeatMode = RepeatMode.values.firstWhere(
+      repeatMode = RepeatMode.values.firstWhere(
         (e) => e.name == rm,
         orElse: () => RepeatMode.off,
       );
-      _shuffle = _prefs!.getBool('shuffle') ?? false;
-      _folders = _prefs!.getStringList('libraryFolders') ?? [];
+      shuffle = _prefs!.getBool('shuffle') ?? false;
+      folders = _prefs!.getStringList('libraryFolders') ?? [];
     } catch (e) {
       debugPrint('prefs load error: $e');
     }
+    state = state.copyWith(
+      favoriteIds: favorites,
+      playlists: playlists,
+      volume: volume,
+      repeatMode: repeatMode,
+      shuffle: shuffle,
+      folders: folders,
+    );
 
     // 恢复 Subsonic 会话凭据（WebDAV/NAS 凭据由 NetworkSourceConfig 直接读）。
     try {
@@ -192,7 +267,7 @@ class PlayerController {
 
     // 加载 Rust 引擎（找不到 dylib 时为 null，播放不可用但 App 仍可启动）
     _engine = await Engine.load();
-    _engineInitError = _engine == null
+    final engineInitError = _engine == null
         ? null
         : await _engine!.initialize(
             sampleRate: 44100,
@@ -204,11 +279,15 @@ class PlayerController {
             crossfadeMs: (_prefs!.getInt('engine.crossfadeMs') ?? 0)
                 .clamp(0, 8000),
           );
-    if (_engineInitError != null) {
-      debugPrint('engine init error: $_engineInitError');
+    state = state.copyWith(
+      engineReady: _engine != null && engineInitError == null,
+      engineInitError: engineInitError,
+    );
+    if (engineInitError != null) {
+      debugPrint('engine init error: $engineInitError');
     }
     _engine?.events.listen(_onEngineEvent);
-    await _engine?.setVolume(_volume);
+    await _engine?.setVolume(state.volume);
     // 恢复音频输出/DSP 设置（设备、采样率、效果链、EQ、FIR），
     // 与设置页同源读写 SharedPreferences。
     await _restoreAudioSettings();
@@ -223,9 +302,8 @@ class PlayerController {
         addLibraryFiles(dbTracks);
         debugPrint(
             '[perf] DB 曲库恢复 ${dbTracks.length} 首: ${swDb.elapsedMilliseconds}ms');
-        // DB 恢复后立即广播：UI 提前显示曲库与封面（此前要等全部文件夹
-        // 扫完才广播一次，大曲库开场长时间空白，列表“显得慢”）。
-        _librarySC.add(null);
+        // DB 恢复后立即生效：UI 提前显示曲库与封面（此前要等全部文件夹
+        // 扫完才更新一次，大曲库开场长时间空白，列表“显得慢”）。
         // 补提网络源封面：封面文件可能在缓存清理/历史操作中丢失，
         // 后台快速路径（已缓存直接写回）+ 缺失才远程提取，不阻塞启动。
         final remote =
@@ -235,8 +313,8 @@ class PlayerController {
     } catch (e) {
       _reportError('曲库读取失败，本次启动以空库运行', e);
     }
-    if (_folders.isNotEmpty) {
-      for (final folder in _folders) {
+    if (state.folders.isNotEmpty) {
+      for (final folder in state.folders) {
         final swFolder = Stopwatch()..start();
         final scanned = await scanFolder(folder);
         addLibraryFiles(scanned);
@@ -247,8 +325,6 @@ class PlayerController {
         }
         debugPrint('[perf] 扫描 $folder: ${scanned.length} 首, '
             '${swFolder.elapsedMilliseconds}ms');
-        // 每个文件夹扫完立即广播（此前等全部结束才显示一次）
-        _librarySC.add(null);
         // 扫描期已直接落盘封面并回填 coverUrl（library.dart _seedCover），
         // 此处仅补漏（扫描中标签读取失败的文件），后台执行不阻塞 UI。
         extractCoversFor(scanned);
@@ -271,7 +347,7 @@ class PlayerController {
   Future<void> _backfillCoverThumbs() async {
     if (_thumbSwept) return;
     _thumbSwept = true;
-    final files = _library
+    final files = state.library
         .map((t) => t.coverUrl)
         .whereType<String>()
         .where((u) => !u.startsWith('http://') && !u.startsWith('https://'))
@@ -337,8 +413,8 @@ class PlayerController {
     switch (e.type) {
       case 'position':
         if (e.value != null) {
-          _position = Duration(milliseconds: (e.value! * 1000).round());
-          _positionSC.add(_position);
+          state = state.copyWith(
+              position: Duration(milliseconds: (e.value! * 1000).round()));
           _throttledPersistPosition();
         }
       case 'duration':
@@ -349,13 +425,13 @@ class PlayerController {
           // durationHint 是按 1000kbps 粗估（误差可数倍），估算收敛值与
           // 粗估值偏差大概率超阈值 → 真实时长被永久拒收，进度条/结束时间
           // 钉死在粗估上（用户实测「结束时间不准确」的根因）。
-          _duration = Duration(milliseconds: (e.value! * 1000).round());
-          _durationSC.add(_duration);
+          state = state.copyWith(
+              duration: Duration(milliseconds: (e.value! * 1000).round()));
         }
       case 'stopped':
         // 流式 seek 重启流（拖进度条）时，core 的 play_stream 会先 stop_playback
         // 拆掉旧流再起新流，必然发一次 stopped（core/state.rs 的流式 seek 历史坑）。
-        // 这个伪事件不能翻转 _playing —— 新流的状态才是权威，否则 UI 误显"暂停"
+        // 这个伪事件不能翻转 playing —— 新流的状态才是权威，否则 UI 误显"暂停"
         // 且播放按钮 resume 对已播/已停引擎无效（"拖一下就停、点了没反应"）。
         if (_lastStreamSeekAt != null &&
             DateTime.now().difference(_lastStreamSeekAt!) <
@@ -363,8 +439,7 @@ class PlayerController {
           debugPrint('[stopped] 流式 seek 重启伪停止，忽略(不翻转播放态)');
           return;
         }
-        _playing = false;
-        _playingSC.add(false);
+        state = state.copyWith(playing: false);
         if (_stopRequested) {
           _stopRequested = false;
         } else {
@@ -382,17 +457,20 @@ class PlayerController {
   }
 
   void setLibrary(List<Track> list) {
-    _library = list;
     _queueBase = list;
-    _queue = _shuffle ? _shuffled(list, null) : list;
-    _queueIndex = null;
+    state = state.copyWith(
+      library: list,
+      queue: state.shuffle ? _shuffled(list, null) : list,
+      queueIndex: null,
+    );
   }
 
   /// 向曲库累积添加一批曲目（按 id 去重）。
   /// 尚未开始播放时同步重建队列；正在播放时只更新曲库，不打断当前曲目。
   void addLibraryFiles(List<Track> tracks) {
+    _flushCoverUpdates();
     final map = <String, Track>{};
-    for (final t in _library) {
+    for (final t in state.library) {
       map[t.id] = t;
     }
     for (final t in tracks) {
@@ -406,49 +484,85 @@ class PlayerController {
         map[t.id] = t;
       }
     }
-    _library = map.values.toList();
-    _queueBase = _library;
-    if (_queueIndex == null) {
-      _queue = _shuffle ? _shuffled(_library, null) : _library;
+    final library = map.values.toList();
+    _queueBase = library;
+    if (state.queueIndex == null) {
+      state = state.copyWith(
+        library: library,
+        queue: state.shuffle ? _shuffled(library, null) : library,
+      );
+    } else {
+      state = state.copyWith(library: library);
     }
   }
 
-  /// 添加一个音乐文件夹：持久化路径 + 扫描并入曲库 + 写库，并广播 libraryStream。
+  /// 添加一个音乐文件夹：持久化路径 + 扫描并入曲库 + 写库。
   /// 重复添加同一文件夹允许（等价于手动重扫，按路径前缀整段替换，覆盖增删）。
   Future<void> addFolder(String path) async {
-    if (!_folders.contains(path)) {
-      _folders = [..._folders, path];
-      await _prefs?.setStringList('libraryFolders', _folders);
+    var folders = state.folders;
+    if (!folders.contains(path)) {
+      folders = [...folders, path];
+      await _prefs?.setStringList('libraryFolders', folders);
     }
-    final tracks = await scanFolder(path);
+    // 增量入库：扫描每攒满一批（32 首）立即并入曲库，UI 列表随进度逐批
+    // 填充。修复「600 首文件夹点击后至少 3s 列表才显示」——此前要等
+    // scanFolder 全部解析完（含逐首封面缩略图生成）才一次性更新。
+    final tracks = await scanFolder(
+      path,
+      onBatch: (batch) => addLibraryFiles(batch),
+    );
+    // cue 虚拟曲目在扫描完成后并入；增量批次是解析完成顺序，最后整库
+    // 按规范顺序（艺人→专辑→音轨号→标题）重排。
     addLibraryFiles(tracks);
+    _resortLibrary();
     try {
       await TrackRepository.syncScan(tracks, localPrefix: path);
     } catch (e) {
       _reportError('曲库保存失败，本次扫描结果未持久化', e);
     }
-    _librarySC.add(null);
+    state = state.copyWith(folders: folders);
     // 后台提取本地封面（不阻塞 UI）
     extractCoversFor(tracks);
   }
 
+  /// 扫描增量入库后按规范顺序重排曲库（批次是解析完成顺序，非排序顺序）。
+  /// 正在播放时只重排曲库与基准队列，不打断当前曲目（播放队列保持原样）。
+  void _resortLibrary() {
+    final sorted = [...state.library]..sort(libraryOrder);
+    _queueBase = sorted;
+    if (state.queueIndex == null) {
+      state = state.copyWith(
+        library: sorted,
+        queue: state.shuffle ? _shuffled(sorted, null) : sorted,
+      );
+    } else {
+      state = state.copyWith(library: sorted);
+    }
+  }
+
   /// 移除一个音乐文件夹（曲库与 DB 中该文件夹下的曲目一并移除）。
   Future<void> removeFolder(String path) async {
-    _folders = _folders.where((f) => f != path).toList();
-    await _prefs?.setStringList('libraryFolders', _folders);
-    _library = _library
+    final folders =
+        state.folders.where((f) => f != path).toList();
+    await _prefs?.setStringList('libraryFolders', folders);
+    final library = state.library
         .where((t) => !(t.filePath ?? '').startsWith('$path/'))
         .toList();
-    _queueBase = _library;
-    if (_queueIndex == null) {
-      _queue = _shuffle ? _shuffled(_library, null) : _library;
+    _queueBase = library;
+    if (state.queueIndex == null) {
+      state = state.copyWith(
+        folders: folders,
+        library: library,
+        queue: state.shuffle ? _shuffled(library, null) : library,
+      );
+    } else {
+      state = state.copyWith(folders: folders, library: library);
     }
     try {
       await TrackRepository.deleteLocalUnder(path);
     } catch (e) {
       _reportError('移除文件夹失败，曲库可能残留该目录曲目', e);
     }
-    _librarySC.add(null);
   }
 
   /// 彻底清空所有应用内数据（**只删应用沙盒里的扫描配置与缓存副本，
@@ -463,9 +577,6 @@ class PlayerController {
     } catch (_) {
       // 引擎可能未初始化，忽略
     }
-    _playing = false;
-    _position = Duration.zero;
-    _duration = Duration.zero;
 
     // 2. 清空内存曲库与队列
     setLibrary([]);
@@ -478,7 +589,6 @@ class PlayerController {
     }
 
     // 3. 清空本地文件夹配置（决定启动重扫）
-    _folders = const [];
     await _prefs?.remove('libraryFolders');
 
     // 4. 清空三类网络音源连接配置
@@ -488,23 +598,17 @@ class PlayerController {
     SubsonicService.clear();
 
     // 5. 清空收藏与播放列表
-    _favoriteIds.clear();
     await _prefs?.remove('favorites');
-    _playlists = const [];
     await _prefs?.remove('playlists');
 
     // 6. 重置播放模式（loop/shuffle），音量保留
-    _shuffle = false;
     await _prefs?.remove('shuffle');
-    _repeatMode = RepeatMode.off;
     await _prefs?.remove('repeatMode');
 
     // 6.5 清空续播状态
     _loadedTrackId = null;
     _pendingSeek = null;
     _lastPersistAt = null;
-    _queueIndex = null;
-    _queue = const [];
     _queueBase = const [];
     if (_prefs != null) await PlaybackSnapshot.clear(_prefs!);
 
@@ -522,19 +626,25 @@ class PlayerController {
     // 7. 删除磁盘缓存目录（仅副本，安全）
     await _clearCacheDirs();
 
-    // 广播播放状态变化：clearAllData 已重置 _playing/_position/_duration/
-    // _queueIndex，必须同步 emit 对应流，否则传输栏仍显示旧曲在播放、进度条
-    // 停在旧位置、且 currentTrack 不刷新（点播放变 no-op，只能重启恢复）。
-    _playingSC.add(_playing);
-    _positionSC.add(_position);
-    _durationSC.add(_duration);
-    _indexSC.add(_queueIndex);
-
-    // 广播曲库变化，UI 刷新为空库
-    _librarySC.add(null);
+    // 重置全部 UI 状态：clearAllData 已重置播放/队列/曲库/收藏/播放列表/
+    // 模式，必须一次性下发，否则传输栏仍显示旧曲在播放、进度条停在旧
+    // 位置、且 currentTrack 不刷新（点播放变 no-op，只能重启恢复）。
+    state = state.copyWith(
+      playing: false,
+      position: Duration.zero,
+      duration: Duration.zero,
+      queueIndex: null,
+      queue: const [],
+      folders: const [],
+      favoriteIds: const {},
+      playlists: const [],
+      lyrics: null,
+      shuffle: false,
+      repeatMode: RepeatMode.off,
+    );
   }
 
-  /// 删除应用 Documents 下的三个缓存目录（封面 / NAS 边下边播 / WebDAV 边下边播）。
+  /// 删除应用 Documents 下的缓存目录（封面 / NAS 边下边播 / WebDAV 边下边播）。
   /// 均为音轨副本或生成物，不含用户源文件。
   Future<void> _clearCacheDirs() async {
     try {
@@ -557,7 +667,7 @@ class PlayerController {
 
   /// Resolve a playlist's ids into actual [Track] objects from the library.
   List<Track> tracksOfPlaylist(Playlist pl) =>
-      _library.where((t) => pl.trackIds.contains(t.id)).toList();
+      state.library.where((t) => pl.trackIds.contains(t.id)).toList();
 
   // ---- 封面提取（本地文件）----
 
@@ -566,7 +676,7 @@ class PlayerController {
   final Set<String> _coverMissing = {};
 
   /// 为本地/NAS 曲目批量提取封面（后台、限并发）。已缓存或已带 coverUrl 的跳过。
-  /// 不阻塞调用方；提取成功写回 [Track.coverUrl] 并广播 libraryStream 增量刷新。
+  /// 不阻塞调用方；提取成功写回 [Track.coverUrl] 并增量刷新（每 32 首一批）。
   void extractCoversFor(List<Track> tracks) {
     final pending = tracks.where((t) {
       if (t.source == TrackSource.subsonic) {
@@ -600,7 +710,7 @@ class PlayerController {
       }
     }
     if (todo.isEmpty) {
-      _librarySC.add(null);
+      _flushCoverUpdates();
       return;
     }
     var i = 0;
@@ -628,25 +738,38 @@ class PlayerController {
     debugPrint(
         '[perf] 封面提取完成: ${todo.length} 首, ${sw.elapsedMilliseconds}ms '
         '(并发 $concurrency)');
-    _librarySC.add(null);
+    _flushCoverUpdates();
   }
 
+  /// 封面写回缓冲：替换操作累积到 32 首或批次结束时一次性并入 state，
+  /// 避免海量封面逐张触发全体 select(library) 订阅者重建（MediaIndex 重算）。
+  final List<(Track, Track)> _coverUpdates = [];
   int _coverApplied = 0;
+
   void _applyCoverUrl(Track oldT, String path) {
     if (oldT.coverUrl == path) return;
-    final updated = oldT.copyWith(coverUrl: path);
-    _library = _replaceTrack(_library, oldT, updated);
-    _queueBase = _replaceTrack(_queueBase, oldT, updated);
-    if (_queueIndex != null) {
-      _queue = _replaceTrack(_queue, oldT, updated);
-    }
+    _coverUpdates.add((oldT, oldT.copyWith(coverUrl: path)));
     // 写回 DB：封面路径跨重启持久（否则重启后网络源曲目封面全部丢失）。
     unawaited(TrackRepository.updateCoverUrl(oldT.id, path).catchError((Object e) {
       debugPrint('coverUrl persist failed for ${oldT.id}: $e');
     }));
-    // 增量广播：每 32 首刷新一次，避免海量曲目一次性刷新造成的卡顿
     _coverApplied++;
-    if (_coverApplied % 32 == 0) _librarySC.add(null);
+    if (_coverApplied % 32 == 0) _flushCoverUpdates();
+  }
+
+  void _flushCoverUpdates() {
+    if (_coverUpdates.isEmpty) return;
+    var library = state.library;
+    var queue = state.queue;
+    for (final (oldT, newT) in _coverUpdates) {
+      library = _replaceTrack(library, oldT, newT);
+      _queueBase = _replaceTrack(_queueBase, oldT, newT);
+      if (state.queueIndex != null) {
+        queue = _replaceTrack(queue, oldT, newT);
+      }
+    }
+    _coverUpdates.clear();
+    state = state.copyWith(library: library, queue: queue);
   }
 
   List<Track> _replaceTrack(List<Track> list, Track oldT, Track newT) {
@@ -674,8 +797,7 @@ class PlayerController {
         _reportError('WebDAV 曲库写入失败，导入结果未保存', e);
       }
     }
-    _librarySC.add(null);
-    // 后台提取 WebDAV 封面（Range 读头/尾解析，完成后增量广播刷新）
+    // 后台提取 WebDAV 封面（Range 读头/尾解析，完成后增量刷新）
     if (tracks.isNotEmpty) extractCoversFor(tracks);
     await _cleanOrphanCaches();
     return tracks;
@@ -692,8 +814,7 @@ class PlayerController {
         _reportError('NAS 曲库写入失败，导入结果未保存', e);
       }
     }
-    _librarySC.add(null);
-    // 后台提取 NAS 封面（远程读头/尾字节解析，完成后增量广播刷新）
+    // 后台提取 NAS 封面（远程读头/尾字节解析，完成后增量刷新）
     if (tracks.isNotEmpty) extractCoversFor(tracks);
     await _cleanOrphanCaches();
     return tracks;
@@ -710,7 +831,6 @@ class PlayerController {
         _reportError('Subsonic 曲库写入失败，导入结果未保存', e);
       }
     }
-    _librarySC.add(null);
     await _cleanOrphanCaches();
     return tracks;
   }
@@ -718,37 +838,37 @@ class PlayerController {
   /// Begin playing [list] starting at [index], honoring shuffle state.
   void playFrom(List<Track> list, int index) {
     _queueBase = list;
-    if (_shuffle) {
-      _queue = _shuffled(list, index >= 0 && index < list.length
-          ? list[index]
-          : null);
-      _queueIndex = 0;
+    if (state.shuffle) {
+      state = state.copyWith(
+        queue: _shuffled(list, index >= 0 && index < list.length
+            ? list[index]
+            : null),
+        queueIndex: 0,
+      );
     } else {
-      _queue = list;
-      _queueIndex = index;
+      state = state.copyWith(queue: list, queueIndex: index);
     }
-    if (_queueIndex != null) playIndex(_queueIndex!);
+    if (state.queueIndex != null) playIndex(state.queueIndex!);
   }
 
   Future<void> playIndex(int index) async {
-    if (index < 0 || index >= _queue.length) {
-      debugPrint('[playIndex] index $index out of range (len=${_queue.length})');
+    final queue = state.queue;
+    if (index < 0 || index >= queue.length) {
+      debugPrint('[playIndex] index $index out of range (len=${queue.length})');
       return;
     }
-    _queueIndex = index;
-    _indexSC.add(_queueIndex);
-    _position = Duration.zero;
-    _positionSC.add(_position);
-    _duration = Duration.zero;
-    _durationSC.add(_duration);
+    state = state.copyWith(
+      queueIndex: index,
+      position: Duration.zero,
+      duration: Duration.zero,
+    );
 
-    final t = _queue[index];
+    final t = queue[index];
     debugPrint('[playIndex] idx=$index source=${t.source.name} '
         'filePath=${t.filePath} remotePath=${t.remotePath}');
     // 网络扫描期已知的真实时长先填入，避免进度条先 0:00 再跳变。
     if (t.durationHint != null && t.durationHint! > Duration.zero) {
-      _duration = t.durationHint!;
-      _durationSC.add(_duration);
+      state = state.copyWith(duration: t.durationHint!);
     }
     await _playTrack(t);
     _loadedTrackId = t.id;
@@ -770,14 +890,14 @@ class PlayerController {
 
   /// 持久化当前播放上下文（曲目/进度/队列），供重启续播恢复。
   void _persistPlayback() {
-    final t = currentTrack;
+    final t = state.currentTrack;
     final p = _prefs;
     if (t == null || p == null) return;
     unawaited(
       PlaybackSnapshot(
         trackId: t.id,
-        position: _position,
-        queueIds: _queue.map((e) => e.id).toList(),
+        position: state.position,
+        queueIds: state.queue.map((e) => e.id).toList(),
       ).save(p),
     );
   }
@@ -787,7 +907,7 @@ class PlayerController {
     final p = _prefs;
     if (p == null) return;
     final snap = PlaybackSnapshot.fromPrefs(p);
-    final restored = restorePlayback(snap, _library);
+    final restored = restorePlayback(snap, state.library);
     if (restored == null) {
       // 有快照但曲库已无该曲（被删）→ 清理残留；无快照则什么都不做
       if (snap != null) unawaited(PlaybackSnapshot.clear(p));
@@ -796,37 +916,34 @@ class PlayerController {
     _queueBase = restored.queue;
     // shuffle 开启时同样对恢复队列应用乱序（当前曲目放首位，进度不受影响），
     // 否则跨重启后 shuffle 状态与队列顺序不一致。
-    if (_shuffle) {
+    if (state.shuffle) {
       final cur = restored.queue[restored.index];
-      _queue = _shuffled(restored.queue, cur);
-      _queueIndex = 0;
+      state = state.copyWith(
+        queue: _shuffled(restored.queue, cur),
+        queueIndex: 0,
+        position: restored.position,
+      );
     } else {
-      _queue = restored.queue;
-      _queueIndex = restored.index;
+      state = state.copyWith(
+        queue: restored.queue,
+        queueIndex: restored.index,
+        position: restored.position,
+      );
     }
-    _position = restored.position;
     _pendingSeek = restored.pendingSeek;
-    // 广播，让 UI 立即显示当前曲目与进度（暂停态，不自动出声）
-    _indexSC.add(_queueIndex);
-    _positionSC.add(_position);
-    if (_duration == Duration.zero &&
+    // 时长兜底：恢复态引擎尚未加载曲目，先用扫描期时长避免进度条 0:00。
+    if (state.duration == Duration.zero &&
         restored.queue[restored.index].durationHint != null) {
-      _duration = restored.queue[restored.index].durationHint!;
-      _durationSC.add(_duration);
+      state = state.copyWith(duration: restored.queue[restored.index].durationHint!);
     }
-  }
-
-  void _setPlaying(bool v) {
-    _playing = v;
-    _playingSC.add(v);
   }
 
   /// 按曲目来源分发播放：本地直播；WebDAV/NAS 走 Rust 边下边播，失败回退
   /// 全量下载；Subsonic 先下载流再本地播放。
   Future<void> _playTrack(Track t) async {
-    if (_engine == null || _engineInitError != null) {
+    if (_engine == null || state.engineInitError != null) {
       debugPrint('[_playTrack] engine unavailable (null=$_engine, '
-          'initError=$_engineInitError), cannot play ${t.id}');
+          'initError=${state.engineInitError}), cannot play ${t.id}');
       return;
     }
     // 后台分析当前曲目（BPM/Key/能量），不阻塞播放；完成后通知播放页刷新徽章
@@ -845,7 +962,7 @@ class PlayerController {
           try {
             await _engine!.play(t.filePath!);
             _streaming = false;
-            _setPlaying(true);
+            state = state.copyWith(playing: true);
           } catch (e) {
             debugPrint('[_playTrack] engine.play failed: $e');
           }
@@ -874,7 +991,7 @@ class PlayerController {
         await _engine!.removeQueueEntry(1);
       }
       _streaming = false;
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
     } catch (e) {
       debugPrint('[_playCueTrack] failed: $e');
     }
@@ -887,7 +1004,7 @@ class PlayerController {
     if (path == null) return;
     final result = await AnalysisService.instance.analyze(t.id, path);
     if (result == null) return;
-    if (!_analysisSC.isClosed && currentTrack?.id == t.id) {
+    if (!_analysisSC.isClosed && state.currentTrack?.id == t.id) {
       _analysisSC.add(t.id);
     }
   }
@@ -904,7 +1021,7 @@ class PlayerController {
     }
     final url = WebdavService.fullUrlFor(davPath);
     if (url == null) {
-      debugPrint('[_playWebdav] fullUrl null for $davPath');
+      debugPrint('[_playWebdav] fullUrl null: $davPath');
       return;
     }
     // 缓存命中：本地直播，不再重新从远端拉流
@@ -913,7 +1030,7 @@ class PlayerController {
     if (cached != null) {
       _streaming = false;
       await _engine!.play(cached);
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
       return;
     }
     final cache = await WebdavService.cachePathFor(davPath);
@@ -927,7 +1044,7 @@ class PlayerController {
     );
     if (err == null) {
       _streaming = true;
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
       return;
     }
     debugPrint('webdav 流式播放失败，回退下载: $err');
@@ -935,13 +1052,13 @@ class PlayerController {
     if (local != null) {
       _streaming = false;
       await _engine!.play(local);
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
     } else {
       debugPrint('[_playWebdav] 回退下载失败: $davPath');
-      // 流已停 + 下载失败：引擎静默。不复位的话 _playing 残留上一首的 true，
+      // 流已停 + 下载失败：引擎静默。不复位的话 playing 残留上一首的 true，
       // UI 显示"播放中"但无声。
       _streaming = false;
-      _setPlaying(false);
+      state = state.copyWith(playing: false);
     }
   }
 
@@ -956,7 +1073,7 @@ class PlayerController {
     if (cached != null) {
       _streaming = false;
       await _engine!.play(cached);
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
       return;
     }
     // 播放前确保 SMB 会话存活（扫描后可能已超时/断开）。
@@ -973,7 +1090,7 @@ class PlayerController {
     );
     if (err == null) {
       _streaming = true;
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
       return;
     }
     debugPrint('nas 流式播放失败，回退下载: $err');
@@ -981,12 +1098,12 @@ class PlayerController {
     if (local != null) {
       _streaming = false;
       await _engine!.play(local);
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
     } else {
       debugPrint('[_playNas] 回退下载失败: $smbPath');
       // 同 [_playWebdav]：流已停 + 下载失败，必须复位播放态。
       _streaming = false;
-      _setPlaying(false);
+      state = state.copyWith(playing: false);
     }
   }
 
@@ -995,7 +1112,7 @@ class PlayerController {
     if (local != null) {
       _streaming = false;
       await _engine!.play(local);
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
     } else {
       debugPrint('[_playSubsonic] downloadStream failed for ${t.id}');
     }
@@ -1062,7 +1179,7 @@ class PlayerController {
     if (cached != null) {
       _streaming = false;
       await _engine!.play(cached);
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
       return;
     }
     final connErr = await NasService.connect();
@@ -1076,7 +1193,7 @@ class PlayerController {
     );
     if (err == null) {
       _streaming = true;
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
       return;
     }
     debugPrint('strm smb 流式失败，回退下载: $err');
@@ -1084,11 +1201,11 @@ class PlayerController {
     if (local != null) {
       _streaming = false;
       await _engine!.play(local);
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
     } else {
       debugPrint('[_playStrmSmb] 回退下载失败: $smbPath');
       _streaming = false;
-      _setPlaying(false);
+      state = state.copyWith(playing: false);
     }
   }
 
@@ -1103,7 +1220,7 @@ class PlayerController {
     if (cached != null) {
       _streaming = false;
       await _engine!.play(cached);
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
       return;
     }
     final cache = await WebdavService.cachePathFor(davPath);
@@ -1117,7 +1234,7 @@ class PlayerController {
     );
     if (err == null) {
       _streaming = true;
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
       return;
     }
     debugPrint('strm dav 流式失败，回退下载: $err');
@@ -1125,11 +1242,11 @@ class PlayerController {
     if (local != null) {
       _streaming = false;
       await _engine!.play(local);
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
     } else {
       debugPrint('[_playStrmDav] 回退下载失败: $davPath');
       _streaming = false;
-      _setPlaying(false);
+      state = state.copyWith(playing: false);
     }
   }
 
@@ -1144,12 +1261,12 @@ class PlayerController {
     );
     if (err == null) {
       _streaming = true;
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
     } else {
       debugPrint('[_playStrmHttp] 播放失败 ($kind): $url -> $err');
       // 失败时确保播放态复位，避免 UI 停在“正在播放”但实际无声
       _streaming = false;
-      _setPlaying(false);
+      state = state.copyWith(playing: false);
     }
   }
 
@@ -1163,23 +1280,24 @@ class PlayerController {
   Future<void> _loadLyrics(Track t) async {
     final id = t.id;
     final lines = await loadLyricsFor(t);
-    // 竞态守卫：快速切歌时旧请求晚到，若已切到别的曲则丢弃，避免覆盖新歌词；
-    // dispose 后 _lyricsSC 已关闭，add 会抛 StateError，需先判 isClosed。
-    if (id != currentTrack?.id) return;
-    if (!_lyricsSC.isClosed) _lyricsSC.add(lines);
+    // 容器已销毁（测试 tearDown / provider 失效）后读/写 state 都会抛
+    // StateError 并以未处理异步错误炸掉测试——挂载守卫直接放弃。
+    if (!ref.mounted) return;
+    // 竞态守卫：快速切歌时旧请求晚到，若已切到别的曲则丢弃，避免覆盖新歌词。
+    if (id != state.currentTrack?.id) return;
+    state = state.copyWith(lyrics: lines);
   }
 
   Future<void> togglePlay() async {
-    if (_queueIndex == null) {
-      if (_queue.isNotEmpty) await playIndex(0);
+    if (state.queueIndex == null) {
+      if (state.queue.isNotEmpty) await playIndex(0);
       return;
     }
-    if (_playing) {
+    if (state.playing) {
       await _engine?.pause();
-      _playing = false;
-      _playingSC.add(false);
+      state = state.copyWith(playing: false);
     } else {
-      final t = currentTrack;
+      final t = state.currentTrack;
       if (t == null) return;
       if (_loadedTrackId != t.id) {
         // 引擎尚未加载该曲（如启动恢复后首次播放）→ 加载并 seek 到恢复进度
@@ -1191,30 +1309,29 @@ class PlayerController {
       } else {
         await _engine?.resume();
       }
-      _playing = true;
-      _playingSC.add(true);
+      state = state.copyWith(playing: true);
     }
   }
 
   Future<void> next() async {
-    if (_queue.isEmpty) return;
-    if (_queueIndex == null) {
+    final queue = state.queue;
+    if (queue.isEmpty) return;
+    if (state.queueIndex == null) {
       await playIndex(0);
       return;
     }
-    if (_repeatMode == RepeatMode.one) {
-      await playIndex(_queueIndex!);
+    if (state.repeatMode == RepeatMode.one) {
+      await playIndex(state.queueIndex!);
       return;
     }
-    final ni = _queueIndex! + 1;
-    if (ni >= _queue.length) {
-      if (_repeatMode == RepeatMode.all) {
+    final ni = state.queueIndex! + 1;
+    if (ni >= queue.length) {
+      if (state.repeatMode == RepeatMode.all) {
         await playIndex(0);
       } else {
         _stopRequested = true;
         await _engine?.stop();
-        _playing = false;
-        _playingSC.add(false);
+        state = state.copyWith(playing: false);
       }
     } else {
       await playIndex(ni);
@@ -1222,26 +1339,26 @@ class PlayerController {
   }
 
   Future<void> previous() async {
-    if (_queue.isEmpty) return;
-    if (_queueIndex == null) {
+    final queue = state.queue;
+    if (queue.isEmpty) return;
+    if (state.queueIndex == null) {
       await playIndex(0);
       return;
     }
-    if (_position > const Duration(seconds: 3)) {
+    if (state.position > const Duration(seconds: 3)) {
       await seek(Duration.zero);
       return;
     }
-    final pi = _queueIndex! - 1;
-    await playIndex(pi < 0 ? _queue.length - 1 : pi);
+    final pi = state.queueIndex! - 1;
+    await playIndex(pi < 0 ? queue.length - 1 : pi);
   }
 
   /// 曲目自然结束后的切歌由引擎 stopped 事件在 [_onEngineEvent] 中处理。
   Future<void> seek(Duration d) async {
-    _position = d;
-    _positionSC.add(d);
+    state = state.copyWith(position: d);
     if (_pendingSeek != null) _pendingSeek = d; // 恢复进度随拖动更新
     _persistPlayback();
-    final t = currentTrack;
+    final t = state.currentTrack;
     if (_streaming &&
         t != null &&
         (t.isStrm ||
@@ -1273,7 +1390,7 @@ class PlayerController {
   }
 
   Future<void> _runStreamSeek(Track t) async {
-    while (_pendingStreamSeek != null && currentTrack?.id == t.id) {
+    while (_pendingStreamSeek != null && state.currentTrack?.id == t.id) {
       final target = _pendingStreamSeek!;
       _pendingStreamSeek = null;
       // 按源分支下载本地副本：SMB 走 NasService，WebDAV 走 WebdavService；
@@ -1300,7 +1417,7 @@ class PlayerController {
           _ => null,
         };
       }
-      if (currentTrack?.id != t.id) return; // 下载期间已切歌：丢弃
+      if (state.currentTrack?.id != t.id) return; // 下载期间已切歌：丢弃
       if (path == null) {
         // 下载失败：保持流式继续播，仅提示（不打断播放）
         debugPrint('[seek] 流式 seek 回退下载失败: ${t.title}');
@@ -1318,7 +1435,7 @@ class PlayerController {
       _streaming = false;
       await _engine!.play(path);
       await _engine!.seek(finalTarget.inMilliseconds / 1000.0);
-      _setPlaying(true);
+      state = state.copyWith(playing: true);
       _pendingSeek = finalTarget;
       return;
     }
@@ -1369,40 +1486,40 @@ class PlayerController {
 
   /// Queue a track to play immediately after the current one.
   void playNext(Track t) {
-    if (_queue.isEmpty) {
+    if (state.queue.isEmpty) {
       _queueBase = [t];
-      _queue = [t];
-      _queueIndex = 0;
+      state = state.copyWith(queue: [t], queueIndex: 0);
       playIndex(0);
       return;
     }
     // 插入播放队列：当前曲目之后。
-    final at = (_queueIndex ?? -1) + 1;
-    _queue = [..._queue.sublist(0, at), t, ..._queue.sublist(at)];
+    final at = (state.queueIndex ?? -1) + 1;
+    final queue = [...state.queue.sublist(0, at), t, ...state.queue.sublist(at)];
     // 插入基准队列：按当前曲目在 _queueBase 中的真实位置计算。
-    // shuffle 模式下 _queue 与 _queueBase 顺序不同，不能复用队列下标。
-    final baseAt = _queueBase.indexOf(currentTrack ?? t);
+    // shuffle 模式下 queue 与 _queueBase 顺序不同，不能复用队列下标。
+    final baseAt = _queueBase.indexOf(state.currentTrack ?? t);
     final insertAt = baseAt < 0 ? _queueBase.length : baseAt + 1;
     _queueBase = [
       ..._queueBase.sublist(0, insertAt),
       t,
       ..._queueBase.sublist(insertAt),
     ];
-    _indexSC.add(_queueIndex);
+    state = state.copyWith(queue: queue);
   }
 
   // ---- Favorites -----------------------------------------------------------
 
-  bool isFavorite(Track t) => _favoriteIds.contains(t.id);
+  bool isFavorite(Track t) => state.favoriteIds.contains(t.id);
 
   Future<void> toggleFavorite(Track t) async {
-    if (_favoriteIds.contains(t.id)) {
-      _favoriteIds.remove(t.id);
+    final favs = {...state.favoriteIds};
+    if (favs.contains(t.id)) {
+      favs.remove(t.id);
     } else {
-      _favoriteIds.add(t.id);
+      favs.add(t.id);
     }
-    await _prefs?.setStringList('favorites', _favoriteIds.toList());
-    _favoritesSC.add(null);
+    await _prefs?.setStringList('favorites', favs.toList());
+    state = state.copyWith(favoriteIds: favs);
   }
 
   // ---- Playlists -----------------------------------------------------------
@@ -1412,30 +1529,29 @@ class PlayerController {
       id: 'pl_${DateTime.now().microsecondsSinceEpoch}',
       name: name.trim().isEmpty ? '新建播放列表' : name.trim(),
     );
-    _playlists = [..._playlists, pl];
+    state = state.copyWith(playlists: [...state.playlists, pl]);
     await _savePlaylists();
-    _playlistsSC.add(null);
   }
 
   Future<void> deletePlaylist(String id) async {
-    _playlists = _playlists.where((p) => p.id != id).toList();
+    state = state.copyWith(
+        playlists: state.playlists.where((p) => p.id != id).toList());
     await _savePlaylists();
-    _playlistsSC.add(null);
   }
 
   Future<void> addToPlaylist(String playlistId, String trackId) async {
-    _playlists = _playlists.map((p) {
+    final playlists = state.playlists.map((p) {
       if (p.id != playlistId || p.trackIds.contains(trackId)) return p;
       return p.copyWith(trackIds: [...p.trackIds, trackId]);
     }).toList();
+    state = state.copyWith(playlists: playlists);
     await _savePlaylists();
-    _playlistsSC.add(null);
   }
 
   Future<void> _savePlaylists() async {
     await _prefs?.setStringList(
       'playlists',
-      _playlists.map((p) => jsonEncode(p.toJson())).toList(),
+      state.playlists.map((p) => jsonEncode(p.toJson())).toList(),
     );
   }
 
@@ -1443,36 +1559,62 @@ class PlayerController {
 
   /// 只更新引擎音量（拖动过程中高频调用，不落盘）。
   Future<void> setVolume(double v) async {
-    _volume = v.clamp(0.0, 1.0);
-    await _engine?.setVolume(_volume);
-    _modeSC.add(null);
+    final volume = v.clamp(0.0, 1.0);
+    await _engine?.setVolume(volume);
+    state = state.copyWith(volume: volume);
   }
 
   /// 持久化音量（拖动结束 onChangeEnd 时调用一次）。
   Future<void> persistVolume() async {
-    await _prefs?.setDouble('volume', _volume);
+    await _prefs?.setDouble('volume', state.volume);
   }
 
   Future<void> toggleShuffle() async {
-    _shuffle = !_shuffle;
-    final cur = currentTrack;
-    if (_shuffle) {
-      _queue = _shuffled(_queueBase, cur);
-      _queueIndex = cur == null ? null : 0;
+    final shuffle = !state.shuffle;
+    final cur = state.currentTrack;
+    if (shuffle) {
+      state = state.copyWith(
+        shuffle: true,
+        queue: _shuffled(_queueBase, cur),
+        queueIndex: cur == null ? null : 0,
+      );
     } else {
-      _queue = _queueBase;
-      _queueIndex = cur == null ? null : _queueBase.indexOf(cur);
+      state = state.copyWith(
+        shuffle: false,
+        queue: _queueBase,
+        queueIndex: cur == null ? null : _queueBase.indexOf(cur),
+      );
     }
-    if (_queueIndex != null) _indexSC.add(_queueIndex);
-    await _prefs?.setBool('shuffle', _shuffle);
-    _modeSC.add(null);
+    await _prefs?.setBool('shuffle', shuffle);
   }
 
   Future<void> cycleRepeat() async {
-    _repeatMode =
-        RepeatMode.values[(_repeatMode.index + 1) % RepeatMode.values.length];
-    await _prefs?.setString('repeatMode', _repeatMode.name);
-    _modeSC.add(null);
+    final mode = RepeatMode
+        .values[(state.repeatMode.index + 1) % RepeatMode.values.length];
+    state = state.copyWith(repeatMode: mode);
+    await _prefs?.setString('repeatMode', mode.name);
+  }
+
+  /// 合并播放模式四态循环（底部条单按钮用）：
+  /// 顺序 → 随机 → 单曲循环 → 列表循环 → 顺序
+  Future<void> cyclePlayMode() async {
+    if (!state.shuffle && state.repeatMode == RepeatMode.off) {
+      // 顺序 → 随机
+      await toggleShuffle();
+    } else if (state.shuffle) {
+      // 随机 → 单曲循环（先还原队列顺序再切 repeat）
+      await toggleShuffle();
+      state = state.copyWith(repeatMode: RepeatMode.one);
+      await _prefs?.setString('repeatMode', RepeatMode.one.name);
+    } else if (state.repeatMode == RepeatMode.one) {
+      // 单曲循环 → 列表循环
+      state = state.copyWith(repeatMode: RepeatMode.all);
+      await _prefs?.setString('repeatMode', RepeatMode.all.name);
+    } else {
+      // 列表循环 → 顺序
+      state = state.copyWith(repeatMode: RepeatMode.off);
+      await _prefs?.setString('repeatMode', RepeatMode.off.name);
+    }
   }
 
   List<Track> _shuffled(List<Track> list, Track? current) {
@@ -1486,15 +1628,6 @@ class PlayerController {
     await _engine?.stop();
     _engine?.dispose();
     await TrackRepository.close();
-    await _positionSC.close();
-    await _durationSC.close();
-    await _playingSC.close();
-    await _indexSC.close();
-    await _lyricsSC.close();
-    await _favoritesSC.close();
-    await _playlistsSC.close();
-    await _modeSC.close();
-    await _librarySC.close();
     await _errorSC.close();
     await _analysisSC.close();
     await _spectrumSC.close();
