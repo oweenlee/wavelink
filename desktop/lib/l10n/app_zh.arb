@@ -24,6 +24,7 @@
   "settingsSrInvalid": "采样率需为 8000–384000 之间的整数",
   "settingsSrApplied": "输出采样率已应用",
   "settingsRewSource": "REW 生成",
+  "settingsCommonRate": "常用采样率",
   "ttPlay": "播放",
   "ttPause": "暂停",
   "ttPrevious": "上一曲",

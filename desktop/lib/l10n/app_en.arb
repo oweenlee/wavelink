@@ -24,6 +24,7 @@
   "settingsSrInvalid": "Sample rate must be an integer between 8000 and 384000",
   "settingsSrApplied": "Output sample rate applied",
   "settingsRewSource": "Generated from REW",
+  "settingsCommonRate": "Common sample rate",
   "ttPlay": "Play",
   "ttPause": "Pause",
   "ttPrevious": "Previous track",

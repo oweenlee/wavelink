@@ -24,6 +24,7 @@
   "settingsSrInvalid": "Abtastrate muss eine ganze Zahl zwischen 8000 und 384000 sein",
   "settingsSrApplied": "Ausgangs-Abtastrate angewendet",
   "settingsRewSource": "Aus REW erzeugt",
+  "settingsCommonRate": "Übliche Abtastrate",
   "ttPlay": "Wiedergeben",
   "ttPause": "Pausieren",
   "ttPrevious": "Vorheriger Titel",

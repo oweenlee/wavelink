@@ -34,7 +34,12 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   int _active = 0;
   Timer? _diagTimer;
-  final _srController = TextEditingController(text: '44100');
+
+  /// 输出采样率固定档位（行业标准值，杜绝非法输入）。
+  static const _sampleRates = [44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000];
+
+  /// 最常用档位（星标提示）：CD 标准与视频/流媒体标准。
+  static const _commonRates = {44100, 48000};
 
   static const _locales = ['system', 'zh', 'ja', 'de', 'en'];
   static const _presets = [
@@ -54,7 +59,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void dispose() {
     _diagTimer?.cancel();
-    _srController.dispose();
     super.dispose();
   }
 
@@ -62,14 +66,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final engineNull = !ref.watch(playerProvider.select((s) => s.engineReady));
     final audio = ref.watch(audioSettingsProvider);
-
-    // SR 输入框回显持久化值（restore / apply 后同步）。
-    ref.listen(audioSettingsProvider.select((s) => s.sampleRatePref),
-        (_, next) {
-      if (_srController.text != next.toString()) {
-        _srController.text = next.toString();
-      }
-    });
 
     return Scaffold(
       backgroundColor: AppTheme.s1,
@@ -270,26 +266,47 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               icon: LucideIcons.hash,
               title: l.settingsOutputSampleRate,
               description: l.settingsSrHint,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: SettingTextField(
-                      key: const Key('sr_field'),
-                      controller: _srController,
-                      hint: '44100',
-                      suffixText: 'Hz',
-                      // Bit-Perfect 按源直通，手动采样率无效 → 联动禁用
-                      enabled: !audio.bitPerfect,
+              // 下拉与标题同行（trailing），选中即应用；
+              // Bit-Perfect 按源直通 → 联动禁用
+              trailing: SettingDropdown<int>(
+                key: const Key('sr_dropdown'),
+                value: audio.sampleRatePref,
+                width: 170,
+                onChanged: audio.bitPerfect
+                    ? null
+                    : (v) async {
+                        if (v == null) return;
+                        final messenger = ScaffoldMessenger.of(context);
+                        await ref
+                            .read(audioSettingsProvider.notifier)
+                            .applySampleRate(v);
+                        if (mounted) {
+                          messenger.showSnackBar(
+                              SnackBar(content: Text(l.settingsSrApplied)));
+                        }
+                      },
+                items: _sampleRates.map((r) {
+                  final common = _commonRates.contains(r);
+                  return DropdownMenuItem(
+                    value: r,
+                    child: Row(
+                      children: [
+                        Text('$r Hz',
+                            style: const TextStyle(
+                                color: AppTheme.textPrimary, fontSize: 13)),
+                        // 44.1k/48k 为通用档位，加星标提示
+                        if (common) ...[
+                          const SizedBox(width: 6),
+                          Tooltip(
+                            message: l.settingsCommonRate,
+                            child: const Icon(Icons.star_rounded,
+                                size: 14, color: AppTheme.textSecondary),
+                          ),
+                        ],
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  SettingPrimaryButton(
-                    key: const Key('sr_apply'),
-                    label: l.settingsApply,
-                    onPressed:
-                        audio.bitPerfect ? null : () => _applySampleRate(),
-                  ),
-                ],
+                  );
+                }).toList(),
               ),
             ),
           ],
@@ -708,21 +725,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   // ───────────────────────── 交互（对话框 / 文件选择） ─────────────────────────
-
-  /// 应用输出采样率：校验范围（8000–384000），成功/失败均有 SnackBar 反馈。
-  Future<void> _applySampleRate() async {
-    final l = AppLocalizations.of(context);
-    final messenger = ScaffoldMessenger.of(context);
-    final r = int.tryParse(_srController.text.trim());
-    if (r == null || r < 8000 || r > 384000) {
-      messenger.showSnackBar(SnackBar(content: Text(l.settingsSrInvalid)));
-      return;
-    }
-    await ref.read(audioSettingsProvider.notifier).applySampleRate(r);
-    if (mounted) {
-      messenger.showSnackBar(SnackBar(content: Text(l.settingsSrApplied)));
-    }
-  }
 
   /// 音频输出恢复默认；失败时提示，成功静默（状态已可见回弹）。
   Future<void> _resetAudio() async {

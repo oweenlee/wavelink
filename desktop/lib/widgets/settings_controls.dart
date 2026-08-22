@@ -113,7 +113,9 @@ class SettingTextField extends StatelessWidget {
 class SettingDropdown<T> extends StatelessWidget {
   final T? value;
   final List<DropdownMenuItem<T>> items;
-  final ValueChanged<T?> onChanged;
+
+  /// null 时下拉禁用（置灰不可点）。
+  final ValueChanged<T?>? onChanged;
   final String? hint;
   final double width;
   const SettingDropdown({
@@ -143,8 +145,11 @@ class SettingDropdown<T> extends StatelessWidget {
           value: safeValue,
           isExpanded: true,
           underline: const SizedBox.shrink(),
-          icon: const Icon(LucideIcons.chevronDown,
-              size: 16, color: AppTheme.textSecondary),
+          icon: Icon(LucideIcons.chevronDown,
+              size: 16,
+              color: onChanged == null
+                  ? AppTheme.textDisabled
+                  : AppTheme.textSecondary),
           hint: hint != null
               ? Text(hint!,
                   style: const TextStyle(

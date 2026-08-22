@@ -24,6 +24,7 @@
   "settingsSrInvalid": "サンプルレートは 8000〜384000 の整数で入力してください",
   "settingsSrApplied": "出力サンプルレートを適用しました",
   "settingsRewSource": "REW から生成",
+  "settingsCommonRate": "一般的なサンプルレート",
   "ttPlay": "再生",
   "ttPause": "一時停止",
   "ttPrevious": "前の曲",

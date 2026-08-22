@@ -216,8 +216,10 @@ void main() {
       await _pumpSettings(tester, player);
       await _selectSection(tester, 'audio');
 
-      await tester.enterText(find.byKey(const Key('sr_field')), '48000');
-      await tester.tap(find.byKey(const Key('sr_apply')));
+      // SR 改为固定档位下拉：展开 → 选 48000 Hz（选中即应用）
+      await tester.tap(find.byKey(const Key('sr_dropdown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('48000 Hz').last);
       await tester.pump();
       expect(fake.calls['setOutputSampleRate'], 48000);
     });
@@ -296,10 +298,10 @@ void main() {
       ));
       expect(asrSwitch.value, isFalse);
       expect(asrSwitch.onChanged, isNull);
-      // SR 输入框同样联动禁用
-      final srField = tester.widget<SettingTextField>(
-          find.byKey(const Key('sr_field')));
-      expect(srField.enabled, isFalse);
+      // SR 下拉同样联动禁用
+      final srDropdown = tester.widget<SettingDropdown<int>>(
+          find.byKey(const Key('sr_dropdown')));
+      expect(srDropdown.onChanged, isNull);
     });
 
     testWidgets('AutoEQ picker selects catalog model', (tester) async {
