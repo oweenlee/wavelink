@@ -1406,7 +1406,15 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
   Future<void> _loadLyrics(Track t) async {
     final id = t.id;
-    final lines = await loadLyricsFor(t);
+    // STRM 指针文件：remotePath 是 .strm 文本本身，不能直接找同名 lrc——
+    // 先经 Resolver 落地真实目标，再按 kind 到目标目录探测歌词（对齐 mobile）。
+    final lines = t.isStrm
+        ? await _resolveStrmTarget(t).then(
+            (target) => target == null
+                ? const <LyricLine>[]
+                : loadStrmLyrics(kind: target.kind, targetPath: target.path),
+          )
+        : await loadLyricsFor(t);
     // 容器已销毁（测试 tearDown / provider 失效）后读/写 state 都会抛
     // StateError 并以未处理异步错误炸掉测试——挂载守卫直接放弃。
     if (!ref.mounted) return;

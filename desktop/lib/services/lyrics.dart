@@ -20,11 +20,16 @@ class LyricLine {
 
 /// Parse a standard .lrc file into time-sorted lyric lines.
 /// Supports multiple timestamps per line, e.g. `[00:12.34][00:50.00]text`.
+///
+/// 与 mobile `lrc_parser.dart` 同规格：
+/// - 分钟数支持 3 位（>99 分钟长曲）
+/// - CRLF 安全（\r\n 换行不残留 \r）
+/// - 纯时间戳空文本行跳过；重复时间戳全保留（不去重）
 List<LyricLine> parseLrc(String content) {
-  final timeTag = RegExp(r'\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]');
-  final Map<Duration, String> map = {};
+  final timeTag = RegExp(r'\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]');
+  final lines = <LyricLine>[];
 
-  for (final rawLine in content.split('\n')) {
+  for (final rawLine in content.split(RegExp(r'\r?\n'))) {
     final line = rawLine.trim();
     if (line.isEmpty) continue;
 
@@ -32,6 +37,8 @@ List<LyricLine> parseLrc(String content) {
     if (matches.isEmpty) continue;
 
     final text = line.replaceAll(timeTag, '').trim();
+    if (text.isEmpty) continue; // 空文本占位行跳过（对齐 mobile）
+
     for (final m in matches) {
       final min = int.parse(m.group(1)!);
       final sec = int.parse(m.group(2)!);
@@ -39,28 +46,34 @@ List<LyricLine> parseLrc(String content) {
       // group(3) may be milliseconds (3 digits) or centiseconds (2 digits)
       final frac = int.parse(fracRaw.padRight(3, '0').substring(0, 3));
       final time = Duration(minutes: min, seconds: sec, milliseconds: frac);
-      map[time] = text;
+      lines.add(LyricLine(time, text));
     }
   }
 
-  final lines = map.entries
-      .map((e) => LyricLine(e.key, e.value))
-      .toList()
-    ..sort((a, b) => a.time.compareTo(b.time));
-  return lines;
+  return lines..sort((a, b) => a.time.compareTo(b.time));
 }
 
 /// Load and parse the .lrc sibling of a track, if present.
+/// 候选扩展名 .lrc/.LRC 都试（Windows 侧工具常导出大写扩展名）。
 Future<List<LyricLine>> loadLyrics(String? lyricsPath) async {
   if (lyricsPath == null) return const [];
-  try {
-    final file = File(lyricsPath);
-    if (!await file.exists()) return const [];
-    return parseLrc(decodeLrcBytes(await file.readAsBytes()));
-  } catch (e) {
-    debugPrint('loadLyrics error: $e');
-    return const [];
+  final candidates = <String>[
+    lyricsPath,
+    ...['.lrc', '.LRC'].map(
+      (e) => lyricsPath.replaceFirst(RegExp(r'\.[^.]+$'), '') + e,
+    ),
+  ];
+  for (final p in candidates) {
+    try {
+      final file = File(p);
+      if (!await file.exists()) continue;
+      final parsed = parseLrc(decodeLrcBytes(await file.readAsBytes()));
+      if (parsed.isNotEmpty) return parsed;
+    } catch (e) {
+      debugPrint('loadLyrics error: $e');
+    }
   }
+  return const [];
 }
 
 /// 按音源加载歌词（对齐 mobile）：
@@ -101,6 +114,26 @@ Future<List<LyricLine>> loadLyricsFor(Track t) async {
     case TrackSource.subsonic:
       return const [];
   }
+}
+
+/// STRM 指针歌词（对齐 mobile）：按 Resolver 落地的真实目标地址找
+/// 同目录同名远端 .lrc，复用远端缓存通道。
+/// [kind]/[targetPath] 为 null（解析失败或外链）时返回空——
+/// http/stream 外链无「同目录」语义可探测，与 mobile 一致。
+Future<List<LyricLine>> loadStrmLyrics({
+  required String? kind,
+  required String? targetPath,
+}) async {
+  if (kind == null || targetPath == null || targetPath.isEmpty) {
+    return const [];
+  }
+  return switch (kind) {
+    'smb' =>
+      _loadCachedOrFetch(targetPath, () => fetchNasLyrics(targetPath)),
+    'dav' =>
+      _loadCachedOrFetch(targetPath, () => fetchWebdavLyrics(targetPath)),
+    _ => const [],
+  };
 }
 
 /// NAS(SMB) 远端歌词：与音频同目录同名的 .lrc/.LRC，两个扩展名并行探测
