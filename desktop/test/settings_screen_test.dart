@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:local_music_player/l10n/app_localizations.dart';
 import 'package:local_music_player/screens/settings.dart';
 import 'package:local_music_player/services/player_notifier.dart';
+import 'package:local_music_player/widgets/settings_controls.dart';
 import 'package:local_music_player/services/player_providers.dart';
 import 'package:local_music_player/services/engine.dart';
 import 'package:local_music_player/services/network_source_config.dart';
@@ -288,15 +289,17 @@ void main() {
       ));
       expect(bpSwitch.value, isTrue);
 
-      // 新切换的 AutoSampleRate 即时落盘
-      final asrSwitch = find.descendant(
+      // Bit-Perfect 开启时 AutoSampleRate 联动禁用（onChanged 为 null）
+      final asrSwitch = tester.widget<Switch>(find.descendant(
         of: find.byKey(const Key('sw_autosr')),
         matching: find.byType(Switch),
-      );
-      await tester.tap(asrSwitch);
-      await tester.pump();
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getBool('engine.autoSampleRate'), isTrue);
+      ));
+      expect(asrSwitch.value, isFalse);
+      expect(asrSwitch.onChanged, isNull);
+      // SR 输入框同样联动禁用
+      final srField = tester.widget<SettingTextField>(
+          find.byKey(const Key('sr_field')));
+      expect(srField.enabled, isFalse);
     });
 
     testWidgets('AutoEQ picker selects catalog model', (tester) async {

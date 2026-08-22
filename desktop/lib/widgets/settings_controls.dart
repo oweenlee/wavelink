@@ -60,6 +60,7 @@ class SettingTextField extends StatelessWidget {
   final String? suffixText;
   final ValueChanged<String>? onChanged;
   final Color? accent;
+  final bool enabled;
   const SettingTextField({
     super.key,
     this.controller,
@@ -67,6 +68,7 @@ class SettingTextField extends StatelessWidget {
     this.suffixText,
     this.onChanged,
     this.accent,
+    this.enabled = true,
   });
 
   @override
@@ -74,7 +76,11 @@ class SettingTextField extends StatelessWidget {
     return TextField(
       controller: controller,
       onChanged: onChanged,
-      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
+      enabled: enabled,
+      style: TextStyle(
+          color: AppTheme.textPrimary,
+          fontSize: 13,
+          decoration: enabled ? null : TextDecoration.none),
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(color: AppTheme.textTertiary, fontSize: 13),
@@ -222,11 +228,11 @@ class _SliderWithLabelState extends State<SliderWithLabel> {
   }
 }
 
-/// 强调色 Switch（与全局 AccentScope 协调）。
+/// 强调色 Switch（与全局 AccentScope 协同）。onChanged 传 null 即禁用。
 class AccentSwitch extends StatelessWidget {
   final bool value;
-  final ValueChanged<bool> onChanged;
-  const AccentSwitch({super.key, required this.value, required this.onChanged});
+  final ValueChanged<bool>? onChanged;
+  const AccentSwitch({super.key, required this.value, this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -243,10 +249,10 @@ class AccentSwitch extends StatelessWidget {
   }
 }
 
-/// 实心主按钮（前景色随底色亮度自适应）。
+/// 实心主按钮（前景色随底色亮度自适应）。onPressed 传 null 即禁用。
 class SettingPrimaryButton extends StatelessWidget {
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final Color? accent;
   const SettingPrimaryButton({
     super.key,
@@ -262,6 +268,8 @@ class SettingPrimaryButton extends StatelessWidget {
       onPressed: onPressed,
       style: FilledButton.styleFrom(
         backgroundColor: color,
+        disabledBackgroundColor: AppTheme.s3,
+        disabledForegroundColor: AppTheme.textTertiary,
         foregroundColor:
             color.computeLuminance() > 0.45 ? AppTheme.background : Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

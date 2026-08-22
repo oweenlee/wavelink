@@ -84,6 +84,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: SettingsSectionContent(
               section: kSettingsSections[_active],
               engineNull: engineNull,
+              // 音频/DSP 分区提供一键恢复默认
+              onReset: _active == 1 ? _resetAudio : (_active == 2 ? _resetDsp : null),
               child: _activeContent(engineNull, audio),
             ),
           ),
@@ -276,13 +278,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       controller: _srController,
                       hint: '44100',
                       suffixText: 'Hz',
+                      // Bit-Perfect 按源直通，手动采样率无效 → 联动禁用
+                      enabled: !audio.bitPerfect,
                     ),
                   ),
                   const SizedBox(width: 10),
                   SettingPrimaryButton(
                     key: const Key('sr_apply'),
                     label: l.settingsApply,
-                    onPressed: () => _applySampleRate(),
+                    onPressed:
+                        audio.bitPerfect ? null : () => _applySampleRate(),
                   ),
                 ],
               ),
@@ -318,19 +323,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               key: const Key('sw_autosr'),
               icon: LucideIcons.refreshCw,
               title: l.settingsAutoSr,
-              description: l.settingsAutoSrDesc,
+              description: audio.bitPerfect
+                  ? l.settingsBitPerfectLocksSr
+                  : l.settingsAutoSrDesc,
               trailing: AccentSwitch(
                 value: audio.autoSampleRate,
-                onChanged: (v) async {
-                  final messenger = ScaffoldMessenger.of(context);
-                  final err = await ref
-                      .read(audioSettingsProvider.notifier)
-                      .setAutoSampleRate(v);
-                  if (err != null && mounted) {
-                    messenger.showSnackBar(SnackBar(
-                        content: Text(l.settingsAutoSrFailed(err))));
-                  }
-                },
+                // Bit-Perfect 按源直通，自动采样率无意义 → 联动禁用
+                onChanged: audio.bitPerfect
+                    ? null
+                    : (v) async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        final err = await ref
+                            .read(audioSettingsProvider.notifier)
+                            .setAutoSampleRate(v);
+                        if (err != null && mounted) {
+                          messenger.showSnackBar(SnackBar(
+                              content:
+                                  Text(l.settingsAutoSrFailed(err))));
+                        }
+                      },
               ),
             ),
             SettingTile(
@@ -706,6 +717,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     await ref.read(audioSettingsProvider.notifier).applySampleRate(r);
     if (mounted) {
       messenger.showSnackBar(SnackBar(content: Text(l.settingsSrApplied)));
+    }
+  }
+
+  /// 音频输出恢复默认；失败时提示，成功静默（状态已可见回弹）。
+  Future<void> _resetAudio() async {
+    final l = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final err =
+        await ref.read(audioSettingsProvider.notifier).resetOutput();
+    if (err != null && mounted) {
+      messenger.showSnackBar(
+          SnackBar(content: Text(l.settingsBitPerfectFailed(err))));
+    } else if (mounted) {
+      messenger.showSnackBar(
+          SnackBar(content: Text(l.settingsResetDone)));
+    }
+  }
+
+  /// DSP 恢复默认。
+  Future<void> _resetDsp() async {
+    final l = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    await ref.read(dspSettingsProvider.notifier).resetAll();
+    if (mounted) {
+      messenger.showSnackBar(SnackBar(content: Text(l.settingsResetDone)));
     }
   }
 

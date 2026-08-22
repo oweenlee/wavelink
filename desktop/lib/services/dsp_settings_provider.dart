@@ -166,6 +166,44 @@ class DspSettingsNotifier extends Notifier<DspSettingsState> {
     await _saveDouble('dsp.speed', state.speed);
   }
 
+  /// 恢复全部 DSP 默认值并下发引擎（保留用户手动加载的 FIR IR 文件）。
+  Future<void> resetAll() async {
+    const d = DspSettingsState();
+    state = state.copyWith(
+      widenerOn: d.widenerOn,
+      widenerWidth: d.widenerWidth,
+      crossfeed: d.crossfeed,
+      limiter: d.limiter,
+      dither: d.dither,
+      noiseShaping: d.noiseShaping,
+      gain: d.gain,
+      speed: d.speed,
+      preset: d.preset,
+      autoEq: '',
+    );
+    await Future.wait([
+      _saveBool('dsp.widener', false),
+      _saveDouble('dsp.widenerWidth', 0.5),
+      _saveBool('dsp.crossfeed', false),
+      _saveBool('dsp.limiter', false),
+      _saveBool('dsp.dither', false),
+      _saveBool('dsp.noiseShaping', false),
+      _saveDouble('dsp.gain', 0),
+      _saveDouble('dsp.speed', 1.0),
+      _saveString('dsp.preset', 'flat'),
+      _saveString('dsp.autoEq', ''),
+    ]);
+    _engine?..setStereoWidener(false, 0.5)
+        ..setCrossfeed(false)
+        ..setLimiter(false)
+        ..setDither(false)
+        ..setNoiseShaping(false)
+        ..setReplaygainGain(0)
+        ..setSpeed(1.0)
+        ..applyPreset('flat')
+        ..setAutoEq(null);
+  }
+
   // ── 均衡器 ──
 
   void applyPreset(String name) {

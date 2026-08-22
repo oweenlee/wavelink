@@ -176,6 +176,36 @@ class AudioSettingsNotifier extends Notifier<AudioSettingsState> {
     (await SharedPreferences.getInstance())
         .setInt('engine.crossfadeMs', state.crossfadeMs.round());
   }
+
+  /// 恢复音频输出默认值（系统默认设备/共享模式/44100/无交叉淡化），
+  /// 一次 reinitialize 下发，避免多次重启引擎。
+  Future<String?> resetOutput() async {
+    final p = await SharedPreferences.getInstance();
+    await Future.wait([
+      p.setBool('exclusiveMode', false),
+      p.setBool('engine.bitPerfect', false),
+      p.setBool('engine.autoSampleRate', false),
+      p.setInt('outputSampleRate', 44100),
+      p.setInt('engine.crossfadeMs', 0),
+      p.remove('outputDevice'),
+    ]);
+    final err = await _engine?.reinitialize(
+      exclusiveMode: false,
+      bitPerfect: false,
+      autoSampleRate: false,
+    );
+    await _engine?.setOutputSampleRate(44100);
+    await refreshActualSampleRate();
+    state = state.copyWith(
+      exclusive: false,
+      bitPerfect: false,
+      autoSampleRate: false,
+      sampleRatePref: 44100,
+      crossfadeMs: 0,
+      selectedDevice: null,
+    );
+    return err;
+  }
 }
 
 final audioSettingsProvider =

@@ -83,11 +83,15 @@ class SettingsSectionContent extends StatelessWidget {
   final SettingsSectionMeta section;
   final bool engineNull;
   final Widget child;
+
+  /// 非空时页头显示「恢复默认」按钮（音频/DSP 分区用）。
+  final VoidCallback? onReset;
   const SettingsSectionContent({
     super.key,
     required this.section,
     required this.engineNull,
     required this.child,
+    this.onReset,
   });
 
   @override
@@ -101,7 +105,8 @@ class SettingsSectionContent extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _PageHeader(section: section, engineNull: engineNull),
+              _PageHeader(
+                  section: section, engineNull: engineNull, onReset: onReset),
               const SizedBox(height: 22),
               if (engineNull) const _EngineNullBanner(),
               child,
@@ -114,11 +119,16 @@ class SettingsSectionContent extends StatelessWidget {
   }
 }
 
-/// 页头：强调色图标块 + 标题 + 副标题 + 引擎状态胶囊。
+/// 页头：强调色图标块 + 标题 + 副标题 + 恢复默认 + 引擎状态胶囊。
 class _PageHeader extends StatelessWidget {
   final SettingsSectionMeta section;
   final bool engineNull;
-  const _PageHeader({required this.section, required this.engineNull});
+  final VoidCallback? onReset;
+  const _PageHeader({
+    required this.section,
+    required this.engineNull,
+    this.onReset,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -150,6 +160,19 @@ class _PageHeader extends StatelessWidget {
             ],
           ),
         ),
+        if (onReset != null)
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: TextButton.icon(
+              key: const Key('settings_reset'),
+              onPressed: onReset,
+              icon: const Icon(LucideIcons.rotateCcw,
+                  size: 14, color: AppTheme.textSecondary),
+              label: Text(l.settingsReset,
+                  style: const TextStyle(
+                      color: AppTheme.textSecondary, fontSize: 12)),
+            ),
+          ),
         EnginePill(ready: !engineNull),
       ],
     );
