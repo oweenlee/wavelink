@@ -335,6 +335,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
           '[perf] 扫描 $folder: ${scanned.length} 首, '
           '${swFolder.elapsedMilliseconds}ms',
         );
+        // TODO(启动优化观察哨)：扫描是每次启动全量重读标签（无 mtime 增量）。
+        // 实测 839 首热缓存 421ms / 冷缓存 3.1s，UI 不阻塞可接受。若曲库
+        // 增长到数千首且此日志超 10s，再考虑 mtime+size 增量方案
+        // （需同步改造 syncScan 的「按前缀删旧插新」模型，正确性风险见
+        // DESIGN_GUIDE 启动管线一节）。
         // 扫描期已直接落盘封面并回填 coverUrl（library.dart _seedCover），
         // 此处仅补漏（扫描中标签读取失败的文件），后台执行不阻塞 UI。
         extractCoversFor(scanned);

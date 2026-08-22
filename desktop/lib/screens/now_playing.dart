@@ -78,7 +78,8 @@ class NowPlaying extends ConsumerWidget {
             const SizedBox(height: 12),
             RepaintBoundary(child: _Progress(player: player)),
             const SizedBox(height: 12),
-            RepaintBoundary(child: Expanded(child: _Lyrics(player: player))),
+            // Expanded 必须是 Column 直接子级，RepaintBoundary 放其内侧
+            Expanded(child: RepaintBoundary(child: _Lyrics(player: player))),
           ],
         ),
       ),

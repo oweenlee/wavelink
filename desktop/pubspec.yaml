@@ -88,6 +88,7 @@ flutter:
   assets:
     - assets/tray_icon.png
     - assets/tray_icon.ico
+    - assets/splash/
 
   # 字体与 mobile 对齐：display=SpaceGrotesk / body=Inter / mono=JetBrainsMono
   fonts:

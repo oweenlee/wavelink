@@ -11,6 +11,7 @@ import 'services/locale_provider.dart';
 import 'services/network_source_config.dart';
 import 'services/player_providers.dart';
 import 'services/tray_service.dart';
+import 'widgets/brand_splash.dart';
 
 /// Intercept the window close button so the app minimizes to the tray instead
 /// of quitting (the tray menu "退出" triggers a real destroy).
@@ -104,7 +105,8 @@ class MyApp extends ConsumerWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: LocaleNotifier.supported,
-      home: const HomeScreen(),
+      // SplashGate：品牌启动图遮蔽 player.init 异步初始化窗口
+      home: const SplashGate(child: HomeScreen()),
     );
   }
 }
