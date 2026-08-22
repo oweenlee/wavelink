@@ -353,6 +353,13 @@ class Engine {
     return frb.wavelinkSetOutputSampleRate(rate: rate);
   }
 
+  /// 更新交叉淡化快照：引擎无运行时修改命令（仅 init 接收），
+  /// 此处同步内存值，保证后续 reinitialize（切独占等）不回退用户改动；
+  /// 对当前播放需重启应用后才生效。
+  void updateCrossfadePref(int ms) {
+    _crossfadeMs = ms;
+  }
+
   Future<void> setPeqBand(int index, double freq, double gainDb, double q) =>
       frb.wavelinkSetPeqBand(index: index, freq: freq, gainDb: gainDb, q: q);
 

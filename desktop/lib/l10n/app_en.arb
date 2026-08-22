@@ -25,6 +25,17 @@
   "settingsSrApplied": "Output sample rate applied",
   "settingsRewSource": "Generated from REW",
   "settingsCommonRate": "Common sample rate",
+  "ttSleep": "Sleep timer",
+  "sleepOff": "Off",
+  "sleepMinutes": "{min} min",
+  "sleepDone": "Sleep timer ended, playback paused",
+  "@sleepMinutes": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
   "ttPlay": "Play",
   "ttPause": "Pause",
   "ttPrevious": "Previous track",
@@ -174,7 +185,7 @@
   "settingsAutoSrDesc": "Switch output to match the source file's sample rate; switching restarts the engine",
   "settingsAutoSrFailed": "Failed to switch auto sample rate: {err}",
   "settingsCrossfade": "Gapless crossfade",
-  "settingsCrossfadeDesc": "Effective from the next track",
+  "settingsCrossfadeDesc": "Takes effect after app restart",
   "settingsOff": "Off",
   "settingsGroupSpatial": "Spatial effects",
   "settingsGroupSpatialDesc": "Stereo widening and crossfeed",

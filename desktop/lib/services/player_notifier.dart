@@ -1353,6 +1353,23 @@ class PlayerNotifier extends Notifier<PlayerState> {
     await playIndex(pi < 0 ? queue.length - 1 : pi);
   }
 
+  /// 输出配置（采样率/设备等）变更后重播当前曲目并恢复原位置：
+  /// 播放中切换采样率时，解码管线目标速率与已重建的输出流不匹配
+  /// （变速变调 + underrun 坏帧），必须整曲重启让管线按新速率初始化。
+  Future<void> replayCurrentTrack() async {
+    final idx = state.queueIndex;
+    final t = state.currentTrack;
+    if (t == null || idx == null || idx < 0 || idx >= state.queue.length) {
+      return;
+    }
+    final pos = state.position;
+    await playIndex(idx);
+    if (pos > Duration.zero) {
+      // playIndex 内部 play 同步等待引擎就绪，此处可直接跳回原位置
+      await seek(pos);
+    }
+  }
+
   /// 曲目自然结束后的切歌由引擎 stopped 事件在 [_onEngineEvent] 中处理。
   Future<void> seek(Duration d) async {
     state = state.copyWith(position: d);

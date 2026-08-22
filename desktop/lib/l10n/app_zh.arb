@@ -25,6 +25,17 @@
   "settingsSrApplied": "输出采样率已应用",
   "settingsRewSource": "REW 生成",
   "settingsCommonRate": "常用采样率",
+  "ttSleep": "睡眠定时器",
+  "sleepOff": "关闭",
+  "sleepMinutes": "{min} 分钟",
+  "sleepDone": "睡眠定时结束，已暂停播放",
+  "@sleepMinutes": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
   "ttPlay": "播放",
   "ttPause": "暂停",
   "ttPrevious": "上一曲",
@@ -230,7 +241,7 @@
     }
   },
   "settingsCrossfade": "曲间无缝 Crossfade",
-  "settingsCrossfadeDesc": "下一首启动生效",
+  "settingsCrossfadeDesc": "重启应用后生效",
   "settingsOff": "关闭",
   "settingsGroupSpatial": "空间效果",
   "settingsGroupSpatialDesc": "立体声展宽与跨馈处理",

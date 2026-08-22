@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -31,6 +33,48 @@ class _TransportBarState extends ConsumerState<TransportBar> {
   double? _seekDragMs;
   /// 音量条拖动本地值（拖动中实时下发引擎但不落盘，松手才持久化）。
   double? _volDrag;
+
+  /// 睡眠定时器截止时刻；null = 未启用。
+  DateTime? _sleepDeadline;
+  Timer? _sleepTicker;
+
+  void _setSleepTimer(int? minutes) {
+    _sleepTicker?.cancel();
+    _sleepTicker = null;
+    if (minutes == null) {
+      setState(() => _sleepDeadline = null);
+      return;
+    }
+    setState(() => _sleepDeadline = DateTime.now().add(Duration(minutes: minutes)));
+    // 每秒刷新剩余时间显示；到点暂停播放（若已在播放）
+    _sleepTicker = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return t.cancel();
+      final remain = _sleepDeadline?.difference(DateTime.now());
+      if (remain == null || remain.isNegative) {
+        t.cancel();
+        if (!mounted) return;
+        setState(() => _sleepDeadline = null);
+        final st = ref.read(playerProvider);
+        if (st.playing) widget.player.togglePlay();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).sleepDone)),
+        );
+      } else {
+        setState(() {});
+      }
+    });
+  }
+
+  String _sleepRemainText() {
+    final r = _sleepDeadline!.difference(DateTime.now());
+    return '${r.inMinutes}:${(r.inSeconds % 60).toString().padLeft(2, '0')}';
+  }
+
+  @override
+  void dispose() {
+    _sleepTicker?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -204,12 +248,13 @@ class _TransportBarState extends ConsumerState<TransportBar> {
                         ],
                       ),
                     ),
-                    // 右侧：引擎状态 + 音量控制（宽度随内容：
-                    // 基础=音量图标22+间距8；引擎异常时追加警告图标20+右边距10；
-                    // 音量条可见时再扩展到 180）
+                    // 右侧：引擎状态 + 睡眠定时 + 音量控制（宽度随内容：
+                    // 基础=音量图标22+间距8；引擎异常时追加警告图标20+边距10；
+                    // 睡眠定时按钮 w>=640 时追加约 40；音量条可见时再扩展到 180）
                     SizedBox(
-                      width: (showVolumeSlider ? 180 : 30) +
-                          (st.engineReady ? 0 : 30),
+                      width: (showVolumeSlider ? 200 : 30) +
+                          (st.engineReady ? 0 : 30) +
+                          (w >= 640 ? 48 : 0),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.end,
@@ -222,6 +267,33 @@ class _TransportBarState extends ConsumerState<TransportBar> {
                                 child: const Icon(Icons.error_outline,
                                     color: AppTheme.textTertiary, size: 20),
                               ),
+                            ),
+                          // 睡眠定时器：到点自动暂停（窄窗口隐藏）
+                          if (w >= 640)
+                            PopupMenuButton<int?>(
+                              tooltip: _sleepDeadline != null
+                                  ? '${l10n.ttSleep} · ${_sleepRemainText()}'
+                                  : l10n.ttSleep,
+                              icon: Icon(
+                                Icons.timer_outlined,
+                                size: 20,
+                                color: _sleepDeadline != null
+                                    ? accent
+                                    : AppTheme.textTertiary,
+                              ),
+                              onSelected: _setSleepTimer,
+                              itemBuilder: (c) => [
+                                PopupMenuItem(
+                                  value: null,
+                                  child: Text(l10n.sleepOff,
+                                      style: const TextStyle(fontSize: 13)),
+                                ),
+                                ...const [15, 30, 60, 90].map((m) => PopupMenuItem(
+                                      value: m,
+                                      child: Text(l10n.sleepMinutes(m),
+                                          style: const TextStyle(fontSize: 13)),
+                                    )),
+                              ],
                             ),
                           const Icon(Icons.volume_up,
                               color: AppTheme.textTertiary, size: 22),

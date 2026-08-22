@@ -25,6 +25,17 @@
   "settingsSrApplied": "出力サンプルレートを適用しました",
   "settingsRewSource": "REW から生成",
   "settingsCommonRate": "一般的なサンプルレート",
+  "ttSleep": "スリープタイマー",
+  "sleepOff": "オフ",
+  "sleepMinutes": "{min} 分",
+  "sleepDone": "スリープタイマー終了、再生を一時停止しました",
+  "@sleepMinutes": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
   "ttPlay": "再生",
   "ttPause": "一時停止",
   "ttPrevious": "前の曲",
@@ -146,7 +157,7 @@
   "settingsAutoSrDesc": "ソースファイルのサンプルレートに合わせて出力を切替。切り替えでエンジンを再起動",
   "settingsAutoSrFailed": "自動サンプルレートの切り替えに失敗：{err}",
   "settingsCrossfade": "曲間シームレス Crossfade",
-  "settingsCrossfadeDesc": "次の曲から有効",
+  "settingsCrossfadeDesc": "アプリ再起動後に有効",
   "settingsOff": "オフ",
   "settingsGroupSpatial": "空間効果",
   "settingsGroupSpatialDesc": "ステレオ幅拡張とクロスフィード",

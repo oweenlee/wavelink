@@ -25,6 +25,17 @@
   "settingsSrApplied": "Ausgangs-Abtastrate angewendet",
   "settingsRewSource": "Aus REW erzeugt",
   "settingsCommonRate": "Übliche Abtastrate",
+  "ttSleep": "Einschlaftimer",
+  "sleepOff": "Aus",
+  "sleepMinutes": "{min} Min.",
+  "sleepDone": "Timer beendet, Wiedergabe pausiert",
+  "@sleepMinutes": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
   "ttPlay": "Wiedergeben",
   "ttPause": "Pausieren",
   "ttPrevious": "Vorheriger Titel",
@@ -146,7 +157,7 @@
   "settingsAutoSrDesc": "Ausgabe an Abtastrate der Quelldatei anpassen; Wechsel startet die Engine neu",
   "settingsAutoSrFailed": "Wechsel der automatischen Abtastrate fehlgeschlagen: {err}",
   "settingsCrossfade": "Übergangsloser Crossfade",
-  "settingsCrossfadeDesc": "Wirkt ab dem nächsten Titel",
+  "settingsCrossfadeDesc": "Wirkt nach App-Neustart",
   "settingsOff": "Aus",
   "settingsGroupSpatial": "Räumliche Effekte",
   "settingsGroupSpatialDesc": "Stereoverbreiterung und Crossfeed",

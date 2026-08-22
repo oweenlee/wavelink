@@ -202,6 +202,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (_viewMode != 'all') setState(() => _viewMode = 'all');
   }
 
+  /// 静音切换记忆（M 键）：记住静音前的音量。
+  double _lastVolume = 1.0;
+
   void _seekBy(Duration delta) {
     final st = ref.read(playerProvider);
     final max = st.duration;
@@ -227,6 +230,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     if (e.logicalKey == LogicalKeyboardKey.arrowLeft) {
       _seekBy(const Duration(seconds: -5));
+      return KeyEventResult.handled;
+    }
+    // 音量 ↑↓（步进 5%）
+    if (e.logicalKey == LogicalKeyboardKey.arrowUp ||
+        e.logicalKey == LogicalKeyboardKey.arrowDown) {
+      final cur = ref.read(playerProvider).volume;
+      final v = (cur + (e.logicalKey == LogicalKeyboardKey.arrowUp ? 0.05 : -0.05))
+          .clamp(0.0, 1.0);
+      if (v > 0) _lastVolume = v;
+      player.setVolume(v);
+      return KeyEventResult.handled;
+    }
+    // M 静音切换
+    if (e.logicalKey == LogicalKeyboardKey.keyM) {
+      final cur = ref.read(playerProvider).volume;
+      if (cur > 0) _lastVolume = cur;
+      player.setVolume(cur > 0 ? 0.0 : _lastVolume);
+      return KeyEventResult.handled;
+    }
+    // N/P 切歌
+    if (e.logicalKey == LogicalKeyboardKey.keyN) {
+      player.next();
+      return KeyEventResult.handled;
+    }
+    if (e.logicalKey == LogicalKeyboardKey.keyP) {
+      player.previous();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
