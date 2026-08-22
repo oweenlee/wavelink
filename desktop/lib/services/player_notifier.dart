@@ -469,6 +469,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
           return;
         }
         state = state.copyWith(playing: false);
+        // 引擎已真停（非暂停）：清加载标记，让下次点播放走重载路径。
+        // 不清的话 togglePlay 走 resume() 分支——引擎停止态 resume 无声，
+        // 但状态置 playing:true，UI 显示"播放中"实际静音。
+        _loadedTrackId = null;
         if (_stopRequested) {
           _stopRequested = false;
         } else if (_engineQueueActive) {
@@ -614,6 +618,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
       // 引擎可能未初始化，忽略
     }
     _engineQueueActive = false;
+    // 播放链路标志一并复位：_streaming 残留会让后续 seek 误走流式分支
+    _streaming = false;
+    _pendingStreamSeek = null;
+    _streamSeekPending = false;
+    _stopRequested = false;
 
     // 2. 清空内存曲库与队列
     setLibrary([]);
@@ -1101,8 +1110,23 @@ class PlayerNotifier extends Notifier<PlayerState> {
     final paths = queue.map((t) => t.filePath!).toList();
     final startIndex = (state.queueIndex ?? 0).clamp(0, paths.length - 1);
     try {
+      // 运行中重发（playNext 插曲 / shuffle 切换）会重启当前曲目：
+      // 先记进度，起播后跳回，避免「点循环/随机按钮歌从头放」。
+      final resumePos =
+          state.playing || state.position > Duration.zero
+              ? state.position
+              : Duration.zero;
       await _engine!.playQueue(paths, startIndex: startIndex);
       await _engine!.setPlayMode(_currentEnginePlayMode());
+      if (resumePos > Duration.zero) {
+        // 仅运行中重发才有进度可恢复；此时维持调用方的暂停态
+        //（暂停中切 shuffle 不应意外出声）。playIndex 初始路径 position
+        // 已归零，不会进入本分支，不影响正常起播。
+        await _engine!.seek(resumePos.inMilliseconds / 1000.0);
+        if (!state.playing) {
+          await _engine!.pause();
+        }
+      }
       _engineQueueActive = true;
       return true;
     } catch (e) {
@@ -1770,10 +1794,13 @@ class PlayerNotifier extends Notifier<PlayerState> {
         queueIndex: cur == null ? null : 0,
       );
     } else {
+      // 混合队列下 cur 可能不在 base（CUE/STRM 边界）：-1 会让后续
+      // playIndex 直接 return 卡死，兜底回 0
+      final idx = cur == null ? -1 : _queueBase.indexOf(cur);
       state = state.copyWith(
         shuffle: false,
         queue: _queueBase,
-        queueIndex: cur == null ? null : _queueBase.indexOf(cur),
+        queueIndex: cur == null ? null : (idx < 0 ? 0 : idx),
       );
     }
     // 引擎队列模式：shuffle 变更需重发队列（顺序变了）+ 同步播放模式

@@ -70,6 +70,22 @@ class _TransportBarState extends ConsumerState<TransportBar> {
     return '${r.inMinutes}:${(r.inSeconds % 60).toString().padLeft(2, '0')}';
   }
 
+  /// 右端各段宽度预算（px）：
+  /// - 音量图标段：图标 22 + 间距 8
+  /// - 引擎警告段：图标 20 + 右边距 10
+  /// - 睡眠按钮：M3 IconButton 实测 48
+  /// - 音量条块：slider 120 + 图标 22 + 间距 8 + 余量 50
+  static double _rightWidthBudget({
+    required bool volumeSlider,
+    required bool engineAlert,
+    required bool sleep,
+  }) {
+    var w = volumeSlider ? 200 : 30;
+    if (engineAlert) w += 30;
+    if (sleep) w += 48;
+    return w.toDouble();
+  }
+
   @override
   void dispose() {
     _sleepTicker?.cancel();
@@ -248,13 +264,14 @@ class _TransportBarState extends ConsumerState<TransportBar> {
                         ],
                       ),
                     ),
-                    // 右侧：引擎状态 + 睡眠定时 + 音量控制（宽度随内容：
-                    // 基础=音量图标22+间距8；引擎异常时追加警告图标20+边距10；
-                    // 睡眠定时按钮 w>=640 时追加约 40；音量条可见时再扩展到 180）
+                    // 右侧宽度 = 各段预算之和（与实际控件对齐，改控件尺寸
+                    // 需同步这里；历史两次溢出回归均因新增控件未入账）
                     SizedBox(
-                      width: (showVolumeSlider ? 200 : 30) +
-                          (st.engineReady ? 0 : 30) +
-                          (w >= 640 ? 48 : 0),
+                      width: _rightWidthBudget(
+                        volumeSlider: showVolumeSlider,
+                        engineAlert: !st.engineReady,
+                        sleep: w >= 640,
+                      ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.end,

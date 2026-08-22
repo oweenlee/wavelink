@@ -157,17 +157,34 @@ class _MacAppMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // PlatformMenuBar 在 MaterialApp 之外，拿不到 l10n delegate；
+    // 按系统语言手动解析（仅菜单几个词，不值得引入完整方案）
+    final zh = PlatformDispatcher.instance.locale.languageCode == 'zh';
+    final ja = PlatformDispatcher.instance.locale.languageCode == 'ja';
+    final de = PlatformDispatcher.instance.locale.languageCode == 'de';
+    final about = de
+        ? 'Über WaveLink'
+        : ja
+            ? 'WaveLink について'
+            : zh
+                ? '关于 WaveLink'
+                : 'About WaveLink';
+    final quit = de
+        ? 'Beenden'
+        : ja
+            ? '終了'
+            : zh
+                ? '退出 WaveLink'
+                : 'Quit WaveLink';
     return PlatformMenuBar(
       menus: [
-        const PlatformMenuItemGroup(
-          members: [
-            PlatformMenuItem(label: '关于 WaveLink', onSelected: _showAbout),
-          ],
-        ),
+        PlatformMenuItemGroup(members: [
+          PlatformMenuItem(label: about, onSelected: _showAbout),
+        ]),
         PlatformMenuItemGroup(
           members: [
             PlatformMenuItem(
-              label: '退出 WaveLink',
+              label: quit,
               shortcut:
                   const SingleActivator(LogicalKeyboardKey.keyQ, meta: true),
               // 托盘 preventClose 只拦窗口 X，⌘Q 必须真销毁
