@@ -26,6 +26,8 @@
   "settingsRewSource": "REW から生成",
   "settingsCommonRate": "一般的なサンプルレート",
   "searchClearFilter": "検索をクリア",
+  "dlgSubsonicCompatHint": "Subsonic / Navidrome は完全互換。Jellyfin / Emby はサーバー側で Subsonic API プラグインを有効にしてください（音声がトランスコードされる場合があります）",
+  "dlgWebdavCompatHint": "標準 WebDAV に対応：Nextcloud / Seafile / Synology / rclone / AList（Aliyun Drive 等のクラウドドライブは AList 経由）",
   "ttSleep": "スリープタイマー",
   "sleepOff": "オフ",
   "sleepMinutes": "{min} 分",

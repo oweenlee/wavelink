@@ -26,6 +26,8 @@
   "settingsRewSource": "Aus REW erzeugt",
   "settingsCommonRate": "Übliche Abtastrate",
   "searchClearFilter": "Suche löschen",
+  "dlgSubsonicCompatHint": "Voll kompatibel mit Subsonic / Navidrome; Jellyfin / Emby benötigen das Subsonic-API-Plugin auf dem Server (Streams können transkodiert werden)",
+  "dlgWebdavCompatHint": "Standard-WebDAV: Nextcloud / Seafile / Synology / rclone / AList (Aliyun Drive & Cloud-Laufwerke über AList)",
   "ttSleep": "Einschlaftimer",
   "sleepOff": "Aus",
   "sleepMinutes": "{min} Min.",

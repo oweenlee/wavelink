@@ -26,6 +26,8 @@
   "settingsRewSource": "REW 生成",
   "settingsCommonRate": "常用采样率",
   "searchClearFilter": "清除搜索",
+  "dlgSubsonicCompatHint": "完整兼容 Subsonic / Navidrome；Jellyfin / Emby 需在服务端开启 Subsonic API 插件（音频流可能被转码）",
+  "dlgWebdavCompatHint": "兼容标准 WebDAV：Nextcloud / Seafile / 群晖 / rclone / AList（阿里云盘等网盘需经 AList 挂载）",
   "ttSleep": "睡眠定时器",
   "sleepOff": "关闭",
   "sleepMinutes": "{min} 分钟",

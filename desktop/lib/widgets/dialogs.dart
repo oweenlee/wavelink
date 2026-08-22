@@ -12,7 +12,6 @@ import '../services/player_providers.dart';
 const _surface = kSurface;
 const _onSurface = kOnSurface;
 const _onSurfaceVariant = kOnSurfaceVariant;
-const _border = kBorder;
 
 /// 单行文本命名对话框（新建播放列表等）。对齐 mobile 端「一个用途一个
 /// 统一入口」的组件思路：此前 home.dart 内 `_askName` 与 `_askNewPlaylist`
@@ -29,22 +28,40 @@ Future<String?> askNameDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surface,
-        title: Text(title, style: const TextStyle(color: _onSurface)),
+        // 标题与其他对话框统一品牌字体
+        title: Text(title,
+            style: const TextStyle(
+                fontFamily: 'SpaceGrotesk',
+                color: _onSurface,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3)),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          style: const TextStyle(color: _onSurface),
+          style: const TextStyle(color: _onSurface, fontSize: 13.5),
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: const TextStyle(color: _onSurfaceVariant),
-            enabledBorder: const OutlineInputBorder(
-              borderSide: BorderSide(color: _border),
+            isDense: true,
+            filled: true,
+            fillColor: AppTheme.s3,
+            // 与网络音源对话框同高（≈44px）
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: AppTheme.highlightStrong),
             ),
-            focusedBorder: const OutlineInputBorder(
-              borderSide: BorderSide(color: _onSurfaceVariant),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide:
+                  const BorderSide(color: AppTheme.textTertiary, width: 1.4),
             ),
           ),
-          onSubmitted: (value) => Navigator.pop(ctx, ctrl.text),
+          onSubmitted: (value) {
+            if (ctrl.text.trim().isNotEmpty) Navigator.pop(ctx, ctrl.text);
+          },
         ),
         actions: [
           TextButton(
@@ -52,10 +69,24 @@ Future<String?> askNameDialog(
             child: Text(l10n.btnCancel,
                 style: const TextStyle(color: _onSurfaceVariant)),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text),
-            child: Text(l10n.btnOk,
-                style: const TextStyle(color: _onSurface)),
+          // 空名禁用：此前可点确定但调用方静默忽略，用户无反馈
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: ctrl,
+            builder: (c, v, _) => FilledButton(
+              onPressed:
+                  v.text.trim().isEmpty ? null : () => Navigator.pop(ctx, ctrl.text),
+              style: FilledButton.styleFrom(
+                backgroundColor: _onSurface,
+                disabledBackgroundColor: AppTheme.s3,
+                disabledForegroundColor: AppTheme.textTertiary,
+                foregroundColor: _surface,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              child: Text(l10n.btnOk),
+            ),
           ),
         ],
       ),

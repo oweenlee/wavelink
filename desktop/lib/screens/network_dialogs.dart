@@ -320,11 +320,20 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
       content: SizedBox(
         width: 440,
         child: SingleChildScrollView(
-          child: Column(
+          child:           Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               ..._fields(),
+              if (widget.source == TrackSource.subsonic)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2, bottom: 8),
+                  child: Text(
+                    l10n.dlgSubsonicCompatHint,
+                    style: const TextStyle(
+                        color: AppTheme.textTertiary, fontSize: 11.5),
+                  ),
+                ),
               if (widget.source == TrackSource.nas) _sharesBrowser(),
               if (_status != null) _statusLine(),
             ],
@@ -407,8 +416,9 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
                 isDense: true,
                 filled: true,
                 fillColor: AppTheme.s3,
+                // 垂直 13：13*2 + 行高16 + 边框2 ≈ 44px 输入框总高
                 contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(color: AppTheme.highlightStrong),
