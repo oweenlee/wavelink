@@ -9,7 +9,9 @@ import '../models/track.dart';
 import '../services/lyrics.dart';
 import '../services/player_notifier.dart';
 import '../services/player_providers.dart';
+import '../services/audio_settings_provider.dart';
 import '../widgets/cover_art.dart';
+import '../widgets/settings_controls.dart';
 import '../widgets/wl_slider.dart';
 import '../widgets/spectrum_visualizer.dart';
 
@@ -27,10 +29,61 @@ class NowPlaying extends ConsumerWidget {
   final double width;
   const NowPlaying({super.key, required this.player, this.width = 320});
 
+  /// 封面放大预览：黑底大图 + 曲名/艺术家，点遮罩关闭。
+  void _showCoverDialog(BuildContext context, Track? track) {
+    if (track == null) return;
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: GestureDetector(
+          onTap: () => Navigator.of(ctx).pop(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CoverArt(
+                key: ValueKey('np-big-${track.coverUrl ?? track.id}'),
+                seed: track.id,
+                coverUrl: track.coverUrl,
+                size: 420,
+                rounded: true,
+              ),
+              const SizedBox(height: 14),
+              Text(track.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style:
+                      WlText.display(fontSize: 20)),
+              const SizedBox(height: 4),
+              Text(track.artist,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: _onSurfaceVariant)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 文件格式标签：本地取扩展名，CUE 分轨标注 CUE，网络曲用音源短名。
+  String _formatLabel(Track t) {
+    if (t.isCueTrack) return 'CUE';
+    if (!t.isNetwork && t.filePath != null) {
+      final ext = t.filePath!.split('.').last.toUpperCase();
+      return ext.isEmpty ? '—' : ext;
+    }
+    return t.source.short;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // watch currentTrack：切歌 / 封面异步提取写回 state 后面板都能刷新
     final track = ref.watch(playerProvider.select((s) => s.currentTrack));
+    final actualSampleRate =
+        ref.watch(audioSettingsProvider.select((s) => s.actualSampleRate));
     final l10n = AppLocalizations.of(context);
     return Container(
       width: width,
@@ -44,25 +97,44 @@ class NowPlaying extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Center(
-              child: CoverArt(
-                key: ValueKey('np-${track?.coverUrl ?? track?.id ?? 'empty'}'),
-                seed: track?.id ?? 'empty',
-                coverUrl: track?.coverUrl,
-                size: 168,
-                rounded: true,
+              child: GestureDetector(
+                // 点击封面放大预览
+                onTap: () => _showCoverDialog(context, track),
+                child: CoverArt(
+                  key: ValueKey('np-${track?.coverUrl ?? track?.id ?? 'empty'}'),
+                  seed: track?.id ?? 'empty',
+                  coverUrl: track?.coverUrl,
+                  size: 168,
+                  rounded: true,
+                ),
               ),
             ),
             const SizedBox(height: 16),
-            Text(track?.title ?? l10n.nowPlayingEmpty,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: WlText.display(fontSize: 17)),
-            const SizedBox(height: 4),
-            Text(track?.artist ?? l10n.tapToStart,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    color: _onSurfaceVariant, fontSize: 13)),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(track?.title ?? l10n.nowPlayingEmpty,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: WlText.display(fontSize: 17)),
+                      const SizedBox(height: 4),
+                      Text(track?.artist ?? l10n.tapToStart,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: _onSurfaceVariant, fontSize: 13)),
+                    ],
+                  ),
+                ),
+                // 当前曲一键收藏（此前面板纯展示零操作）
+                if (track != null)
+                  _FavoriteButton(player: player, track: track),
+              ],
+            ),
             const SizedBox(height: 10),
             // BPM/Key 分析徽章（播放时后台分析，完成后经 analysisStream 刷新）
             RepaintBoundary(
@@ -72,6 +144,19 @@ class NowPlaying extends ConsumerWidget {
                     _AnalysisTags(player: player, track: track),
               ),
             ),
+            // 音质徽章：实际输出采样率 + 文件格式（hi-res 定位的核心读数）
+            if (track != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: TechChips(children: [
+                  TechChip(
+                      label: 'SR',
+                      value: actualSampleRate != null
+                          ? '$actualSampleRate Hz'
+                          : '—'),
+                  TechChip(label: 'FMT', value: _formatLabel(track)),
+                ]),
+              ),
             const SizedBox(height: 14),
             // 实时频谱（引擎 spectrum 事件驱动；暂停后自然衰减到零）
             RepaintBoundary(child: SpectrumVisualizer(player: player, height: 36)),
@@ -89,6 +174,30 @@ class NowPlaying extends ConsumerWidget {
 
 /// BPM / Key 分析徽章（对齐 mobile 播放页 _Tags）。无结果（未分析完/失败）
 /// 时渲染为空，不占位；分析完成经 [PlayerNotifier.analysisStream] 触发重建。
+/// 当前曲收藏按钮（对齐曲目行 _FavoriteButton 视觉：实心红心高亮）。
+class _FavoriteButton extends ConsumerWidget {
+  final PlayerNotifier player;
+  final Track track;
+  const _FavoriteButton({required this.player, required this.track});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(playerProvider.select((s) => s.favoriteIds));
+    final fav = player.isFavorite(track);
+    final l10n = AppLocalizations.of(context);
+    return IconButton(
+      tooltip: fav ? l10n.favRemove : l10n.favAdd,
+      // 对齐 mobile：Material 实心/描边爱心（Lucide 的 fill 参数不生效）
+      icon: Icon(
+        fav ? Icons.favorite : Icons.favorite_border,
+        size: 20,
+        color: fav ? AppTheme.danger : AppTheme.textTertiary,
+      ),
+      onPressed: () => player.toggleFavorite(track),
+    );
+  }
+}
+
 class _AnalysisTags extends StatelessWidget {
   final PlayerNotifier player;
   final Track? track;
@@ -246,21 +355,28 @@ class _LyricsState extends ConsumerState<_Lyrics> {
           final distance = (i - active).abs();
           return SizedBox(
             height: _lineH,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                lines[i].text,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: isActive
-                      ? _onSurface
-                      : distance <= 2
-                          ? _onSurfaceVariant
-                          : AppTheme.textTertiary,
-                  fontWeight:
-                      isActive ? FontWeight.w600 : FontWeight.w400,
-                  fontSize: isActive ? 15.5 : 13,
+            // 点击歌词行跳转到该句时间点
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: InkWell(
+                onTap: () => widget.player.seek(lines[i].time),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    lines[i].text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isActive
+                          ? _onSurface
+                          : distance <= 2
+                              ? _onSurfaceVariant
+                              : AppTheme.textTertiary,
+                      fontWeight:
+                          isActive ? FontWeight.w600 : FontWeight.w400,
+                      fontSize: isActive ? 15.5 : 13,
+                    ),
+                  ),
                 ),
               ),
             ),

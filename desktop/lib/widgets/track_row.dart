@@ -239,12 +239,12 @@ class _FavoriteButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(playerProvider.select((s) => s.favoriteIds));
     final fav = player.isFavorite(track);
+    // 对齐 mobile：Material 实心/描边爱心
     return IconButton(
       icon: Icon(
-        fav ? LucideIcons.heart : LucideIcons.heart,
+        fav ? Icons.favorite : Icons.favorite_border,
         size: 17,
         color: fav ? AppTheme.danger : AppTheme.textTertiary,
-        fill: fav ? 1.0 : 0.0,
       ),
       onPressed: () => player.toggleFavorite(track),
     );
