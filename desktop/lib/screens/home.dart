@@ -217,7 +217,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   KeyEventResult _onKey(KeyEvent e) {
     if (e is! KeyDownEvent) return KeyEventResult.ignored;
     if (_searchFocus.hasFocus) {
-      if (e.logicalKey == LogicalKeyboardKey.escape) _searchFocus.unfocus();
+      if (e.logicalKey == LogicalKeyboardKey.escape) {
+        // 两段式：有内容先清空并立即退出过滤，无内容才失焦
+        if (_searchCtrl.text.isNotEmpty || _query.isNotEmpty) {
+          _searchCtrl.clear();
+          _queryDebounce?.cancel();
+          setState(() => _query = '');
+        } else {
+          _searchFocus.unfocus();
+        }
+        return KeyEventResult.handled;
+      }
       return KeyEventResult.ignored;
     }
     if (e.logicalKey == LogicalKeyboardKey.space) {

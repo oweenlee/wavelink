@@ -132,8 +132,29 @@ class LibraryView extends ConsumerWidget {
                   );
                 }
                 return Center(
-                  child: Text(l10n.noMatch,
-                      style: const TextStyle(color: _onSurfaceVariant)),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(l10n.noMatch,
+                          style:
+                              const TextStyle(color: _onSurfaceVariant)),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          searchCtrl.clear();
+                          onQuery('');
+                        },
+                        icon: const Icon(LucideIcons.x, size: 14),
+                        label: Text(l10n.searchClearFilter),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _onSurface,
+                          side: const BorderSide(color: _border),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ],
+                  ),
                 );
               }
               return ListView.builder(

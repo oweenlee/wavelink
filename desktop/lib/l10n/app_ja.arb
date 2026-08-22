@@ -25,6 +25,7 @@
   "settingsSrApplied": "出力サンプルレートを適用しました",
   "settingsRewSource": "REW から生成",
   "settingsCommonRate": "一般的なサンプルレート",
+  "searchClearFilter": "検索をクリア",
   "ttSleep": "スリープタイマー",
   "sleepOff": "オフ",
   "sleepMinutes": "{min} 分",

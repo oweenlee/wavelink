@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../core/theme.dart';
@@ -69,16 +70,36 @@ class _SearchFieldState extends State<SearchField> {
             child: TextField(
               focusNode: widget.focusNode,
               controller: widget.controller,
-              onChanged: widget.onChanged,
+              // IME 组合期（中文输入法拼字）不过滤，避免拼音字母触发搜索
+              onChanged: (v) {
+                if (widget.controller.value.composing != TextRange.empty) {
+                  return;
+                }
+                widget.onChanged(v);
+              },
               style: const TextStyle(color: _onSurface, fontSize: 13.5),
+              textAlignVertical: TextAlignVertical.center,
               decoration: InputDecoration(
                 border: InputBorder.none,
+                isDense: true,
                 hintText: l10n.searchHint,
                 hintStyle: const TextStyle(color: _onSurfaceVariant),
-                contentPadding: const EdgeInsets.only(bottom: 2),
+                // (38 - 行高)/2 ≈ 10：文字与光标在容器内垂直居中
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
               ),
             ),
           ),
+          // 快捷键角标：空内容时显示 ⌘F / Ctrl+F，提升发现性
+          if (!_hasText)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Text(
+                defaultTargetPlatform == TargetPlatform.macOS ? '⌘F' : 'Ctrl+F',
+                style: WlText.mono(
+                    fontSize: 10.5,
+                    color: AppTheme.textTertiary.withValues(alpha: 0.7)),
+              ),
+            ),
           if (_hasText)
             IconButton(
               icon: const Icon(LucideIcons.x,
@@ -86,6 +107,8 @@ class _SearchFieldState extends State<SearchField> {
               onPressed: () {
                 widget.controller.clear();
                 widget.onChanged('');
+                // 点击清除后焦点还给输入框，方便继续输入
+                widget.focusNode?.requestFocus();
               },
             ),
         ],

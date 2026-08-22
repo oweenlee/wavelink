@@ -25,6 +25,7 @@
   "settingsSrApplied": "Ausgangs-Abtastrate angewendet",
   "settingsRewSource": "Aus REW erzeugt",
   "settingsCommonRate": "Übliche Abtastrate",
+  "searchClearFilter": "Suche löschen",
   "ttSleep": "Einschlaftimer",
   "sleepOff": "Aus",
   "sleepMinutes": "{min} Min.",

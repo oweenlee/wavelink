@@ -142,9 +142,9 @@ class PlayerState {
 /// 中央播放引擎 + 曲库状态（Riverpod Notifier 版）。
 ///
 /// 音频后端为 Rust `Engine`（经 FFI 桥接 `audio_core`），继承 hi-res / DSP /
-/// bit-perfect 能力。播放顺序（队列 / 随机 / 循环）由本 Notifier 在 Dart 侧
-/// 管理，每首曲目通过 `engine.play(path)` 下发给引擎；曲目自然结束时由引擎
-/// 的 `stopped` 事件驱动 `next()` 切歌（gapless / 引擎队列为 Phase 2）。
+/// bit-perfect 能力。本地曲目走引擎队列播放（gapless 无缝切换），网络曲目
+/// 逐首下发（引擎不支持网络流入队列）。曲目自然结束时由引擎的 `stopped`
+/// 事件驱动 `next()` 切歌。
 ///
 /// 收藏 / 播放列表 / 音量 / 模式经 shared_preferences 持久化；UI 状态全部
 /// 进入 [PlayerState]，UI 经 select 精细订阅（替代旧的 12 路广播流）。
@@ -189,6 +189,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
   /// 流式 seek 下载/切换是否进行中（防重入，单飞）
   bool _streamSeekPending = false;
+
+  /// 引擎队列模式是否激活（本地曲目全部可播放时启用 gapless 无缝切换）。
+  /// 网络曲目或混合队列时为 false，退化为逐首 engine.play() 模式。
+  bool _engineQueueActive = false;
 
   // —— 事件流（非 UI 状态，StreamProvider 桥接）——
 
@@ -276,8 +280,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
             // 高级音频引擎配置从设置页持久化（reinitialize 会保留这些值）
             bitPerfect: _prefs!.getBool('engine.bitPerfect') ?? false,
             autoSampleRate: _prefs!.getBool('engine.autoSampleRate') ?? false,
-            crossfadeMs: (_prefs!.getInt('engine.crossfadeMs') ?? 0)
-                .clamp(0, 8000),
+            crossfadeMs: (_prefs!.getInt('engine.crossfadeMs') ?? 0).clamp(
+              0,
+              8000,
+            ),
           );
     state = state.copyWith(
       engineReady: _engine != null && engineInitError == null,
@@ -301,13 +307,15 @@ class PlayerNotifier extends Notifier<PlayerState> {
       if (dbTracks.isNotEmpty) {
         addLibraryFiles(dbTracks);
         debugPrint(
-            '[perf] DB 曲库恢复 ${dbTracks.length} 首: ${swDb.elapsedMilliseconds}ms');
+          '[perf] DB 曲库恢复 ${dbTracks.length} 首: ${swDb.elapsedMilliseconds}ms',
+        );
         // DB 恢复后立即生效：UI 提前显示曲库与封面（此前要等全部文件夹
         // 扫完才更新一次，大曲库开场长时间空白，列表“显得慢”）。
         // 补提网络源封面：封面文件可能在缓存清理/历史操作中丢失，
         // 后台快速路径（已缓存直接写回）+ 缺失才远程提取，不阻塞启动。
-        final remote =
-            dbTracks.where((t) => t.source != TrackSource.local).toList();
+        final remote = dbTracks
+            .where((t) => t.source != TrackSource.local)
+            .toList();
         if (remote.isNotEmpty) extractCoversFor(remote);
       }
     } catch (e) {
@@ -323,8 +331,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
         } catch (e) {
           _reportError('曲库写入失败，扫描结果可能未保存', e);
         }
-        debugPrint('[perf] 扫描 $folder: ${scanned.length} 首, '
-            '${swFolder.elapsedMilliseconds}ms');
+        debugPrint(
+          '[perf] 扫描 $folder: ${scanned.length} 首, '
+          '${swFolder.elapsedMilliseconds}ms',
+        );
         // 扫描期已直接落盘封面并回填 coverUrl（library.dart _seedCover），
         // 此处仅补漏（扫描中标签读取失败的文件），后台执行不阻塞 UI。
         extractCoversFor(scanned);
@@ -364,8 +374,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
     }
 
     await Future.wait(List.generate(4, (_) => worker()));
-    debugPrint('[perf] 缩略图回填: ${files.length} 张, '
-        '${sw.elapsedMilliseconds}ms');
+    debugPrint(
+      '[perf] 缩略图回填: ${files.length} 张, '
+      '${sw.elapsedMilliseconds}ms',
+    );
   }
 
   /// 恢复音频输出与 DSP 设置（prefs 键与设置页一致）；引擎未加载则跳过。
@@ -382,7 +394,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
         await _engine?.reinitialize(exclusiveMode: true);
       }
       await _engine?.setStereoWidener(
-          p.getBool('dsp.widener') ?? false, p.getDouble('dsp.widenerWidth') ?? 0.5);
+        p.getBool('dsp.widener') ?? false,
+        p.getDouble('dsp.widenerWidth') ?? 0.5,
+      );
       await _engine?.setCrossfeed(p.getBool('dsp.crossfeed') ?? false);
       await _engine?.setLimiter(p.getBool('dsp.limiter') ?? false);
       await _engine?.setDither(p.getBool('dsp.dither') ?? false);
@@ -414,25 +428,35 @@ class PlayerNotifier extends Notifier<PlayerState> {
       case 'position':
         if (e.value != null) {
           state = state.copyWith(
-              position: Duration(milliseconds: (e.value! * 1000).round()));
+            position: Duration(milliseconds: (e.value! * 1000).round()),
+          );
           _throttledPersistPosition();
         }
       case 'duration':
         if (e.value != null) {
-          // 无条件接受：core 的流式时长估算已收敛后再发出（首报 5s、未收敛
-          // 每 3s 修正、1% 收敛停发、EOF 回传真实时长），播放中收到的值
-          // 就是要展示的值。曾加过「相对>20% 拒收」滤波，但 NAS 扫描期的
-          // durationHint 是按 1000kbps 粗估（误差可数倍），估算收敛值与
-          // 粗估值偏差大概率超阈值 → 真实时长被永久拒收，进度条/结束时间
-          // 钉死在粗估上（用户实测「结束时间不准确」的根因）。
           state = state.copyWith(
-              duration: Duration(milliseconds: (e.value! * 1000).round()));
+            duration: Duration(milliseconds: (e.value! * 1000).round()),
+          );
+        }
+      case 'track_changed':
+        // 引擎队列 gapless 切歌后，同步 Dart 侧 queueIndex。
+        final path = e.path;
+        if (_engineQueueActive && path != null) {
+          final idx = state.queue.indexWhere((t) => t.filePath == path);
+          if (idx >= 0 && idx != state.queueIndex) {
+            state = state.copyWith(
+              queueIndex: idx,
+              position: Duration.zero,
+              duration: Duration.zero,
+            );
+            _loadedTrackId = state.queue[idx].id;
+            _loadLyrics(state.queue[idx]);
+            _persistPlayback();
+          }
         }
       case 'stopped':
         // 流式 seek 重启流（拖进度条）时，core 的 play_stream 会先 stop_playback
         // 拆掉旧流再起新流，必然发一次 stopped（core/state.rs 的流式 seek 历史坑）。
-        // 这个伪事件不能翻转 playing —— 新流的状态才是权威，否则 UI 误显"暂停"
-        // 且播放按钮 resume 对已播/已停引擎无效（"拖一下就停、点了没反应"）。
         if (_lastStreamSeekAt != null &&
             DateTime.now().difference(_lastStreamSeekAt!) <
                 const Duration(seconds: 3)) {
@@ -442,8 +466,16 @@ class PlayerNotifier extends Notifier<PlayerState> {
         state = state.copyWith(playing: false);
         if (_stopRequested) {
           _stopRequested = false;
+        } else if (_engineQueueActive) {
+          // 引擎队列播完（非 gapless 模式的自然结束）→ 按循环模式处理
+          if (state.repeatMode == RepeatMode.all) {
+            // 重发队列从头播（引擎 queue normal 模式播完会停）
+            _syncEngineQueue();
+          }
+          // repeat_one 由引擎内部处理（循环当前曲），不会到这里
+          // repeat_off → 队列播完，保持 stopped 状态
         } else {
-          // 自然结束 → 切下一首（遵循循环/随机模式）
+          // 逐首播放模式：自然结束 → 切下一首
           next();
         }
       case 'error':
@@ -542,8 +574,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
   /// 移除一个音乐文件夹（曲库与 DB 中该文件夹下的曲目一并移除）。
   Future<void> removeFolder(String path) async {
-    final folders =
-        state.folders.where((f) => f != path).toList();
+    final folders = state.folders.where((f) => f != path).toList();
     await _prefs?.setStringList('libraryFolders', folders);
     final library = state.library
         .where((t) => !(t.filePath ?? '').startsWith('$path/'))
@@ -577,6 +608,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     } catch (_) {
       // 引擎可能未初始化，忽略
     }
+    _engineQueueActive = false;
 
     // 2. 清空内存曲库与队列
     setLibrary([]);
@@ -614,11 +646,23 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
     // 6.7 清空音频输出与 DSP 设置（设备/采样率/效果链/EQ/FIR）
     for (final k in const [
-      'outputDevice', 'outputSampleRate', 'exclusiveMode',
-      'engine.bitPerfect', 'engine.autoSampleRate', 'engine.crossfadeMs',
-      'dsp.widener', 'dsp.widenerWidth', 'dsp.crossfeed', 'dsp.limiter',
-      'dsp.dither', 'dsp.noiseShaping', 'dsp.gain', 'dsp.speed',
-      'dsp.preset', 'dsp.autoEq', 'dsp.irPath',
+      'outputDevice',
+      'outputSampleRate',
+      'exclusiveMode',
+      'engine.bitPerfect',
+      'engine.autoSampleRate',
+      'engine.crossfadeMs',
+      'dsp.widener',
+      'dsp.widenerWidth',
+      'dsp.crossfeed',
+      'dsp.limiter',
+      'dsp.dither',
+      'dsp.noiseShaping',
+      'dsp.gain',
+      'dsp.speed',
+      'dsp.preset',
+      'dsp.autoEq',
+      'dsp.irPath',
     ]) {
       await _prefs?.remove(k);
     }
@@ -736,8 +780,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
     final sw = Stopwatch()..start();
     await Future.wait(List.generate(concurrency, (_) => worker()));
     debugPrint(
-        '[perf] 封面提取完成: ${todo.length} 首, ${sw.elapsedMilliseconds}ms '
-        '(并发 $concurrency)');
+      '[perf] 封面提取完成: ${todo.length} 首, ${sw.elapsedMilliseconds}ms '
+      '(并发 $concurrency)',
+    );
     _flushCoverUpdates();
   }
 
@@ -750,9 +795,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
     if (oldT.coverUrl == path) return;
     _coverUpdates.add((oldT, oldT.copyWith(coverUrl: path)));
     // 写回 DB：封面路径跨重启持久（否则重启后网络源曲目封面全部丢失）。
-    unawaited(TrackRepository.updateCoverUrl(oldT.id, path).catchError((Object e) {
-      debugPrint('coverUrl persist failed for ${oldT.id}: $e');
-    }));
+    unawaited(
+      TrackRepository.updateCoverUrl(oldT.id, path).catchError((Object e) {
+        debugPrint('coverUrl persist failed for ${oldT.id}: $e');
+      }),
+    );
     _coverApplied++;
     if (_coverApplied % 32 == 0) _flushCoverUpdates();
   }
@@ -840,9 +887,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
     _queueBase = list;
     if (state.shuffle) {
       state = state.copyWith(
-        queue: _shuffled(list, index >= 0 && index < list.length
-            ? list[index]
-            : null),
+        queue: _shuffled(
+          list,
+          index >= 0 && index < list.length ? list[index] : null,
+        ),
         queueIndex: 0,
       );
     } else {
@@ -864,13 +912,28 @@ class PlayerNotifier extends Notifier<PlayerState> {
     );
 
     final t = queue[index];
-    debugPrint('[playIndex] idx=$index source=${t.source.name} '
-        'filePath=${t.filePath} remotePath=${t.remotePath}');
+    debugPrint(
+      '[playIndex] idx=$index source=${t.source.name} '
+      'filePath=${t.filePath} remotePath=${t.remotePath}',
+    );
     // 网络扫描期已知的真实时长先填入，避免进度条先 0:00 再跳变。
     if (t.durationHint != null && t.durationHint! > Duration.zero) {
       state = state.copyWith(duration: t.durationHint!);
     }
-    await _playTrack(t);
+
+    // 尝试引擎队列播放（本地曲目 gapless 无缝切换）。
+    // 成功则引擎接管整队列，无需逐首 engine.play()。
+    // 失败（网络曲目/混合队列）退化为单曲播放。
+    // 注意：queued 路径必须显式置 playing:true——引擎队列成功返回即已出声，
+    // 且无 'playing' 事件回填，漏设会导致 UI 按钮停在"播放"态（启动恢复后
+    // 首次切歌必现：恢复态 queueIndex 非空且全本地 → 必走引擎队列）。
+    final queued = await _syncEngineQueue();
+    if (queued) {
+      state = state.copyWith(playing: true);
+    } else {
+      await _playTrack(t);
+    }
+
     _loadedTrackId = t.id;
     _pendingSeek = null; // 切换/新播均从头，清掉恢复待 seek
     _loadLyrics(t);
@@ -890,6 +953,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
   /// 持久化当前播放上下文（曲目/进度/队列），供重启续播恢复。
   void _persistPlayback() {
+    // playIndex 等调用方在 await 后触发本方法：期间 provider 可能已重建
+    // （如测试中 notifier 被替换），读 state 会抛 "Ref used after dispose"。
+    if (!ref.mounted) return;
     final t = state.currentTrack;
     final p = _prefs;
     if (t == null || p == null) return;
@@ -934,7 +1000,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // 时长兜底：恢复态引擎尚未加载曲目，先用扫描期时长避免进度条 0:00。
     if (state.duration == Duration.zero &&
         restored.queue[restored.index].durationHint != null) {
-      state = state.copyWith(duration: restored.queue[restored.index].durationHint!);
+      state = state.copyWith(
+        duration: restored.queue[restored.index].durationHint!,
+      );
     }
   }
 
@@ -942,8 +1010,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
   /// 全量下载；Subsonic 先下载流再本地播放。
   Future<void> _playTrack(Track t) async {
     if (_engine == null || state.engineInitError != null) {
-      debugPrint('[_playTrack] engine unavailable (null=$_engine, '
-          'initError=${state.engineInitError}), cannot play ${t.id}');
+      debugPrint(
+        '[_playTrack] engine unavailable (null=$_engine, '
+        'initError=${state.engineInitError}), cannot play ${t.id}',
+      );
       return;
     }
     // 后台分析当前曲目（BPM/Key/能量），不阻塞播放；完成后通知播放页刷新徽章
@@ -965,9 +1035,12 @@ class PlayerNotifier extends Notifier<PlayerState> {
             state = state.copyWith(playing: true);
           } catch (e) {
             debugPrint('[_playTrack] engine.play failed: $e');
+            // 引擎静默：不复位的话 playing 残留 true，UI 显示"播放中"但无声
+            state = state.copyWith(playing: false);
           }
         } else {
           debugPrint('[_playTrack] local track has no filePath: ${t.id}');
+          state = state.copyWith(playing: false);
         }
       case TrackSource.webdav:
         await _playWebdav(t);
@@ -994,11 +1067,56 @@ class PlayerNotifier extends Notifier<PlayerState> {
       state = state.copyWith(playing: true);
     } catch (e) {
       debugPrint('[_playCueTrack] failed: $e');
+      // 同 local：失败必须复位，否则 UI 残留"播放中"
+      state = state.copyWith(playing: false);
     }
   }
 
   /// 后台分析 [t]（仅本地可分析路径：local 文件 / 已缓存的 WebDAV）。
   /// 分析完成后若仍是当前曲目则广播刷新 UI；失败静默。
+
+  /// 将 Dart 侧队列同步到引擎（仅本地曲目可走 gapless）。
+  /// 返回 true 表示成功启用了引擎队列模式。
+  Future<bool> _syncEngineQueue() async {
+    if (_engine == null) return false;
+    final queue = state.queue;
+    if (queue.isEmpty) return false;
+    // 全部为本地可播放曲目时才走引擎队列（网络曲目引擎无法直接播放）
+    final allLocal = queue.every(
+      (t) =>
+          t.source == TrackSource.local &&
+          !t.isCueTrack &&
+          !t.isStrm &&
+          t.filePath != null,
+    );
+    if (!allLocal) {
+      _engineQueueActive = false;
+      return false;
+    }
+    final paths = queue.map((t) => t.filePath!).toList();
+    final startIndex = (state.queueIndex ?? 0).clamp(0, paths.length - 1);
+    try {
+      await _engine!.playQueue(paths, startIndex: startIndex);
+      await _engine!.setPlayMode(_currentEnginePlayMode());
+      _engineQueueActive = true;
+      return true;
+    } catch (e) {
+      debugPrint('[_syncEngineQueue] failed: $e');
+      _engineQueueActive = false;
+      return false;
+    }
+  }
+
+  /// Dart 侧播放模式 → 引擎 PlayMode 映射。
+  PlayMode _currentEnginePlayMode() {
+    if (state.shuffle) return PlayMode.shuffle;
+    return switch (state.repeatMode) {
+      RepeatMode.off => PlayMode.normal,
+      RepeatMode.all => PlayMode.repeatAll,
+      RepeatMode.one => PlayMode.repeatOne,
+    };
+  }
+
   Future<void> _analyzeTrack(Track t) async {
     final path = await AnalysisService.instance.localPathFor(t);
     if (path == null) return;
@@ -1115,6 +1233,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
       state = state.copyWith(playing: true);
     } else {
       debugPrint('[_playSubsonic] downloadStream failed for ${t.id}');
+      // 对齐 webdav/nas：下载失败引擎静默，必须复位播放态
+      state = state.copyWith(playing: false);
     }
   }
 
@@ -1154,6 +1274,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
     final target = await _resolveStrmTarget(t);
     if (target == null) {
       debugPrint('[_playStrm] 解析失败: ${t.id} (${t.strmPath})');
+      // 解析失败引擎未起播：复位播放态，避免 UI 残留"播放中"
+      state = state.copyWith(playing: false);
       return;
     }
     switch (target.kind) {
@@ -1300,8 +1422,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
       final t = state.currentTrack;
       if (t == null) return;
       if (_loadedTrackId != t.id) {
-        // 引擎尚未加载该曲（如启动恢复后首次播放）→ 加载并 seek 到恢复进度
-        await _playTrack(t);
+        // 引擎尚未加载该曲（如启动恢复后首次播放）→ 尝试引擎队列或单曲加载
+        final queued = await _syncEngineQueue();
+        if (!queued) {
+          await _playTrack(t);
+        }
         if (_pendingSeek != null) {
           await seek(_pendingSeek!);
           _pendingSeek = null;
@@ -1320,6 +1445,24 @@ class PlayerNotifier extends Notifier<PlayerState> {
       await playIndex(0);
       return;
     }
+
+    // 引擎队列模式：让引擎自己推进（gapless 无缝），Dart 同步 index。
+    if (_engineQueueActive) {
+      final ni = state.queueIndex! + 1;
+      if (ni >= queue.length && state.repeatMode == RepeatMode.off) {
+        // 队列播完 + 不循环 → 停止
+        _stopRequested = true;
+        await _engine?.stop();
+        _engineQueueActive = false;
+        state = state.copyWith(playing: false);
+        return;
+      }
+      // 引擎内部会自行处理循环/随机，此处只通知引擎推进
+      await _engine?.next();
+      return;
+    }
+
+    // 逐首播放模式（网络曲目 / 混合队列）
     if (state.repeatMode == RepeatMode.one) {
       await playIndex(state.queueIndex!);
       return;
@@ -1349,6 +1492,14 @@ class PlayerNotifier extends Notifier<PlayerState> {
       await seek(Duration.zero);
       return;
     }
+
+    // 引擎队列模式：让引擎自己回退，Dart 同步 index。
+    if (_engineQueueActive) {
+      await _engine?.prev();
+      return;
+    }
+
+    // 逐首播放模式
     final pi = state.queueIndex! - 1;
     await playIndex(pi < 0 ? queue.length - 1 : pi);
   }
@@ -1359,7 +1510,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
   Future<void> replayCurrentTrack() async {
     final idx = state.queueIndex;
     final t = state.currentTrack;
-    if (t == null || idx == null || idx < 0 || idx >= state.queue.length) {
+    if (t == null ||
+        idx == null ||
+        idx < 0 ||
+        idx >= state.queue.length) {
       return;
     }
     final pos = state.position;
@@ -1401,9 +1555,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
   void _scheduleStreamSeek(Track t) {
     if (_streamSeekPending) return;
     _streamSeekPending = true;
-    unawaited(
-      _runStreamSeek(t).whenComplete(() => _streamSeekPending = false),
-    );
+    unawaited(_runStreamSeek(t).whenComplete(() => _streamSeekPending = false));
   }
 
   Future<void> _runStreamSeek(Track t) async {
@@ -1429,8 +1581,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
       } else {
         path = switch (t.source) {
           TrackSource.nas => await NasService.downloadToLocal(t),
-          TrackSource.webdav =>
-            await WebdavService.downloadToLocal(t.remotePath ?? ''),
+          TrackSource.webdav => await WebdavService.downloadToLocal(
+            t.remotePath ?? '',
+          ),
           _ => null,
         };
       }
@@ -1502,18 +1655,21 @@ class PlayerNotifier extends Notifier<PlayerState> {
   }
 
   /// Queue a track to play immediately after the current one.
-  void playNext(Track t) {
+  Future<void> playNext(Track t) async {
     if (state.queue.isEmpty) {
       _queueBase = [t];
       state = state.copyWith(queue: [t], queueIndex: 0);
-      playIndex(0);
+      await playIndex(0);
       return;
     }
     // 插入播放队列：当前曲目之后。
     final at = (state.queueIndex ?? -1) + 1;
-    final queue = [...state.queue.sublist(0, at), t, ...state.queue.sublist(at)];
+    final queue = [
+      ...state.queue.sublist(0, at),
+      t,
+      ...state.queue.sublist(at),
+    ];
     // 插入基准队列：按当前曲目在 _queueBase 中的真实位置计算。
-    // shuffle 模式下 queue 与 _queueBase 顺序不同，不能复用队列下标。
     final baseAt = _queueBase.indexOf(state.currentTrack ?? t);
     final insertAt = baseAt < 0 ? _queueBase.length : baseAt + 1;
     _queueBase = [
@@ -1522,6 +1678,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
       ..._queueBase.sublist(insertAt),
     ];
     state = state.copyWith(queue: queue);
+    // 引擎队列模式：队列变了需重发（引擎内部队列不含新曲）
+    if (_engineQueueActive) {
+      await _syncEngineQueue();
+    }
   }
 
   // ---- Favorites -----------------------------------------------------------
@@ -1552,7 +1712,8 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
   Future<void> deletePlaylist(String id) async {
     state = state.copyWith(
-        playlists: state.playlists.where((p) => p.id != id).toList());
+      playlists: state.playlists.where((p) => p.id != id).toList(),
+    );
     await _savePlaylists();
   }
 
@@ -1602,6 +1763,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
         queueIndex: cur == null ? null : _queueBase.indexOf(cur),
       );
     }
+    // 引擎队列模式：shuffle 变更需重发队列（顺序变了）+ 同步播放模式
+    if (_engineQueueActive && state.queueIndex != null) {
+      await _syncEngineQueue();
+    }
     await _prefs?.setBool('shuffle', shuffle);
   }
 
@@ -1609,6 +1774,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
     final mode = RepeatMode
         .values[(state.repeatMode.index + 1) % RepeatMode.values.length];
     state = state.copyWith(repeatMode: mode);
+    // 引擎队列模式：仅同步播放模式（队列顺序不变，无需重发）
+    if (_engineQueueActive) {
+      await _engine?.setPlayMode(_currentEnginePlayMode());
+    }
     await _prefs?.setString('repeatMode', mode.name);
   }
 
@@ -1622,14 +1791,23 @@ class PlayerNotifier extends Notifier<PlayerState> {
       // 随机 → 单曲循环（先还原队列顺序再切 repeat）
       await toggleShuffle();
       state = state.copyWith(repeatMode: RepeatMode.one);
+      if (_engineQueueActive) {
+        await _engine?.setPlayMode(_currentEnginePlayMode());
+      }
       await _prefs?.setString('repeatMode', RepeatMode.one.name);
     } else if (state.repeatMode == RepeatMode.one) {
       // 单曲循环 → 列表循环
       state = state.copyWith(repeatMode: RepeatMode.all);
+      if (_engineQueueActive) {
+        await _engine?.setPlayMode(_currentEnginePlayMode());
+      }
       await _prefs?.setString('repeatMode', RepeatMode.all.name);
     } else {
       // 列表循环 → 顺序
       state = state.copyWith(repeatMode: RepeatMode.off);
+      if (_engineQueueActive) {
+        await _engine?.setPlayMode(_currentEnginePlayMode());
+      }
       await _prefs?.setString('repeatMode', RepeatMode.off.name);
     }
   }

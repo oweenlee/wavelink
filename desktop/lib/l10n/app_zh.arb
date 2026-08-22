@@ -25,6 +25,7 @@
   "settingsSrApplied": "输出采样率已应用",
   "settingsRewSource": "REW 生成",
   "settingsCommonRate": "常用采样率",
+  "searchClearFilter": "清除搜索",
   "ttSleep": "睡眠定时器",
   "sleepOff": "关闭",
   "sleepMinutes": "{min} 分钟",

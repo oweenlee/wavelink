@@ -25,6 +25,7 @@
   "settingsSrApplied": "Output sample rate applied",
   "settingsRewSource": "Generated from REW",
   "settingsCommonRate": "Common sample rate",
+  "searchClearFilter": "Clear search",
   "ttSleep": "Sleep timer",
   "sleepOff": "Off",
   "sleepMinutes": "{min} min",
