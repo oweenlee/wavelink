@@ -321,19 +321,33 @@ class NasService {
     if (!audioExtensions.contains('.$ext')) return null;
     final smbPath = dirPath.isEmpty ? name : p.join(dirPath, name);
 
-    final (artist, title) = parseArtistTitle(name);
+    var (artist, title) = parseArtistTitle(name);
 
-    // 扫描期回填真实时长：读文件头经 lofty 探测（SMB 连接池限流并发）。
-    // 失败/探不到（如 OGG 需尾部页）回退 1000kbps 粗估，并标 estimated。
-    final realSecs = await frb_duration.getNasDuration(
+    // 扫描期读一次头部同时拿「真实标签 + 时长」（lofty 内存探测，
+    // SMB 连接池限流并发），与封面提取解耦：无内嵌封面也能回填
+    // 专辑/艺术家，不再全挤在占位「NAS Music / Unknown Artist」里。
+    // 探不到（如 OGG 需尾部页）回退文件名解析 + 1000kbps 粗估。
+    final meta = await frb_duration.getNasMetadata(
       path: smbPath,
       headLimit: BigInt.from(4 * 1024 * 1024),
     );
     final Duration durationHint;
     final bool durationEstimated;
-    if (realSecs != null && realSecs > 0) {
-      durationHint = Duration(milliseconds: (realSecs * 1000).round());
-      durationEstimated = false;
+    if (meta != null) {
+      if (meta.title != null && meta.title!.trim().isNotEmpty) {
+        title = meta.title!.trim();
+      }
+      if (meta.artist != null && meta.artist!.trim().isNotEmpty) {
+        artist = meta.artist!.trim();
+      }
+      if (meta.durationSecs > 0) {
+        durationHint =
+            Duration(milliseconds: (meta.durationSecs * 1000).round());
+        durationEstimated = false;
+      } else {
+        durationHint = estimateDuration(entry.size.toInt());
+        durationEstimated = true;
+      }
     } else {
       durationHint = estimateDuration(entry.size.toInt());
       durationEstimated = true;
@@ -343,11 +357,16 @@ class NasService {
       id: 'nas_${fnv1a(smbPath)}',
       title: title,
       artist: artist == 'Unknown Artist' ? 'Unknown Artist' : artist,
-      album: 'NAS Music',
+      album: meta != null &&
+              meta.album != null &&
+              meta.album!.trim().isNotEmpty
+          ? meta.album!.trim()
+          : 'NAS Music',
       source: TrackSource.nas,
       remotePath: smbPath,
       durationHint: durationHint,
       durationEstimated: durationEstimated,
+      trackNumber: meta?.trackNumber,
       fileSize: entry.size.toInt(),
     );
   }

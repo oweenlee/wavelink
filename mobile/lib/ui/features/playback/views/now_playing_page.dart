@@ -655,7 +655,9 @@ class _SongInfo extends StatelessWidget {
       children: [
         Text(
           song.title,
-          style: WlText.display(fontSize: 26, fontWeight: FontWeight.w600),
+          style: WlText.display(fontSize: 24, fontWeight: FontWeight.w600),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
         ),
         const SizedBox(height: 4),
         Text(
@@ -985,7 +987,7 @@ class _PlayBtn extends StatelessWidget {
               key: ValueKey('np_play_$isPlaying'),
               isPlaying ? Icons.pause : Icons.play_arrow,
               color: AppTheme.textSecondary,
-              size: 30,
+              size: 32,
             ),
           ),
         ),

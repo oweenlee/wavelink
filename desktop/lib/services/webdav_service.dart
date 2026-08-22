@@ -245,22 +245,34 @@ class WebdavService {
     }
     if (!audioExtensions.contains('.$ext')) return null;
 
-    final (artist, title) = parseArtistTitle(name);
+    var (artist, title) = parseArtistTitle(name);
 
-    // 扫描期回填真实时长：读文件头（Range 请求）经 lofty 探测。
-    // 失败/探不到回退 1000kbps 粗估，并标 estimated。
+    // 扫描期读一次头部同时拿「真实标签 + 时长」（Range 请求 + lofty），
+    // 与封面提取解耦：无内嵌封面也能回填专辑/艺术家（对齐 NAS 扫描）。
+    // 探不到回退文件名解析 + 1000kbps 粗估。
     final Duration durationHint;
     final bool durationEstimated;
+    frb_duration.HeadMetadataDto? meta;
     final url = fullUrlFor(path);
     if (url != null) {
-      final realSecs = await frb_duration.getWebdavDuration(
+      meta = await frb_duration.getWebdavMetadata(
         url: url,
         username: username,
         password: password,
         headLimit: BigInt.from(4 * 1024 * 1024),
       );
-      if (realSecs != null && realSecs > 0) {
-        durationHint = Duration(milliseconds: (realSecs * 1000).round());
+    }
+    final m = meta;
+    String albumName = _albumPlaceholder;
+    if (m != null) {
+      final t = m.title?.trim();
+      if (t != null && t.isNotEmpty) title = t;
+      final a = m.artist?.trim();
+      if (a != null && a.isNotEmpty) artist = a;
+      final al = m.album?.trim();
+      if (al != null && al.isNotEmpty) albumName = al;
+      if (m.durationSecs > 0) {
+        durationHint = Duration(milliseconds: (m.durationSecs * 1000).round());
         durationEstimated = false;
       } else {
         durationHint = estimateDuration(entry.size?.toInt() ?? 0);
@@ -275,11 +287,12 @@ class WebdavService {
       id: 'dav_${fnv1a(path)}',
       title: title,
       artist: artist == 'Unknown Artist' ? _artistPlaceholder : artist,
-      album: _albumPlaceholder,
+      album: albumName,
       source: TrackSource.webdav,
       remotePath: path,
       durationHint: durationHint,
       durationEstimated: durationEstimated,
+      trackNumber: m?.trackNumber,
       fileSize: entry.size?.toInt(),
     );
   }

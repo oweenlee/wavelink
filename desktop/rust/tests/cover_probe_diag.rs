@@ -5,6 +5,7 @@ use std::fs;
 
 fn probe(name: &str, data: &[u8]) {
     use lofty::file::TaggedFileExt;
+    use lofty::tag::Accessor;
     let mut reader = std::io::Cursor::new(data);
     let probed: Result<lofty::file::TaggedFile, lofty::error::LoftyError> =
         match lofty::probe::Probe::new(&mut reader).guess_file_type() {
@@ -20,11 +21,18 @@ fn probe(name: &str, data: &[u8]) {
                     break 'outer;
                 }
             }
+            let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
             let has_pic = match cover {
                 Some(n) => format!("cover={n}B"),
                 None => "no-picture".into(),
             };
-            eprintln!("[diag] {name}: OK {has_pic}");
+            let title = tag.and_then(|t| t.title().map(|s| s.to_string()));
+            let artist = tag.and_then(|t| t.artist().map(|s| s.to_string()));
+            let album = tag.and_then(|t| t.album().map(|s| s.to_string()));
+            eprintln!(
+                "[diag] {name}: OK {has_pic} artist={:?} album={:?} title={:?}",
+                artist, album, title
+            );
         }
         Err(e) => eprintln!("[diag] {name}: FAIL {e}"),
     }

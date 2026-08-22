@@ -6,10 +6,36 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `duration_of`, `read_duration_from_memory`
+// These functions are ignored because they are not marked as `pub`: `read_duration_from_memory`, `read_metadata_from_memory`
+
+/// NAS 文件头部元数据（tags + 时长）。读头经 lofty 内存探测；网络读失败
+/// 或 lofty 探不到返回 None，由 Dart 侧回退文件名解析 + estimateDuration。
+Future<HeadMetadataDto?> getNasMetadata({
+  required String path,
+  required BigInt headLimit,
+}) => RustLib.instance.api.crateApiDurationGetNasMetadata(
+  path: path,
+  headLimit: headLimit,
+);
+
+/// WebDAV 文件头部元数据（tags + 时长）。语义与 [get_nas_metadata] 一致。
+Future<HeadMetadataDto?> getWebdavMetadata({
+  required String url,
+  required String username,
+  required String password,
+  required BigInt headLimit,
+}) => RustLib.instance.api.crateApiDurationGetWebdavMetadata(
+  url: url,
+  username: username,
+  password: password,
+  headLimit: headLimit,
+);
 
 /// NAS 文件真实时长（秒）。读文件头经 lofty 内存探测；网络读失败或 lofty
 /// 探不到（如 OGG 需尾部页）返回 None，由 Dart 侧回退 estimateDuration。
+///
+/// 已被 [get_nas_metadata]（tags+时长一体）取代；保留仅为过渡兼容，
+/// 新代码请用 metadata 版本（一次读头同时拿全标签与时长）。
 Future<double?> getNasDuration({
   required String path,
   required BigInt headLimit,
@@ -18,8 +44,7 @@ Future<double?> getNasDuration({
   headLimit: headLimit,
 );
 
-/// WebDAV 文件真实时长（秒）。读文件头（Range 请求）经 lofty 内存探测；
-/// 网络读失败或 lofty 探不到返回 None，由 Dart 侧回退 estimateDuration。
+/// WebDAV 文件真实时长（秒）；同 [get_nas_duration] 为过渡兼容接口。
 Future<double?> getWebdavDuration({
   required String url,
   required String username,
@@ -31,3 +56,39 @@ Future<double?> getWebdavDuration({
   password: password,
   headLimit: headLimit,
 );
+
+/// 扫描期头部探测结果（标题/艺人/专辑/音轨号/时长，可为 None）。
+class HeadMetadataDto {
+  final String? title;
+  final String? artist;
+  final String? album;
+  final int? trackNumber;
+  final double durationSecs;
+
+  const HeadMetadataDto({
+    this.title,
+    this.artist,
+    this.album,
+    this.trackNumber,
+    required this.durationSecs,
+  });
+
+  @override
+  int get hashCode =>
+      title.hashCode ^
+      artist.hashCode ^
+      album.hashCode ^
+      trackNumber.hashCode ^
+      durationSecs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is HeadMetadataDto &&
+          runtimeType == other.runtimeType &&
+          title == other.title &&
+          artist == other.artist &&
+          album == other.album &&
+          trackNumber == other.trackNumber &&
+          durationSecs == other.durationSecs;
+}

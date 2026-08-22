@@ -29,7 +29,10 @@ const String unknownArtist = '未知艺人';
 /// 否则整名作标题，艺人回退 [unknownArtist]。
 /// 入参可带扩展名（内部会剥掉最后一个 `.xxx` 后缀）。
 (String artist, String title) parseArtistTitle(String name) {
-  final base = name.replaceAll(RegExp(r'\.[^.]+$'), '').trim();
+  // 对齐 mobile：先去掉开头的轨道号（"01 " / "01- " / "01. " 等），
+  // 否则「01 - 艺人 - 歌名」会被 desktop 旧规则拆成 artist=01。
+  var base = name.replaceFirst(RegExp(r'^\d{1,3}\s*[.。\-]\s*'), '');
+  base = base.replaceAll(RegExp(r'\.[^.]+$'), '').trim();
   if (base.contains(' - ')) {
     final parts = base.split(' - ');
     final artist = parts.first.trim();

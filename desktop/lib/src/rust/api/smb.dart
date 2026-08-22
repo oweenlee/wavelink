@@ -104,7 +104,7 @@ Future<Uint8List> smbReadFileRange({
   maxLen: maxLen,
 );
 
-/// 远端文件大小（扫描时判断是否有变化，避免重复下载）#[frb]
+/// 远端文件大小（下载完整性校验用）#[frb]
 Future<BigInt> smbFileSize({required String path}) =>
     RustLib.instance.api.crateApiSmbSmbFileSize(path: path);
 
