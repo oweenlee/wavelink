@@ -71,7 +71,7 @@ class _TransportBarState extends ConsumerState<TransportBar> {
               final w = c.maxWidth;
               // 窄窗口逐级隐藏次要元素
               final showVolumeSlider = w >= 760;
-              final showLeftInfo = w >= 480;
+              final showLeftInfo = w >= 600; // 左侧固定占 252px，需给中间控制组留足空间
               final showCover = w >= 380;
               final showMode = w >= 420;
               return Padding(
@@ -144,14 +144,17 @@ class _TransportBarState extends ConsumerState<TransportBar> {
                                     },
                               onPressed: player.cyclePlayMode,
                             ),
-                          IconButton(
-                            icon: const Icon(Icons.skip_previous_rounded,
-                                size: 28, color: AppTheme.textPrimary),
-                            onPressed: player.previous,
-                          ),
-                          const SizedBox(width: 4),
-                          // 圆形播放/暂停按钮（强调色底 + 阴影，对齐 mobile MiniPlayerBar）
-                          Container(
+                        IconButton(
+                          icon: const Icon(Icons.skip_previous_rounded,
+                              size: 28, color: AppTheme.textPrimary),
+                          tooltip: l10n.ttPrevious,
+                          onPressed: player.previous,
+                        ),
+                        const SizedBox(width: 4),
+                        // 圆形播放/暂停按钮（强调色底 + 阴影，对齐 mobile MiniPlayerBar）
+                        Tooltip(
+                          message: playing ? l10n.ttPause : l10n.ttPlay,
+                          child: Container(
                             width: 42,
                             height: 42,
                             decoration: BoxDecoration(
@@ -190,18 +193,23 @@ class _TransportBarState extends ConsumerState<TransportBar> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 4),
-                          IconButton(
-                            icon: const Icon(Icons.skip_next_rounded,
-                                size: 28, color: AppTheme.textPrimary),
-                            onPressed: player.next,
-                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          icon: const Icon(Icons.skip_next_rounded,
+                              size: 28, color: AppTheme.textPrimary),
+                          tooltip: l10n.ttNext,
+                          onPressed: player.next,
+                        ),
                         ],
                       ),
                     ),
-                    // 右侧：引擎状态 + 音量控制（固定宽度）
+                    // 右侧：引擎状态 + 音量控制（宽度随内容：
+                    // 基础=音量图标22+间距8；引擎异常时追加警告图标20+右边距10；
+                    // 音量条可见时再扩展到 180）
                     SizedBox(
-                      width: showVolumeSlider ? 180 : 30,
+                      width: (showVolumeSlider ? 180 : 30) +
+                          (st.engineReady ? 0 : 30),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.end,

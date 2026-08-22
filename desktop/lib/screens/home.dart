@@ -57,13 +57,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _query = '';
   int _sort = 0; // 0 default, 1 title, 2 artist
 
+  /// 搜索防抖：大曲库下每键全量过滤+排序开销明显，150ms 合并输入。
+  Timer? _queryDebounce;
+
   @override
   void dispose() {
     _errorSub?.cancel();
     _kbFocus.dispose();
     _searchFocus.dispose();
     _searchCtrl.dispose();
+    _queryDebounce?.cancel();
     super.dispose();
+  }
+
+  /// 输入防抖提交；清空（v.isEmpty）立即生效，保证 ESC/删除即时回列表。
+  void _onQueryChanged(String v) {
+    _queryDebounce?.cancel();
+    if (v.isEmpty) {
+      setState(() => _query = '');
+      return;
+    }
+    _queryDebounce = Timer(const Duration(milliseconds: 150), () {
+      if (mounted) setState(() => _query = v);
+    });
   }
 
   List<Track> get _baseList {
@@ -166,7 +182,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       tracks: visible,
       title: _viewTitle,
       query: _query,
-      onQuery: (v) => setState(() => _query = v),
+      onQuery: _onQueryChanged,
       sort: _sort,
       onSort: (v) => setState(() => _sort = v),
       searchFocus: _searchFocus,

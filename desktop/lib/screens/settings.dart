@@ -556,9 +556,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             SettingTile(
               icon: LucideIcons.fileAudio,
               title: l.settingsFirIr,
+              // 来源标记：REW 生成的临时 FIR（wavelink_correction_*）显式标注，
+              // 用户能区分手动加载的文件与工具生成产物
               description: dsp.irPath.isEmpty
                   ? l.settingsNotLoaded
-                  : dsp.irPath.split('/').last,
+                  : (dsp.irPath.split('/').last.startsWith('wavelink_correction_')
+                      ? '${l.settingsRewSource} · ${dsp.irPath.split('/').last}'
+                      : dsp.irPath.split('/').last),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
