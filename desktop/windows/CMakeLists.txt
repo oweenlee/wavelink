@@ -32,6 +32,9 @@ set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
+# Windows 10 21H2 (build 19044) 最低支持
+add_definitions(-DWINVER=0x0A00 -D_WIN32_WINNT=0x0A00)
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by
