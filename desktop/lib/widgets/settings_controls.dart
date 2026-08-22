@@ -57,12 +57,14 @@ class TechChips extends StatelessWidget {
 class SettingTextField extends StatelessWidget {
   final TextEditingController? controller;
   final String? hint;
+  final String? suffixText;
   final ValueChanged<String>? onChanged;
   final Color? accent;
   const SettingTextField({
     super.key,
     this.controller,
     this.hint,
+    this.suffixText,
     this.onChanged,
     this.accent,
   });
@@ -76,6 +78,9 @@ class SettingTextField extends StatelessWidget {
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(color: AppTheme.textTertiary, fontSize: 13),
+        suffixText: suffixText,
+        suffixStyle:
+            const TextStyle(color: AppTheme.textTertiary, fontSize: 12),
         isDense: true,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
@@ -148,13 +153,17 @@ class SettingDropdown<T> extends StatelessWidget {
 }
 
 /// 带等宽读数的滑块行（SettingTile.child 用）。
-class SliderWithLabel extends StatelessWidget {
+///
+/// 拖动中实时回调 [onChanged]（引擎即时反馈），松手回调一次 [onChangeEnd]
+/// （持久化），避免拖动过程每帧写磁盘。
+class SliderWithLabel extends StatefulWidget {
   final double value;
   final double min;
   final double max;
   final int? divisions;
   final String Function(double) fmt;
   final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChangeEnd;
   const SliderWithLabel({
     super.key,
     required this.value,
@@ -163,10 +172,20 @@ class SliderWithLabel extends StatelessWidget {
     this.divisions,
     required this.fmt,
     required this.onChanged,
+    this.onChangeEnd,
   });
 
   @override
+  State<SliderWithLabel> createState() => _SliderWithLabelState();
+}
+
+class _SliderWithLabelState extends State<SliderWithLabel> {
+  /// 拖动中的本地值；null 表示未在拖动（显示外部传入值）。
+  double? _drag;
+
+  @override
   Widget build(BuildContext context) {
+    final shown = _drag ?? widget.value;
     return Row(
       children: [
         Expanded(
@@ -177,17 +196,24 @@ class SliderWithLabel extends StatelessWidget {
               overlayRadius: 14,
             ),
             child: Slider(
-              value: value,
-              min: min,
-              max: max,
-              divisions: divisions,
-              onChanged: onChanged,
+              value: shown.clamp(widget.min, widget.max),
+              min: widget.min,
+              max: widget.max,
+              divisions: widget.divisions,
+              onChanged: (v) {
+                setState(() => _drag = v);
+                widget.onChanged(v);
+              },
+              onChangeEnd: (v) {
+                setState(() => _drag = null);
+                widget.onChangeEnd?.call(v);
+              },
             ),
           ),
         ),
         SizedBox(
           width: 72,
-          child: Text(fmt(value),
+          child: Text(widget.fmt(shown),
               textAlign: TextAlign.end,
               style: WlText.mono(color: AppTheme.textSecondary, fontSize: 12)),
         ),
@@ -263,8 +289,9 @@ class MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
+    // 不内建 Expanded：由调用方决定横向（Row+Expanded）或纵向堆叠，
+    // 保证窄窗口下卡片不被挤压截断。
+    return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppTheme.s2,
@@ -303,7 +330,6 @@ class MetricCard extends StatelessWidget {
                     fontWeight: FontWeight.w600)),
           ],
         ),
-      ),
     );
   }
 }

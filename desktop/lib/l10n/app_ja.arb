@@ -21,6 +21,8 @@
   "btnConfirmClear": "削除を確認",
   "tooltipRescan": "再スキャン",
   "modeSequential": "連続再生",
+  "settingsSrInvalid": "サンプルレートは 8000〜384000 の整数で入力してください",
+  "settingsSrApplied": "出力サンプルレートを適用しました",
   "modeShuffle": "シャッフル",
   "modeRepeatOne": "1曲リピート",
   "modeRepeatAll": "全曲リピート",

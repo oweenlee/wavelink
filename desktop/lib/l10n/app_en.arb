@@ -21,6 +21,8 @@
   "btnConfirmClear": "Confirm Clear",
   "tooltipRescan": "Rescan",
   "modeSequential": "Sequential",
+  "settingsSrInvalid": "Sample rate must be an integer between 8000 and 384000",
+  "settingsSrApplied": "Output sample rate applied",
   "modeShuffle": "Shuffle",
   "modeRepeatOne": "Repeat one",
   "modeRepeatAll": "Repeat all",

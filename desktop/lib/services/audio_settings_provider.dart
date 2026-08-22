@@ -166,10 +166,15 @@ class AudioSettingsNotifier extends Notifier<AudioSettingsState> {
     return err;
   }
 
+  /// 更新交叉淡入淡出（拖动中实时调用，不落盘）。
   Future<void> setCrossfade(double ms) async {
     state = state.copyWith(crossfadeMs: ms);
-    final p = await SharedPreferences.getInstance();
-    await p.setInt('engine.crossfadeMs', ms.round());
+  }
+
+  /// 滑块松手（onChangeEnd）时持久化，避免拖动中每帧写磁盘。
+  Future<void> persistCrossfade() async {
+    (await SharedPreferences.getInstance())
+        .setInt('engine.crossfadeMs', state.crossfadeMs.round());
   }
 }
 

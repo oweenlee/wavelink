@@ -275,20 +275,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       key: const Key('sr_field'),
                       controller: _srController,
                       hint: '44100',
+                      suffixText: 'Hz',
                     ),
                   ),
                   const SizedBox(width: 10),
                   SettingPrimaryButton(
                     key: const Key('sr_apply'),
                     label: l.settingsApply,
-                    onPressed: () {
-                      final r = int.tryParse(_srController.text);
-                      if (r != null) {
-                        ref
-                            .read(audioSettingsProvider.notifier)
-                            .applySampleRate(r);
-                      }
-                    },
+                    onPressed: () => _applySampleRate(),
                   ),
                 ],
               ),
@@ -352,6 +346,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onChanged: (v) => ref
                     .read(audioSettingsProvider.notifier)
                     .setCrossfade(v),
+                onChangeEnd: (_) => ref
+                    .read(audioSettingsProvider.notifier)
+                    .persistCrossfade(),
               ),
             ),
           ],
@@ -394,6 +391,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   max: 1,
                   fmt: (v) => v.toStringAsFixed(2),
                   onChanged: n.setWidenerWidth,
+                  onChangeEnd: (_) => n.persistSliders(),
                 ),
               ),
             SettingTile(
@@ -460,6 +458,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 max: 12,
                 fmt: (v) => '${v.toStringAsFixed(1)} dB',
                 onChanged: n.setGain,
+                onChangeEnd: (_) => n.persistSliders(),
               ),
             ),
             SettingTile(
@@ -472,6 +471,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 max: 4,
                 fmt: (v) => '${v.toStringAsFixed(2)}x',
                 onChanged: n.setSpeed,
+                onChangeEnd: (_) => n.persistSliders(),
               ),
             ),
           ],
@@ -603,16 +603,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        // 指标卡响应式：宽窗口横排三卡，窄窗口（<560）纵向堆叠防截断
+        LayoutBuilder(builder: (context, c) {
+          final cards = [
             MetricCard(
               icon: LucideIcons.gauge,
               label: 'UNDERRUN',
               value: '${diag.underrun}',
               valueColor: diag.underrun > 0 ? AppTheme.warn : AppTheme.ok,
             ),
-            const SizedBox(width: 12),
             MetricCard(
               icon: LucideIcons.waves,
               label: l.settingsSampleRate,
@@ -620,7 +619,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ? '${audio.actualSampleRate} Hz'
                   : '—',
             ),
-            const SizedBox(width: 12),
             MetricCard(
               icon: engineNull
                   ? LucideIcons.circleAlert
@@ -629,8 +627,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               value: engineNull ? l.settingsNotLoaded : l.settingsReady,
               valueColor: engineNull ? AppTheme.warn : AppTheme.ok,
             ),
-          ],
-        ),
+          ];
+          if (c.maxWidth < 560) {
+            return Column(
+              children: [
+                for (var i = 0; i < cards.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 12),
+                  cards[i],
+                ],
+              ],
+            );
+          }
+          return Row(
+            children: [
+              for (var i = 0; i < cards.length; i++) ...[
+                if (i > 0) const SizedBox(width: 12),
+                Expanded(child: cards[i]),
+              ],
+            ],
+          );
+        }),
         const SizedBox(height: 14),
         SettingGroup(
           icon: LucideIcons.terminal,
@@ -678,6 +694,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   // ───────────────────────── 交互（对话框 / 文件选择） ─────────────────────────
 
+  /// 应用输出采样率：校验范围（8000–384000），成功/失败均有 SnackBar 反馈。
+  Future<void> _applySampleRate() async {
+    final l = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final r = int.tryParse(_srController.text.trim());
+    if (r == null || r < 8000 || r > 384000) {
+      messenger.showSnackBar(SnackBar(content: Text(l.settingsSrInvalid)));
+      return;
+    }
+    await ref.read(audioSettingsProvider.notifier).applySampleRate(r);
+    if (mounted) {
+      messenger.showSnackBar(SnackBar(content: Text(l.settingsSrApplied)));
+    }
+  }
+
   Future<void> _pickIr() async {
     final x = await openFile(
       acceptedTypeGroups: const [
@@ -707,32 +738,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         content: SizedBox(
           width: 380,
           height: 360,
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              AutoEqTile(
-                label: l.settingsAutoEqOff,
-                selected: ref.read(dspSettingsProvider).autoEq.isEmpty,
-                accent: accent,
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  ref.read(dspSettingsProvider.notifier).setAutoEq(null);
-                },
-              ),
-              ...catalog.map((m) => AutoEqTile(
-                    label: m,
-                    selected:
-                        m == ref.read(dspSettingsProvider).autoEq,
-                    accent: accent,
-                    onTap: () {
-                      Navigator.of(ctx).pop();
-                      ref
-                          .read(dspSettingsProvider.notifier)
-                          .setAutoEq(m);
-                    },
-                  )),
-            ],
-          ),
+          // Consumer 订阅选中态：对话框打开期间状态变化也能刷新高亮
+          child: Consumer(builder: (ctx, ref2, _) {
+            final current = ref2.watch(dspSettingsProvider).autoEq;
+            return ListView(
+              shrinkWrap: true,
+              children: [
+                AutoEqTile(
+                  label: l.settingsAutoEqOff,
+                  selected: current.isEmpty,
+                  accent: accent,
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    ref.read(dspSettingsProvider.notifier).setAutoEq(null);
+                  },
+                ),
+                ...catalog.map((m) => AutoEqTile(
+                      label: m,
+                      selected: m == current,
+                      accent: accent,
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        ref
+                            .read(dspSettingsProvider.notifier)
+                            .setAutoEq(m);
+                      },
+                    )),
+              ],
+            );
+          }),
         ),
       ),
     );

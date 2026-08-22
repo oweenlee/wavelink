@@ -118,7 +118,6 @@ class DspSettingsNotifier extends Notifier<DspSettingsState> {
 
   void setWidenerWidth(double v) {
     state = state.copyWith(widenerWidth: v);
-    _saveDouble('dsp.widenerWidth', v);
     if (state.widenerOn) _engine?.setStereoWidener(true, v);
   }
 
@@ -152,14 +151,19 @@ class DspSettingsNotifier extends Notifier<DspSettingsState> {
 
   void setGain(double v) {
     state = state.copyWith(gain: v);
-    _saveDouble('dsp.gain', v);
     _engine?.setReplaygainGain(v);
   }
 
   void setSpeed(double v) {
     state = state.copyWith(speed: v);
-    _saveDouble('dsp.speed', v);
     _engine?.setSpeed(v);
+  }
+
+  /// 滑块松手（onChangeEnd）时统一持久化，避免拖动中每帧写磁盘。
+  Future<void> persistSliders() async {
+    await _saveDouble('dsp.widenerWidth', state.widenerWidth);
+    await _saveDouble('dsp.gain', state.gain);
+    await _saveDouble('dsp.speed', state.speed);
   }
 
   // ── 均衡器 ──

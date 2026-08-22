@@ -21,6 +21,8 @@
   "btnConfirmClear": "确认清空",
   "tooltipRescan": "重新扫描",
   "modeSequential": "顺序播放",
+  "settingsSrInvalid": "采样率需为 8000–384000 之间的整数",
+  "settingsSrApplied": "输出采样率已应用",
   "modeShuffle": "随机播放",
   "modeRepeatOne": "单曲循环",
   "modeRepeatAll": "列表循环",
