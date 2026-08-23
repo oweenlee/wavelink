@@ -7,6 +7,7 @@ import 'file_picker_service.dart';
 import '../../ui/core/theme/app_theme.dart';
 import 'media_store_service.dart';
 import 'media_store_channel.dart';
+import 'cover_thumb.dart';
 import 'subsonic_service.dart';
 import 'smb_service.dart';
 import 'webdav_service.dart';
@@ -241,7 +242,7 @@ class ImportService {
             final cacheFile = File(
               '${cacheDir.path}/${stableHash(song.path!)}.jpg',
             );
-            await cacheFile.writeAsBytes(meta.coverBytes);
+            await CoverThumb.writeCover(cacheFile, meta.coverBytes);
             song.coverUrl = cacheFile.path;
             song.hasCover = true;
           } catch (e) {
@@ -280,7 +281,7 @@ class ImportService {
               final cacheFile = File(
                 '${cacheDir.path}/${stableHash(file.path)}.jpg',
               );
-              await cacheFile.writeAsBytes(meta.coverBytes);
+              await CoverThumb.writeCover(cacheFile, meta.coverBytes);
               coverUrl = cacheFile.path;
             } catch (e) {
               Log.e('Import', '封面缓存失败: $e');
@@ -427,7 +428,7 @@ class ImportService {
           final cacheFile = File(
             '${cacheDir.path}/${stableHash(song.path!)}.jpg',
           );
-          await cacheFile.writeAsBytes(bytes);
+          await CoverThumb.writeCover(cacheFile, bytes);
           song.coverUrl = cacheFile.path;
           song.hasCover = true;
         }
@@ -445,7 +446,7 @@ class ImportService {
         final cacheFile = File(
           '${cacheDir.path}/${stableHash(song.path!)}.jpg',
         );
-        await cacheFile.writeAsBytes(bytes);
+        await CoverThumb.writeCover(cacheFile, bytes);
         song.coverUrl = cacheFile.path;
         song.hasCover = true;
       }

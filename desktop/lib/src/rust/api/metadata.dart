@@ -13,6 +13,17 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 Future<MetadataResult> readMetadata({required String path}) =>
     RustLib.instance.api.crateApiMetadataReadMetadata(path: path);
 
+/// 读取音频文件标签（优先主标签，退而任意标签）
+Future<TagInfoResult> readTags({required String path}) =>
+    RustLib.instance.api.crateApiMetadataReadTags(path: path);
+
+/// 将标签更新写入文件（原地修改）。成功返回 null，失败返回错误字符串。
+Future<void> writeTags({
+  required String path,
+  required TagUpdateRequest update,
+}) =>
+    RustLib.instance.api.crateApiMetadataWriteTags(path: path, update: update);
+
 /// 音频文件元数据（扫描期一次性读取，含封面字节避免 Dart 二次解析文件）
 class MetadataResult {
   final String? title;
@@ -63,4 +74,100 @@ class MetadataResult {
           hasCover == other.hasCover &&
           coverBytes == other.coverBytes &&
           lyrics == other.lyrics;
+}
+
+/// 标签信息（读取结果，供 Dart 展示 + 编辑回填）
+class TagInfoResult {
+  final String? title;
+  final String? artist;
+  final String? album;
+  final String? albumArtist;
+  final String? genre;
+  final int? trackNumber;
+
+  const TagInfoResult({
+    this.title,
+    this.artist,
+    this.album,
+    this.albumArtist,
+    this.genre,
+    this.trackNumber,
+  });
+
+  @override
+  int get hashCode =>
+      title.hashCode ^
+      artist.hashCode ^
+      album.hashCode ^
+      albumArtist.hashCode ^
+      genre.hashCode ^
+      trackNumber.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TagInfoResult &&
+          runtimeType == other.runtimeType &&
+          title == other.title &&
+          artist == other.artist &&
+          album == other.album &&
+          albumArtist == other.albumArtist &&
+          genre == other.genre &&
+          trackNumber == other.trackNumber;
+}
+
+/// 标签更新请求（`None` = 保持原值不变）
+class TagUpdateRequest {
+  final String? title;
+  final String? artist;
+  final String? album;
+  final String? albumArtist;
+  final String? genre;
+  final String? comment;
+  final int? trackNumber;
+  final int? trackTotal;
+  final int? discNumber;
+  final int? discTotal;
+
+  const TagUpdateRequest({
+    this.title,
+    this.artist,
+    this.album,
+    this.albumArtist,
+    this.genre,
+    this.comment,
+    this.trackNumber,
+    this.trackTotal,
+    this.discNumber,
+    this.discTotal,
+  });
+
+  @override
+  int get hashCode =>
+      title.hashCode ^
+      artist.hashCode ^
+      album.hashCode ^
+      albumArtist.hashCode ^
+      genre.hashCode ^
+      comment.hashCode ^
+      trackNumber.hashCode ^
+      trackTotal.hashCode ^
+      discNumber.hashCode ^
+      discTotal.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TagUpdateRequest &&
+          runtimeType == other.runtimeType &&
+          title == other.title &&
+          artist == other.artist &&
+          album == other.album &&
+          albumArtist == other.albumArtist &&
+          genre == other.genre &&
+          comment == other.comment &&
+          trackNumber == other.trackNumber &&
+          trackTotal == other.trackTotal &&
+          discNumber == other.discNumber &&
+          discTotal == other.discTotal;
 }

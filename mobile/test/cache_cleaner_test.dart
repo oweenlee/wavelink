@@ -4,6 +4,8 @@ import 'package:checks/checks.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wavelink_mobile/data/services/cache_cleaner.dart';
+import 'package:wavelink_mobile/data/services/cover_thumb.dart';
+import 'package:wavelink_mobile/data/services/stable_hash.dart';
 import 'package:wavelink_mobile/domain/models/song.dart';
 
 /// 独立 Documents 目录，path_provider mock 指向这里
@@ -71,11 +73,13 @@ void main() {
       final refs = await CacheCleaner.collectReferencedFiles([s]);
       check(refs).contains(s.path!);
       check(refs).contains(s.coverUrl!);
+      // 封面缩略图与原图同生命周期，视为被引用
+      check(refs).contains(CoverThumb.thumbPathFor(s.coverUrl!));
       check(refs).contains(s.lyricsPath!);
       // smbPath → NAS 歌词本地缓存；davPath → WebDAV 下载缓存
-      check(refs).contains('$docs/.lrc_cache/${s.smbPath.hashCode}.lrc');
+      check(refs).contains('$docs/.lrc_cache/${stableHash(s.smbPath!)}.lrc');
       check(refs).contains(
-        '$docs/.webdav_cache/${s.davPath!.hashCode}_${s.davPath!.split('/').last}',
+        '$docs/.webdav_cache/${stableHash(s.davPath!)}_${s.davPath!.split('/').last}',
       );
     });
 
@@ -87,21 +91,24 @@ void main() {
         smbPath: 'Music/s1.flac',
       );
       await write('.covers/keep.jpg', 10);
+      final keepThumb = CoverThumb.thumbPathFor('$docs/.covers/keep.jpg');
+      await write(keepThumb.substring(docs.length + 1), 5);
       await write('.covers/orphan.jpg', 20);
       await write('.smb_cache/keep.flac', 10);
       await write('.smb_cache/orphan.flac', 30);
       await write('.webdav_cache/orphan.flac', 40);
-      final lrcPath = '$docs/.lrc_cache/${s.smbPath.hashCode}.lrc';
+      final lrcPath = '$docs/.lrc_cache/${stableHash(s.smbPath!)}.lrc';
       await write(lrcPath.substring(docs.length + 1), 10);
       await write('.lrc_cache/orphan.lrc', 5);
 
       final refs = await CacheCleaner.collectReferencedFiles([s]);
       final freed = await CacheCleaner.clearUnreferencedCache(refs);
 
-      // 释放 4 个孤儿文件：20+30+40+5
+      // 释放 4 个孤儿文件：20+30+40+5（引用中的 keep.jpg 缩略图不计）
       check(freed).equals(20 + 30 + 40 + 5);
       check(File(s.path!).existsSync()).isTrue();
       check(File(s.coverUrl!).existsSync()).isTrue();
+      check(File(CoverThumb.thumbPathFor(s.coverUrl!)).existsSync()).isTrue();
       check(File(lrcPath).existsSync()).isTrue();
       check(File('$docs/.covers/orphan.jpg').existsSync()).isFalse();
       check(File('$docs/.smb_cache/orphan.flac').existsSync()).isFalse();

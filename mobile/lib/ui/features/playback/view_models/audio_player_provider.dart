@@ -11,6 +11,7 @@ import '../../../../data/services/native_audio_service.dart';
 import '../../../../data/services/smb_service.dart';
 import '../../../../data/services/webdav_service.dart';
 import '../../../../data/services/import_service.dart';
+import '../../../../data/services/cover_thumb.dart';
 import '../../../../data/services/lrc_parser.dart';
 import '../../../../data/services/library_cache_service.dart';
 import '../../../../data/repositories/audio_engine_repository.dart';
@@ -1682,7 +1683,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
       final bytes = await _engineRepo.getCoverBytes(song.path!);
       final cacheDir = Directory('${appDir.path}/.covers');
       if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
-      await cacheFile.writeAsBytes(bytes);
+      await CoverThumb.writeCover(cacheFile, bytes);
       song.coverUrl = cacheFile.path;
       state = state.copyWith(); // 封面就绪，触发 UI 刷新
     } catch (e) {

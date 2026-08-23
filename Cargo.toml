@@ -24,11 +24,15 @@ opt-level = 3
 
 # release（各端上架包）：strip 去符号表（.so 8.7M → ~5.5M），
 # lto + 单编译单元进一步压缩 10~20% 并提升运行性能。
+# debug=true + split-debuginfo=packed：生成 .dSYM bundle 供 App Store 上传，
+# 二进制仍保持 stripped（体积不增）。
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
+debug = true
+split-debuginfo = "packed"
 
 # core 的 symphonia 用 git main；adapter 仍依赖 crates.io 的 symphonia-core，
 # 用 patch 统一到同一版本源码，避免双 symphonia_core 编译冲突

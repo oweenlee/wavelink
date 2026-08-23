@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../../data/services/log.dart';
+import '../../../../data/services/cover_thumb.dart';
 import '../../../../data/services/smb_service.dart';
 import '../../../../data/services/stable_hash.dart';
 import '../../../../data/services/webdav_service.dart';
@@ -229,7 +230,7 @@ class CoverService {
           }
           try {
             final bytes = await engineRepo.getCoverBytes(song.path!);
-            await cacheFile.writeAsBytes(bytes);
+            await CoverThumb.writeCover(cacheFile, bytes);
             song.coverUrl = cacheFile.path;
             changed = true;
           } catch (e) {

@@ -43,4 +43,36 @@ fi
 # 随 app 一起 ad-hoc 签名，避免嵌套 dylib 触发库校验导致加载失败（本地分发足够）。
 codesign --force --sign - "$DST" 2>/dev/null || true
 
+# App Store 上传要求 archive 内每个二进制都有配套 dSYM（否则报 missing dSYM）。
+# cargo 的 split-debuginfo=packed 在 target/release 生成同名 .dSYM bundle；
+# Archive 时 Xcode 注入 DWARF_DSYM_FOLDER_PATH（指向 .xcarchive/dSYMs），拷入即可。
+# install_name_tool 只改 LC_ID_DYLIB 不动 UUID，与 dSYM 的匹配关系不受影响。
+#
+# ⚠️ 关键坑（本次报错根因）：split-debuginfo=packed 会把顶层
+#   target/release/libwavelink_desktop.dylib.dSYM 建成「指向 deps/… 的符号链接」。
+# 若直接 `cp -Rf` 会把符号链接原样拷进 archive，其相对目标 deps/… 在归档内不存在
+# → 悬空链接 → App Store 校验报
+#   "The archive did not include a dSYM for the libwavelink_desktop.dylib with the UUIDs [...]"。
+# 因此必须先解引用到真实目录再拷贝，并保证落盘的是真实目录（非链接）。
+if [ -n "${DWARF_DSYM_FOLDER_PATH:-}" ]; then
+  DSYM_SRC="$SRC.dSYM"
+  if [ -e "$DSYM_SRC" ]; then
+    # 解引用符号链接（macOS 自带 readlink 无 -f，手动处理相对/绝对目标）
+    if [ -L "$DSYM_SRC" ]; then
+      _tgt=$(readlink "$DSYM_SRC")
+      case "$_tgt" in
+        /*) DSYM_SRC="$_tgt" ;;
+        *)  DSYM_SRC="$(dirname "$DSYM_SRC")/$_tgt" ;;
+      esac
+    fi
+    mkdir -p "$DWARF_DSYM_FOLDER_PATH"
+    # 先清掉可能残留的悬空链接/旧目录，避免 cp 套娃成 dSYM.dSYM
+    rm -rf "$DWARF_DSYM_FOLDER_PATH/libwavelink_desktop.dylib.dSYM"
+    cp -Rf "$DSYM_SRC" "$DWARF_DSYM_FOLDER_PATH/libwavelink_desktop.dylib.dSYM"
+    echo "[rust] copied dSYM -> $DWARF_DSYM_FOLDER_PATH/libwavelink_desktop.dylib.dSYM"
+  else
+    echo "[rust] WARNING: dSYM not found at $SRC.dSYM (App Store 上传会被拒；需 workspace [profile.release] debug=true + split-debuginfo=packed)"
+  fi
+fi
+
 echo "[rust] bundled + fixed + signed dylib -> $DST"

@@ -8,6 +8,7 @@ import 'package:webdav_client/webdav_client.dart' as wd;
 import '../../domain/models/song.dart';
 import '../../ui/core/theme/app_theme.dart';
 import 'import_service.dart';
+import 'cover_thumb.dart';
 import 'log.dart';
 import 'lrc_codec.dart';
 import 'preferences_service.dart';
@@ -419,7 +420,7 @@ class WebdavService {
         final coverFile = File(
           '${coversDir.path}/dav_${stableHash(davPath)}.jpg',
         );
-        await coverFile.writeAsBytes(meta.coverBytes);
+        await CoverThumb.writeCover(coverFile, meta.coverBytes);
         song.coverUrl = coverFile.path;
         song.hasCover = true;
         return true;

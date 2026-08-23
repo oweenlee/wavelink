@@ -9,6 +9,7 @@ import '../../src/rust/api/metadata.dart' show MetadataResult;
 import '../../src/rust/api/smb.dart' as smb;
 import '../../ui/core/theme/app_theme.dart';
 import 'import_service.dart';
+import 'cover_thumb.dart';
 import 'lrc_codec.dart';
 import 'log.dart';
 import 'preferences_service.dart';
@@ -842,7 +843,7 @@ class SmbService {
         final coverFile = File(
           '${coversDir.path}/smb_${stableHash(smbPath)}.jpg',
         );
-        await coverFile.writeAsBytes(meta.coverBytes);
+        await CoverThumb.writeCover(coverFile, meta.coverBytes);
         song.coverUrl = coverFile.path;
         song.hasCover = true;
         Log.v('SMB', '封面整文件兜底成功: $smbPath');
@@ -882,7 +883,7 @@ class SmbService {
         final coverFile = File(
           '${coversDir.path}/smb_${stableHash(smbPath)}.jpg',
         );
-        await coverFile.writeAsBytes(meta.coverBytes);
+        await CoverThumb.writeCover(coverFile, meta.coverBytes);
         song.coverUrl = coverFile.path;
         song.hasCover = true;
         return true;

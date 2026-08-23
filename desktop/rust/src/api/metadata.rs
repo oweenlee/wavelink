@@ -3,6 +3,8 @@
 //! 扫描期从音频文件读取真实标签（标题/艺术家/专辑/时长/内嵌歌词），
 //! 替代「文件名 Artist - Title 约定」猜测。主提取走 audio-core 的
 //! symphonia 读取器，lofty 作封面兜底（与 mobile 同策略）。
+//!
+//! 标签读写走 audio-core 的 `tag` 模块（基于 lofty），支持 MP3/FLAC/M4A/OGG/WAV/AIFF。
 
 use std::path::Path;
 
@@ -88,4 +90,62 @@ fn extract_cover_lofty(path: &Path) -> Result<Vec<u8>, String> {
         }
     }
     Err("未找到封面".into())
+}
+
+// ── 标签读写（tag editor 用）──
+
+/// 标签信息（读取结果，供 Dart 展示 + 编辑回填）
+pub struct TagInfoResult {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub album_artist: Option<String>,
+    pub genre: Option<String>,
+    pub track_number: Option<u32>,
+}
+
+/// 读取音频文件标签（优先主标签，退而任意标签）
+#[frb]
+pub fn read_tags(path: String) -> Result<TagInfoResult, String> {
+    let info = audio_core::tag::read_tags(Path::new(&path))?;
+    Ok(TagInfoResult {
+        title: info.title,
+        artist: info.artist,
+        album: info.album,
+        album_artist: info.album_artist,
+        genre: info.genre,
+        track_number: info.track_number,
+    })
+}
+
+/// 标签更新请求（`None` = 保持原值不变）
+pub struct TagUpdateRequest {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub album_artist: Option<String>,
+    pub genre: Option<String>,
+    pub comment: Option<String>,
+    pub track_number: Option<u32>,
+    pub track_total: Option<u32>,
+    pub disc_number: Option<u32>,
+    pub disc_total: Option<u32>,
+}
+
+/// 将标签更新写入文件（原地修改）。成功返回 null，失败返回错误字符串。
+#[frb]
+pub fn write_tags(path: String, update: TagUpdateRequest) -> Result<(), String> {
+    let tag_update = audio_core::tag::TagUpdate {
+        title: update.title,
+        artist: update.artist,
+        album: update.album,
+        album_artist: update.album_artist,
+        genre: update.genre,
+        comment: update.comment,
+        track_number: update.track_number,
+        track_total: update.track_total,
+        disc_number: update.disc_number,
+        disc_total: update.disc_total,
+    };
+    audio_core::tag::write_tags(Path::new(&path), &tag_update)
 }

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import '../../domain/models/song.dart';
+import 'cover_thumb.dart';
 import 'log.dart';
 import 'stable_hash.dart';
 
@@ -49,6 +50,9 @@ class CacheCleaner {
 
       add(s.path);
       add(s.coverUrl);
+      // 封面缩略图（<原图>.thumb.jpg）与原图同生命周期，一并视为被引用，
+      // 避免清理缓存时被当孤儿误删
+      if (s.coverUrl != null) add(CoverThumb.thumbPathFor(s.coverUrl!));
       add(s.lyricsPath);
       if (s.smbPath != null && s.smbPath!.isNotEmpty) {
         // NAS 远端歌词本地缓存，与 smb_service 命名一致

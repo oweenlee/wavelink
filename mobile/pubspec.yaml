@@ -47,6 +47,7 @@ dependencies:
   package_info_plus: ^8.0.0
   sqflite: ^2.4.3
   sqflite_common_ffi: ^2.4.2+1
+  image: ^4.5.4               # 封面缩略图 JPEG 编码（对齐 desktop CoverCache.ensureThumb）
 
 dev_dependencies:
   flutter_test:

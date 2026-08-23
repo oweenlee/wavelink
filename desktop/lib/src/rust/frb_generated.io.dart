@@ -56,6 +56,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   HeadMetadataDto dco_decode_box_autoadd_head_metadata_dto(dynamic raw);
 
   @protected
+  TagUpdateRequest dco_decode_box_autoadd_tag_update_request(dynamic raw);
+
+  @protected
   int dco_decode_box_autoadd_u_32(dynamic raw);
 
   @protected
@@ -149,6 +152,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SmbShareInfo dco_decode_smb_share_info(dynamic raw);
 
   @protected
+  TagInfoResult dco_decode_tag_info_result(dynamic raw);
+
+  @protected
+  TagUpdateRequest dco_decode_tag_update_request(dynamic raw);
+
+  @protected
   int dco_decode_u_16(dynamic raw);
 
   @protected
@@ -196,6 +205,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   HeadMetadataDto sse_decode_box_autoadd_head_metadata_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TagUpdateRequest sse_decode_box_autoadd_tag_update_request(
     SseDeserializer deserializer,
   );
 
@@ -303,6 +317,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SmbShareInfo sse_decode_smb_share_info(SseDeserializer deserializer);
 
   @protected
+  TagInfoResult sse_decode_tag_info_result(SseDeserializer deserializer);
+
+  @protected
+  TagUpdateRequest sse_decode_tag_update_request(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_u_16(SseDeserializer deserializer);
 
   @protected
@@ -356,6 +376,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_head_metadata_dto(
     HeadMetadataDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_tag_update_request(
+    TagUpdateRequest self,
     SseSerializer serializer,
   );
 
@@ -496,6 +522,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_smb_share_info(SmbShareInfo self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_tag_info_result(TagInfoResult self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_tag_update_request(
+    TagUpdateRequest self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_u_16(int self, SseSerializer serializer);

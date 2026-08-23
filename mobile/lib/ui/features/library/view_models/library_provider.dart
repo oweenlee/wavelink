@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../../data/services/preferences_service.dart';
+import '../../../../data/services/cover_thumb.dart';
 import '../../../../data/services/smb_service.dart';
 import '../../../../data/services/webdav_service.dart';
 import '../../../../data/services/library_cache_service.dart';
@@ -587,6 +588,8 @@ class LibraryNotifier extends Notifier<LibraryState> {
     for (final p in [
       song.path,
       song.coverUrl,
+      // 封面缩略图与原图一并删除，不留孤儿 .thumb.jpg
+      if (song.coverUrl != null) CoverThumb.thumbPathFor(song.coverUrl!),
       song.lyricsPath,
       // NAS 远端歌词的本地缓存（.lrc_cache/）
       if (song.smbPath != null && song.smbPath!.isNotEmpty)

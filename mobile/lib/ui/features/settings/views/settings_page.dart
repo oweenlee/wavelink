@@ -43,11 +43,7 @@ class SettingsPage extends StatelessWidget {
         final isLast = i == rows.length - 1;
         final row = rows[i];
         items.add(
-          (ctx) => _RowShell(
-            isFirst: isFirst,
-            isLast: isLast,
-            child: row(ctx),
-          ),
+          (ctx) => _RowShell(isFirst: isFirst, isLast: isLast, child: row(ctx)),
         );
       }
       items.add((_) => const SizedBox(height: 24));
@@ -243,18 +239,46 @@ class _BitPerfectRow extends ConsumerWidget {
   }
 }
 
-class _CoverBlurRow extends ConsumerWidget {
+class _CoverBlurRow extends ConsumerStatefulWidget {
   const _CoverBlurRow();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_CoverBlurRow> createState() => _CoverBlurRowState();
+}
+
+class _CoverBlurRowState extends ConsumerState<_CoverBlurRow> {
+  bool _dragging = false;
+  double _lastHapticValue = -1;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final value = ref.watch(playerProvider.select((s) => s.coverBlur));
     return _SliderItem(
       icon: LucideIcons.droplets,
       label: l10n.coverBlur,
       value: value,
-      onChanged: (v) => ref.read(playbackControllerProvider).setCoverBlur(v),
+      showValue: _dragging,
+      onChangeStart: (v) {
+        setState(() => _dragging = true);
+        _lastHapticValue = v;
+      },
+      onChanged: (v) {
+        ref.read(playbackControllerProvider).setCoverBlur(v);
+        // 在 0%、50%、100% 位置触发触觉反馈
+        final rounded = (v * 100).round();
+        if ((rounded == 0 || rounded == 50 || rounded == 100) &&
+            (rounded - (_lastHapticValue * 100).round()).abs() > 1) {
+          HapticFeedback.lightImpact();
+          _lastHapticValue = v;
+        }
+      },
+      onChangeEnd: (v) {
+        setState(() => _dragging = false);
+        // 松手时归零到最近的 5% 刻度
+        final snapped = (v * 20).round() / 20;
+        ref.read(playbackControllerProvider).setCoverBlur(snapped);
+      },
     );
   }
 }
@@ -328,7 +352,7 @@ class _CacheRowState extends ConsumerState<_CacheRow> {
     return _SettingItem(
       icon: _clearing ? LucideIcons.loader : LucideIcons.trash2,
       label: l10n.clearCache,
-      trailing: _clearing ? '…' : _size,
+      trailing: _clearing ? '•••' : _size,
       onTap: _clearing ? null : _confirmClear,
     );
   }
@@ -343,10 +367,27 @@ class _VersionRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final v = ref.watch(packageInfoProvider).value?.version;
+    final versionText = (v == null || v.isEmpty) ? '—' : 'v$v';
     return _SettingItem(
       icon: LucideIcons.info,
       label: l10n.version,
-      trailing: (v == null || v.isEmpty) ? '—' : 'v$v',
+      trailing: versionText,
+      onTap: v != null && v.isNotEmpty
+          ? () async {
+              HapticFeedback.lightImpact();
+              try {
+                await Clipboard.setData(ClipboardData(text: 'v$v'));
+              } catch (_) {}
+              Fluttertoast.showToast(
+                msg: 'v$v',
+                gravity: ToastGravity.BOTTOM,
+                timeInSecForIosWeb: 2,
+                backgroundColor: AppTheme.surfaceHigh,
+                textColor: AppTheme.textPrimary,
+                fontSize: 13,
+              );
+            }
+          : null,
     );
   }
 }
@@ -441,7 +482,10 @@ class _LanguageItem extends ConsumerWidget {
               ),
               // 标题行（左对齐，与 SheetShell 一致）
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 8,
+                ),
                 child: Text(
                   l10n.language,
                   style: const TextStyle(
@@ -459,22 +503,38 @@ class _LanguageItem extends ConsumerWidget {
                   padding: const EdgeInsets.only(top: 8, bottom: 32),
                   children: _options.map((mode) {
                     final selected = localeMode == mode;
-                    return ListTile(
-                      leading: Icon(
-                        selected ? LucideIcons.checkCircle2 : LucideIcons.circle,
-                        color: selected ? accent : AppTheme.textTertiary,
-                        size: 20,
+                    return Container(
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 2,
                       ),
-                      title: Text(
-                        labelFor(mode),
-                        style: TextStyle(
-                          fontSize: 15,
-                          color: selected ? accent : AppTheme.textPrimary,
-                          fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? accent.withValues(alpha: 0.1)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: ListTile(
+                        leading: Icon(
+                          selected
+                              ? LucideIcons.checkCircle2
+                              : LucideIcons.circle,
+                          color: selected ? accent : AppTheme.textTertiary,
+                          size: 20,
                         ),
+                        title: Text(
+                          labelFor(mode),
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: selected ? accent : AppTheme.textPrimary,
+                            fontWeight: selected
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                          ),
+                        ),
+                        dense: true,
+                        onTap: () => Navigator.of(context).pop(mode),
                       ),
-                      dense: true,
-                      onTap: () => Navigator.of(context).pop(mode),
                     );
                   }).toList(),
                 ),
@@ -631,18 +691,20 @@ class _SettingItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // GestureDetector 自带 tap action 语义，但需 MergeSemantics 把
-    // icon+label+trailing 聚合成单一可点击节点：VoiceOver/TalkBack 焦点
-    // 落在整行而非分离的文本片段，且保留 button role 与 enabled 状态。
+    // MergeSemantics 把 icon+label+trailing 聚合成单一可点击节点：
+    // VoiceOver/TalkBack 焦点落在整行，保留 button role 与 enabled 状态。
     return MergeSemantics(
       child: Semantics(
         button: true,
         enabled: onTap != null,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
+        child: InkWell(
           onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          // 圆角匹配分组容器，墨水不溢出到外层
+          borderRadius: BorderRadius.circular(14),
+          splashColor: AppTheme.textTertiary.withValues(alpha: 0.1),
+          highlightColor: AppTheme.textTertiary.withValues(alpha: 0.05),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
               children: [
                 Icon(icon, color: AppTheme.textSecondary, size: 22),
@@ -658,11 +720,9 @@ class _SettingItem extends StatelessWidget {
                     ),
                   ),
                 ),
-                // trailing 与 chevron 二选一：有内容显示内容，可点击显示箭头
                 if (trailing != null) ...[
                   const SizedBox(width: 8),
                   ConstrainedBox(
-                    // 长文案（如 AutoEQ 型号名）限宽单行截断，避免换行挤压标题
                     constraints: BoxConstraints(
                       maxWidth: MediaQuery.sizeOf(context).width * 0.45,
                     ),
@@ -712,16 +772,19 @@ class _SwitchItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return MergeSemantics(
       child: Semantics(
-        // 整行开关：toggled 状态随切换同步，屏幕阅读器可朗读并操作
         toggled: value,
         enabled: true,
         button: true,
-        child: GestureDetector(
-          // 整行可点：行内任意位置（含文字/图标）都能切换
-          behavior: HitTestBehavior.opaque,
-          onTap: () => onChanged(!value),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          splashColor: AppTheme.textTertiary.withValues(alpha: 0.1),
+          highlightColor: AppTheme.textTertiary.withValues(alpha: 0.05),
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onChanged(!value);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
               children: [
                 Icon(icon, color: AppTheme.textSecondary, size: 22),
@@ -765,8 +828,10 @@ class _SwitchItem extends StatelessWidget {
                 const SizedBox(width: 8),
                 WlToggle(
                   value: value,
-                  // 与音效面板同一组件，开关视觉全局一致
-                  onChanged: () => onChanged(!value),
+                  onChanged: () {
+                    HapticFeedback.lightImpact();
+                    onChanged(!value);
+                  },
                 ),
               ],
             ),
@@ -782,29 +847,29 @@ class _SliderItem extends StatelessWidget {
   final String label;
   final double value;
   final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChangeStart;
+  final ValueChanged<double>? onChangeEnd;
+  final bool showValue;
 
   const _SliderItem({
     required this.icon,
     required this.label,
     required this.value,
     required this.onChanged,
+    this.onChangeStart,
+    this.onChangeEnd,
+    this.showValue = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
     return Padding(
-      // 垂直 12 与 _SettingItem 对齐：整行高度一致，避免滑块行
-      // 因内部上下结构比其它分区行高而显得错位
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
         children: [
           Icon(icon, color: AppTheme.textSecondary, size: 22),
           const SizedBox(width: 16),
-          // 长文案限宽（按屏宽 40% 自适应，非写死）：label 只占固有
-          // 宽度、不参与 flex，滑块 Expanded 独占剩余。
-          // 宽屏上限随屏宽放大避免滑块畸长；窄屏/大字体下截断 label
-          // 优先保住滑块可操作性。
           ConstrainedBox(
             constraints: BoxConstraints(
               maxWidth: MediaQuery.sizeOf(context).width * 0.4,
@@ -813,36 +878,46 @@ class _SliderItem extends StatelessWidget {
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 15,
-                color: AppTheme.textPrimary,
-              ),
+              style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary),
             ),
           ),
-          // 间距与左侧 icon→文字一致（16px），三种间隔统一：
-          // icon |16| label |16| slider(full remaining)
           const SizedBox(width: 16),
           Expanded(
             child: SliderTheme(
               data: SliderThemeData(
-                // 与特效面板滑杆同款配色
                 trackHeight: 3,
-                // 小 thumb（5px）：减小覆盖轨道端点的视觉，轨道
-                // 更贴近两侧；track 已因 padding 非空而全宽
-                thumbShape:
-                    const RoundSliderThumbShape(enabledThumbRadius: 5),
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
                 activeTrackColor: accent,
                 inactiveTrackColor: AppTheme.textTertiary.withValues(
                   alpha: 0.3,
                 ),
                 thumbColor: accent,
                 overlayColor: accent.withValues(alpha: 0.08),
-                // 去掉 Slider 默认 16px 横向 padding：贴齐标签
                 padding: EdgeInsets.zero,
               ),
-              child: Slider(value: value, onChanged: onChanged),
+              child: Slider(
+                value: value,
+                onChanged: onChanged,
+                onChangeStart: onChangeStart,
+                onChangeEnd: onChangeEnd,
+              ),
             ),
           ),
+          if (showValue) ...[
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 36,
+              child: Text(
+                '${(value * 100).round()}%',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textTertiary,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

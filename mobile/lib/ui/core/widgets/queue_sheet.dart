@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../data/services/cover_thumb.dart';
 import '../../../domain/models/song.dart';
 import '../../features/playback/view_models/playback_controller.dart';
 import '../../features/playback/view_models/queue_provider.dart';
@@ -142,12 +143,18 @@ class _QueueCover extends StatelessWidget {
         children: [
           if (hasCover)
             Image.file(
-              f,
+              // 36px 行优先读 320px 缩略图，缺失回退原图（与曲库行一致）
+              File(CoverThumb.thumbPathFor(f.path)),
               fit: BoxFit.cover,
               // 36px 行缩略图按 ~90px 解码（与曲库行 SongCoverArt 的 cacheWidth
               // 同一策略），避免队列每次打开都全尺寸解码封面
               cacheWidth: 90,
-              errorBuilder: (_, _, _) => const CoverPlaceholder(size: 36),
+              errorBuilder: (_, _, _) => Image.file(
+                f,
+                fit: BoxFit.cover,
+                cacheWidth: 90,
+                errorBuilder: (_, _, _) => const CoverPlaceholder(size: 36),
+              ),
             )
           else
             const CoverPlaceholder(size: 36),

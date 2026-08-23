@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../../../data/services/cover_thumb.dart';
 import '../../../domain/models/song.dart';
 import '../theme/app_theme.dart';
 import 'now_playing_indicator.dart';
@@ -38,6 +39,11 @@ class WlCover extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasCover = coverUrl != null && coverUrl!.isNotEmpty;
     final radius = BorderRadius.circular(borderRadius);
+    // 小幅展示优先读 320px 缩略图（~30-60KB）：原图常 1-5MB，列表/网格
+    // 每个可见项整读原图磁盘 IO 会拖垮滚动（对齐 desktop CoverArt 策略）。
+    // 缩略图缺失/解码失败经 errorBuilder 回退原图。
+    final useThumb =
+        width != null && width!.isFinite && width! <= CoverThumb.thumbSize;
     return Container(
       width: width,
       height: height,
@@ -61,24 +67,40 @@ class WlCover extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             if (hasCover)
-              Image.file(
-                File(coverUrl!),
-                fit: BoxFit.cover,
-                // 缩略图：按展示尺寸解码缩放，避免 4K 封面整图进内存。
-                // 尺寸未知（width 无限大，如网格内 Expanded 撑开）时由
-                // 调用方显式传 imageCacheWidth。
-                cacheWidth: imageCacheWidth ??
-                    (width != null && width!.isFinite
-                        ? (width! * 2.5).round().clamp(128, 1024)
-                        : null),
-                errorBuilder: (context, error, stackTrace) => _fallback(),
-              )
+              _coverImage(useThumb, radius)
             else
               _fallback(),
             ?overlay,
           ],
         ),
       ),
+    );
+  }
+
+  Widget _coverImage(bool useThumb, BorderRadius radius) {
+    final url = coverUrl!;
+    final cacheWidth = imageCacheWidth ??
+        (width != null && width!.isFinite
+            ? (width! * 2.5).round().clamp(128, 1024)
+            : null);
+    if (useThumb) {
+      final thumb = Image.file(
+        File(CoverThumb.thumbPathFor(url)),
+        fit: BoxFit.cover,
+        cacheWidth: cacheWidth,
+        errorBuilder: (_, _, _) => _fullImage(cacheWidth),
+      );
+      return thumb;
+    }
+    return _fullImage(cacheWidth);
+  }
+
+  Widget _fullImage(int? cacheWidth) {
+    return Image.file(
+      File(coverUrl!),
+      fit: BoxFit.cover,
+      cacheWidth: cacheWidth,
+      errorBuilder: (context, error, stackTrace) => _fallback(),
     );
   }
 
@@ -197,13 +219,21 @@ class SongCoverArt extends StatelessWidget {
           ? Stack(
               fit: StackFit.expand,
               children: [
+                // 40px 行优先读 320px 缩略图：原图常 1-5MB，滚动时每行
+                // 整读原图磁盘 IO 是列表卡顿主因；缺失回退原图。
                 Image.file(
-                  coverFile,
+                  File(CoverThumb.thumbPathFor(song.coverUrl!)),
                   fit: BoxFit.cover,
-                  // 40px 行缩略图按 100px 解码，避免整张封面全尺寸解码
-                  //（常 1000~2000px）拖慢列表滚动/刷新
                   cacheWidth: 100,
-                  errorBuilder: (_, _, _) => const CoverPlaceholder(size: 40),
+                  errorBuilder: (_, _, _) => Image.file(
+                    coverFile,
+                    fit: BoxFit.cover,
+                    // 40px 行缩略图按 100px 解码，避免整张封面全尺寸解码
+                    //（常 1000~2000px）拖慢列表滚动/刷新
+                    cacheWidth: 100,
+                    errorBuilder: (_, _, _) =>
+                        const CoverPlaceholder(size: 40),
+                  ),
                 ),
                 if (isPlaying)
                   Container(
