@@ -238,5 +238,11 @@
   "noAlbums": "Keine passenden Alben",
   "playAlbum": "Album abspielen",
   "artistCount": "{count} Künstler",
-  "albumCount": "{count} Alben"
+  "albumCount": "{count} Alben",
+  "settingsGroupAppearance": "Darstellung",
+  "settingsGroupAppearanceDesc": "Anzeigeeinstellungen",
+  "settingsListDensity": "Listendichte",
+  "settingsListDensityDesc": "Zeilenhöhe und Abstand der Titelliste",
+  "densityCompact": "Kompakt",
+  "densityComfortable": "Geräumig"
 }

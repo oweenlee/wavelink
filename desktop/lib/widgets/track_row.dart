@@ -9,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../models/track.dart';
 import '../services/player_notifier.dart';
 import '../services/player_providers.dart';
+import '../services/ui_settings_provider.dart';
 import 'cover_art.dart';
 import 'dialogs.dart';
 import 'now_playing_indicator.dart';
@@ -21,8 +22,8 @@ const _border = kBorder;
 
 /// 歌曲行（对齐 mobile `ui/core/widgets/song_tile.dart` 的 SongTile）：
 /// 封面（当前曲目叠加播放指示器遮罩）+ 标题/艺术家 + 时长 + 来源徽章 +
-/// 收藏 + 更多菜单。
-class TrackRow extends StatelessWidget {
+/// 收藏 + 更多菜单。行高响应全局列表密度设置（紧凑 48 / 舒适 56）。
+class TrackRow extends ConsumerWidget {
   final PlayerNotifier player;
   final Track track;
   final int index;
@@ -46,9 +47,12 @@ class TrackRow extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final accent = AccentScope.of(context);
     final l10n = AppLocalizations.of(context);
+    final density =
+        ref.watch(uiSettingsProvider.select((s) => s.rowDensity));
+    final coverSize = density.coverSize;
     final badge = track.isCueTrack
         ? 'CUE'
         : track.isNetwork
@@ -72,13 +76,16 @@ class TrackRow extends StatelessWidget {
                 )
               : null,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            padding: EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: density == RowDensity.compact ? 5 : 7),
             child: Row(
               children: [
                 _TrackCover(
                   track: track,
                   isCurrent: isCurrent,
                   isPlaying: isPlaying,
+                  size: coverSize,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -91,6 +98,10 @@ class TrackRow extends StatelessWidget {
                           style: TextStyle(
                               color: isCurrent ? accent : _onSurface,
                               fontSize: 13.5,
+                              // 紧凑密度下固定行高防溢出（38px 内容区）
+                              height: density == RowDensity.compact
+                                  ? 1.2
+                                  : null,
                               fontWeight: isCurrent
                                   ? FontWeight.w600
                                   : FontWeight.normal)),
@@ -104,8 +115,13 @@ class TrackRow extends StatelessWidget {
                             child: Text(track.artist,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    color: _onSurfaceVariant, fontSize: 12)),
+                                style: TextStyle(
+                                    color: _onSurfaceVariant,
+                                    fontSize: 12,
+                                    height:
+                                        density == RowDensity.compact
+                                            ? 1.2
+                                            : null)),
                           ),
                         ],
                       ),
@@ -135,11 +151,15 @@ class TrackRow extends StatelessWidget {
                         fontWeight: FontWeight.w500)),
               ),
               const SizedBox(width: 10),
-              _FavoriteButton(player: player, track: track),
+              _FavoriteButton(player: player, track: track, density: density),
               PopupMenuButton<String>(
                 icon: const Icon(LucideIcons.moreVertical,
                     size: 18, color: AppTheme.textTertiary),
                 color: _surface,
+                // 紧凑密度下收窄按钮触达区，避免撑高行高（行高 48）
+                constraints: density == RowDensity.compact
+                    ? const BoxConstraints(minWidth: 36, minHeight: 36)
+                    : const BoxConstraints(minWidth: 40, minHeight: 40),
                 itemBuilder: (c) => [
                   PopupMenuItem(
                     value: 'fav',
@@ -191,11 +211,13 @@ class _TrackCover extends StatelessWidget {
   final Track track;
   final bool isCurrent;
   final bool isPlaying;
+  final double size;
 
   const _TrackCover({
     required this.track,
     required this.isCurrent,
     required this.isPlaying,
+    required this.size,
   });
 
   @override
@@ -204,7 +226,7 @@ class _TrackCover extends StatelessWidget {
       key: ValueKey('row-${track.coverUrl ?? track.id}'),
       seed: track.id,
       coverUrl: track.coverUrl,
-      size: 42,
+      size: size,
     );
     if (!isCurrent) return cover;
     return Stack(
@@ -213,10 +235,10 @@ class _TrackCover extends StatelessWidget {
         cover,
         // 遮罩放在 ClipRRect 之外会溢出圆角，这里用同尺寸容器裁剪
         ClipRRect(
-          borderRadius: BorderRadius.circular(42 * 0.12),
+          borderRadius: BorderRadius.circular(size * 0.12),
           child: Container(
-            width: 42,
-            height: 42,
+            width: size,
+            height: size,
             color: Colors.black26,
             alignment: Alignment.center,
             child: isPlaying
@@ -233,7 +255,9 @@ class _TrackCover extends StatelessWidget {
 class _FavoriteButton extends ConsumerWidget {
   final PlayerNotifier player;
   final Track track;
-  const _FavoriteButton({required this.player, required this.track});
+  final RowDensity density;
+  const _FavoriteButton(
+      {required this.player, required this.track, required this.density});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -246,6 +270,10 @@ class _FavoriteButton extends ConsumerWidget {
         size: 17,
         color: fav ? AppTheme.danger : AppTheme.textTertiary,
       ),
+      // 紧凑密度下收窄触达区，避免撑高行高（行高 48）
+      visualDensity: density == RowDensity.compact
+          ? VisualDensity.compact
+          : VisualDensity.standard,
       onPressed: () => player.toggleFavorite(track),
     );
   }

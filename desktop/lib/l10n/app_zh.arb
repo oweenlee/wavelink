@@ -332,5 +332,11 @@
   "eqPresetFullBass": "重低音",
   "eqPresetFullTreble": "重高音",
   "eqPresetTechno": "电子",
-  "eqPresetVocals": "人声"
+  "eqPresetVocals": "人声",
+  "settingsGroupAppearance": "外观",
+  "settingsGroupAppearanceDesc": "界面显示偏好",
+  "settingsListDensity": "列表密度",
+  "settingsListDensityDesc": "曲目列表的行高与间距",
+  "densityCompact": "紧凑",
+  "densityComfortable": "舒适"
 }

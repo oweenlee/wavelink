@@ -8,6 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../models/track.dart';
 import '../services/player_notifier.dart';
 import '../services/player_providers.dart';
+import '../services/ui_settings_provider.dart';
 import '../widgets/search_field.dart';
 import '../widgets/track_row.dart';
 
@@ -53,6 +54,14 @@ class LibraryView extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final currentId =
         ref.watch(playerProvider.select((s) => s.currentTrack?.id));
+    // 扫描中（本地/网络音源导入）驱动顶部细进度条
+    final scanning = ref.watch(playerProvider.select((s) => s.scanning));
+    // 扫描确定性进度（null = 无进度信息，显示不定态）
+    final scanProgress =
+        ref.watch(playerProvider.select((s) => s.scanProgress));
+    // 列表密度（紧凑 48 / 舒适 56）
+    final density =
+        ref.watch(uiSettingsProvider.select((s) => s.rowDensity));
     return Column(
       children: [
         Padding(
@@ -95,6 +104,15 @@ class LibraryView extends ConsumerWidget {
             ],
           ),
         ),
+        // 扫描反馈：细进度条（扫描通常数秒，批次渐进已让列表随扫随增；
+        // 本地扫描带确定性进度 value，网络音源无进度回调时显示不定态）
+        if (scanning)
+          LinearProgressIndicator(
+            minHeight: 2,
+            value: scanProgress,
+            color: AccentScope.of(context),
+            backgroundColor: Colors.transparent,
+          ),
         Expanded(
           child: Builder(
             builder: (c) {
@@ -158,7 +176,7 @@ class LibraryView extends ConsumerWidget {
                 );
               }
               return ListView.builder(
-                itemExtent: 56, // 固定行高（7+42+7），跳过测量优化性能
+                itemExtent: density.rowHeight, // 固定行高，跳过测量优化性能
                 itemCount: tracks.length,
                 itemBuilder: (c, i) {
                   final t = tracks[i];

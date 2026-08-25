@@ -9,7 +9,8 @@ const _onSurfaceVariant = kOnSurfaceVariant;
 
 /// 侧栏完整形态导航项：图标 + 标签 + 计数 + 可选尾随操作按钮，
 /// 选中态为左侧强调色条 + 高亮底（对齐 mobile 列表选中态语言）。
-class NavItem extends StatelessWidget {
+/// 按压态：按下时背景加深（全局已禁用 Material ripple，用底色变化替代）。
+class NavItem extends StatefulWidget {
   final IconData icon;
   final String label;
   final String? trailing;
@@ -28,25 +29,34 @@ class NavItem extends StatelessWidget {
   });
 
   @override
+  State<NavItem> createState() => _NavItemState();
+}
+
+class _NavItemState extends State<NavItem> {
+  /// 按压中（按下未松开）；驱动底色加深反馈。
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
     final body = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
-          Icon(icon,
-              size: 17, color: active ? accent : AppTheme.textTertiary),
+          Icon(widget.icon,
+              size: 17, color: widget.active ? accent : AppTheme.textTertiary),
           const SizedBox(width: 11),
           Expanded(
-            child: Text(label,
+            child: Text(widget.label,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    color: active ? _onSurface : _onSurfaceVariant,
+                    color: widget.active ? _onSurface : _onSurfaceVariant,
                     fontSize: 13,
-                    fontWeight: active ? FontWeight.w600 : FontWeight.w400)),
+                    fontWeight:
+                        widget.active ? FontWeight.w600 : FontWeight.w400)),
           ),
-          if (trailing != null)
-            Text(trailing!,
+          if (widget.trailing != null)
+            Text(widget.trailing!,
                 style: const TextStyle(
                     color: AppTheme.textTertiary, fontSize: 11)),
         ],
@@ -61,27 +71,32 @@ class NavItem extends StatelessWidget {
             width: 3,
             height: 26,
             decoration: BoxDecoration(
-              color: active ? accent : Colors.transparent,
+              color: widget.active ? accent : Colors.transparent,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
           Expanded(
             child: Material(
-              color: active ? _surface2 : Colors.transparent,
+              color: widget.active
+                  ? _surface2
+                  : (_pressed ? AppTheme.highlightStrong : Colors.transparent),
               borderRadius: BorderRadius.circular(8),
               child: InkWell(
-                onTap: onTap,
+                onTap: widget.onTap,
+                onHighlightChanged: (h) {
+                  if (h != _pressed) setState(() => _pressed = h);
+                },
                 borderRadius: BorderRadius.circular(8),
                 child: body,
               ),
             ),
           ),
-          if (trailingActions != null)
+          if (widget.trailingActions != null)
             Padding(
               padding: const EdgeInsets.only(right: 4),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
-                children: trailingActions!,
+                children: widget.trailingActions!,
               ),
             ),
         ],
@@ -92,7 +107,7 @@ class NavItem extends StatelessWidget {
 
 /// 侧栏紧凑形态导航项（Tooltip + 选中态左侧 accent 色条）。
 /// 窄窗口（<720px）下侧栏折叠为图标条时使用，对齐主流桌面播放器。
-class NavItemCompact extends StatelessWidget {
+class NavItemCompact extends StatefulWidget {
   final IconData icon;
   final String tooltip;
   final bool active;
@@ -107,14 +122,26 @@ class NavItemCompact extends StatelessWidget {
   });
 
   @override
+  State<NavItemCompact> createState() => _NavItemCompactState();
+}
+
+class _NavItemCompactState extends State<NavItemCompact> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
     final accent = AccentScope.of(context);
     return Tooltip(
-      message: tooltip,
+      message: widget.tooltip,
       child: Material(
-        color: active ? _surface2 : Colors.transparent,
+        color: widget.active
+            ? _surface2
+            : (_pressed ? AppTheme.highlightStrong : Colors.transparent),
         child: InkWell(
-          onTap: onTap,
+          onTap: widget.onTap,
+          onHighlightChanged: (h) {
+            if (h != _pressed) setState(() => _pressed = h);
+          },
           child: Container(
             width: double.infinity,
             height: 44,
@@ -122,11 +149,13 @@ class NavItemCompact extends StatelessWidget {
             decoration: BoxDecoration(
               border: Border(
                 left: BorderSide(
-                    color: active ? accent : Colors.transparent, width: 3),
+                    color: widget.active ? accent : Colors.transparent,
+                    width: 3),
               ),
             ),
-            child: Icon(icon,
-                size: 19, color: active ? accent : AppTheme.textTertiary),
+            child: Icon(widget.icon,
+                size: 19,
+                color: widget.active ? accent : AppTheme.textTertiary),
           ),
         ),
       ),

@@ -13,6 +13,7 @@ import '../services/diagnostics_provider.dart';
 import '../services/dsp_settings_provider.dart';
 import '../services/locale_provider.dart';
 import '../services/player_providers.dart';
+import '../services/ui_settings_provider.dart';
 import '../src/rust/api/room.dart' as frb_room;
 import '../widgets/settings_controls.dart';
 import '../widgets/settings_rail.dart';
@@ -108,6 +109,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget _buildGeneral() {
     final l = AppLocalizations.of(context);
     final mode = ref.watch(localeProvider);
+    final density =
+        ref.watch(uiSettingsProvider.select((s) => s.rowDensity));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -135,6 +138,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                   color: AppTheme.textPrimary, fontSize: 13)),
                         ))
                     .toList(),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        SettingGroup(
+          icon: LucideIcons.layoutGrid,
+          title: l.settingsGroupAppearance,
+          description: l.settingsGroupAppearanceDesc,
+          tiles: [
+            SettingTile(
+              icon: LucideIcons.rows3,
+              title: l.settingsListDensity,
+              description: l.settingsListDensityDesc,
+              trailing: SettingDropdown<RowDensity>(
+                value: density,
+                onChanged: (v) {
+                  if (v != null) {
+                    ref.read(uiSettingsProvider.notifier).setRowDensity(v);
+                  }
+                },
+                items: [
+                  DropdownMenuItem(
+                    value: RowDensity.compact,
+                    child: Text(l.densityCompact,
+                        style: const TextStyle(
+                            color: AppTheme.textPrimary, fontSize: 13)),
+                  ),
+                  DropdownMenuItem(
+                    value: RowDensity.comfortable,
+                    child: Text(l.densityComfortable,
+                        style: const TextStyle(
+                            color: AppTheme.textPrimary, fontSize: 13)),
+                  ),
+                ],
               ),
             ),
           ],

@@ -252,5 +252,11 @@
   "eqPresetFullBass": "Full Bass",
   "eqPresetFullTreble": "Full Treble",
   "eqPresetTechno": "Techno",
-  "eqPresetVocals": "Vocals"
+  "eqPresetVocals": "Vocals",
+  "settingsGroupAppearance": "Appearance",
+  "settingsGroupAppearanceDesc": "Interface display preferences",
+  "settingsListDensity": "List Density",
+  "settingsListDensityDesc": "Row height and spacing of the track list",
+  "densityCompact": "Compact",
+  "densityComfortable": "Comfortable"
 }

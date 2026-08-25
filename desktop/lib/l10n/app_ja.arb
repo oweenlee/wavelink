@@ -238,5 +238,11 @@
   "noAlbums": "一致するアルバムなし",
   "playAlbum": "アルバムを再生",
   "artistCount": "アーティスト {count} 組",
-  "albumCount": "アルバム {count} 枚"
+  "albumCount": "アルバム {count} 枚",
+  "settingsGroupAppearance": "外観",
+  "settingsGroupAppearanceDesc": "表示設定",
+  "settingsListDensity": "リスト密度",
+  "settingsListDensityDesc": "トラックリストの行の高さと間隔",
+  "densityCompact": "コンパクト",
+  "densityComfortable": "ゆったり"
 }
