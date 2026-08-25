@@ -252,5 +252,20 @@
   "sourceWebdavConnected": "Verbunden — tippen zum Verwalten",
   "settingsMusicSources": "Musikquellen",
   "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS",
-  "createPlaylistHint": "Erstellt eine leere Playlist. Füge Lieder über das Liedmenü → „Zur Playlist hinzufügen“ hinzu"
+  "createPlaylistHint": "Erstellt eine leere Playlist. Füge Lieder über das Liedmenü → „Zur Playlist hinzufügen“ hinzu",
+  "paywallTitle": "WaveLink Pro",
+  "paywallSubtitle": "Schalte erweiterte Audio-Kalibrierung frei – abgestimmt auf deine Ohren und deinen Raum",
+  "paywallFeatureAutoEq": "AutoEQ-Kopfhörerkorrektur – Tausende Profile mit einem Tipp",
+  "paywallFeatureRoomCorrection": "Raumkorrektur – Raumakustik per REW-Messung ausgleichen",
+  "paywallFeatureReplayGain": "ReplayGain-Lautstärkeanpassung – gleichmäßige Lautstärke bei allen Titeln",
+  "paywallTrialButton": "1 Monat kostenlos testen, dann {price}/Monat",
+  "paywallSubscribeButton": "Abonnieren · {price}/Monat",
+  "paywallRestore": "Käufe wiederherstellen",
+  "paywallTerms": "1 Monat kostenlos, danach automatische Verlängerung für {price}/Monat. Jederzeit in den App-Store-Abo-Einstellungen kündbar.",
+  "paywallErrorOfferings": "Abo-Informationen konnten nicht geladen werden. Bitte Verbindung prüfen und erneut versuchen.",
+  "paywallErrorRestore": "Keine wiederherstellbaren Käufe gefunden",
+  "paywallErrorGeneric": "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+  "proActive": "Aktiv",
+  "paywallTermsOfUse": "Nutzungsbedingungen",
+  "paywallPrivacyPolicy": "Datenschutzrichtlinie"
 }

@@ -10,6 +10,7 @@ import '../features/library/views/song_list_page.dart';
 import '../features/settings/views/diagnostic_page.dart';
 import '../features/settings/views/autoeq_settings_page.dart';
 import '../features/settings/views/room_correction_page.dart';
+import '../features/paywall/views/paywall_page.dart';
 import '../features/library/views/nas_settings_page.dart';
 import '../features/library/views/subsonic_settings_page.dart';
 import '../features/library/views/webdav_settings_page.dart';
@@ -116,6 +117,29 @@ final goRouter = GoRouter(
     GoRoute(
       path: '/room-correction',
       builder: (context, state) => const RoomCorrectionPage(),
+    ),
+    GoRoute(
+      path: '/paywall',
+      pageBuilder: (context, state) => CustomTransitionPage(
+        key: state.pageKey,
+        child: const PaywallPage(),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 1),
+              end: Offset.zero,
+            ).animate(curved),
+            child: FadeTransition(opacity: curved, child: child),
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 320),
+        reverseTransitionDuration: const Duration(milliseconds: 260),
+      ),
     ),
   ],
 );

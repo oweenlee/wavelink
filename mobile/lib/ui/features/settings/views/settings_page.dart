@@ -15,6 +15,18 @@ import '../../playback/view_models/audio_player_provider.dart';
 import '../view_models/dsp_provider.dart';
 import '../view_models/locale_provider.dart';
 import '../view_models/package_info_provider.dart';
+import '../../paywall/view_models/subscription_provider.dart';
+
+/// Pro 功能门控：未订阅（且订阅状态已查询完成）时改道付费墙，
+/// 否则执行原动作。状态未就绪前放行，避免启动时误弹。
+void _requirePro(BuildContext context, WidgetRef ref, VoidCallback action) {
+  final sub = ref.read(subscriptionProvider);
+  if (sub.isPro || !sub.ready) {
+    action();
+  } else {
+    context.push('/paywall');
+  }
+}
 
 /// 设置页。
 ///
@@ -91,6 +103,7 @@ class SettingsPage extends StatelessWidget {
     addSection(l10n.language, [(_) => const _LanguageItem()]);
 
     addSection(l10n.settingsAbout, [
+      (ctx) => const _ProRow(),
       (ctx) => _SettingItem(
         icon: LucideIcons.activity,
         label: l10n.diagnosticEntry,
@@ -176,7 +189,7 @@ class _AutoEqRow extends ConsumerWidget {
       icon: LucideIcons.headphones,
       label: l10n.autoEq,
       trailing: model ?? l10n.autoEqOff,
-      onTap: () => context.push('/autoeq'),
+      onTap: () => _requirePro(context, ref, () => context.push('/autoeq')),
     );
   }
 }
@@ -194,7 +207,8 @@ class _RoomCorrectionRow extends ConsumerWidget {
       trailing: irPath != null
           ? l10n.roomCorrectionActive
           : l10n.roomCorrectionOff,
-      onTap: () => context.push('/room-correction'),
+      onTap: () =>
+          _requirePro(context, ref, () => context.push('/room-correction')),
     );
   }
 }
@@ -210,8 +224,9 @@ class _ReplayGainRow extends ConsumerWidget {
       icon: LucideIcons.sparkles,
       label: l10n.replayGain,
       value: value,
-      onChanged: (_) =>
-          ref.read(playbackControllerProvider).setReplayGain(!value),
+      onChanged: (_) => _requirePro(context, ref, () {
+        ref.read(playbackControllerProvider).setReplayGain(!value);
+      }),
     );
   }
 }
@@ -354,6 +369,23 @@ class _CacheRowState extends ConsumerState<_CacheRow> {
       label: l10n.clearCache,
       trailing: _clearing ? '•••' : _size,
       onTap: _clearing ? null : _confirmClear,
+    );
+  }
+}
+
+/// WaveLink Pro 入口：已订阅显示激活状态，未订阅点击进付费墙。
+class _ProRow extends ConsumerWidget {
+  const _ProRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final isPro = ref.watch(subscriptionProvider.select((s) => s.isPro));
+    return _SettingItem(
+      icon: LucideIcons.crown,
+      label: l10n.paywallTitle,
+      trailing: isPro ? l10n.proActive : null,
+      onTap: () => context.push('/paywall'),
     );
   }
 }

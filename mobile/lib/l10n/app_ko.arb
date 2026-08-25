@@ -252,5 +252,20 @@
   "sourceWebdavConnected": "연결됨 — 눌러서 관리",
   "settingsMusicSources": "음악 소스",
   "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS",
-  "createPlaylistHint": "빈 플레이리스트를 만듭니다. 곡 메뉴 → \"플레이리스트에 추가\"로 곡을 추가하세요"
+  "createPlaylistHint": "빈 플레이리스트를 만듭니다. 곡 메뉴 → \"플레이리스트에 추가\"로 곡을 추가하세요",
+  "paywallTitle": "WaveLink Pro",
+  "paywallSubtitle": "고급 오디오 보정 기능을 잠금 해제하고 내 귀와 공간에 맞는 소리로",
+  "paywallFeatureAutoEq": "AutoEQ 헤드폰 보정 — 수천 개 프로파일을 한 번에 적용",
+  "paywallFeatureRoomCorrection": "룸 보정 — REW 측정으로 공간 음향을 보정",
+  "paywallFeatureReplayGain": "ReplayGain 라우드니스 조절 — 곡마다 일정한 음량",
+  "paywallTrialButton": "1개월 무료 체험, 이후 {price}/월",
+  "paywallSubscribeButton": "구독 · {price}/월",
+  "paywallRestore": "구매 복원",
+  "paywallTerms": "1개월 무료 후 {price}/월로 자동 갱신됩니다. App Store 구독 관리에서 언제든 해지할 수 있습니다.",
+  "paywallErrorOfferings": "구독 정보를 가져올 수 없습니다. 네트워크를 확인한 후 다시 시도해 주세요.",
+  "paywallErrorRestore": "복원할 구매 기록이 없습니다",
+  "paywallErrorGeneric": "작업에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+  "proActive": "활성화됨",
+  "paywallTermsOfUse": "이용약관",
+  "paywallPrivacyPolicy": "개인정보 처리방침"
 }

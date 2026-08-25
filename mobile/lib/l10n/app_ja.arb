@@ -252,5 +252,20 @@
   "sourceWebdavConnected": "接続済み — タップして管理",
   "settingsMusicSources": "音楽ソース",
   "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS",
-  "createPlaylistHint": "空のプレイリストを作成します。曲メニュー →「プレイリストに追加」で曲を追加してください"
+  "createPlaylistHint": "空のプレイリストを作成します。曲メニュー →「プレイリストに追加」で曲を追加してください",
+  "paywallTitle": "WaveLink Pro",
+  "paywallSubtitle": "高度なオーディオ補正を解錠して、あなたの耳と部屋に合わせた音へ",
+  "paywallFeatureAutoEq": "AutoEQ ヘッドフォン補正 — 数千機種のプロファイルをワンタップ適用",
+  "paywallFeatureRoomCorrection": "ルーム補正 — REW 測定で部屋の音響特性を補正",
+  "paywallFeatureReplayGain": "ReplayGain ラウドネス調整 — 曲間の音量差を均一化",
+  "paywallTrialButton": "1ヶ月無料トライアル、その後 {price}/月",
+  "paywallSubscribeButton": "購読 · {price}/月",
+  "paywallRestore": "購入を復元",
+  "paywallTerms": "1ヶ月間無料、期限後は {price}/月で自動更新されます。App Store の登録管理からいつでもキャンセルできます。",
+  "paywallErrorOfferings": "サブスクリプション情報を取得できません。ネットワークをご確認ください。",
+  "paywallErrorRestore": "復元できる購入履歴が見つかりません",
+  "paywallErrorGeneric": "操作に失敗しました。しばらくしてからもう一度お試しください。",
+  "proActive": "有効",
+  "paywallTermsOfUse": "利用規約",
+  "paywallPrivacyPolicy": "プライバシーポリシー"
 }

@@ -47,6 +47,8 @@ dependencies:
   package_info_plus: ^8.0.0
   sqflite: ^2.4.3
   sqflite_common_ffi: ^2.4.2+1
+  purchases_flutter: ^10.9.1   # RevenueCat 订阅（Pro 功能付费墙）
+  url_launcher: ^6.3.2         # 付费墙条款/隐私政策外链（苹果审核要求）
   image: ^4.5.4               # 封面缩略图 JPEG 编码（对齐 desktop CoverCache.ensureThumb）
 
 dev_dependencies:

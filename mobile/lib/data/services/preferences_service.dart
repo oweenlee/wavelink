@@ -186,7 +186,10 @@ class PreferencesService {
 
   // ── ReplayGain ──
   static const _kReplayGain = 'replay_gain';
-  bool get replayGain => _prefs.getBool(_kReplayGain) ?? true;
+  // ReplayGain 是 Pro 功能：未订阅用户不能操作开关，默认必须关闭，
+  // 否则出现「付费功能默认开启却无法关闭」的矛盾体验。
+  // 仅影响从未写入过该 key 的新装用户；老用户已持久化的值不受影响。
+  bool get replayGain => _prefs.getBool(_kReplayGain) ?? false;
   Future<void> setReplayGain(bool v) => _prefs.setBool(_kReplayGain, v);
 
   // ── Bit-perfect / 采样率跟随 ──

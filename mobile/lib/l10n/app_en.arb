@@ -252,5 +252,20 @@
   "sourceWebdavConnected": "Connected — tap to manage",
   "settingsMusicSources": "Music Sources",
   "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS",
-  "createPlaylistHint": "Creates an empty playlist. Add songs via the song menu → \"Add to playlist\""
+  "createPlaylistHint": "Creates an empty playlist. Add songs via the song menu → \"Add to playlist\"",
+  "paywallTitle": "WaveLink Pro",
+  "paywallSubtitle": "Unlock advanced audio calibration tuned to your ears and room",
+  "paywallFeatureAutoEq": "AutoEQ headphone correction — thousands of profiles, one tap",
+  "paywallFeatureRoomCorrection": "Room correction — compensate your room with REW measurement",
+  "paywallFeatureReplayGain": "ReplayGain loudness leveling — consistent volume across tracks",
+  "paywallTrialButton": "Try free for 1 month, then {price}/mo",
+  "paywallSubscribeButton": "Subscribe · {price}/mo",
+  "paywallRestore": "Restore purchases",
+  "paywallTerms": "Free for 1 month, then auto-renews at {price}/month. Cancel anytime in your App Store subscription settings.",
+  "paywallErrorOfferings": "Unable to load subscription info. Check your connection and try again.",
+  "paywallErrorRestore": "No purchases found to restore",
+  "paywallErrorGeneric": "Something went wrong. Please try again.",
+  "proActive": "Active",
+  "paywallTermsOfUse": "Terms of Use",
+  "paywallPrivacyPolicy": "Privacy Policy"
 }

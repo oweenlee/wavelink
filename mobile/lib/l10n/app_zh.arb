@@ -252,5 +252,20 @@
   "sourceWebdavConnected": "已连接 — 点击管理",
   "settingsMusicSources": "音乐源",
   "supportedFormats": "FLAC · WAV · AIFF · MP3 · AAC · OGG · OPUS · WAVPACK · DSF/DFF (DSD) · CUE · M3U/PLS",
-  "createPlaylistHint": "新建的是空播放列表，在歌曲菜单可「添加到播放列表」"
+  "createPlaylistHint": "新建的是空播放列表，在歌曲菜单可「添加到播放列表」",
+  "paywallTitle": "WaveLink Pro",
+  "paywallSubtitle": "解锁高级音频校正功能，把声音调到最适合你",
+  "paywallFeatureAutoEq": "AutoEQ 耳机校正 — 数千款耳机档案一键应用",
+  "paywallFeatureRoomCorrection": "房间校正 — REW 测量曲线补偿房间声学缺陷",
+  "paywallFeatureReplayGain": "ReplayGain 响度均衡 — 不同曲目音量一致",
+  "paywallTrialButton": "免费试用 1 个月，之后 {price}/月",
+  "paywallSubscribeButton": "订阅 · {price}/月",
+  "paywallRestore": "恢复购买",
+  "paywallTerms": "免费试用 1 个月，到期后自动按 {price}/月 续订，可随时在 App Store 订阅管理中取消。",
+  "paywallErrorOfferings": "暂时无法获取订阅信息，请检查网络后重试",
+  "paywallErrorRestore": "未找到可恢复的购买记录",
+  "paywallErrorGeneric": "操作失败，请稍后重试",
+  "proActive": "已激活",
+  "paywallTermsOfUse": "使用条款",
+  "paywallPrivacyPolicy": "隐私政策"
 }
