@@ -134,7 +134,7 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
               const SizedBox(height: 24),
               _featureRow(LucideIcons.headphones, l10n.paywallFeatureAutoEq),
               _featureRow(LucideIcons.building2, l10n.paywallFeatureRoomCorrection),
-              _featureRow(LucideIcons.sparkles, l10n.paywallFeatureReplayGain),
+              _featureRow(LucideIcons.badgeCheck, l10n.paywallFeatureBitPerfect),
               const Spacer(),
               if (_error != null)
                 Padding(

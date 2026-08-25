@@ -257,7 +257,7 @@
   "paywallSubtitle": "고급 오디오 보정 기능을 잠금 해제하고 내 귀와 공간에 맞는 소리로",
   "paywallFeatureAutoEq": "AutoEQ 헤드폰 보정 — 수천 개 프로파일을 한 번에 적용",
   "paywallFeatureRoomCorrection": "룸 보정 — REW 측정으로 공간 음향을 보정",
-  "paywallFeatureReplayGain": "ReplayGain 라우드니스 조절 — 곡마다 일정한 음량",
+  "paywallFeatureBitPerfect": "Bit Perfect 출력 — 원음을 가공하지 않고 네이티브 샘플레이트로 재생",
   "paywallTrialButton": "1개월 무료 체험, 이후 {price}/월",
   "paywallSubscribeButton": "구독 · {price}/월",
   "paywallRestore": "구매 복원",

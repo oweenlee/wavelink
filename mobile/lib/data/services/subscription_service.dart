@@ -84,7 +84,10 @@ class SubscriptionService {
 
   /// 恢复购买。返回恢复后是否拥有 Pro 权益；失败向上抛，由调用方
   /// 统一展示本地化错误（与 purchase 的抛错约定一致）。
+  /// 未初始化时直接返回 false：SDK 未 configure 时调原生方法会
+  /// fatal error 崩溃，且该崩溃无法被 Dart catch。
   static Future<bool> restore() async {
+    if (!_initialized) return false;
     final info = await Purchases.restorePurchases();
     return info.entitlements.all[proEntitlementId]?.isActive ?? false;
   }

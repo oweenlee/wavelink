@@ -189,6 +189,7 @@ class _AutoEqRow extends ConsumerWidget {
       icon: LucideIcons.headphones,
       label: l10n.autoEq,
       trailing: model ?? l10n.autoEqOff,
+      badge: const _ProBadge(),
       onTap: () => _requirePro(context, ref, () => context.push('/autoeq')),
     );
   }
@@ -207,6 +208,7 @@ class _RoomCorrectionRow extends ConsumerWidget {
       trailing: irPath != null
           ? l10n.roomCorrectionActive
           : l10n.roomCorrectionOff,
+      badge: const _ProBadge(),
       onTap: () =>
           _requirePro(context, ref, () => context.push('/room-correction')),
     );
@@ -224,9 +226,8 @@ class _ReplayGainRow extends ConsumerWidget {
       icon: LucideIcons.sparkles,
       label: l10n.replayGain,
       value: value,
-      onChanged: (_) => _requirePro(context, ref, () {
-        ref.read(playbackControllerProvider).setReplayGain(!value);
-      }),
+      onChanged: (_) =>
+          ref.read(playbackControllerProvider).setReplayGain(!value),
     );
   }
 }
@@ -247,8 +248,10 @@ class _BitPerfectRow extends ConsumerWidget {
       icon: LucideIcons.badgeCheck,
       label: l10n.bitPerfect,
       value: bitPerfect,
-      onChanged: (_) =>
-          ref.read(playbackControllerProvider).setBitPerfect(!bitPerfect),
+      onChanged: (_) => _requirePro(context, ref, () {
+        ref.read(playbackControllerProvider).setBitPerfect(!bitPerfect);
+      }),
+      badge: const _ProBadge(),
       subtitle: _bitPerfectStatus(l10n, bitPerfect, telemetry, dsp, replayGain),
     );
   }
@@ -708,17 +711,52 @@ class _RowShell extends StatelessWidget {
   }
 }
 
+/// Pro 功能标识：未订阅（且状态已就绪）时显示小徽标，订阅成功后消失。
+/// 行内只 select ready/isPro，购买完成自动刷新本行。
+class _ProBadge extends ConsumerWidget {
+  const _ProBadge();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final locked = ref.watch(
+      subscriptionProvider.select((s) => s.ready && !s.isPro),
+    );
+    if (!locked) return const SizedBox.shrink();
+    final accent = AccentScope.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Text(
+        'PRO',
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          color: accent,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+}
+
 class _SettingItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final String? trailing;
   final VoidCallback? onTap;
 
+  /// 行内 Pro 徽标（可选），渲染在标题右侧、trailing 之前。
+  final Widget? badge;
+
   const _SettingItem({
     required this.icon,
     required this.label,
     this.trailing,
     this.onTap,
+    this.badge,
   });
 
   @override
@@ -752,6 +790,10 @@ class _SettingItem extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (badge != null) ...[
+                  const SizedBox(width: 8),
+                  badge!,
+                ],
                 if (trailing != null) ...[
                   const SizedBox(width: 8),
                   ConstrainedBox(
@@ -792,12 +834,16 @@ class _SwitchItem extends StatelessWidget {
   final ValueChanged<bool> onChanged;
   final String? subtitle;
 
+  /// 行内 Pro 徽标（可选），渲染在标题右侧、开关之前。
+  final Widget? badge;
+
   const _SwitchItem({
     required this.icon,
     required this.label,
     required this.value,
     required this.onChanged,
     this.subtitle,
+    this.badge,
   });
 
   @override
@@ -857,6 +903,10 @@ class _SwitchItem extends StatelessWidget {
                           ],
                         ),
                 ),
+                if (badge != null) ...[
+                  const SizedBox(width: 8),
+                  badge!,
+                ],
                 const SizedBox(width: 8),
                 WlToggle(
                   value: value,

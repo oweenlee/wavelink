@@ -8,6 +8,12 @@ PODS:
     - Flutter
   - package_info_plus (0.4.5):
     - Flutter
+  - purchases_flutter (10.10.0):
+    - Flutter
+    - PurchasesHybridCommon (= 18.32.1)
+  - PurchasesHybridCommon (18.32.1):
+    - RevenueCat (= 5.85.0)
+  - RevenueCat (5.85.0)
   - rust_lib_wavelink_mobile (0.0.1):
     - Flutter
   - shared_preferences_foundation (0.0.1):
@@ -16,6 +22,8 @@ PODS:
   - sqflite_darwin (0.0.4):
     - Flutter
     - FlutterMacOS
+  - url_launcher_ios (0.0.1):
+    - Flutter
 
 DEPENDENCIES:
   - connectivity_plus (from `.symlinks/plugins/connectivity_plus/ios`)
@@ -23,9 +31,16 @@ DEPENDENCIES:
   - fluttertoast (from `.symlinks/plugins/fluttertoast/ios`)
   - integration_test (from `.symlinks/plugins/integration_test/ios`)
   - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
+  - purchases_flutter (from `.symlinks/plugins/purchases_flutter/ios`)
   - rust_lib_wavelink_mobile (from `.symlinks/plugins/rust_lib_wavelink_mobile/ios`)
   - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
   - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
+  - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
+
+SPEC REPOS:
+  trunk:
+    - PurchasesHybridCommon
+    - RevenueCat
 
 EXTERNAL SOURCES:
   connectivity_plus:
@@ -38,12 +53,16 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/integration_test/ios"
   package_info_plus:
     :path: ".symlinks/plugins/package_info_plus/ios"
+  purchases_flutter:
+    :path: ".symlinks/plugins/purchases_flutter/ios"
   rust_lib_wavelink_mobile:
     :path: ".symlinks/plugins/rust_lib_wavelink_mobile/ios"
   shared_preferences_foundation:
     :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
   sqflite_darwin:
     :path: ".symlinks/plugins/sqflite_darwin/darwin"
+  url_launcher_ios:
+    :path: ".symlinks/plugins/url_launcher_ios/ios"
 
 SPEC CHECKSUMS:
   connectivity_plus: cb623214f4e1f6ef8fe7403d580fdad517d2f7dd
@@ -51,9 +70,13 @@ SPEC CHECKSUMS:
   fluttertoast: fe6790210fdba20801685be946e3a2124b72eef5
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
   package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499
+  purchases_flutter: 187d766283ddd415af6d95a32dfd63f55162a130
+  PurchasesHybridCommon: 02cad5fb69b682309baa3ad4d6dcb7836c1543e0
+  RevenueCat: 2dec9f71800de36af31884c3cc73e9ffb4a41786
   rust_lib_wavelink_mobile: 1d7fe67d1e416242f67d3b8fe66cc9827040ca51
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
   sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
+  url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
 
 PODFILE CHECKSUM: 1857a7cdb7dfafe45f2b0e9a9af44644190f7506
 

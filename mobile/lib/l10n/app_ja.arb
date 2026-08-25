@@ -257,7 +257,7 @@
   "paywallSubtitle": "高度なオーディオ補正を解錠して、あなたの耳と部屋に合わせた音へ",
   "paywallFeatureAutoEq": "AutoEQ ヘッドフォン補正 — 数千機種のプロファイルをワンタップ適用",
   "paywallFeatureRoomCorrection": "ルーム補正 — REW 測定で部屋の音響特性を補正",
-  "paywallFeatureReplayGain": "ReplayGain ラウドネス調整 — 曲間の音量差を均一化",
+  "paywallFeatureBitPerfect": "Bit Perfect 出力 — 音源を加工せずネイティブのサンプルレートで再生",
   "paywallTrialButton": "1ヶ月無料トライアル、その後 {price}/月",
   "paywallSubscribeButton": "購読 · {price}/月",
   "paywallRestore": "購入を復元",

@@ -257,7 +257,7 @@
   "paywallSubtitle": "Schalte erweiterte Audio-Kalibrierung frei – abgestimmt auf deine Ohren und deinen Raum",
   "paywallFeatureAutoEq": "AutoEQ-Kopfhörerkorrektur – Tausende Profile mit einem Tipp",
   "paywallFeatureRoomCorrection": "Raumkorrektur – Raumakustik per REW-Messung ausgleichen",
-  "paywallFeatureReplayGain": "ReplayGain-Lautstärkeanpassung – gleichmäßige Lautstärke bei allen Titeln",
+  "paywallFeatureBitPerfect": "Bit-perfect-Ausgabe – unverfälschtes Audio mit nativer Abtastrate",
   "paywallTrialButton": "1 Monat kostenlos testen, dann {price}/Monat",
   "paywallSubscribeButton": "Abonnieren · {price}/Monat",
   "paywallRestore": "Käufe wiederherstellen",

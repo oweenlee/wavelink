@@ -257,7 +257,7 @@
   "paywallSubtitle": "解锁高级音频校正功能，把声音调到最适合你",
   "paywallFeatureAutoEq": "AutoEQ 耳机校正 — 数千款耳机档案一键应用",
   "paywallFeatureRoomCorrection": "房间校正 — REW 测量曲线补偿房间声学缺陷",
-  "paywallFeatureReplayGain": "ReplayGain 响度均衡 — 不同曲目音量一致",
+  "paywallFeatureBitPerfect": "Bit Perfect 模式 — 无损原样直出，采样率不经重采样",
   "paywallTrialButton": "免费试用 1 个月，之后 {price}/月",
   "paywallSubscribeButton": "订阅 · {price}/月",
   "paywallRestore": "恢复购买",
