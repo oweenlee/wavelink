@@ -59,10 +59,9 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
       if (!mounted) return;
       if (ok) Navigator.of(context).pop(true);
     } on PlatformException catch (e) {
-      // 用户取消购买是正常路径，不弹错误。
-      // purchases_flutter 约定：PlatformException.code 为错误码字符串，
-      // purchaseCancelledError = PurchasesErrorCode 枚举 index 1
-      final cancelled = e.code == '1';
+      // 用户取消购买是正常路径，不弹错误（官方助手解析错误码）
+      final cancelled = PurchasesErrorHelper.getErrorCode(e) ==
+          PurchasesErrorCode.purchaseCancelledError;
       if (!cancelled && mounted) {
         setState(() => _error = 'purchase_failed');
       }
@@ -171,11 +170,13 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
                 ),
               ],
               const SizedBox(height: 8),
-              // 苹果审核要求明示到期后价格；无套餐（加载失败/离线）时不渲染，
-              // 避免出现「之后 /月」的残缺文案
+              // 苹果审核要求明示到期后价格，用 priceString（StoreKit 已按
+              // 地区货币格式化）。注意：当前仅配置单个月度套餐，条款只取
+              // 首个套餐的价格；将来加年费等多套餐时需逐套餐展示条款，
+              // 否则条款价与按钮价不一致会被审核挑刺。
               if (_packages.isNotEmpty)
                 Text(
-                  l10n.paywallTerms(_packages.first.storeProduct.price),
+                  l10n.paywallTerms(_packages.first.storeProduct.priceString),
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 11,
@@ -276,7 +277,7 @@ class _PurchaseButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final price = package.storeProduct.price;
+    final price = package.storeProduct.priceString;
     final hasTrial =
         package.storeProduct.introductoryPrice != null;
 

@@ -5,7 +5,8 @@ import 'log.dart';
 /// RevenueCat 订阅服务（Pro 功能付费墙）。
 ///
 /// 上线前需完成：
-/// 1. RevenueCat 控制台创建项目，填入下方 API Key；
+/// 1. RevenueCat 控制台创建项目，构建时注入 API Key：
+///    --dart-define=REVENUECAT_APPLE_KEY=appl_xxx；
 /// 2. App Store Connect 创建自动续期订阅产品（月订阅 + 1 个月免费试用
 ///    的引进优惠），并在 RevenueCat 关联为 entitlement `pro`。
 ///
@@ -13,8 +14,11 @@ import 'log.dart';
 class SubscriptionService {
   SubscriptionService._();
 
-  /// RevenueCat Apple API Key（appl_ 开头）。TODO: 上线前替换。
-  static const String _appleApiKey = 'REPLACE_WITH_REVENUECAT_APPLE_KEY';
+  /// RevenueCat Apple API Key（appl_ 开头）。
+  /// 通过 --dart-define=REVENUECAT_APPLE_KEY=appl_xxx 注入，避免明文进仓库。
+  /// 未注入（空值）时所有接口静默降级为「未订阅」。
+  static const String _appleApiKey =
+      String.fromEnvironment('REVENUECAT_APPLE_KEY');
 
   /// RevenueCat entitlement 标识：拥有即 Pro。
   static const String proEntitlementId = 'pro';
@@ -39,8 +43,7 @@ class SubscriptionService {
     }
   }
 
-  static bool get kKeyMissing =>
-      _appleApiKey.startsWith('REPLACE_WITH_') || _appleApiKey.isEmpty;
+  static bool get kKeyMissing => _appleApiKey.isEmpty;
 
   /// 当前是否拥有 Pro 权益。未初始化/查询失败一律视为未订阅。
   static Future<bool> isPro() async {
@@ -69,7 +72,9 @@ class SubscriptionService {
   }
 
   /// 购买指定套餐。成功后刷新权益并返回是否成为 Pro。
+  /// 与其余接口一致先做初始化检查，避免原生异常漏到上层。
   static Future<bool> purchase(Package package) async {
+    if (!_initialized) return false;
     final result = await Purchases.purchase(
       PurchaseParams.package(package),
     );
@@ -77,15 +82,10 @@ class SubscriptionService {
         false;
   }
 
-  /// 恢复购买。返回恢复后是否拥有 Pro 权益。
+  /// 恢复购买。返回恢复后是否拥有 Pro 权益；失败向上抛，由调用方
+  /// 统一展示本地化错误（与 purchase 的抛错约定一致）。
   static Future<bool> restore() async {
-    if (!_initialized) return false;
-    try {
-      final info = await Purchases.restorePurchases();
-      return info.entitlements.all[proEntitlementId]?.isActive ?? false;
-    } catch (e) {
-      Log.e('Subscription', '恢复购买失败: $e');
-      rethrow;
-    }
+    final info = await Purchases.restorePurchases();
+    return info.entitlements.all[proEntitlementId]?.isActive ?? false;
   }
 }
