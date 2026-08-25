@@ -71,14 +71,20 @@ class CoverCache {
   /// 统一入口：扫描期种子（library.dart）与三个 extract* 都走这里，
   /// 保证新落盘的封面都带缩略图；原图已存在只补缩略图。
   /// 失败（解码异常/编码异常）静默：UI 侧 errorBuilder 回退原图。
-  Future<String?> writeCover(Track probe, Uint8List bytes) async {
+  /// 写封面原图 + 320px 缩略图。[thumb] 为 false 时只写原图
+  /// （扫描主链路用：缩略图解码编码是重活，挪到后台回填，让曲库
+  /// 扫描先完成、列表先出现）。
+  Future<String?> writeCover(Track probe, Uint8List bytes,
+      {bool thumb = true}) async {
     try {
       final out = File(await cacheFilePathFor(probe));
       if (!await out.exists()) {
         await out.writeAsBytes(bytes);
       }
-      // 直接复用内存 bytes 生成缩略图，避免刚写完又读一遍原图。
-      await ensureThumb(out, bytes: bytes);
+      if (thumb) {
+        // 直接复用内存 bytes 生成缩略图，避免刚写完又读一遍原图。
+        await ensureThumb(out, bytes: bytes);
+      }
       return out.path;
     } catch (_) {
       return null;

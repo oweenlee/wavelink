@@ -14,8 +14,9 @@ import 'scan_helpers.dart';
 List<String> get _audioExtensions => audioExtensions;
 
 /// 元数据读取并发度。symphonia/lofty 读头很快（每首毫秒级），
-/// 8 路并发足以让数千曲库在数秒内完成，且不压垮磁盘 I/O。
-const int _metadataConcurrency = 8;
+/// 12 路并发足以让数千曲库在数秒内完成，且不压垮磁盘 I/O。
+/// （缩略图编码已移出扫描主链路，并发可略高于此前 8 路。）
+const int _metadataConcurrency = 12;
 
 /// 递归扫描目录，返回按 艺人→专辑→音轨号→标题 排序的曲目列表。
 ///
@@ -32,9 +33,13 @@ const int _metadataConcurrency = 8;
 /// [onBatch] 为可选进度回调：标签解析每攒满一批（32 首）即调用一次，
 /// 供调用方增量并入曲库。数百首的大文件夹不必等全部解析完（数秒）才
 /// 一次性出现列表，首屏随扫描进度逐批填充。
+///
+/// [onProgress] 为可选确定性进度回调：(total, done)，每处理 16 首回调
+/// 一次（节流，避免每首触发 UI 重建）。供调用方驱动确定性进度条。
 Future<List<Track>> scanFolder(
   String folderPath, {
   void Function(List<Track> batch)? onBatch,
+  void Function(int total, int done)? onProgress,
 }) async {
   final dir = Directory(folderPath);
   if (!await dir.exists()) return const [];
@@ -65,7 +70,8 @@ Future<List<Track>> scanFolder(
   final files = audioFiles
       .where((f) => !cueResult.imagePaths.contains(_normKey(f.path)))
       .toList();
-  final tracks = await _parseTracksConcurrent(files, onBatch: onBatch);
+  final tracks = await _parseTracksConcurrent(files,
+      onBatch: onBatch, onProgress: onProgress);
 
   tracks.addAll(cueResult.tracks);
   tracks.sort(libraryOrder);
@@ -175,6 +181,7 @@ const int _scanBatchSize = 32;
 Future<List<Track>> _parseTracksConcurrent(
   List<File> files, {
   void Function(List<Track> batch)? onBatch,
+  void Function(int total, int done)? onProgress,
 }) async {
   // 空列表（空目录 / 全为 cue 镜像被排除）直接返回，避免
   // _metadataConcurrency.clamp(1, 0) 因 lower>upper 抛 ArgumentError，
@@ -184,6 +191,7 @@ Future<List<Track>> _parseTracksConcurrent(
   final results = List<Track?>.filled(files.length, null);
   final acc = <Track>[];
   var next = 0;
+  var done = 0;
 
   void flush() {
     if (onBatch == null || acc.isEmpty) return;
@@ -197,6 +205,12 @@ Future<List<Track>> _parseTracksConcurrent(
       if (i >= files.length) return;
       final t = await _parseTrack(files[i]);
       results[i] = t;
+      done++;
+      // 进度节流：每 16 首回调一次（UI 重建频率与 onBatch 同级，
+      // 避免 1000 首触发 1000 次重建）。
+      if (done % 16 == 0 || done == files.length) {
+        onProgress?.call(files.length, done);
+      }
       if (t == null) continue;
       acc.add(t);
       if (acc.length >= _scanBatchSize) flush();
@@ -284,9 +298,10 @@ Future<Track?> _parseTrack(File file) async {
 Future<String?> _seedCover(String filePath, List<int> bytes) async {
   try {
     final probe = Track(id: filePath, title: '', artist: '', filePath: filePath);
-    // 统一写入封面缓存（原图 + 320px 缩略图），失败返回 null（后台提取与其兑底）。
+    // 统一写入封面缓存（只写原图；320px 缩略图由扫描后的后台回填生成，
+    // 避免缩略图解码编码拖慢扫描主链路）。失败返回 null（后台提取与其兑底）。
     return await CoverCache.instance
-        .writeCover(probe, Uint8List.fromList(bytes));
+        .writeCover(probe, Uint8List.fromList(bytes), thumb: false);
   } catch (_) {
     // 缓存落盘失败不影响扫描结果
     return null;

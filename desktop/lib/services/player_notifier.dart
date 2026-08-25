@@ -71,6 +71,14 @@ class PlayerState {
   /// 引擎初始化错误信息（null 表示成功或尚未加载，哨兵区分）。
   final String? engineInitError;
 
+  /// 是否正在扫描音源（本地文件夹 / WebDAV / NAS / Subsonic 导入中）。
+  /// 驱动曲库顶部的细进度条反馈（扫描通常数秒，批次渐进已让列表随扫随增）。
+  final bool scanning;
+
+  /// 扫描确定性进度 0~1（null = 扫描中但无进度信息，进度条显示不定态）。
+  /// 本地扫描经 scanFolder 的 onProgress 节流上报；网络音源无进度回调。
+  final double? scanProgress;
+
   const PlayerState({
     this.library = const [],
     this.folders = const [],
@@ -87,6 +95,8 @@ class PlayerState {
     this.lyrics,
     this.engineReady = false,
     this.engineInitError,
+    this.scanning = false,
+    this.scanProgress,
   });
 
   /// 当前曲目（队列为空或未开始播放时为 null）。
@@ -112,6 +122,8 @@ class PlayerState {
     Object? lyrics = _sentinel,
     bool? engineReady,
     Object? engineInitError = _sentinel,
+    bool? scanning,
+    Object? scanProgress = _sentinel,
   }) {
     return PlayerState(
       library: library ?? this.library,
@@ -135,6 +147,10 @@ class PlayerState {
       engineInitError: identical(engineInitError, _sentinel)
           ? this.engineInitError
           : engineInitError as String?,
+      scanning: scanning ?? this.scanning,
+      scanProgress: identical(scanProgress, _sentinel)
+          ? this.scanProgress
+          : scanProgress as double?,
     );
   }
 }
@@ -322,27 +338,39 @@ class PlayerNotifier extends Notifier<PlayerState> {
       _reportError('曲库读取失败，本次启动以空库运行', e);
     }
     if (state.folders.isNotEmpty) {
-      for (final folder in state.folders) {
-        final swFolder = Stopwatch()..start();
-        final scanned = await scanFolder(folder);
-        addLibraryFiles(scanned);
-        try {
-          await TrackRepository.syncScan(scanned, localPrefix: folder);
-        } catch (e) {
-          _reportError('曲库写入失败，扫描结果可能未保存', e);
+      state = state.copyWith(scanning: true, scanProgress: 0.0);
+      try {
+        for (final folder in state.folders) {
+          final swFolder = Stopwatch()..start();
+          final scanned = await scanFolder(
+            folder,
+            onProgress: (total, done) {
+              // 每文件夹独立进度；total 为当前文件夹曲目数
+              state = state.copyWith(
+                  scanProgress: total > 0 ? done / total : 0.0);
+            },
+          );
+          addLibraryFiles(scanned);
+          try {
+            await TrackRepository.syncScan(scanned, localPrefix: folder);
+          } catch (e) {
+            _reportError('曲库写入失败，扫描结果可能未保存', e);
+          }
+          debugPrint(
+            '[perf] 扫描 $folder: ${scanned.length} 首, '
+            '${swFolder.elapsedMilliseconds}ms',
+          );
+          // TODO(启动优化观察哨)：扫描是每次启动全量重读标签（无 mtime 增量）。
+          // 实测 839 首热缓存 421ms / 冷缓存 3.1s，UI 不阻塞可接受。若曲库
+          // 增长到数千首且此日志超 10s，再考虑 mtime+size 增量方案
+          // （需同步改造 syncScan 的「按前缀删旧插新」模型，正确性风险见
+          // DESIGN_GUIDE 启动管线一节）。
+          // 扫描期已直接落盘封面并回填 coverUrl（library.dart _seedCover），
+          // 此处仅补漏（扫描中标签读取失败的文件），后台执行不阻塞 UI。
+          extractCoversFor(scanned);
         }
-        debugPrint(
-          '[perf] 扫描 $folder: ${scanned.length} 首, '
-          '${swFolder.elapsedMilliseconds}ms',
-        );
-        // TODO(启动优化观察哨)：扫描是每次启动全量重读标签（无 mtime 增量）。
-        // 实测 839 首热缓存 421ms / 冷缓存 3.1s，UI 不阻塞可接受。若曲库
-        // 增长到数千首且此日志超 10s，再考虑 mtime+size 增量方案
-        // （需同步改造 syncScan 的「按前缀删旧插新」模型，正确性风险见
-        // DESIGN_GUIDE 启动管线一节）。
-        // 扫描期已直接落盘封面并回填 coverUrl（library.dart _seedCover），
-        // 此处仅补漏（扫描中标签读取失败的文件），后台执行不阻塞 UI。
-        extractCoversFor(scanned);
+      } finally {
+        state = state.copyWith(scanning: false, scanProgress: null);
       }
     }
     // 恢复上次的播放队列/曲目/进度（曲库已在上面就绪）
@@ -354,15 +382,14 @@ class PlayerNotifier extends Notifier<PlayerState> {
     unawaited(_backfillCoverThumbs());
   }
 
-  /// 会话级缩略图回填：扫描曲库中已带封面但缺缩略图的曲目，限并发生成。
-  /// 每张只读一次原图再编码，之后的启动全是 existsSync 快速跳过。
-  /// hasSource ?? 不需要：仅处理 coverUrl 为本地缓存文件的（网络 URL 无缩略图）。
-  static bool _thumbSwept = false;
-
-  Future<void> _backfillCoverThumbs() async {
-    if (_thumbSwept) return;
-    _thumbSwept = true;
-    final files = state.library
+  /// 缩略图回填：为 [tracks]（默认全部曲库）中已带封面但缺缩略图的曲目
+  /// 限并发生成 320px 缩略图。每张只读一次原图再编码，ensureThumb 的
+  /// exists 快速跳过保证重复调用零成本（首次启动全量回填老缓存，
+  /// 每次本地扫描后回填新曲目）。仅处理 coverUrl 为本地缓存文件的
+  /// （网络 URL 无缩略图）。
+  Future<void> _backfillCoverThumbs([List<Track>? tracks]) async {
+    final src = tracks ?? state.library;
+    final files = src
         .map((t) => t.coverUrl)
         .whereType<String>()
         .where((u) => !u.startsWith('http://') && !u.startsWith('https://'))
@@ -548,22 +575,34 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // 增量入库：扫描每攒满一批（32 首）立即并入曲库，UI 列表随进度逐批
     // 填充。修复「600 首文件夹点击后至少 3s 列表才显示」——此前要等
     // scanFolder 全部解析完（含逐首封面缩略图生成）才一次性更新。
-    final tracks = await scanFolder(
-      path,
-      onBatch: (batch) => addLibraryFiles(batch),
-    );
-    // cue 虚拟曲目在扫描完成后并入；增量批次是解析完成顺序，最后整库
-    // 按规范顺序（艺人→专辑→音轨号→标题）重排。
-    addLibraryFiles(tracks);
-    _resortLibrary();
+    state = state.copyWith(scanning: true, scanProgress: 0.0);
     try {
-      await TrackRepository.syncScan(tracks, localPrefix: path);
-    } catch (e) {
-      _reportError('曲库保存失败，本次扫描结果未持久化', e);
+      final tracks = await scanFolder(
+        path,
+        onBatch: (batch) => addLibraryFiles(batch),
+        onProgress: (total, done) {
+          state = state.copyWith(
+              scanProgress: total > 0 ? done / total : 0.0);
+        },
+      );
+      // cue 虚拟曲目在扫描完成后并入；增量批次是解析完成顺序，最后整库
+      // 按规范顺序（艺人→专辑→音轨号→标题）重排。
+      addLibraryFiles(tracks);
+      _resortLibrary();
+      try {
+        await TrackRepository.syncScan(tracks, localPrefix: path);
+      } catch (e) {
+        _reportError('曲库保存失败，本次扫描结果未持久化', e);
+      }
+      state = state.copyWith(folders: folders);
+      // 后台提取本地封面（不阻塞 UI）
+      extractCoversFor(tracks);
+      // 缩略图回填：扫描主链路只写原图（writeCover thumb:false），
+      // 320px 缩略图在此后台限并发补齐（ensureThumb 有 exists 快速跳过）。
+      unawaited(_backfillCoverThumbs(tracks));
+    } finally {
+      state = state.copyWith(scanning: false, scanProgress: null);
     }
-    state = state.copyWith(folders: folders);
-    // 后台提取本地封面（不阻塞 UI）
-    extractCoversFor(tracks);
   }
 
   /// 扫描增量入库后按规范顺序重排曲库（批次是解析完成顺序，非排序顺序）。
@@ -849,51 +888,66 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
   /// 扫描 WebDAV 服务器并导入曲库（按 id 去重 + 写库）。返回扫描到的曲目。
   Future<List<Track>> importWebdav() async {
-    final tracks = await WebdavService.scanWebdav();
-    if (tracks.isNotEmpty) {
-      addLibraryFiles(tracks);
-      try {
-        await TrackRepository.syncScan(tracks, source: TrackSource.webdav);
-      } catch (e) {
-        _reportError('WebDAV 曲库写入失败，导入结果未保存', e);
+    state = state.copyWith(scanning: true);
+    try {
+      final tracks = await WebdavService.scanWebdav();
+      if (tracks.isNotEmpty) {
+        addLibraryFiles(tracks);
+        try {
+          await TrackRepository.syncScan(tracks, source: TrackSource.webdav);
+        } catch (e) {
+          _reportError('WebDAV 曲库写入失败，导入结果未保存', e);
+        }
       }
+      // 后台提取 WebDAV 封面（Range 读头/尾解析，完成后增量刷新）
+      if (tracks.isNotEmpty) extractCoversFor(tracks);
+      await _cleanOrphanCaches();
+      return tracks;
+    } finally {
+      state = state.copyWith(scanning: false);
     }
-    // 后台提取 WebDAV 封面（Range 读头/尾解析，完成后增量刷新）
-    if (tracks.isNotEmpty) extractCoversFor(tracks);
-    await _cleanOrphanCaches();
-    return tracks;
   }
 
   /// 扫描 NAS (SMB) 共享并导入曲库（按 id 去重 + 写库）。返回扫描到的曲目。
   Future<List<Track>> importNas() async {
-    final tracks = await NasService.scan();
-    if (tracks.isNotEmpty) {
-      addLibraryFiles(tracks);
-      try {
-        await TrackRepository.syncScan(tracks, source: TrackSource.nas);
-      } catch (e) {
-        _reportError('NAS 曲库写入失败，导入结果未保存', e);
+    state = state.copyWith(scanning: true);
+    try {
+      final tracks = await NasService.scan();
+      if (tracks.isNotEmpty) {
+        addLibraryFiles(tracks);
+        try {
+          await TrackRepository.syncScan(tracks, source: TrackSource.nas);
+        } catch (e) {
+          _reportError('NAS 曲库写入失败，导入结果未保存', e);
+        }
       }
+      // 后台提取 NAS 封面（远程读头/尾字节解析，完成后增量刷新）
+      if (tracks.isNotEmpty) extractCoversFor(tracks);
+      await _cleanOrphanCaches();
+      return tracks;
+    } finally {
+      state = state.copyWith(scanning: false);
     }
-    // 后台提取 NAS 封面（远程读头/尾字节解析，完成后增量刷新）
-    if (tracks.isNotEmpty) extractCoversFor(tracks);
-    await _cleanOrphanCaches();
-    return tracks;
   }
 
   /// 扫描 Subsonic 音乐服务器并导入曲库（按 id 去重 + 写库）。返回扫描到的曲目。
   Future<List<Track>> importSubsonic() async {
-    final tracks = await SubsonicService.scanLibrary();
-    if (tracks.isNotEmpty) {
-      addLibraryFiles(tracks);
-      try {
-        await TrackRepository.syncScan(tracks, source: TrackSource.subsonic);
-      } catch (e) {
-        _reportError('Subsonic 曲库写入失败，导入结果未保存', e);
+    state = state.copyWith(scanning: true);
+    try {
+      final tracks = await SubsonicService.scanLibrary();
+      if (tracks.isNotEmpty) {
+        addLibraryFiles(tracks);
+        try {
+          await TrackRepository.syncScan(tracks, source: TrackSource.subsonic);
+        } catch (e) {
+          _reportError('Subsonic 曲库写入失败，导入结果未保存', e);
+        }
       }
+      await _cleanOrphanCaches();
+      return tracks;
+    } finally {
+      state = state.copyWith(scanning: false);
     }
-    await _cleanOrphanCaches();
-    return tracks;
   }
 
   /// Begin playing [list] starting at [index], honoring shuffle state.
