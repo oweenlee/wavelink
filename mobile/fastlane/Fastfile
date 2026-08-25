@@ -13,6 +13,14 @@
 
 default_platform(:ios)
 
+# App Store Connect API 认证（上传 TestFlight 用）
+# issuer_id 在 App Store Connect → 用户和访问 → 集成 → 密钥页面顶部获取
+app_store_connect_api_key(
+  key_id: 'P4Q97KKSQQ',
+  issuer_id: 'f5009def-bf90-45d1-9a4a-1de2ecb3a82e', # TODO: 替换为你的 Issuer ID（形如 57246542-96fe-1a63-e053-0824d011072a）
+  key_filepath: File.expand_path('~/.fastlane/AuthKey_P4Q97KKSQQ.p8'),
+)
+
 # fastlane 从 fastlane/ 目录运行，pubspec.yaml 在上级目录，用 __dir__ 定位
 def pubspec_path
   File.expand_path('../pubspec.yaml', __dir__)
@@ -23,6 +31,21 @@ def flutter_version
   m = File.read(pubspec_path).match(/^version:\s*(\d+\.\d+\.\d+)\+(\d+)/)
   UI.user_error!('pubspec.yaml 缺少 version: x.y.z+b 字段') unless m
   [m[1], m[2]]
+end
+
+# 写回 pubspec.yaml 的 version 字段
+def write_version(name, build)
+  content = File.read(pubspec_path).sub(/^version:.*$/, "version: #{name}+#{build}")
+  File.write(pubspec_path, content)
+end
+
+# 仅递增 build number（版本名不变），返回新 build number
+def increment_build
+  name, build = flutter_version
+  new_build = build.to_i + 1
+  write_version(name, new_build)
+  UI.success("pubspec.yaml: #{name}+#{build} → #{name}+#{new_build}")
+  new_build
 end
 
 desc '递增版本号（major/minor/patch，默认 patch），build number 同时 +1'
@@ -40,40 +63,39 @@ lane :bump_version do |options|
   end
   new_name = parts.join('.')
   new_build = build.to_i + 1
-  content = File.read(pubspec_path)
-                 .sub(/^version:.*$/, "version: #{new_name}+#{new_build}")
-  File.write(pubspec_path, content)
+  write_version(new_name, new_build)
   UI.success("pubspec.yaml: #{name}+#{build} → #{new_name}+#{new_build}")
 end
 
 desc '仅递增 build number，版本号不变（如 1.0.0+1 → 1.0.0+2）'
 lane :bump_build do
-  name, build = flutter_version
-  new_build = build.to_i + 1
-  content = File.read(pubspec_path)
-                 .sub(/^version:.*$/, "version: #{name}+#{new_build}")
-  File.write(pubspec_path, content)
-  UI.success("pubspec.yaml: #{name}+#{build} → #{name}+#{new_build}")
+  increment_build
 end
 
 desc '构建 iOS ipa（Release）'
 lane :build_ios do
   name, build = flutter_version
-  sh "flutter build ipa --release --build-name #{name} --build-number #{build}"
+  sh "flutter build ipa --release --build-name \"#{name}\" --build-number \"#{build}\""
   # 产物：build/ios/ipa/*.ipa
 end
 
 desc '构建 Android AAB（Release）'
 lane :build_android do
   name, build = flutter_version
-  sh "flutter build appbundle --release --build-name #{name} --build-number #{build}"
+  sh "flutter build appbundle --release --build-name \"#{name}\" --build-number \"#{build}\""
   # 产物：build/app/outputs/bundle/release/app-release.aab
 end
 
-desc '构建并上传 iOS 到 TestFlight（需先在 App Store Connect 建好应用与证书）'
-lane :upload_testflight do
-  name, build = flutter_version
-  sh "flutter build ipa --release --build-name #{name} --build-number #{build}"
+desc '构建并上传 iOS 到 TestFlight（默认自动递增 build number 防重复，可用 bump:false 关闭）'
+lane :upload_testflight do |options|
+  if options[:bump] == false
+    name, build = flutter_version
+    UI.important("跳过 bump，使用 pubspec.yaml 当前版本：#{name}+#{build}")
+  else
+    increment_build
+    name, build = flutter_version
+  end
+  sh "flutter build ipa --release --build-name \"#{name}\" --build-number \"#{build}\""
   upload_to_testflight(
     ipa: 'build/ios/ipa/wavelink_mobile.ipa',
     skip_waiting_for_build_processing: true,
@@ -83,5 +105,6 @@ end
 desc '一键发版：递增版本号（默认 patch，可用 kind:minor/major）+ 上传 TestFlight'
 lane :release do |options|
   bump_version(options)
-  upload_testflight
+  # bump_version 已递增过 build number，这里关闭重复递增
+  upload_testflight(bump: false)
 end

@@ -51,7 +51,7 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 [bundle exec] fastlane upload_testflight
 ```
 
-构建并上传 iOS 到 TestFlight（需先在 App Store Connect 建好应用与证书）
+构建并上传 iOS 到 TestFlight（默认自动递增 build number 防重复，可用 bump:false 关闭）
 
 ### release
 
