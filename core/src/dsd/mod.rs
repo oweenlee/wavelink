@@ -89,9 +89,13 @@ impl StreamingDsdDecoder {
         let rate_val = reader.dsd_rate();
         let dsd_rate = DsdRate::try_from(rate_val as u32)
             .map_err(|_| format!("不支持的 DSD 速率: {rate_val}"))?;
-        let sample_rate = output_sample_rate(dsd_rate);
+        Ok(Self::with_format(dsd_rate, channels))
+    }
 
-        Ok(StreamingDsdDecoder {
+    /// 用已知格式信息构建（调用方已持有 DsdReader 时用，避免重复打开文件）
+    pub fn with_format(dsd_rate: DsdRate, channels: usize) -> Self {
+        let sample_rate = output_sample_rate(dsd_rate);
+        StreamingDsdDecoder {
             chan_dsd: (0..channels)
                 .map(|_| Vec::with_capacity(FLUSH_THRESHOLD + 4096))
                 .collect(),
@@ -101,7 +105,7 @@ impl StreamingDsdDecoder {
             channels,
             dsd_rate,
             sample_rate,
-        })
+        }
     }
 
     /// 获取输出采样率

@@ -77,11 +77,14 @@ fn capture_chained_output(track1: &str, track2: &str) -> Vec<f32> {
             on_bad_frame: &|| {},
             on_samples_output: &|_| {},
             on_end_of_track: &|| nr.lock().take(),
+            take_next_rx: &|| None,
+            on_crossfaded: &|| {},
         };
         let ctrl = ConsumerControl {
             stop: s,
             ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            xfade_trigger: Arc::new(AtomicBool::new(false)),
         };
         run_consumer_loop(rx1, &config, &cb, &ctrl);
         // 保持解码器存活至循环结束
@@ -219,11 +222,14 @@ fn gapless_three_track_chain() {
                     Some(g.remove(0))
                 }
             },
+            take_next_rx: &|| None,
+            on_crossfaded: &|| {},
         };
         let ctrl = ConsumerControl {
             stop: s,
             ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            xfade_trigger: Arc::new(AtomicBool::new(false)),
         };
         run_consumer_loop(rx_a, &config, &cb, &ctrl);
         drop((_da, _db, _dc));

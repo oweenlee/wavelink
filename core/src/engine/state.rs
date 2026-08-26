@@ -91,6 +91,13 @@ pub struct EngineState {
     pub(crate) capture_inner_shared: Option<Arc<RwLock<Option<Arc<crate::capture::CaptureInner>>>>>,
     /// 播放代数：每次 play_entry 递增，消费者线程用它判断自己是否已成"僵尸"
     pub(crate) playback_gen: Arc<AtomicU64>,
+    /// 真交叉淡化触发标志（与消费者线程共享）：引擎在位置进入淡变窗口时置位，
+    /// 消费者取预加载下一首做双源混合（见 consumer::run_crossfade_phase）
+    pub(crate) xfade_trigger: Arc<AtomicBool>,
+    /// 交叉淡化已武装（当前曲时长已知且模式允许）
+    pub(crate) xfade_armed: bool,
+    /// 当前曲总样本数（交错、输出速率域），触发判断用：position ≥ total - fade 时置位触发
+    pub(crate) xfade_total_samples: u64,
 }
 
 impl EngineState {
@@ -144,6 +151,9 @@ impl EngineState {
             output_bit_depth: 24,
             capture_inner_shared: None,
             playback_gen: Arc::new(AtomicU64::new(1)),
+            xfade_trigger: Arc::new(AtomicBool::new(false)),
+            xfade_armed: false,
+            xfade_total_samples: 0,
             widener_enabled: false,
             widener_width: 1.0,
             crossfeed_enabled: true,
@@ -197,7 +207,17 @@ impl EngineState {
         }
     }
 
+    /// 播放指定曲目；失败（文件不存在/解码失败/输出异常）时非递归地自动跳下一首。
     pub(crate) fn play_entry(&mut self, entry: &QueueEntry) {
+        if !self.play_entry_once(entry) {
+            self.play_next_chain();
+        }
+    }
+
+    /// 尝试播放一首曲目。成功返回 true；失败返回 false（已发出 Error 事件，
+    /// 由调用方决定是否继续跳下一首——不得在此函数内递归调用 advance_queue，
+    /// 连续坏轨会叠栈打爆引擎线程栈，见 play_next_chain 注释）。
+    pub(crate) fn play_entry_once(&mut self, entry: &QueueEntry) -> bool {
         self.playback_gen.fetch_add(1, Ordering::SeqCst);
         crate::diag::log(&format!(
             "seq: play_entry 开始: {} (gen={})",
@@ -228,20 +248,22 @@ impl EngineState {
                 "文件不存在: {}",
                 entry.audio_file
             )));
-            self.advance_queue();
-            return;
+            return false;
         }
 
         let mut sr = self.config.sample_rate;
         let mut ch = self.config.channels;
         let mut source_bit_depth: u16 = 0;
 
-        // bit-perfect 模式：探测源文件采样率和位深，强制精确匹配
+        // bit-perfect 模式：探测源文件采样率和位深，强制精确匹配（单次开文件同时取两者）
         if self.config.bit_perfect {
-            if let Some(file_sr) = crate::decoder::probe_sample_rate(&path_buf) {
-                sr = file_sr;
+            match crate::decoder::probe_format_info(&path_buf) {
+                Some((file_sr, bits)) => {
+                    sr = file_sr;
+                    source_bit_depth = bits;
+                }
+                None => source_bit_depth = 24,
             }
-            source_bit_depth = crate::decoder::probe_bit_depth(&path_buf).unwrap_or(24);
             info!(
                 "bit-perfect 模式: 采样率 {}Hz, 位深 {}bit",
                 sr, source_bit_depth
@@ -292,8 +314,7 @@ impl EngineState {
         ) {
             Ok(setup) => (setup.pcm, setup.actual_sr, setup.actual_ch),
             Err(()) => {
-                self.advance_queue();
-                return;
+                return false;
             }
         };
 
@@ -335,8 +356,7 @@ impl EngineState {
             Err(e) => {
                 error!("启动解码失败: {e}");
                 self.emit(EngineEvent::Error(format!("解码失败: {e}")));
-                self.advance_queue();
-                return;
+                return false;
             }
         };
         let decode_err_rx = decoder.take_err_rx().unwrap_or_else(|| bounded(1).1);
@@ -373,14 +393,14 @@ impl EngineState {
             decode_err_rx,
             dop_active,
             self.playback_gen.clone(),
+            self.xfade_trigger.clone(),
         );
         let output = match self.output.as_ref() {
             Some(o) => o,
             None => {
                 error!("播放时输出设备未初始化");
                 self.stop_playback();
-                self.advance_queue();
-                return;
+                return false;
             }
         };
         match ready_rx.recv_timeout(Duration::from_secs(3)) {
@@ -413,8 +433,7 @@ impl EngineState {
                     entry.display
                 )));
                 self.stop_playback();
-                self.advance_queue();
-                return;
+                return false;
             }
         }
 
@@ -429,6 +448,8 @@ impl EngineState {
 
         self.sync_dsp_latency();
         self.preload_next();
+        self.arm_crossfade();
+        true
     }
 
     /// 从流式数据源播放（网络流媒体用）。
@@ -459,6 +480,8 @@ impl EngineState {
         self.duration_us.store(0, Ordering::Release);
         self.stream_handle = None;
         self.current_entry = None;
+        // 流式播放时长未知，无法计算淡变窗口 → 解除武装（回退现有行为）
+        self.xfade_armed = false;
 
         let sr = self.config.sample_rate;
         let ch = self.config.channels;
@@ -567,6 +590,7 @@ impl EngineState {
             decode_err_rx,
             false,
             self.playback_gen.clone(),
+            self.xfade_trigger.clone(),
         );
         let output = match self.output.as_ref() {
             Some(o) => o,
@@ -758,6 +782,7 @@ impl EngineState {
             decode_err_rx,
             dop,
             self.playback_gen.clone(),
+            self.xfade_trigger.clone(),
         );
         let output = match self.output.as_ref() {
             Some(o) => o,
@@ -883,6 +908,22 @@ impl EngineState {
         }
     }
 
+    /// 武装真交叉淡化：时长已知且模式允许时记录当前曲总样本数，引擎线程在位置进入
+    /// 距曲尾 crossfade_ms 的淡变窗口时置位 xfade_trigger，消费者取预加载下一首混合。
+    /// 任一条件不满足（未启用/直通/时长未知）则解除武装——所有播放路径的回退行为不变。
+    pub(crate) fn arm_crossfade(&mut self) {
+        let dur_us = self.duration_us.load(Ordering::Acquire);
+        let allowed = self.config.crossfade_ms > 0 && !self.dop_active && !self.config.bit_perfect;
+        if !allowed || dur_us == 0 {
+            self.xfade_armed = false;
+            return;
+        }
+        let secs = dur_us as f64 / 1_000_000.0;
+        self.xfade_total_samples =
+            (secs * self.output_sample_rate as f64) as u64 * self.config.channels as u64;
+        self.xfade_armed = true;
+    }
+
     /// 无缝切歌时更新元数据（时长 + 事件）
     pub(crate) fn seamless_switch(&mut self, next: &QueueEntry) {
         debug!("无缝切换至: {}", next.display);
@@ -901,6 +942,8 @@ impl EngineState {
         }
         self.emit_queue();
         self.preload_next();
+        // 新曲时长已写入 duration_us：重新武装交叉淡化（无缝切歌后下一窗口生效）
+        self.arm_crossfade();
     }
 
     // ── DSP 配置 ──
@@ -1139,6 +1182,11 @@ impl EngineState {
 
     pub(crate) fn stop_playback(&mut self) {
         crate::diag::log("seq: stop_playback 开始");
+        // 统一失效上一代消费者线程：旧消费者若恰在解码通道断开（Disconnected）
+        // 时醒来，会经 on_end_of_track 发 TrackChanged("") → advance_queue 误切歌/误报
+        // PlaybackStopped。所有终止播放的路径（seek/recover_output/stop_full/next_track/
+        // play_entry 失败）都会汇聚到这里，故 bump 集中在此处，须在 stop 标志置位之前。
+        self.playback_gen.fetch_add(1, Ordering::SeqCst);
         self.playing.store(false, Ordering::Release);
         if let Some(flag) = &self.consumer_stop {
             flag.store(true, Ordering::SeqCst);
@@ -1174,6 +1222,9 @@ impl EngineState {
         *self.next_rx.lock() = None;
         self.consumer_stop = None;
         self.dsp = None;
+        // 解除交叉淡化武装：旧触发不得泄漏到下一次播放（新播放会重新 arm）
+        self.xfade_armed = false;
+        self.xfade_trigger.store(false, Ordering::SeqCst);
         self.sync_dsp_latency();
     }
 
@@ -1262,6 +1313,9 @@ pub(crate) mod tests {
             output_bit_depth: 24,
             capture_inner_shared: None,
             playback_gen: Arc::new(AtomicU64::new(1)),
+            xfade_trigger: Arc::new(AtomicBool::new(false)),
+            xfade_armed: false,
+            xfade_total_samples: 0,
             widener_enabled: false,
             widener_width: 1.0,
             crossfeed_enabled: true,

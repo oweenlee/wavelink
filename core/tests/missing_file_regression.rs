@@ -6,7 +6,8 @@
 //!
 //! 修复点（两处，缺一不可）：
 //! 1. stop_playback 清除 next_rx 残留预加载接收端
-//! 2. advance_normal/advance_shuffle 队列空时彻底 stop_playback + 位置归零
+//! 2. 队列推进链路空队列时彻底 stop_playback + 位置归零（现为迭代式
+//!    play_next_chain，取代原 play_entry ⇄ advance_queue 互相递归）
 
 use std::time::{Duration, Instant};
 
@@ -108,4 +109,64 @@ fn missing_file_then_replay_converges_cleanly() {
 
     let _ = std::fs::remove_file(&a_moved);
     let _ = std::fs::remove_file(&b);
+}
+
+/// 2026-08-25 macOS 崩溃回归：队列全为坏轨（文件不存在）时，
+/// 旧实现 `play_entry ⇄ advance_queue` 互相递归，每跳一首加深一层栈，
+/// 引擎线程 2MB 栈溢出 → EXC_BAD_ACCESS(SIGBUS)。
+/// 新实现必须迭代收敛为 PlaybackStopped。
+#[test]
+fn all_files_missing_converges_without_recursion() {
+    let dir = std::env::temp_dir();
+    let ghosts: Vec<String> = (0..12)
+        .map(|i| format!("{}/wavelink_ghost_{i}.wav", dir.display()))
+        .collect();
+    for g in &ghosts {
+        let _ = std::fs::remove_file(g);
+    }
+
+    let (handle, rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+
+    handle.play_queue(ghosts);
+
+    let mut stopped = false;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        if let Ok(EngineEvent::PlaybackStopped) = rx.recv_timeout(Duration::from_millis(100)) {
+            stopped = true;
+            break;
+        }
+    }
+    assert!(stopped, "全坏轨队列应干净停止而非递归爆栈");
+    assert!(!handle.is_playing(), "停止后 playing 必须为 false");
+}
+
+/// RepeatOne 单曲循环 + 坏轨：旧实现无限递归（同一首反复重播失败），
+/// 必然爆栈；新实现命中失败上限后干净停止。
+#[test]
+fn repeat_one_missing_file_converges() {
+    let dir = std::env::temp_dir();
+    let ghost = format!("{}/wavelink_ghost_repeat1.wav", dir.display());
+    let _ = std::fs::remove_file(&ghost);
+
+    let (handle, rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 50,
+        ..Default::default()
+    });
+    handle.set_play_mode(audio_core::engine::PlayMode::RepeatOne);
+    handle.play_queue(vec![ghost]);
+
+    let mut stopped = false;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        if let Ok(EngineEvent::PlaybackStopped) = rx.recv_timeout(Duration::from_millis(100)) {
+            stopped = true;
+            break;
+        }
+    }
+    assert!(stopped, "RepeatOne + 坏轨应在失败上限后停止而非无限递归");
+    assert!(!handle.is_playing());
 }

@@ -54,11 +54,14 @@ fn test_real_wav_through_consumer() {
             on_bad_frame: &|| {},
             on_samples_output: &|_| {},
             on_end_of_track: &|| None,
+            take_next_rx: &|| None,
+            on_crossfaded: &|| {},
         };
         let ctrl = ConsumerControl {
             stop: s,
             ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            xfade_trigger: Arc::new(AtomicBool::new(false)),
         };
         run_consumer_loop(rx, &config, &cb, &ctrl);
     });
@@ -116,11 +119,14 @@ fn test_consumer_output_count_matches() {
                 *oc.lock() += n;
             },
             on_end_of_track: &|| None,
+            take_next_rx: &|| None,
+            on_crossfaded: &|| {},
         };
         let ctrl = ConsumerControl {
             stop: s,
             ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            xfade_trigger: Arc::new(AtomicBool::new(false)),
         };
         run_consumer_loop(rx, &config, &cb, &ctrl);
     });
@@ -175,11 +181,14 @@ fn test_48k_wav_through_consumer() {
             on_bad_frame: &|| {},
             on_samples_output: &|_| {},
             on_end_of_track: &|| None,
+            take_next_rx: &|| None,
+            on_crossfaded: &|| {},
         };
         let ctrl = ConsumerControl {
             stop: s,
             ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            xfade_trigger: Arc::new(AtomicBool::new(false)),
         };
         run_consumer_loop(rx, &config, &cb, &ctrl);
     });
@@ -231,11 +240,14 @@ fn test_consumer_stop_during_decoding() {
             on_bad_frame: &|| {},
             on_samples_output: &|_| {},
             on_end_of_track: &|| None,
+            take_next_rx: &|| None,
+            on_crossfaded: &|| {},
         };
         let ctrl = ConsumerControl {
             stop: s,
             ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            xfade_trigger: Arc::new(AtomicBool::new(false)),
         };
         run_consumer_loop(rx, &config, &cb, &ctrl);
     });
@@ -288,11 +300,14 @@ fn test_consumer_zero_timeout() {
             on_bad_frame: &|| {},
             on_samples_output: &|_| {},
             on_end_of_track: &|| None,
+            take_next_rx: &|| None,
+            on_crossfaded: &|| {},
         };
         let ctrl = ConsumerControl {
             stop: s,
             ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            xfade_trigger: Arc::new(AtomicBool::new(false)),
         };
         run_consumer_loop(rx, &config, &cb, &ctrl);
     });
@@ -357,11 +372,14 @@ fn test_consumer_very_short_file() {
             on_bad_frame: &|| {},
             on_samples_output: &|_| {},
             on_end_of_track: &|| None,
+            take_next_rx: &|| None,
+            on_crossfaded: &|| {},
         };
         let ctrl = ConsumerControl {
             stop: s,
             ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            xfade_trigger: Arc::new(AtomicBool::new(false)),
         };
         run_consumer_loop(rx, &config, &cb, &ctrl);
     });
@@ -412,11 +430,14 @@ fn test_consumer_dsp_silences_output() {
             on_bad_frame: &|| {},
             on_samples_output: &|_| {},
             on_end_of_track: &|| None,
+            take_next_rx: &|| None,
+            on_crossfaded: &|| {},
         };
         let ctrl = ConsumerControl {
             stop: s,
             ready_tx,
             speed: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            xfade_trigger: Arc::new(AtomicBool::new(false)),
         };
         run_consumer_loop(rx, &config, &cb, &ctrl);
     });

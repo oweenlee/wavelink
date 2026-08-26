@@ -338,6 +338,37 @@ fn test_engine_queue_advances_to_next() {
 }
 
 #[test]
+fn test_engine_crossfade_queue_advances_cleanly() {
+    // 真交叉淡化冒烟：启用 crossfade_ms 后两曲队列应完整干净地播完。
+    // 混合数学正确性由 consumer 单测（余弦加权叠加）覆盖，此处验证
+    // 引擎侧 arm → tick 触发 → 消费者混合 → 切歌 → 重新武装整条链路无错误/卡死。
+    let tone = ensure_test_wav(); // 1.0s
+    let (handle, rx) = EngineHandle::start_with_config(EngineConfig {
+        buffer_ms: 30,
+        crossfade_ms: 300,
+        ..Default::default()
+    });
+
+    handle.play_queue(vec![tone.clone(), tone.clone()]);
+
+    let mut track_changes = 0usize;
+    let mut stopped = false;
+    let deadline = std::time::Instant::now() + Duration::from_secs(8);
+    while std::time::Instant::now() < deadline && !stopped {
+        match rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(EngineEvent::TrackChanged(_)) => track_changes += 1,
+            Ok(EngineEvent::PlaybackStopped) => stopped = true,
+            Ok(EngineEvent::Error(e)) => panic!("交叉淡化播放不应报错: {e}"),
+            _ => continue,
+        }
+    }
+
+    assert!(track_changes >= 2, "两曲应各发 TrackChanged，实际 {track_changes}");
+    assert!(stopped, "队列播完应干净停止（混合链路无卡死）");
+    handle.stop();
+}
+
+#[test]
 fn test_engine_multiple_commands_stress() {
     let path = ensure_test_wav();
     let (handle, _rx) = EngineHandle::start_with_config(EngineConfig {

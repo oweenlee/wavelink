@@ -147,8 +147,8 @@ pub enum EngineEvent {
     Error(String),
     /// 队列变更（当前队列 + 当前曲目路径）
     QueueChanged(Vec<String>, String),
-    /// 实时频谱数据（16 个频段，0.0~1.0 归一化）
-    Spectrum(Vec<f32>),
+    /// 实时频谱数据（16 个频段，0.0~1.0 归一化）。固定数组避免高频事件的堆分配。
+    Spectrum([f32; SPECTRUM_BANDS]),
     /// 电平数据（RMS / 峰值 / 削波标志）
     Levels(Levels),
     /// DoP 直出状态变更（true = 当前曲目以 DoP 输出，false = PCM）

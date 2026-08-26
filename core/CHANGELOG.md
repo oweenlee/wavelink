@@ -4,6 +4,12 @@
 
 ### 新增
 
+- **真交叉淡化**（`EngineConfig::crossfade_ms`，默认 0 = 保持真·无间隙）：旧曲尾部与新曲头部在淡变窗口内按余弦曲线逐样本叠加混合，替代原来仅对新曲首帧的淡入。
+  - 引擎侧按位置武装/触发（`arm_crossfade` + 200ms tick 窗口检测），消费者侧 `run_crossfade_phase` 双源混合；混合在 DSP 前做（线性环节满足叠加律，限幅器正好保护叠加峰值）
+  - 完备回退：DoP/bit-perfect/流式（时长未知）/无预加载/新流失效 均降级为现有无间隙行为，不产生爆音
+  - `ConsumerCallbacks` 新增 `take_next_rx`/`on_crossfaded`；`ConsumerControl` 新增 `xfade_trigger`
+  - 测试：consumer 余弦加权叠加/回退单测 + 引擎双曲队列冒烟集成（307 全过）
+
 - **DSD DoP 直出**（`DsdMode::Dop`）：原始 DSD 比特打包为 DoP 24-bit 帧
   （0x05/0xFA 交替标记）直送 DoP DAC，还原原生 DSD。支持 DSD64/128/256，
   DSD512 自动回退 PCM 转换；设备不支持 DoP 速率时自动回退。
@@ -33,6 +39,14 @@
   - `export_ir_wav`：导出 32-bit float WAV，经现有 `ConvolutionEq` 加载应用
   - `resample_ir`：IR 采样率适配（rubato 离线重采样）
   - 支持 `Flat` / `HarmanTilt` 目标曲线；12 个量化测试（DTFT 实测幅频）
+
+### 优化
+
+- **symphonia 依赖**：git main → crates.io 0.6.1 正式版（钉死可复现），去掉根 `[patch.crates-io]`，依赖图统一无双 `symphonia_core`
+- **解码热路径**：rubato 重采样 f64→f32（去掉每帧精度转换+双倍拷贝）；`mix_channels` 返回 `Cow`（立体声→立体声零拷贝）；`run_dsd` 单次开文件（`StreamingDsdDecoder::with_format`）
+- **探测合并**：`probe_format_info` 一次开文件同时取采样率+位深（bit-perfect 路径用它，原两次开文件）
+- **空闲省电**：worker tick 暂停时 200ms→1s；`DeviceMonitor` 轮询 1.2s→5s
+- **事件分配**：`EngineEvent::Spectrum` `Vec<f32>`→`[f32; 16]` 固定数组，消除高频堆分配（desktop/mobile 桥接均兼容）
 
 ### 变更
 

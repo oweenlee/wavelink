@@ -173,6 +173,7 @@ impl EngineState {
             decode_err_rx,
             false,
             self.playback_gen.clone(),
+            self.xfade_trigger.clone(),
         );
         self.consumer_thread = Some(consumer);
 
@@ -191,6 +192,7 @@ impl EngineState {
                 self.playing.store(true, Ordering::Release);
                 info!("设备恢复成功，从 {:.1}s 继续播放", pos_secs);
                 self.preload_next();
+                self.arm_crossfade();
             }
             _ => {
                 error!("设备恢复后消费者启动超时");

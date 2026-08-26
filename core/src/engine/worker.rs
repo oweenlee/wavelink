@@ -228,6 +228,17 @@ pub(crate) fn run_engine(
                         }
                     }
                     let pos_samples = state.position.load(Ordering::Acquire);
+                    // 真交叉淡化触发检测：位置进入距曲尾 crossfade_ms 的淡变窗口时置位，
+                    // 消费者线程取预加载下一首做双源混合。200ms tick 粒度对秒级窗口足够。
+                    if state.xfade_armed && !state.xfade_trigger.load(Ordering::Relaxed) {
+                        let fade_ilv = state.config.crossfade_ms as u64
+                            * state.output_sample_rate as u64
+                            / 1000
+                            * state.config.channels as u64;
+                        if pos_samples + fade_ilv >= state.xfade_total_samples {
+                            state.xfade_trigger.store(true, Ordering::Release);
+                        }
+                    }
                     let latency = state.dsp_latency_shared.as_ref()
                         .map(|l| l.load(Ordering::Acquire))
                         .unwrap_or(0);
@@ -241,7 +252,14 @@ pub(crate) fn run_engine(
                     // 定期发送电平事件（与 Position 同频，200ms）
                     let lv = *state.levels.lock();
                     let _ = external_tx.send(EngineEvent::Levels(lv));
-                    tick = crossbeam_channel::after(Duration::from_millis(200));
+                    // 暂停/空闲时降频到 1s，避免无用事件与锁开销；恢复播放后回到 200ms。
+                    // 设备断开检测同样随之降频，暂停时设备异常本就无可闻后果。
+                    let interval_ms = if state.playing.load(Ordering::Acquire) {
+                        200
+                    } else {
+                        1000
+                    };
+                    tick = crossbeam_channel::after(Duration::from_millis(interval_ms));
                 }
             }
         }
@@ -280,6 +298,7 @@ pub(crate) fn spawn_consumer(
     err_rx: Receiver<EngineError>,
     passthrough: bool,
     playback_gen: Arc<AtomicU64>,
+    xfade_trigger: Arc<AtomicBool>,
 ) -> thread::JoinHandle<()> {
     let my_gen = playback_gen.load(Ordering::SeqCst);
     thread::spawn(move || {
@@ -319,7 +338,7 @@ pub(crate) fn spawn_consumer(
                     lv.clip = peak_val >= 1.0;
                 },
                 on_spectrum: &|bands| {
-                    let _ = event_tx.send(EngineEvent::Spectrum(bands.to_vec()));
+                    let _ = event_tx.send(EngineEvent::Spectrum(*bands));
                 },
                 on_bad_frame: &|| {
                     let _ = event_tx.send(EngineEvent::Error(
@@ -346,11 +365,23 @@ pub(crate) fn spawn_consumer(
                     }
                     preloaded
                 },
+                take_next_rx: &|| next_rx.lock().take(),
+                on_crossfaded: &|| {
+                    // 与 on_end_of_track 相同的事件语义，但下一首已在 take_next_rx 取走；
+                    // 解码错误检查与共享的 err_rx 互补（先到者消费）
+                    if let Ok(e) = err_rx.try_recv() {
+                        let _ = event_tx.send(EngineEvent::Error(e.to_string()));
+                    }
+                    if playback_gen.load(Ordering::SeqCst) == my_gen {
+                        let _ = event_tx.send(EngineEvent::TrackChanged(String::new()));
+                    }
+                },
             };
             let control = crate::consumer::ConsumerControl {
                 stop: stop_flag,
                 ready_tx,
                 speed,
+                xfade_trigger,
             };
             crate::consumer::run_consumer_loop(rx, &config, &callbacks, &control);
         }));
@@ -454,6 +485,7 @@ mod tests {
             bounded(1).1,
             false,
             Arc::new(AtomicU64::new(1)),
+            Arc::new(AtomicBool::new(false)),
         );
 
         let frame = DecodedFrame {

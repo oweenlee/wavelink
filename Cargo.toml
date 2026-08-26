@@ -33,8 +33,3 @@ codegen-units = 1
 strip = true
 debug = true
 split-debuginfo = "packed"
-
-# core 的 symphonia 用 git main；adapter 仍依赖 crates.io 的 symphonia-core，
-# 用 patch 统一到同一版本源码，避免双 symphonia_core 编译冲突
-[patch.crates-io]
-symphonia-core = { git = "https://github.com/pdeljanov/Symphonia", branch = "main" }

@@ -11,10 +11,11 @@ use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedOut
 pub struct SpeedChanger {
     speed: f32,
     channels: usize,
-    /// rubato 重采样器（speed 变化时重建）
-    resampler: Option<SincFixedOut<f64>>,
+    /// rubato 重采样器（speed 变化时重建）。用 f32：音频管线全程 f32，
+    /// 避免旧 f64 实现每帧的精度转换与双倍拷贝。
+    resampler: Option<SincFixedOut<f32>>,
     /// 每声道累积缓冲（等待足够帧数后送入 resampler）
-    accum: Vec<Vec<f64>>,
+    accum: Vec<Vec<f32>>,
     /// 输出缓冲（交错）
     output: Vec<f32>,
 }
@@ -69,7 +70,7 @@ impl SpeedChanger {
             oversampling_factor: 256,
             window: WindowFunction::BlackmanHarris2,
         };
-        self.resampler = Some(SincFixedOut::<f64>::new(ratio, params, 1024, channels));
+        self.resampler = Some(SincFixedOut::<f32>::new(ratio, params, 1024, channels));
         self.accum = vec![Vec::new(); channels];
     }
 
@@ -90,7 +91,7 @@ impl SpeedChanger {
         let frames = input.len() / channels;
         for f in 0..frames {
             for c in 0..channels {
-                self.accum[c].push(input[f * channels + c] as f64);
+                self.accum[c].push(input[f * channels + c]);
             }
         }
 
@@ -100,7 +101,7 @@ impl SpeedChanger {
             if self.accum[0].len() < needed {
                 break;
             }
-            let waves_in: Vec<Vec<f64>> = self
+            let waves_in: Vec<Vec<f32>> = self
                 .accum
                 .iter_mut()
                 .map(|buf| buf.drain(..needed).collect())
@@ -111,7 +112,7 @@ impl SpeedChanger {
                     self.output.reserve(out_frames * channels);
                     for f in 0..out_frames {
                         for c in 0..channels {
-                            self.output.push(waves_out[c][f] as f32);
+                            self.output.push(waves_out[c][f]);
                         }
                     }
                 }

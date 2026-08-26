@@ -450,7 +450,7 @@ pub enum DeviceEvent {
 
 /// 设备热插拔监视器。
 ///
-/// 通过轮询 [`enumerate_devices()`] 检测设备变化，约 1.2 秒检测一次。
+/// 通过轮询 [`enumerate_devices()`] 检测设备变化，约 5 秒检测一次。
 /// Drop 时自动停止。
 pub struct DeviceMonitor {
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -485,7 +485,9 @@ pub fn start_device_monitor() -> DeviceMonitor {
             let mut prev: Vec<OutputDeviceInfo> = Vec::new();
 
             while !flag.load(std::sync::atomic::Ordering::Acquire) {
-                std::thread::sleep(std::time::Duration::from_millis(1200));
+                // 5s 轮询（原 1.2s）：枚举走系统设备 API，高频轮询白白耗电；
+                // 热插拔不是实时敏感场景，5s 延迟用户无感。
+                std::thread::sleep(std::time::Duration::from_millis(5000));
 
                 let cur = enumerate_devices();
                 if cur.is_empty() {

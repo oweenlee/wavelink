@@ -5,6 +5,7 @@
 pub mod metadata;
 pub use metadata::*;
 
+use std::borrow::Cow;
 use std::fs::File;
 
 use std::path::Path;
@@ -303,8 +304,9 @@ fn try_send_or_stop(tx: &Sender<DecodedFrame>, frame: DecodedFrame, stop_rx: &Re
     }
 }
 
-/// 创建 rubato 重采样器（如源/目标采样率不同）
-fn create_resampler(src_rate: u32, target_rate: u32, out_ch: usize) -> Option<SincFixedOut<f64>> {
+/// 创建 rubato 重采样器（如源/目标采样率不同）。
+/// 用 f32 实现：解码管线全程 f32，旧 f64 实现每帧多两次全缓冲的精度转换+拷贝。
+fn create_resampler(src_rate: u32, target_rate: u32, out_ch: usize) -> Option<SincFixedOut<f32>> {
     if (src_rate as i64 - target_rate as i64).abs() <= 1 {
         return None;
     }
@@ -315,7 +317,7 @@ fn create_resampler(src_rate: u32, target_rate: u32, out_ch: usize) -> Option<Si
         oversampling_factor: 256,
         window: WindowFunction::BlackmanHarris2,
     };
-    Some(SincFixedOut::<f64>::new(
+    Some(SincFixedOut::<f32>::new(
         target_rate as f64 / src_rate as f64,
         params,
         1024,
@@ -326,8 +328,8 @@ fn create_resampler(src_rate: u32, target_rate: u32, out_ch: usize) -> Option<Si
 /// 重采样并发送（或直发）。返回更新后的 pts。
 fn resample_and_send(
     mixed: &[f32],
-    resampler: &mut Option<SincFixedOut<f64>>,
-    rubato_buf: &mut [Vec<f64>],
+    resampler: &mut Option<SincFixedOut<f32>>,
+    rubato_buf: &mut [Vec<f32>],
     out_ch: usize,
     target_rate: u32,
     target_ch: u32,
@@ -337,7 +339,7 @@ fn resample_and_send(
 ) -> f64 {
     if let Some(ref mut resampler) = resampler {
         for c in 0..out_ch {
-            rubato_buf[c].extend(mixed.iter().skip(c).step_by(out_ch).map(|&s| s as f64));
+            rubato_buf[c].extend(mixed.iter().skip(c).step_by(out_ch).copied());
         }
         let mut cur_pts = pts;
         loop {
@@ -345,7 +347,7 @@ fn resample_and_send(
             if rubato_buf[0].len() < needed {
                 break;
             }
-            let waves_in: Vec<Vec<f64>> = rubato_buf
+            let waves_in: Vec<Vec<f32>> = rubato_buf
                 .iter_mut()
                 .map(|buf| buf.drain(..needed).collect())
                 .collect();
@@ -355,7 +357,7 @@ fn resample_and_send(
                     let mut samples = Vec::with_capacity(out_frames * out_ch);
                     for f in 0..out_frames {
                         for c in 0..out_ch {
-                            samples.push(waves_out[c][f] as f32);
+                            samples.push(waves_out[c][f]);
                         }
                     }
                     try_send_or_stop(
@@ -393,8 +395,8 @@ fn resample_and_send(
 /// 输入帧若不处理会在曲尾被静默丢弃（44.1k↔48k 时约 24ms）。补零到所需
 /// 长度做最后一次 `process`，把剩余有效音频连同滤波器尾部一起输出。
 fn flush_resampler(
-    resampler: &mut Option<SincFixedOut<f64>>,
-    rubato_buf: &mut [Vec<f64>],
+    resampler: &mut Option<SincFixedOut<f32>>,
+    rubato_buf: &mut [Vec<f32>],
     out_ch: usize,
     target_rate: u32,
     target_ch: u32,
@@ -412,13 +414,13 @@ fn flush_resampler(
     for buf in rubato_buf.iter_mut() {
         buf.resize(needed, 0.0);
     }
-    let waves_in: Vec<Vec<f64>> = rubato_buf.iter_mut().map(std::mem::take).collect();
+    let waves_in: Vec<Vec<f32>> = rubato_buf.iter_mut().map(std::mem::take).collect();
     if let Ok(waves_out) = resampler.process(&waves_in) {
         let out_frames = waves_out[0].len();
         let mut samples = Vec::with_capacity(out_frames * out_ch);
         for f in 0..out_frames {
             for c in 0..out_ch {
-                samples.push(waves_out[c][f] as f32);
+                samples.push(waves_out[c][f]);
             }
         }
         try_send_or_stop(
@@ -619,7 +621,7 @@ fn run(
                     let mixed = mix_channels(&kept, in_ch, target_ch as usize);
                     let out_ch = target_ch as usize;
                     let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
-                    let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
+                    let mut rubato_buf: Vec<Vec<f32>> = vec![Vec::new(); out_ch];
                     let _ = resample_and_send(
                         &mixed,
                         &mut rubato_resampler,
@@ -640,7 +642,7 @@ fn run(
     // ── 创建 rubato 重采样器（如有必要） ──
     let out_ch = target_ch as usize;
     let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
-    let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
+    let mut rubato_buf: Vec<Vec<f32>> = vec![Vec::new(); out_ch];
     let mut consecutive_errors = 0u32;
     // 跟踪最后发送帧的 pts，EOF 冲刷重采样器残余时用
     let mut last_pts = 0.0f64;
@@ -727,7 +729,7 @@ fn run(
 
         let in_ch = spec.channels().count();
 
-        // 声道混音（支持 5.1/7.1 正确 downmix）
+        // 声道混音（支持 5.1/7.1 正确 downmix；声道相同时零拷贝）
         let mixed = mix_channels(&interleaved, in_ch, out_ch);
 
         // end_secs 样本级截断：即使 packet 起始早于 end，也只保留 end 前的样本。
@@ -735,7 +737,7 @@ fn run(
             let remaining = max_frames.saturating_sub(output_frames);
             let allowed_samples = remaining as usize * out_ch;
             if mixed.len() > allowed_samples {
-                mixed[..allowed_samples].to_vec()
+                Cow::Owned(mixed[..allowed_samples].to_vec())
             } else {
                 mixed
             }
@@ -911,7 +913,7 @@ fn run_from_stream(
     }
 
     let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
-    let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
+    let mut rubato_buf: Vec<Vec<f32>> = vec![Vec::new(); out_ch];
     let mut consecutive_errors = 0u32;
     // 跟踪最后发送帧的 pts，EOF 冲刷重采样器残余时用
     let mut last_pts = 0.0f64;
@@ -1096,16 +1098,25 @@ fn run_dsd(
     seek_pos: Option<f64>,
     end_secs: Option<f64>,
 ) -> Result<(), EngineError> {
-    use dsd_reader::DsdReader;
+    use dsd_reader::{DsdRate, DsdReader};
 
-    // 流式解码器：恒定内存占用
-    let mut converter =
-        dsd::StreamingDsdDecoder::new(path).map_err(|e| EngineError::DecodeFailed {
+    // 打开文件一次：元数据（速率/声道）与数据迭代器共用同一个 reader，
+    // 旧实现 StreamingDsdDecoder::new(path) 内部还会再开一次同一文件。
+    let reader =
+        DsdReader::from_container(path.to_path_buf()).map_err(|e| EngineError::DecodeFailed {
             path: path.to_path_buf(),
-            reason: format!("DSD 解码失败: {e}"),
+            reason: format!("DSD 文件打开失败: {e}"),
         })?;
+    let src_ch = reader.channels_num();
+    let rate_val = reader.dsd_rate();
+    let dsd_rate = DsdRate::try_from(rate_val as u32).map_err(|_| EngineError::DecodeFailed {
+        path: path.to_path_buf(),
+        reason: format!("不支持的 DSD 速率: {rate_val}"),
+    })?;
+
+    // 流式解码器：恒定内存占用（从已打开的 reader 元数据构建）
+    let mut converter = dsd::StreamingDsdDecoder::with_format(dsd_rate, src_ch);
     let src_rate = converter.sample_rate();
-    let src_ch = converter.channels();
     let out_ch = target_ch as usize;
 
     info!(
@@ -1115,12 +1126,7 @@ fn run_dsd(
         src_ch
     );
 
-    // 创建 DSD 迭代器
-    let reader =
-        DsdReader::from_container(path.to_path_buf()).map_err(|e| EngineError::DecodeFailed {
-            path: path.to_path_buf(),
-            reason: format!("DSD 文件打开失败: {e}"),
-        })?;
+    // 创建 DSD 迭代器（复用同一个 reader）
     let iter = reader.dsd_iter().map_err(|e| EngineError::DecodeFailed {
         path: path.to_path_buf(),
         reason: format!("DSD 迭代器创建失败: {e}"),
@@ -1150,7 +1156,7 @@ fn run_dsd(
 
     // 重采样器（如需要）
     let mut resampler = create_resampler(src_rate, target_rate, out_ch);
-    let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
+    let mut rubato_buf: Vec<Vec<f32>> = vec![Vec::new(); out_ch];
     let mut pts = 0.0f64;
 
     // 主循环：流式读取 DSD 块 → 转换 → 混音 → 重采样 → 发送
@@ -1197,7 +1203,7 @@ fn run_dsd(
             let remaining = max_frames.saturating_sub(output_frames);
             let allowed_samples = remaining as usize * out_ch;
             if mixed.len() > allowed_samples {
-                mixed[..allowed_samples].to_vec()
+                Cow::Owned(mixed[..allowed_samples].to_vec())
             } else {
                 mixed
             }
@@ -1325,7 +1331,7 @@ fn run_ape(
 
     // 重采样器（如需要）
     let mut resampler = create_resampler(src_rate, target_rate, out_ch);
-    let mut rubato_buf: Vec<Vec<f64>> = vec![Vec::new(); out_ch];
+    let mut rubato_buf: Vec<Vec<f32>> = vec![Vec::new(); out_ch];
     let mut pts = 0.0f64;
 
     // 主循环：逐帧解码 → 字节转 f32 → 混音 → 重采样 → 发送
@@ -1356,7 +1362,7 @@ fn run_ape(
             let remaining = max_frames.saturating_sub(output_frames);
             let allowed_samples = remaining as usize * out_ch;
             if mixed.len() > allowed_samples {
-                mixed[..allowed_samples].to_vec()
+                Cow::Owned(mixed[..allowed_samples].to_vec())
             } else {
                 mixed
             }
@@ -1649,16 +1655,17 @@ fn run_dsd_dop(
     Ok(())
 }
 
-/// 声道混音：将交错 PCM 从 in_ch 混到 out_ch
+/// 声道混音：将交错 PCM 从 in_ch 混到 out_ch。
+/// 声道数相同时直接返回借用切片（最常见路径，零拷贝）。
 ///
 /// 多声道 downmix 按 ITU-R BS.775 标准：
 /// - 5.1 (FL FR FC LFE RL RR) → 2.0: L' = FL + 0.707*FC + 0.707*RL, R' = FR + 0.707*FC + 0.707*RR
 /// - 7.1 (FL FR FC LFE RL RR SL SR) → 2.0: L' = FL + 0.707*FC + 0.5*RL + 0.707*SL
 /// - 3.0+ (FL FR FC ...) → 2.0: L' = FL + 0.707*FC, R' = FR + 0.707*FC
 /// - 单声道输出：所有声道等权平均
-fn mix_channels(pcm: &[f32], in_ch: usize, out_ch: usize) -> Vec<f32> {
+fn mix_channels(pcm: &[f32], in_ch: usize, out_ch: usize) -> Cow<'_, [f32]> {
     if in_ch == out_ch {
-        return pcm.to_vec();
+        return Cow::Borrowed(pcm);
     }
     let in_frames = pcm.len() / in_ch;
     let mut mixed = Vec::with_capacity(in_frames * out_ch);
@@ -1699,7 +1706,7 @@ fn mix_channels(pcm: &[f32], in_ch: usize, out_ch: usize) -> Vec<f32> {
             mixed.push(r);
         }
     }
-    mixed
+    Cow::Owned(mixed)
 }
 
 #[cfg(test)]

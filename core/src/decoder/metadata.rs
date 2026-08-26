@@ -272,12 +272,19 @@ fn parse_replaygain_str(s: &str) -> Option<f32> {
 
 /// 快速探测音频文件的采样率（不完整解码，只读文件头）
 pub fn probe_sample_rate(path: &Path) -> Option<u32> {
+    probe_format_info(path).map(|(sr, _)| sr)
+}
+
+/// 一次打开文件同时探测采样率与位深（bit-perfect 路径两者都要，
+/// 旧实现分别调 probe_sample_rate/probe_bit_depth 会开两次文件）
+pub fn probe_format_info(path: &Path) -> Option<(u32, u16)> {
     let format = open_symphonia_format(path)?;
     for track in format.tracks() {
         if let Some(symphonia::core::codecs::CodecParameters::Audio(audio)) = &track.codec_params {
             let rate = audio.sample_rate.unwrap_or(44100);
-            if rate > 0 {
-                return Some(rate);
+            let bits = audio.bits_per_sample.unwrap_or(16);
+            if rate > 0 && bits > 0 {
+                return Some((rate, bits as u16));
             }
         }
     }
@@ -304,16 +311,7 @@ pub fn probe_dsf_secs(path: &Path) -> Option<f64> {
 
 /// 快速探测音频文件的位深（不完整解码，只读文件头）
 pub fn probe_bit_depth(path: &Path) -> Option<u16> {
-    let format = open_symphonia_format(path)?;
-    for track in format.tracks() {
-        if let Some(symphonia::core::codecs::CodecParameters::Audio(audio)) = &track.codec_params {
-            let bits = audio.bits_per_sample.unwrap_or(16);
-            if bits > 0 {
-                return Some(bits as u16);
-            }
-        }
-    }
-    None
+    probe_format_info(path).map(|(_, bits)| bits)
 }
 
 // ── DSD 信息探测 ──────────────────────────────────────────────────────────

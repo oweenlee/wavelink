@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use tracing::debug;
+use tracing::{debug, error};
 
 use super::command::{EngineEvent, PlayMode};
 use super::state::EngineState;
@@ -108,17 +108,22 @@ impl EngineState {
             self.play_mode,
             self.queue.len()
         ));
-        match self.play_mode {
-            PlayMode::Normal => self.advance_normal(),
-            PlayMode::RepeatOne => self.advance_repeat_one(),
-            PlayMode::RepeatAll => self.advance_repeat_all(),
-            PlayMode::Shuffle => self.advance_shuffle(),
-        }
+        self.play_next_chain();
     }
 
-    pub(crate) fn advance_normal(&mut self) {
-        if !self.queue.is_empty() {
-            let next = self.queue.remove(0);
+    /// 非递归推进播放：按播放模式挑下一首并播放；该首播放失败（文件不存在/
+    /// 解码失败/输出异常）则继续挑下一首，直到成功或无可播曲目。
+    ///
+    /// 旧实现中 `play_entry ⇄ advance_queue` 互相递归：每跳一首坏轨就加深一层
+    /// 栈（play_entry 帧含解码器/输出大对象，单循环占栈可达数百 KB），连续坏轨
+    /// 会打爆引擎线程 2MB 栈 → SIGBUS 崩溃（2026-08-25 macOS 崩溃报告）；
+    /// RepeatOne 模式下单首坏轨更是无限递归。故全部改为迭代。
+    pub(crate) fn play_next_chain(&mut self) {
+        // 连续失败上限：防止 RepeatOne + 坏轨等场景无限循环空转 CPU。
+        // 正常曲库坏轨跳过后很快命中可播曲目，64 次足够宽裕。
+        const MAX_CONSECUTIVE_FAILS: usize = 64;
+        let mut fails = 0usize;
+        while let Some(next) = self.pick_next_entry() {
             let match_seamless = self
                 .next_entry
                 .as_ref()
@@ -126,64 +131,79 @@ impl EngineState {
                 .unwrap_or(false);
             if match_seamless {
                 self.seamless_switch(&next);
-            } else {
-                debug!("自动播下一曲: {}", next.display);
-                self.play_entry(&next);
+                return;
             }
-        } else {
-            // 队列为空：彻底停止播放。不清理的话 playing 会卡在 true、
-            // 输出回调持续空转 underrun，ringbuf 残留数据可能被播出
-            self.stop_playback();
-            self.position.store(0, std::sync::atomic::Ordering::SeqCst);
-            self.emit(EngineEvent::PlaybackStopped);
+            debug!("自动播下一曲: {}", next.display);
+            if self.play_entry_once(&next) {
+                return;
+            }
+            fails += 1;
+            if fails >= MAX_CONSECUTIVE_FAILS {
+                error!("连续 {fails} 首播放失败，停止自动跳曲");
+                self.emit(EngineEvent::Error(format!(
+                    "连续 {fails} 首播放失败，已停止"
+                )));
+                break;
+            }
         }
+        // 无可播曲目（队列耗尽或连续失败超限）：彻底停止播放。
+        // 不清理的话 playing 会卡在 true、输出回调持续空转 underrun，
+        // ringbuf 残留数据可能被播出
+        self.stop_playback();
+        self.position.store(0, std::sync::atomic::Ordering::SeqCst);
+        self.emit(EngineEvent::PlaybackStopped);
     }
 
-    pub(crate) fn advance_repeat_one(&mut self) {
-        if let Some(entry) = self.current_entry.clone() {
-            self.queue.insert(0, entry);
-        }
-        self.advance_normal();
-    }
-
-    pub(crate) fn advance_repeat_all(&mut self) {
-        if self.queue.is_empty() && !self.original_queue.is_empty() {
-            let current = self.current_entry.as_ref().map(|e| &e.display);
-            self.queue = self
-                .original_queue
-                .iter()
-                .filter(|e| Some(&e.display) != current)
-                .cloned()
-                .collect();
-            if self.queue.is_empty() {
-                if let Some(ref entry) = self.current_entry {
-                    self.queue.push(entry.clone());
+    /// 按播放模式挑出下一首要播的条目（只选择不播放）；无可播条目返回 None。
+    /// - Normal：弹队首，队列空则 None
+    /// - RepeatOne：重复当前曲目；无当前曲目时回落到弹队首
+    /// - RepeatAll：队列耗尽后从 original_queue 回填（排除当前曲目）再弹；仍空则 None
+    /// - Shuffle：随机弹一首，队列空则 None
+    fn pick_next_entry(&mut self) -> Option<QueueEntry> {
+        match self.play_mode {
+            PlayMode::Normal => {
+                if self.queue.is_empty() {
+                    None
+                } else {
+                    Some(self.queue.remove(0))
                 }
             }
-        }
-        self.advance_normal();
-    }
-
-    pub(crate) fn advance_shuffle(&mut self) {
-        if self.queue.is_empty() {
-            // 同 advance_normal：彻底停止，避免 playing 卡死 + underrun 空转
-            self.stop_playback();
-            self.position.store(0, std::sync::atomic::Ordering::SeqCst);
-            self.emit(EngineEvent::PlaybackStopped);
-            return;
-        }
-        let idx = fastrand::usize(..self.queue.len());
-        let next = self.queue.remove(idx);
-        let match_seamless = self
-            .next_entry
-            .as_ref()
-            .map(|e| e.display == next.display)
-            .unwrap_or(false);
-        if match_seamless {
-            self.seamless_switch(&next);
-        } else {
-            debug!("随机播下一曲: {}", next.display);
-            self.play_entry(&next);
+            PlayMode::RepeatOne => self.current_entry.clone().or_else(|| {
+                if self.queue.is_empty() {
+                    None
+                } else {
+                    Some(self.queue.remove(0))
+                }
+            }),
+            PlayMode::RepeatAll => {
+                if self.queue.is_empty() && !self.original_queue.is_empty() {
+                    let current = self.current_entry.as_ref().map(|e| &e.display);
+                    self.queue = self
+                        .original_queue
+                        .iter()
+                        .filter(|e| Some(&e.display) != current)
+                        .cloned()
+                        .collect();
+                    if self.queue.is_empty() {
+                        if let Some(ref entry) = self.current_entry {
+                            self.queue.push(entry.clone());
+                        }
+                    }
+                }
+                if self.queue.is_empty() {
+                    None
+                } else {
+                    Some(self.queue.remove(0))
+                }
+            }
+            PlayMode::Shuffle => {
+                if self.queue.is_empty() {
+                    None
+                } else {
+                    let idx = fastrand::usize(..self.queue.len());
+                    Some(self.queue.remove(idx))
+                }
+            }
         }
     }
 
@@ -292,14 +312,15 @@ mod tests {
             PlayMode::Normal,
         );
         let orig_len = state.queue.len();
-        state.advance_normal();
-        assert!(state.queue.len() < orig_len, "advance_normal 应减少队列");
+        let picked = state.pick_next_entry();
+        assert!(picked.is_some(), "Normal 应选出队首");
+        assert!(state.queue.len() < orig_len, "pick 应减少队列");
     }
 
     #[test]
     fn test_normal_queue_empty_emits_stopped() {
         let (mut state, rx) = make_state(vec![], PlayMode::Normal);
-        state.advance_normal();
+        state.advance_queue();
         let ev = next_state_event(&rx).expect("应收到事件");
         assert!(
             matches!(ev, EngineEvent::PlaybackStopped),
@@ -308,17 +329,11 @@ mod tests {
     }
 
     #[test]
-    fn test_repeat_one_inserts_current_to_front() {
+    fn test_repeat_one_picks_current() {
         let (mut state, _rx) = make_state(vec!["/tmp/next1.wav".into()], PlayMode::RepeatOne);
-        let before = state.queue.len();
-        if let Some(entry) = state.current_entry.clone() {
-            state.queue.insert(0, entry);
-        }
-        assert_eq!(state.queue.len(), before + 1, "应为 current_entry 插入队首");
-        assert_eq!(
-            state.queue[0].display, "/tmp/test.wav",
-            "应插回 current_entry"
-        );
+        let picked = state.pick_next_entry().expect("RepeatOne 应选中当前曲目");
+        assert_eq!(picked.display, "/tmp/test.wav", "应重复 current_entry");
+        assert_eq!(state.queue.len(), 1, "RepeatOne 不应消耗队列");
     }
 
     #[test]
@@ -383,7 +398,7 @@ mod tests {
     #[test]
     fn test_shuffle_empty_emits_stopped() {
         let (mut state, rx) = make_state(vec![], PlayMode::Shuffle);
-        state.advance_shuffle();
+        state.advance_queue();
         let ev = next_state_event(&rx).expect("应收到事件");
         assert!(
             matches!(ev, EngineEvent::PlaybackStopped),
