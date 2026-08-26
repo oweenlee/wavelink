@@ -73,18 +73,26 @@ class Engine {
 
   /// 候选动态库路径（按平台）。dev 默认指向 cargo 构建产物；打包后指向
   /// app bundle 内 Frameworks/ 目录（以可执行文件位置为锚点，避免 CWD 变化）。
+  ///
+  /// CWD 相对路径仅限 dev（`flutter run` 的 CWD 是本目录）；release 构建里
+  /// 跳过，避免从任意目录启动时误加载到构建机的产物。
   static String? _defaultDylibPath() {
     final exeDir = File(Platform.resolvedExecutable).parent.path;
+    final devFallbacks = kDebugMode
+        ? const [
+            '../target/debug',
+            '../target/release',
+            'desktop/rust/target/debug',
+            'desktop/rust/target/release',
+          ]
+        : const <String>[];
     if (Platform.isMacOS) {
       final candidates = [
         p.join(exeDir, '../Frameworks/libwavelink_desktop.dylib'),
         p.join(exeDir, 'libwavelink_desktop.dylib'),
         'libwavelink_desktop.dylib',
-        '../Frameworks/libwavelink_desktop.dylib',
-        '../target/debug/libwavelink_desktop.dylib',
-        '../target/release/libwavelink_desktop.dylib',
-        'desktop/rust/target/debug/libwavelink_desktop.dylib',
-        'desktop/rust/target/release/libwavelink_desktop.dylib',
+        for (final dir in devFallbacks)
+          '$dir/libwavelink_desktop.dylib',
       ];
       for (final c in candidates) {
         if (File(c).existsSync()) return c;
@@ -95,10 +103,7 @@ class Engine {
       final candidates = [
         p.join(exeDir, 'wavelink_desktop.dll'),
         'wavelink_desktop.dll',
-        '..\\target\\debug\\wavelink_desktop.dll',
-        '..\\target\\release\\wavelink_desktop.dll',
-        'desktop/rust/target/debug/wavelink_desktop.dll',
-        'desktop/rust/target/release/wavelink_desktop.dll',
+        for (final dir in devFallbacks) '$dir/wavelink_desktop.dll',
       ];
       for (final c in candidates) {
         if (File(c).existsSync()) return c;
@@ -109,10 +114,7 @@ class Engine {
       final candidates = [
         p.join(exeDir, 'libwavelink_desktop.so'),
         'libwavelink_desktop.so',
-        '../target/debug/libwavelink_desktop.so',
-        '../target/release/libwavelink_desktop.so',
-        'desktop/rust/target/debug/libwavelink_desktop.so',
-        'desktop/rust/target/release/libwavelink_desktop.so',
+        for (final dir in devFallbacks) '$dir/libwavelink_desktop.so',
       ];
       for (final c in candidates) {
         if (File(c).existsSync()) return c;

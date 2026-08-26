@@ -5,7 +5,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../core/theme.dart';
 import '../l10n/app_localizations.dart';
 import '../models/track.dart';
-import '../src/rust/api/smb.dart' as frb_smb;
 import '../services/nas_service.dart';
 import '../services/network_source_config.dart';
 import '../services/player_notifier.dart';
@@ -241,7 +240,7 @@ class _NetworkConfigDialogState extends ConsumerState<NetworkConfigDialog> {
       _busy = true;
       _status = null;
     });
-    List<frb_smb.SmbShareInfo> shares;
+    List<SmbShareInfo> shares;
     try {
       shares = await NasService.listSharesConnected(
         host: _v('host'),

@@ -188,6 +188,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
   Duration? _pendingSeek; // 启动恢复时待应用的进度，首次 resume 播放时消费
   DateTime? _lastPersistAt; // 进度落盘节流时间戳
 
+  /// 切歌代数：playIndex 每次进入自增。await 恢复后若代数已变，
+  /// 说明期间用户又点了别的歌，旧调用不得回写状态（快速连点竞态）。
+  int _playGeneration = 0;
+
   /// 用户主动停止标记：区分「自然结束」与「手动停止」，避免误触发切歌
   bool _stopRequested = false;
 
@@ -294,9 +298,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
             channels: 2,
             bufferMs: 280,
             // 高级音频引擎配置从设置页持久化（reinitialize 会保留这些值）
-            bitPerfect: _prefs!.getBool('engine.bitPerfect') ?? false,
-            autoSampleRate: _prefs!.getBool('engine.autoSampleRate') ?? false,
-            crossfadeMs: (_prefs!.getInt('engine.crossfadeMs') ?? 0).clamp(
+            // prefs 加载失败时 _prefs 为 null，引擎配置回退默认值而非 NPE 中断启动
+            bitPerfect: _prefs?.getBool('engine.bitPerfect') ?? false,
+            autoSampleRate: _prefs?.getBool('engine.autoSampleRate') ?? false,
+            crossfadeMs: (_prefs?.getInt('engine.crossfadeMs') ?? 0).clamp(
               0,
               8000,
             ),
@@ -973,6 +978,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
       debugPrint('[playIndex] index $index out of range (len=${queue.length})');
       return;
     }
+    final gen = ++_playGeneration;
     state = state.copyWith(
       queueIndex: index,
       position: Duration.zero,
@@ -1002,6 +1008,9 @@ class PlayerNotifier extends Notifier<PlayerState> {
       await _playTrack(t);
     }
 
+    // await 期间用户又点了别的歌：旧调用不得回写 loaded 标记/清 pendingSeek，
+    // 否则新曲加载后会被旧曲状态覆盖（显示播放中实际无声）。
+    if (gen != _playGeneration) return;
     _loadedTrackId = t.id;
     _pendingSeek = null; // 切换/新播均从头，清掉恢复待 seek
     _loadLyrics(t);

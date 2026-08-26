@@ -83,15 +83,24 @@ class TrayService with TrayListener {
       case 'next':
         _player.next();
       case 'quit':
-        unawaited(_quit());
+        unawaited(quit());
     }
   }
 
-  /// 完整退出：先移除托盘图标再销毁窗口，最后显式退出进程。
+  /// 完整退出：优雅清理 → 移除托盘图标再销毁窗口，最后显式退出进程。
   ///
   /// 仅 `windowManager.destroy()` 在部分平台不结束进程且托盘图标残留
   /// （进程变成无窗口的「僵尸」），故补 [trayManager.destroy] 与 [exit]。
-  Future<void> _quit() async {
+  ///
+  /// 清理（停引擎、关闭 SQLite 连接并 WAL checkpoint）限时 3s：
+  /// 引擎停止若因音频设备卡死挂住，也不能阻止进程退出（⌘Q/托盘退出共用）。
+  Future<void> quit() async {
+    try {
+      await container
+          .read(playerProvider.notifier)
+          .dispose()
+          .timeout(const Duration(seconds: 3), onTimeout: () {});
+    } catch (_) {}
     try {
       await trayManager.destroy();
     } catch (_) {}

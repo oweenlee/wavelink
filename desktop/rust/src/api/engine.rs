@@ -20,7 +20,9 @@ use serde_json::json;
 /// 用 `Mutex<Option<..>>` 而非 OnceCell：OnceCell set 后不可取出，会导致
 /// deinit → init 循环失效（再 init 永远命中「已初始化」分支）。
 static ENGINE: Mutex<Option<(EngineHandle, Receiver<EngineEvent>)>> = Mutex::new(None);
-/// 事件队列：每次 poll 从 channel 抽干入队，再返回一个，避免 while 循环丢事件
+/// 事件队列：每次 poll 从 channel 抽干入队，再返回一个，避免 while 循环丢事件。
+/// 加一个上限防止极端情况下无限增长（实际事件率低，仅作防御；与 mobile 对齐）。
+const MAX_EVENT_QUEUE: usize = 128;
 static EVENT_QUEUE: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 /// 最近一次错误
 static LAST_ERROR: Mutex<String> = Mutex::new(String::new());
@@ -29,7 +31,11 @@ static CURRENT_PATH: Mutex<String> = Mutex::new(String::new());
 
 fn push_event(value: serde_json::Value) {
     if let Ok(s) = serde_json::to_string(&value) {
-        EVENT_QUEUE.lock().unwrap().push_back(s);
+        let mut queue = EVENT_QUEUE.lock().unwrap();
+        if queue.len() >= MAX_EVENT_QUEUE {
+            queue.pop_front();
+        }
+        queue.push_back(s);
     }
 }
 
@@ -39,7 +45,7 @@ fn push_event(value: serde_json::Value) {
 /// webdav.rs 的 `engine_play_webdav_stream` / smb.rs 的 `engine_play_smb_stream`
 /// 拿到 StreamHandle 后由后台 task 从远端拉字节喂入 core 解码。
 /// [seek_secs]：流式 seek（拖进度条）时从该时间点起播，None=从头播。
-pub(crate) fn engine_start_stream(
+pub(crate) async fn engine_start_stream(
     format_hint: Option<String>,
     content_length: Option<u64>,
     seek_secs: Option<f64>,
@@ -55,9 +61,15 @@ pub(crate) fn engine_start_stream(
             .map(|(h, _)| h.clone())
             .ok_or_else(|| "引擎未初始化".to_string())?
     };
-    handle
-        .play_stream_sync(format_hint, content_length, seek_secs)
-        .map_err(|e| e.to_string())
+    // play_stream_sync 内部同步阻塞等待引擎 ack（stop_playback join + 输出
+    // 重建，最坏 15s+1s），必须放阻塞线程池：直接在 async fn 里跑会占死一个
+    // tokio worker，封面批量提取等多任务并发时可耗尽 worker 池。
+    tokio::task::spawn_blocking(move || {
+        handle.play_stream_sync(format_hint, content_length, seek_secs)
+    })
+    .await
+    .map_err(|e| format!("喂流任务 join 失败: {e}"))?
+    .map_err(|e| e.to_string())
 }
 
 /// 喂流后台 task 失败时注入 error 事件（镜像 mobile `engine_notify_stream_error`）。

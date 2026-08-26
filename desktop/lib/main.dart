@@ -77,6 +77,8 @@ Future<void> main() async {
 
   final tray = TrayService(container);
   await tray.init();
+  // ⌘Q 与托盘退出共用同一清理链路（停引擎 + 关闭 SQLite + WAL checkpoint）
+  _MacAppMenu.quitHandler = tray.quit;
 
   // macOS Dock 菜单（右键图标：播放/暂停 + 下一首）：
   // 推送播放态给原生刷新标题；接收原生控制动作回传。
@@ -155,6 +157,10 @@ class _MacAppMenu extends StatelessWidget {
   static final GlobalKey<NavigatorState> navKey =
       GlobalKey<NavigatorState>();
 
+  /// 优雅退出钩子：main 中托盘初始化后赋值（停引擎 + WAL checkpoint）。
+  /// 未赋值时退回旧行为直接销毁窗口。
+  static Future<void> Function()? quitHandler;
+
   @override
   Widget build(BuildContext context) {
     // PlatformMenuBar 在 MaterialApp 之外，拿不到 l10n delegate；
@@ -187,8 +193,16 @@ class _MacAppMenu extends StatelessWidget {
               label: quit,
               shortcut:
                   const SingleActivator(LogicalKeyboardKey.keyQ, meta: true),
-              // 托盘 preventClose 只拦窗口 X，⌘Q 必须真销毁
-              onSelected: () => windowManager.destroy(),
+              // 托盘 preventClose 只拦窗口 X，⌘Q 必须真退出；
+              // 经 quitHandler 先做清理再销毁进程
+              onSelected: () async {
+                final h = quitHandler;
+                if (h != null) {
+                  await h();
+                } else {
+                  await windowManager.destroy();
+                }
+              },
             ),
           ],
         ),

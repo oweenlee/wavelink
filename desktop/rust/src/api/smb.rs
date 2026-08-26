@@ -201,33 +201,38 @@ pub async fn smb_connect(
 pub async fn smb_keepalive() -> bool {
     let mut healthy = true;
 
-    // 主会话：try_lock 成功则持锁探测（不取出）。
+    // 主会话：持锁探测（不取出）。
     // 取出会让并发读取在窗口内看到 SESSION=None 而报 "not connected"
     //（扫描/播放恰逢保活时静默失败，列表空白且无提示——实测回归）。
-    // 持锁探测最坏阻塞 5s，但只延迟不失败，可接受。
-    if let Ok(mut guard) = SESSION.try_lock() {
-        if let Some(sess) = guard.as_mut() {
-            match sess.tree.as_mut() {
-                Some(tree) => {
-                    let probe = tokio::time::timeout(
-                        KEEPALIVE_PROBE_TIMEOUT,
-                        sess.client.fs_info(tree),
-                    )
-                    .await;
-                    if matches!(probe, Err(_) | Ok(Err(_))) {
+    // 锁被并发读取长期占用时无法确认健康状态，按不健康上报让 Dart
+    // 择机重建：try_lock 失败静默返回 true 的旧写法会让死会话恰逢
+    // 读取占锁时逃过检测（探活永远"成功"→永不重建的历史事故模式）。
+    match tokio::time::timeout(KEEPALIVE_PROBE_TIMEOUT, SESSION.lock()).await {
+        Ok(mut guard) => {
+            if let Some(sess) = guard.as_mut() {
+                match sess.tree.as_mut() {
+                    Some(tree) => {
+                        let probe = tokio::time::timeout(
+                            KEEPALIVE_PROBE_TIMEOUT,
+                            sess.client.fs_info(tree),
+                        )
+                        .await;
+                        if matches!(probe, Err(_) | Ok(Err(_))) {
+                            healthy = false;
+                        }
+                    }
+                    None => {
+                        // 会话存在但共享未挂载：Dart 侧乐观缓存 _connected/_mountedShare
+                        // 与 Rust 实际状态脱节（重建中断/并发 force 竞争导致 tree 丢失，
+                        // 真实 IO 报 "no share connected"）。探活不覆盖此状态，
+                        // 判不健康让 Dart force 重建恢复挂载（历史事故：死会话
+                        // 因探活空转永远不重建，播放/封面连环超时）。
                         healthy = false;
                     }
                 }
-                None => {
-                    // 会话存在但共享未挂载：Dart 侧乐观缓存 _connected/_mountedShare
-                    // 与 Rust 实际状态脱节（重建中断/并发 force 竞争导致 tree 丢失，
-                    // 真实 IO 报 "no share connected"）。探活不覆盖此状态，
-                    // 判不健康让 Dart force 重建恢复挂载（历史事故：死会话
-                    // 因探活空转永远不重建，播放/封面连环超时）。
-                    healthy = false;
-                }
             }
         }
+        Err(_) => healthy = false,
     }
 
     // 读取池：整池取出后逐条探测，避免跨 await 持 POOL 锁（8 条死连接最坏 40s）
@@ -238,21 +243,26 @@ pub async fn smb_keepalive() -> bool {
         Ok(mut pool) => std::mem::take(&mut *pool),
         Err(_) => Vec::new(),
     };
-    for s in taken_pool.iter_mut() {
+    // 探活失败的连接直接丢弃不回填：明知已死仍放回池中，只会让下次
+    // 真实 IO 再白等一次读超时；丢弃后读取按池空回退主会话/新建连接。
+    let mut retained: Vec<SmbSession> = Vec::with_capacity(taken_pool.len());
+    for mut s in taken_pool.drain(..) {
+        let mut ok = true;
         if let Some(tree) = s.tree.as_mut() {
-            let probe = tokio::time::timeout(
-                KEEPALIVE_PROBE_TIMEOUT,
-                s.client.fs_info(tree),
-            )
-            .await;
+            let probe =
+                tokio::time::timeout(KEEPALIVE_PROBE_TIMEOUT, s.client.fs_info(tree)).await;
             if matches!(probe, Err(_) | Ok(Err(_))) {
+                ok = false;
                 healthy = false;
             }
         }
+        if ok {
+            retained.push(s);
+        }
     }
-    if !taken_pool.is_empty() {
+    if !retained.is_empty() {
         let mut guard = POOL.lock().await;
-        guard.extend(taken_pool);
+        guard.extend(retained);
     }
 
     healthy
@@ -701,7 +711,7 @@ pub async fn engine_play_smb_stream(
     seek_secs: Option<f64>,
 ) -> Result<(), String> {
     let handle =
-        crate::api::engine::engine_start_stream(format_hint, content_length, seek_secs)?;
+        crate::api::engine::engine_start_stream(format_hint, content_length, seek_secs).await?;
     // 首块喂流成功信号：喂流 task 写入第一块后通知，主函数据此确认流已启动
     let (first_tx, first_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let first_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(first_tx)));
@@ -941,8 +951,8 @@ mod nas_cover_diag {
     /// NAS 封面链路诊断（真实网络）：
     /// 连接 → 挂载 → 列目录 → 逐首 read_head(4MB) → lofty 解析。
     /// 运行：
-    ///   WAVELINK_NAS_HOST=192.168.110.117 WAVELINK_NAS_USER=qin \
-    ///   WAVELINK_NAS_PASS=qrmac WAVELINK_NAS_SHARE=music \
+    ///   WAVELINK_NAS_HOST=<NAS_IP> WAVELINK_NAS_USER=<USER> \
+    ///   WAVELINK_NAS_PASS=<PASS> WAVELINK_NAS_SHARE=music \
     ///   cargo test -p wavelink_desktop --lib nas_cover_diag -- --ignored --nocapture
     #[tokio::test]
     #[ignore = "真实 NAS 网络诊断"]

@@ -9,6 +9,9 @@ import 'package:path_provider/path_provider.dart';
 import '../models/track.dart';
 import '../src/rust/api/smb.dart' as frb_smb;
 import '../src/rust/api/duration.dart' as frb_duration;
+
+/// 供 UI 层引用 SMB 类型而无需直接依赖 FRB 生成码。
+export '../src/rust/api/smb.dart' show SmbShareInfo;
 import 'network_source_config.dart';
 import 'scan_helpers.dart';
 import 'stable_hash.dart';

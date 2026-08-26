@@ -14,7 +14,7 @@ import '../services/dsp_settings_provider.dart';
 import '../services/locale_provider.dart';
 import '../services/player_providers.dart';
 import '../services/ui_settings_provider.dart';
-import '../src/rust/api/room.dart' as frb_room;
+import '../services/room_service.dart' as room;
 import '../widgets/settings_controls.dart';
 import '../widgets/settings_rail.dart';
 import '../widgets/settings_section.dart';
@@ -870,24 +870,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (x == null || !mounted) return;
     try {
       final text = await File(x.path).readAsString();
-      final pts = await frb_room.parseRewText(text: text);
-      if (pts.isEmpty) {
+      final pointCount = await room.parseRewPointCount(text);
+      if (pointCount == 0) {
         messenger.showSnackBar(
             SnackBar(content: Text(l.settingsRewNoPoints)));
         return;
       }
-      final config = await frb_room.defaultCorrectionConfig();
       final sr =
           ref.read(audioSettingsProvider).actualSampleRate ?? 44100;
-      final result = await frb_room.generateRoomCorrection(
+      final result = await room.generateFromRew(
         rewTxt: text,
-        config: config,
         sampleRate: sr,
       );
       final irFile = File(
           '${Directory.systemTemp.path}/wavelink_correction_${DateTime.now().millisecondsSinceEpoch}.wav');
-      await frb_room.saveIrWav(
-          ir: result.ir, sampleRate: sr, path: irFile.path);
+      await room.saveIrWav(ir: result.ir, sampleRate: sr, path: irFile.path);
       await ref.read(dspSettingsProvider.notifier).loadIr(irFile.path);
       messenger.showSnackBar(SnackBar(
         content: Text(l.settingsRewGenerated(
