@@ -2,7 +2,7 @@ import 'package:checks/checks.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wavelink_mobile/data/services/preferences_service.dart';
 import 'package:wavelink_mobile/ui/features/paywall/view_models/subscription_provider.dart';
@@ -18,16 +18,15 @@ class FakeGateway implements SubscriptionGateway {
   @override
   bool keyMissing = false;
 
-  /// queryPro 结果；null 模拟查询失败
   bool? queryProResult = false;
 
   bool purchaseResult = true;
   Object? purchaseError;
-  Package? purchased;
+  ProductDetails? purchased;
 
   bool restoreResult = true;
 
-  final List<CustomerInfoUpdateListener> listeners = [];
+  final List<void Function(bool)> listeners = [];
 
   @override
   Future<void> init() async {
@@ -38,8 +37,8 @@ class FakeGateway implements SubscriptionGateway {
   Future<bool?> queryPro() async => queryProResult;
 
   @override
-  Future<bool> purchase(Package package) async {
-    purchased = package;
+  Future<bool> purchase(ProductDetails product) async {
+    purchased = product;
     final err = purchaseError;
     if (err != null) throw err;
     return purchaseResult;
@@ -49,64 +48,30 @@ class FakeGateway implements SubscriptionGateway {
   Future<bool> restore() async => restoreResult;
 
   @override
-  void addCustomerInfoListener(CustomerInfoUpdateListener listener) {
+  void addCustomerInfoListener(void Function(bool) listener) {
     listeners.add(listener);
   }
 
   @override
-  void removeCustomerInfoListener(CustomerInfoUpdateListener listener) {
+  void removeCustomerInfoListener(void Function(bool) listener) {
     listeners.remove(listener);
   }
 
-  /// 模拟 SDK 推送权益变更
-  void emit(CustomerInfo info) {
+  void emit(bool isPro) {
     for (final l in List.of(listeners)) {
-      l(info);
+      l(isPro);
     }
   }
 }
 
-// ── 测试数据构造 ─────────────────────────────────────────────────────────
-
-CustomerInfo _customerInfo({required bool proActive}) {
-  final entitlement = EntitlementInfo(
-    'pro',
-    proActive,
-    proActive,
-    '2024-01-01T00:00:00Z',
-    '2024-01-01T00:00:00Z',
-    'wavelink_pro',
-    false,
-  );
-  return CustomerInfo(
-    EntitlementInfos(
-      {'pro': entitlement},
-      proActive ? {'pro': entitlement} : const {},
-    ),
-    const {},
-    const [],
-    const [],
-    const [],
-    '2024-01-01T00:00:00Z',
-    'test-user',
-    const {},
-    '2024-01-01T00:00:00Z',
-  );
-}
-
-Package _package() => Package(
-  r'$rc_monthly',
-  PackageType.monthly,
-  const StoreProduct(
-    'wavelink_pro',
-    '',
-    'WaveLink Pro',
-    7.99,
-    r'$7.99',
-    'USD',
-  ),
-  const PresentedOfferingContext('default', null, null),
-);
+ProductDetails _product() => ProductDetails(
+      id: 'wavelink_pro',
+      title: 'WaveLink Pro',
+      description: '',
+      price: r'$7.99',
+      rawPrice: 7.99,
+      currencyCode: 'USD',
+    );
 
 // ── 测试 ─────────────────────────────────────────────────────────────────
 
@@ -137,7 +102,7 @@ void main() {
   }
 
   group('refresh 状态流转', () {
-    test('已订阅：isPro=true，记录曾激活标记', () async {
+    test('已购买：isPro=true，记录曾激活标记', () async {
       gateway.queryProResult = true;
       final s = await refresh();
       check(s.isPro).isTrue();
@@ -146,7 +111,7 @@ void main() {
       check(revocations).equals(0);
     });
 
-    test('新用户未订阅：锁定但不剥夺任何设置', () async {
+    test('新用户未购买：锁定但不剥夺任何设置', () async {
       gateway.queryProResult = false;
       final s = await refresh();
       check(s.isPro).isFalse();
@@ -161,11 +126,10 @@ void main() {
       check(s.isPro).isFalse();
       check(s.ready).isTrue();
       check(revocations).equals(0);
-      // 标记不被误清：稍后监听回调仍能纠正
       check(PreferencesService.instance.proEverActive).isTrue();
     });
 
-    test('明确未激活且曾激活（过期/退款）：剥夺 Pro 设置并清标记', () async {
+    test('明确未激活且曾激活（退款/撤销）：剥夺 Pro 设置并清标记', () async {
       await PreferencesService.instance.setProEverActive(true);
       gateway.queryProResult = false;
       final s = await refresh();
@@ -186,7 +150,7 @@ void main() {
       check(PreferencesService.instance.proEverActive).isTrue();
     });
 
-    test('configure 失败（如桌面平台不支持）：同样静默降级不剥夺', () async {
+    test('configure 失败：同样静默降级不剥夺', () async {
       await PreferencesService.instance.setProEverActive(true);
       gateway.configured = false;
       final s = await refresh();
@@ -198,12 +162,12 @@ void main() {
   });
 
   group('权益变更监听', () {
-    test('refresh 后注册监听；运行期过期即时剥夺', () async {
+    test('refresh 后注册监听；运行期撤销即时剥夺', () async {
       gateway.queryProResult = true;
       await refresh();
       check(gateway.listeners).length.equals(1);
 
-      gateway.emit(_customerInfo(proActive: false));
+      gateway.emit(false);
       check(container.read(subscriptionProvider).isPro).isFalse();
       check(revocations).equals(1);
       check(PreferencesService.instance.proEverActive).isFalse();
@@ -214,16 +178,16 @@ void main() {
       gateway.queryProResult = true;
       await refresh();
 
-      gateway.emit(_customerInfo(proActive: false));
-      gateway.emit(_customerInfo(proActive: false));
+      gateway.emit(false);
+      gateway.emit(false);
       check(revocations).equals(1);
     });
 
-    test('权益被撤销（退款）后重新购买恢复 Pro', () async {
+    test('权益被撤销后重新购买恢复 Pro', () async {
       gateway.queryProResult = true;
       await refresh();
-      gateway.emit(_customerInfo(proActive: false));
-      gateway.emit(_customerInfo(proActive: true));
+      gateway.emit(false);
+      gateway.emit(true);
       check(container.read(subscriptionProvider).isPro).isTrue();
       check(PreferencesService.instance.proEverActive).isTrue();
     });
@@ -243,7 +207,7 @@ void main() {
       await refresh();
       final ok = await container
           .read(subscriptionProvider.notifier)
-          .purchase(_package());
+          .purchase(_product());
       check(ok).isTrue();
       check(gateway.purchased).isNotNull();
       check(container.read(subscriptionProvider).isPro).isTrue();
@@ -254,7 +218,7 @@ void main() {
       gateway.purchaseResult = false;
       final ok = await container
           .read(subscriptionProvider.notifier)
-          .purchase(_package());
+          .purchase(_product());
       check(ok).isFalse();
       check(container.read(subscriptionProvider).isPro).isFalse();
     });
@@ -265,7 +229,7 @@ void main() {
         message: 'purchaseCancelledError',
       );
       await check(
-        container.read(subscriptionProvider.notifier).purchase(_package()),
+        container.read(subscriptionProvider.notifier).purchase(_product()),
       ).throws<PlatformException>();
       check(container.read(subscriptionProvider).isPro).isFalse();
     });
@@ -276,7 +240,6 @@ void main() {
           .isTrue();
       check(container.read(subscriptionProvider).isPro).isTrue();
 
-      // 换一个新容器验证失败路径
       gateway.restoreResult = false;
       check(await container.read(subscriptionProvider.notifier).restore())
           .isFalse();

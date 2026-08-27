@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../data/services/subscription_service.dart';
@@ -29,7 +28,7 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
   static const _privacyUrl =
       'https://oweenlee.github.io/wavelink/privacy-policy/';
 
-  List<Package> _packages = const [];
+  List<ProductDetails> _products = const [];
   bool _loading = true;
   bool _purchasing = false;
   String? _error;
@@ -47,36 +46,28 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
         _error = null;
       });
     }
-    final packages = await SubscriptionService.getOfferings();
+    final products = await SubscriptionService.getOfferings();
     if (!mounted) return;
     setState(() {
-      _packages = packages;
+      _products = products;
       _loading = false;
-      // 未拉到套餐：未配置商品或离线，展示占位错误 + 重试入口
-      _error = packages.isEmpty ? 'offerings_empty' : null;
+      _error = products.isEmpty ? 'offerings_empty' : null;
     });
   }
 
-  Future<void> _purchase(Package package) async {
+  Future<void> _purchase(ProductDetails product) async {
     setState(() {
       _purchasing = true;
       _error = null;
     });
     try {
-      final ok = await ref.read(subscriptionProvider.notifier).purchase(package);
+      final ok = await ref.read(subscriptionProvider.notifier).purchase(product);
       if (!mounted) return;
       if (ok) {
         Navigator.of(context).pop(true);
       } else {
-        // 未抛异常的失败（SDK 未配置/购买后权益未授予），统一提示
+        // 购买取消/失败：purchase 返回 false，canceled 不弹错由 in_app_purchase 以 false 体现
         setState(() => _error = 'generic');
-      }
-    } on PlatformException catch (e) {
-      // 用户取消购买是正常路径，不弹错误（官方助手解析错误码）
-      final cancelled = PurchasesErrorHelper.getErrorCode(e) ==
-          PurchasesErrorCode.purchaseCancelledError;
-      if (!cancelled && mounted) {
-        setState(() => _error = 'purchase_failed');
       }
     } catch (e) {
       if (mounted) setState(() => _error = 'generic');
@@ -96,7 +87,6 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
         setState(() => _error = 'restore_empty');
       }
     } catch (e) {
-      // 恢复失败不透出原始异常（英文堆栈对用户无意义），统一走本地化文案
       if (mounted) setState(() => _error = 'generic');
     }
   }
@@ -105,7 +95,6 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final accent = AccentScope.of(context);
-    // 已订阅：付费墙转为「管理订阅」入口，不再展示购买按钮（避免重复下单路径）
     final isPro = ref.watch(subscriptionProvider.select((s) => s.isPro));
 
     return Scaffold(
@@ -179,12 +168,12 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
                 if (_loading)
                   const Center(child: CircularProgressIndicator(strokeWidth: 2))
                 else ...[
-                  for (final package in _packages)
+                  for (final product in _products)
                     _PurchaseButton(
-                      package: package,
+                      product: product,
                       purchasing: _purchasing,
                       accent: accent,
-                      onTap: () => _purchase(package),
+                      onTap: () => _purchase(product),
                     ),
                   TextButton(
                     onPressed: _restore,
@@ -210,13 +199,9 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
                 ],
               ],
               const SizedBox(height: 8),
-              // 苹果审核要求明示购买价格，用 priceString（StoreKit 已按
-              // 地区货币格式化）。注意：当前仅配置单商品，条款只取
-              // 首个套餐的价格；将来加多商品时需逐商品展示条款，
-              // 否则条款价与按钮价不一致会被审核挑刺。
-              if (!isPro && _packages.isNotEmpty)
+              if (!isPro && _products.isNotEmpty)
                 Text(
-                  l10n.paywallTerms(_packages.first.storeProduct.priceString),
+                  l10n.paywallTerms(_products.first.price),
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 11,
@@ -224,7 +209,6 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
                   ),
                 ),
               const SizedBox(height: 4),
-              // Guideline 3.1.2：付费墙必须可访问使用条款与隐私政策
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -291,7 +275,6 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
     }
   }
 
-  /// 外链用系统浏览器打开（应用内无 WebView）。失败静默。
   Future<void> _openLink(String url) async {
     try {
       await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
@@ -299,16 +282,15 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
   }
 }
 
-/// 套餐购买按钮：标题取本地化价格（StoreKit 已按地区货币格式化），
-/// 一次性买断，无试用/续订语义。
+/// 购买按钮：标题取本地化价格（StoreKit 已按地区货币格式化），一次性买断。
 class _PurchaseButton extends StatelessWidget {
-  final Package package;
+  final ProductDetails product;
   final bool purchasing;
   final Color accent;
   final VoidCallback onTap;
 
   const _PurchaseButton({
-    required this.package,
+    required this.product,
     required this.purchasing,
     required this.accent,
     required this.onTap,
@@ -317,7 +299,7 @@ class _PurchaseButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final price = package.storeProduct.priceString;
+    final price = product.price;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),

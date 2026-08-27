@@ -5,7 +5,7 @@ description: "WaveLink 移动端：Flutter + Rust（audio-core）跨端 HiFi 音
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
 # The following defines the version and build number for your application.
-version: 1.0.1+2
+version: 1.0.2+7
 
 # 启动图：近黑底 + app logo（原生层只放图标，字标由 App 内动画带出，全程连续）
 flutter_native_splash:
@@ -47,7 +47,7 @@ dependencies:
   package_info_plus: ^8.0.0
   sqflite: ^2.4.3
   sqflite_common_ffi: ^2.4.2+1
-  purchases_flutter: ^10.9.1   # RevenueCat 订阅（Pro 功能付费墙）
+  in_app_purchase: ^3.2.1     # StoreKit 2 / Google Billing（Pro 买断，纯端侧无后端）
   url_launcher: ^6.3.2         # 付费墙条款/隐私政策外链（苹果审核要求）
   image: ^4.5.4               # 封面缩略图 JPEG 编码（对齐 desktop CoverCache.ensureThumb）
 

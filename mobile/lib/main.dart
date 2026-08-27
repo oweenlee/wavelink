@@ -65,8 +65,7 @@ Future<void> main() async {
   // 触发编排层接线，随后启动副作用（偏好加载、播放器 init、曲库扫描）
   container.read(playbackControllerProvider).bootstrap();
 
-  // 订阅：RevenueCat init 在 refresh 内部 await，不阻塞启动关键路径；
-  // 未配置 Key / 离线时静默降级为免费版。
+  // 订阅：in_app_purchase 初始化在 refresh 内部 await，不阻塞启动。
   unawaited(container.read(subscriptionProvider.notifier).refresh());
 
   // NAS/SMB 会话自愈：后台挂起会掐掉 SMB socket 但 Rust 侧无感知，

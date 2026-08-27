@@ -7,9 +7,9 @@
 # 常用流程：
 #   fastlane bump_version            # patch +1，build number +1
 #   fastlane bump_version kind:minor # 次版本 +1，build number +1
-#   fastlane build_ios               # 构建 ipa（需环境变量 REVENUECAT_APPLE_KEY）
-#   fastlane build_android           # 构建 AAB（可选 REVENUECAT_GOOGLE_KEY）
-#   fastlane upload_testflight       # 构建 + 上传 TestFlight（需 REVENUECAT_APPLE_KEY）
+#   fastlane build_ios               # 构建 ipa
+#   fastlane build_android           # 构建 AAB
+#   fastlane upload_testflight       # 构建 + 上传 TestFlight
 
 default_platform(:ios)
 
@@ -48,23 +48,6 @@ def increment_build
   new_build
 end
 
-# ── RevenueCat API Key 注入 ──
-# 订阅功能靠 --dart-define 编译期注入 Key；发版构建缺 Key 会导致线上包
-# 静默降级为免费版（付费墙永远拉不到套餐），因此 iOS 构建缺 Key 直接报错。
-# Key 不进仓库：export REVENUECAT_APPLE_KEY=appl_xxx（或写进 CI secrets）。
-def revenuecat_apple_key
-  key = ENV['REVENUECAT_APPLE_KEY']
-  UI.user_error!('缺少环境变量 REVENUECAT_APPLE_KEY（RevenueCat Apple API Key，appl_ 开头）：没有它线上包无法订阅') if key.nil? || key.empty?
-  key
-end
-
-# Android Key 可选：未配置时静默降级（与 App 内行为一致），不阻断构建
-def revenuecat_android_defines
-  key = ENV['REVENUECAT_GOOGLE_KEY']
-  return '' if key.nil? || key.empty?
-  " --dart-define=REVENUECAT_GOOGLE_KEY=#{key}"
-end
-
 desc '递增版本号（major/minor/patch，默认 patch），build number 同时 +1'
 lane :bump_version do |options|
   kind = (options[:kind] || 'patch').to_s
@@ -92,14 +75,14 @@ end
 desc '构建 iOS ipa（Release）'
 lane :build_ios do
   name, build = flutter_version
-  sh "flutter build ipa --release --build-name \"#{name}\" --build-number \"#{build}\" --dart-define=REVENUECAT_APPLE_KEY=#{revenuecat_apple_key}"
+  sh "flutter build ipa --release --build-name \"#{name}\" --build-number \"#{build}\""
   # 产物：build/ios/ipa/*.ipa
 end
 
 desc '构建 Android AAB（Release）'
 lane :build_android do
   name, build = flutter_version
-  sh "flutter build appbundle --release --build-name \"#{name}\" --build-number \"#{build}\"#{revenuecat_android_defines}"
+  sh "flutter build appbundle --release --build-name \"#{name}\" --build-number \"#{build}\""
   # 产物：build/app/outputs/bundle/release/app-release.aab
 end
 
@@ -112,7 +95,7 @@ lane :upload_testflight do |options|
     increment_build
     name, build = flutter_version
   end
-  sh "flutter build ipa --release --build-name \"#{name}\" --build-number \"#{build}\" --dart-define=REVENUECAT_APPLE_KEY=#{revenuecat_apple_key}"
+  sh "flutter build ipa --release --build-name \"#{name}\" --build-number \"#{build}\""
   upload_to_testflight(
     ipa: 'build/ios/ipa/wavelink_mobile.ipa',
     skip_waiting_for_build_processing: true,

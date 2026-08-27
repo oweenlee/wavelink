@@ -1,0 +1,31 @@
+{
+  "_applicationInternalID" : "com.wavelink.player",
+  "_lastSynchronizedDate" : 0,
+  "_version" : {
+    "major" : 2,
+    "minor" : 0
+  },
+  "products" : {
+    "wavelink_pro" : {
+      "adHocOffers" : [
+
+      ],
+      "codeOffers" : [
+
+      ],
+      "displayPrice" : "7.99",
+      "familyShareable" : false,
+      "group" : "Pro",
+      "internalID" : "wavelink_pro",
+      "productID" : "wavelink_pro",
+      "subscriptionGroupID" : "",
+      "type" : "NonConsumable"
+    }
+  },
+  "settings" : {
+    "_applicationInternalID" : "com.wavelink.player"
+  },
+  "subscriptionGroups" : {
+
+  }
+}
