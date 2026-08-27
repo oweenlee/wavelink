@@ -10,6 +10,7 @@ import 'package:window_manager/window_manager.dart';
 import 'core/theme.dart';
 import 'l10n/app_localizations.dart';
 import 'screens/home.dart';
+import 'services/device_watcher.dart';
 import 'services/locale_provider.dart';
 import 'services/network_source_config.dart';
 import 'services/player_providers.dart';
@@ -79,6 +80,15 @@ Future<void> main() async {
   await tray.init();
   // ⌘Q 与托盘退出共用同一清理链路（停引擎 + 关闭 SQLite + WAL checkpoint）
   _MacAppMenu.quitHandler = tray.quit;
+
+  // 音频输出设备热插拔监听：设备插入/拔出自动刷新列表，
+  // 选中设备消失时回退系统默认（引擎就绪后内部自动跳过空转）。
+  final deviceWatcher = DeviceWatcher(container)..start();
+  final originalQuit = tray.quit;
+  _MacAppMenu.quitHandler = () async {
+    deviceWatcher.dispose();
+    await originalQuit();
+  };
 
   // macOS Dock 菜单（右键图标：播放/暂停 + 下一首）：
   // 推送播放态给原生刷新标题；接收原生控制动作回传。

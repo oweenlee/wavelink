@@ -260,6 +260,11 @@ class PlayerNotifier extends Notifier<PlayerState> {
     if (!_errorSC.isClosed) _errorSC.add(message);
   }
 
+  /// 用户可读提示（非错误，如设备热插拔回退）：SnackBar 呈现，不写日志。
+  void notifyUser(String message) {
+    if (!_errorSC.isClosed) _errorSC.add(message);
+  }
+
   Future<void> init() async {
     var favorites = <String>{...state.favoriteIds};
     var playlists = state.playlists;
@@ -1833,6 +1838,55 @@ class PlayerNotifier extends Notifier<PlayerState> {
     // 移除非当前曲目：当前下标在前则同步 -1
     final newIndex = qi != null && index < qi ? qi - 1 : qi;
     state = state.copyWith(queue: newQueue, queueIndex: newIndex);
+    if (_engineQueueActive) {
+      await _syncEngineQueue();
+    }
+  }
+
+  /// 队列内移动曲目（队列视图拖拽排序用）。
+  /// - 非 shuffle：queue 与基准队列保持同序，同步移动；
+  /// - shuffle：只动播放序（基准队列是原始顺序，不随拖拽改变）；
+  /// - 当前曲目可拖动：queueIndex 跟随曲目新位置。
+  Future<void> moveInQueue(int from, int to) async {
+    final queue = state.queue;
+    if (queue.isEmpty || from < 0 || from >= queue.length) return;
+    if (to < 0 || to >= queue.length) return;
+    if (from == to) return;
+    final moved = queue[from];
+    final newQueue = [...queue]
+      ..removeAt(from)
+      ..insert(to, moved);
+
+    // 当前曲目标下标的语义跟随：
+    // - 拖的是当前曲 → 新下标 = to；
+    // - 拖当前曲之前的曲到 qi 之后 → qi 前移一位；
+    // - 拖当前曲之后的曲到 qi 之前 → qi 后移一位；
+    // - 其余情况 qi 不变。
+    final qi = state.queueIndex;
+    int? newQi = qi;
+    if (qi != null) {
+      if (from == qi) {
+        newQi = to;
+      } else if (from < qi && to >= qi) {
+        newQi = qi - 1;
+      } else if (from > qi && to <= qi) {
+        newQi = qi + 1;
+      }
+    }
+
+    // 非 shuffle 时同步基准队列（与 queue 同序同理移动）；
+    // shuffle 时基准队列保持原始顺序不动（与 removeFromQueueAt 的
+    // 「删曲同步 base」不同：移动不改成员集合，不存在复活问题）。
+    if (!state.shuffle && _queueBase.length == queue.length) {
+      final baseIdx = _queueBase.indexOf(moved);
+      if (baseIdx >= 0 && baseIdx < _queueBase.length) {
+        _queueBase = [..._queueBase]
+          ..removeAt(baseIdx)
+          ..insert(to, moved);
+      }
+    }
+
+    state = state.copyWith(queue: newQueue, queueIndex: newQi);
     if (_engineQueueActive) {
       await _syncEngineQueue();
     }

@@ -567,15 +567,33 @@ class _QueueView extends ConsumerWidget {
           ),
         ),
         Expanded(
-          child: ListView.builder(
+          child: ReorderableListView.builder(
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
             itemExtent: 44,
             itemCount: queue.length,
-            itemBuilder: (c, i) => _QueueTile(
-              player: player,
-              track: queue[i],
+            // 拖拽回调：onReorderItem 已把 newIndex 换算为「移除旧项后的
+            // 最终下标」，直接传给 moveInQueue。
+            onReorderItem: (from, to) {
+              if (to == from) return;
+              player.moveInQueue(from, to);
+            },
+            buildDefaultDragHandles: false,
+            proxyDecorator: (child, index, animation) =>
+                Material(
+              color: AppTheme.background,
+              elevation: 6,
+              borderRadius: BorderRadius.circular(8),
+              child: child,
+            ),
+            itemBuilder: (c, i) => ReorderableDragStartListener(
+              key: ValueKey('drag-${queue[i].id}-$i'),
               index: i,
-              isCurrent: i == qi,
+              child: _QueueTile(
+                player: player,
+                track: queue[i],
+                index: i,
+                isCurrent: i == qi,
+              ),
             ),
           ),
         ),

@@ -267,6 +267,66 @@ void main() {
       await c.clearQueue();
       expect(c.queueBase.length, 1);
     });
+
+    test('moveInQueue reorders and keeps queueIndex on non-current', () async {
+      final ts = mkTracks(4);
+      c.playFrom(ts, 1); // queue=[t0,t1,t2,t3] qi=1
+      await c.moveInQueue(0, 2); // t0 拖到 t2 前 → [t1,t2,t0,t3]
+      expect(c.state.queue.map((t) => t.id).toList(), ['t1', 't2', 't0', 't3']);
+      // t0 从当前曲(qi=1)之前拖到之后：当前曲前移一位
+      expect(c.state.queueIndex, 0);
+      expect(c.queueBase.map((t) => t.id).toList(), ['t1', 't2', 't0', 't3']);
+    });
+
+    test('moveInQueue moves current track and follows index', () async {
+      final ts = mkTracks(4);
+      c.playFrom(ts, 1); // qi=1
+      await c.moveInQueue(1, 3); // 拖当前曲到末尾 → [t0,t2,t3,t1]
+      expect(c.state.queue.map((t) => t.id).toList(), ['t0', 't2', 't3', 't1']);
+      expect(c.state.queueIndex, 3); // 当前曲跟着走
+    });
+
+    test('moveInQueue drag across current shifts index correctly', () async {
+      final ts = mkTracks(4);
+      c.playFrom(ts, 2); // qi=2
+      // t0 拖到 qi 之后：当前曲前移一位
+      await c.moveInQueue(0, 3); // [t1,t2,t3,t0]
+      expect(c.state.queue.map((t) => t.id).toList(), ['t1', 't2', 't3', 't0']);
+      expect(c.state.queueIndex, 1);
+      // 再拖回 qi 之前（t0 从末尾拖到最前）：当前曲后移一位
+      await c.moveInQueue(3, 0); // [t0,t1,t2,t3]
+      expect(c.state.queue.map((t) => t.id).toList(), ['t0', 't1', 't2', 't3']);
+      expect(c.state.queueIndex, 2);
+    });
+
+    test('moveInQueue during shuffle only reorders play order', () async {
+      final ts = mkTracks(4);
+      await c.toggleShuffle();
+      c.playFrom(ts, 0); // qi=0, queue 乱序
+      final shuffledOrder = c.state.queue.map((t) => t.id).toList();
+      expect(c.queueBase.map((t) => t.id).toList(), ['t0', 't1', 't2', 't3']);
+      final from = 1, to = 3;
+      await c.moveInQueue(from, to);
+      final movedOrder = c.state.queue.map((t) => t.id).toList();
+      expect(movedOrder.length, 4);
+      // 期望 = 原乱序中把 index1 的曲移到 index3（移除后插入）
+      final manual = [...shuffledOrder];
+      final m = manual.removeAt(from);
+      manual.insert(to, m);
+      expect(movedOrder, manual);
+      // base 不受影响
+      expect(c.queueBase.map((t) => t.id).toList(), ['t0', 't1', 't2', 't3']);
+    });
+
+    test('moveInQueue bounds are no-ops', () async {
+      final ts = mkTracks(3);
+      c.playFrom(ts, 0);
+      final before = c.state.queue.map((t) => t.id).toList();
+      await c.moveInQueue(-1, 1);
+      await c.moveInQueue(0, 5);
+      await c.moveInQueue(1, 1);
+      expect(c.state.queue.map((t) => t.id).toList(), before);
+    });
   });
 
   group('playlist rename', () {
