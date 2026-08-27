@@ -210,4 +210,78 @@ void main() {
       expect(c.state.queueIndex, 1);
     });
   });
+
+  group('queue view (removeFromQueueAt / clearQueue)', () {
+    test('remove trailing track keeps index', () async {
+      final ts = mkTracks(3);
+      c.playFrom(ts, 1);
+      await c.removeFromQueueAt(2);
+      expect(c.state.queue.length, 2);
+      expect(c.state.queueIndex, 1);
+      expect(c.state.currentTrack?.id, 't1');
+    });
+
+    test('remove track before current shifts index back', () async {
+      final ts = mkTracks(3);
+      c.playFrom(ts, 1);
+      await c.removeFromQueueAt(0);
+      expect(c.state.queue.length, 2);
+      expect(c.state.queueIndex, 0);
+      expect(c.state.currentTrack?.id, 't1');
+    });
+
+    test('remove current track continues with next at same slot', () async {
+      final ts = mkTracks(3);
+      c.playFrom(ts, 1);
+      await c.removeFromQueueAt(1);
+      expect(c.state.queue.length, 2);
+      expect(c.state.queueIndex, 1);
+      expect(c.state.currentTrack?.id, 't2');
+    });
+
+    test('remove only track stops playback', () async {
+      final ts = mkTracks(1);
+      c.playFrom(ts, 0);
+      await c.removeFromQueueAt(0);
+      expect(c.state.queue, isEmpty);
+      expect(c.state.queueIndex, isNull);
+      expect(c.state.playing, isFalse);
+    });
+
+    test('clearQueue keeps only current track', () async {
+      final ts = mkTracks(5);
+      c.playFrom(ts, 2);
+      await c.clearQueue();
+      expect(c.state.queue.length, 1);
+      expect(c.state.queue.single.id, 't2');
+      expect(c.state.queueIndex, 0);
+    });
+
+    test('remove keeps queueBase in sync (no resurrect after shuffle)', () async {
+      final ts = mkTracks(5);
+      await c.toggleShuffle();
+      c.playFrom(ts, 0);
+      final removed = c.state.queue.last.id;
+      await c.removeFromQueueAt(c.state.queue.length - 1);
+      expect(c.queueBase.any((t) => t.id == removed), isFalse);
+      await c.clearQueue();
+      expect(c.queueBase.length, 1);
+    });
+  });
+
+  group('playlist rename', () {
+    test('renamePlaylist updates the name', () async {
+      await c.createPlaylist('Old Name');
+      final id = c.state.playlists.single.id;
+      await c.renamePlaylist(id, 'New Name');
+      expect(c.state.playlists.single.name, 'New Name');
+    });
+
+    test('renamePlaylist ignores blank name', () async {
+      await c.createPlaylist('Old Name');
+      final id = c.state.playlists.single.id;
+      await c.renamePlaylist(id, '   ');
+      expect(c.state.playlists.single.name, 'Old Name');
+    });
+  });
 }

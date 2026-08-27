@@ -258,5 +258,18 @@
   "settingsListDensity": "List Density",
   "settingsListDensityDesc": "Row height and spacing of the track list",
   "densityCompact": "Compact",
-  "densityComfortable": "Comfortable"
+  "densityComfortable": "Comfortable",
+  "npTabPlaying": "Now Playing",
+  "npTabQueue": "Queue",
+  "queueEmpty": "Queue is empty",
+  "queueEmptyHint": "Songs you play will appear here",
+  "queueCurrent": "Now Playing",
+  "queueRemove": "Remove from Queue",
+  "queueClear": "Clear Queue",
+  "queueRemain": "{count} remaining",
+  "npCoverZoomHint": "Click to enlarge cover",
+  "playlistRename": "Rename",
+  "playlistDelete": "Delete Playlist",
+  "dlgRenamePlaylistTitle": "Rename Playlist",
+  "playlistDeleteConfirm": "Delete \"{name}\"? This cannot be undone."
 }

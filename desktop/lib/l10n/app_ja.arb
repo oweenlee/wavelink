@@ -244,5 +244,18 @@
   "settingsListDensity": "リスト密度",
   "settingsListDensityDesc": "トラックリストの行の高さと間隔",
   "densityCompact": "コンパクト",
-  "densityComfortable": "ゆったり"
+  "densityComfortable": "ゆったり",
+  "npTabPlaying": "再生中",
+  "npTabQueue": "キュー",
+  "queueEmpty": "キューは空です",
+  "queueEmptyHint": "再生した曲がここに表示されます",
+  "queueCurrent": "再生中",
+  "queueRemove": "キューから削除",
+  "queueClear": "キューをクリア",
+  "queueRemain": "残り {count} 曲",
+  "npCoverZoomHint": "クリックで拡大",
+  "playlistRename": "名前を変更",
+  "playlistDelete": "プレイリストを削除",
+  "dlgRenamePlaylistTitle": "プレイリスト名を変更",
+  "playlistDeleteConfirm": "「{name}」を削除しますか？この操作は元に戻せません。"
 }

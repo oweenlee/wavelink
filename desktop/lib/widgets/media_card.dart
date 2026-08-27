@@ -32,6 +32,8 @@ class MediaCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
+        // 卡片不参与键盘焦点：保证空格/方向键不被默认行为劫持（见 TrackRow）。
+        canRequestFocus: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

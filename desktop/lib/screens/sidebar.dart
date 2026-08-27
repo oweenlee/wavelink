@@ -4,12 +4,14 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../core/theme.dart';
 import '../l10n/app_localizations.dart';
+import '../models/playlist.dart';
 import '../models/track.dart';
 import '../services/network_source_config.dart';
 import '../services/player_notifier.dart';
 import '../services/player_providers.dart';
 import '../services/subsonic_service.dart';
 import '../services/webdav_service.dart';
+import '../widgets/dialogs.dart';
 import '../widgets/nav_item.dart';
 import 'network_dialogs.dart';
 import 'settings.dart';
@@ -17,6 +19,7 @@ import 'settings.dart';
 // 单色板别名来自 core/theme.dart（与 ThemeData 同源）；别名仅为缩短引用。
 const _surface = kSurface;
 const _border = kBorder;
+const _onSurface = kOnSurface;
 const _onSurfaceVariant = kOnSurfaceVariant;
 
 /// 应用侧栏（对齐 mobile AppShell 的导航职责，桌面形态为左栏）：
@@ -167,27 +170,10 @@ class Sidebar extends ConsumerWidget {
             child: Text(l10n.sidebarNetworkSources,
                 style: TextStyle(color: _onSurfaceVariant, fontSize: 12)),
           ),
-          NavItem(
-            icon: LucideIcons.globe,
-            label: 'WebDAV',
-            trailingActions: _sourceActionButtons(context, TrackSource.webdav),
-            active: viewMode == 'src:webdav',
-            onTap: () => onSelect('src:webdav'),
-          ),
-          NavItem(
-            icon: LucideIcons.server,
-            label: 'NAS (SMB)',
-            trailingActions: _sourceActionButtons(context, TrackSource.nas),
-            active: viewMode == 'src:nas',
-            onTap: () => onSelect('src:nas'),
-          ),
-          NavItem(
-            icon: LucideIcons.radio,
-            label: 'Subsonic',
-            trailingActions: _sourceActionButtons(context, TrackSource.subsonic),
-            active: viewMode == 'src:subsonic',
-            onTap: () => onSelect('src:subsonic'),
-          ),
+          _sourceItem(context, TrackSource.webdav, LucideIcons.globe, 'WebDAV'),
+          _sourceItem(context, TrackSource.nas, LucideIcons.server, 'NAS (SMB)'),
+          _sourceItem(context, TrackSource.subsonic, LucideIcons.radio,
+              'Subsonic'),
           Padding(
             padding: EdgeInsets.fromLTRB(20, 18, 20, 6),
             child: Text(l10n.sidebarPlaylists,
@@ -200,12 +186,17 @@ class Sidebar extends ConsumerWidget {
             physics: const NeverScrollableScrollPhysics(),
             children: playlists
                 .map(
-                  (pl) => NavItem(
-                    icon: LucideIcons.listMusic,
-                    label: pl.name,
-                    trailing: '${pl.trackIds.length}',
-                    active: viewMode == 'pl:${pl.id}',
-                    onTap: () => onSelect('pl:${pl.id}'),
+                  (pl) => GestureDetector(
+                    // 桌面惯例：右键重命名 / 删除播放列表
+                    onSecondaryTapDown: (d) => _showPlaylistContextMenu(
+                        context, d.globalPosition, pl),
+                    child: NavItem(
+                      icon: LucideIcons.listMusic,
+                      label: pl.name,
+                      trailing: '${pl.trackIds.length}',
+                      active: viewMode == 'pl:${pl.id}',
+                      onTap: () => onSelect('pl:${pl.id}'),
+                    ),
                   ),
                 )
                 .toList(),
@@ -255,6 +246,124 @@ class Sidebar extends ConsumerWidget {
       context,
       MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
     );
+  }
+
+  /// 网络音源导航项（右键弹出 重扫 / 配置 菜单，桌面惯例）。
+  Widget _sourceItem(BuildContext context, TrackSource source, IconData icon,
+      String label) {
+    return GestureDetector(
+      onSecondaryTapDown: (d) =>
+          _showSourceContextMenu(context, d.globalPosition, source),
+      child: NavItem(
+        icon: icon,
+        label: label,
+        trailingActions: _sourceActionButtons(context, source),
+        active: viewMode == 'src:${source.name}',
+        onTap: () => onSelect('src:${source.name}'),
+      ),
+    );
+  }
+
+  /// 播放列表右键菜单：重命名 / 删除（删除后若正在查看该列表则切回全部）。
+  Future<void> _showPlaylistContextMenu(
+      BuildContext context, Offset pos, Playlist pl) async {
+    final l10n = AppLocalizations.of(context);
+    final v = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx, pos.dy),
+      color: _surface,
+      items: [
+        PopupMenuItem(
+          value: 'rename',
+          child: Text(l10n.playlistRename,
+              style: const TextStyle(color: _onSurface, fontSize: 13)),
+        ),
+        PopupMenuItem(
+          value: 'delete',
+          child: Text(l10n.playlistDelete,
+              style: const TextStyle(color: _onSurface, fontSize: 13)),
+        ),
+      ],
+    );
+    if (!context.mounted) return;
+    switch (v) {
+      case 'rename':
+        final name = await askNameDialog(context,
+            title: l10n.dlgRenamePlaylistTitle, hint: l10n.dlgNameHintPlaylist);
+        if (name != null && name.trim().isNotEmpty && context.mounted) {
+          await player.renamePlaylist(pl.id, name.trim());
+        }
+      case 'delete':
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: _surface,
+            title: Text(l10n.playlistDelete,
+                style: const TextStyle(
+                    fontFamily: 'SpaceGrotesk',
+                    color: _onSurface,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.3)),
+            content: Text(l10n.playlistDeleteConfirm(pl.name),
+                style: const TextStyle(
+                    color: _onSurfaceVariant, fontSize: 13.5)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(l10n.btnCancel,
+                    style: const TextStyle(color: _onSurfaceVariant)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(l10n.btnConfirmClear,
+                    style: const TextStyle(color: AppTheme.danger)),
+              ),
+            ],
+          ),
+        );
+        if (ok == true && context.mounted) {
+          await player.deletePlaylist(pl.id);
+          if (viewMode == 'pl:${pl.id}') onSelect('all');
+        }
+    }
+  }
+
+  /// 网络音源右键菜单：重扫 / 配置。
+  Future<void> _showSourceContextMenu(
+      BuildContext context, Offset pos, TrackSource source) async {
+    final l10n = AppLocalizations.of(context);
+    final configured = switch (source) {
+      TrackSource.webdav => WebdavService.isConfigured,
+      TrackSource.nas => NetworkSourceConfig.instance.nasHost != null,
+      TrackSource.subsonic => SubsonicService.isConfigured,
+      TrackSource.local => false,
+    };
+    final v = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx, pos.dy),
+      color: _surface,
+      items: [
+        if (configured)
+          PopupMenuItem(
+            value: 'rescan',
+            child: Text(l10n.tooltipRescan,
+                style: const TextStyle(color: _onSurface, fontSize: 13)),
+          ),
+        PopupMenuItem(
+          value: 'config',
+          child: Text(l10n.tooltipConfig,
+              style: const TextStyle(color: _onSurface, fontSize: 13)),
+        ),
+      ],
+    );
+    if (!context.mounted) return;
+    switch (v) {
+      case 'rescan':
+        await _refreshSource(context, player, source);
+      case 'config':
+        _openNetwork(context, source);
+    }
   }
 
   void _openNetwork(BuildContext context, TrackSource source) {

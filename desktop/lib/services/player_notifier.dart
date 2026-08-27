@@ -1802,6 +1802,56 @@ class PlayerNotifier extends Notifier<PlayerState> {
     }
   }
 
+  /// 从播放队列移除指定下标的曲目（队列视图用）。
+  /// - 移除当前曲目：停掉当前，从原位置继续播下一首（队列空则停止）；
+  /// - 移除非当前曲目：不打断播放，同步引擎队列与基准队列
+  ///   （shuffle 切回时不复活已移除曲目）。
+  Future<void> removeFromQueueAt(int index) async {
+    final queue = state.queue;
+    if (index < 0 || index >= queue.length) return;
+    final qi = state.queueIndex;
+    final removed = queue[index];
+    final baseIdx = _queueBase.indexOf(removed);
+    if (baseIdx >= 0) {
+      _queueBase = [..._queueBase]..removeAt(baseIdx);
+    }
+    final newQueue = [...queue]..removeAt(index);
+    if (qi != null && index == qi) {
+      // 移除的是当前曲目
+      if (newQueue.isEmpty) {
+        _stopRequested = true;
+        await _engine?.stop();
+        _engineQueueActive = false;
+        state = state.copyWith(
+            queue: newQueue, queueIndex: null, playing: false);
+        return;
+      }
+      state = state.copyWith(queue: newQueue);
+      await playIndex(index.clamp(0, newQueue.length - 1));
+      return;
+    }
+    // 移除非当前曲目：当前下标在前则同步 -1
+    final newIndex = qi != null && index < qi ? qi - 1 : qi;
+    state = state.copyWith(queue: newQueue, queueIndex: newIndex);
+    if (_engineQueueActive) {
+      await _syncEngineQueue();
+    }
+  }
+
+  /// 清空队列：只保留当前曲目（当前之前/之后全部移除，播完即停）。
+  /// 与基准队列同步，避免 shuffle 切回时复活已清曲目。
+  Future<void> clearQueue() async {
+    final qi = state.queueIndex;
+    final queue = state.queue;
+    if (qi == null || queue.isEmpty) return;
+    final current = queue[qi];
+    _queueBase = [current];
+    state = state.copyWith(queue: [current], queueIndex: 0);
+    if (_engineQueueActive) {
+      await _syncEngineQueue();
+    }
+  }
+
   // ---- Favorites -----------------------------------------------------------
 
   bool isFavorite(Track t) => state.favoriteIds.contains(t.id);
@@ -1831,6 +1881,18 @@ class PlayerNotifier extends Notifier<PlayerState> {
   Future<void> deletePlaylist(String id) async {
     state = state.copyWith(
       playlists: state.playlists.where((p) => p.id != id).toList(),
+    );
+    await _savePlaylists();
+  }
+
+  /// 重命名播放列表（名称去首尾空白；空名忽略）。
+  Future<void> renamePlaylist(String id, String newName) async {
+    final name = newName.trim();
+    if (name.isEmpty) return;
+    state = state.copyWith(
+      playlists: state.playlists
+          .map((p) => p.id == id ? p.copyWith(name: name) : p)
+          .toList(),
     );
     await _savePlaylists();
   }

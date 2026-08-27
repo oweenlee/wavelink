@@ -87,6 +87,8 @@ class _NavItemState extends State<NavItem> {
                   if (h != _pressed) setState(() => _pressed = h);
                 },
                 borderRadius: BorderRadius.circular(8),
+                // 侧栏项不抢键盘焦点：保证全局空格/方向键快捷键不被劫持。
+                canRequestFocus: false,
                 child: body,
               ),
             ),
@@ -142,6 +144,8 @@ class _NavItemCompactState extends State<NavItemCompact> {
           onHighlightChanged: (h) {
             if (h != _pressed) setState(() => _pressed = h);
           },
+          // 紧凑侧栏项同样不抢焦点（全局快捷键优先）。
+          canRequestFocus: false,
           child: Container(
             width: double.infinity,
             height: 44,

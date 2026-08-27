@@ -338,5 +338,18 @@
   "settingsListDensity": "列表密度",
   "settingsListDensityDesc": "曲目列表的行高与间距",
   "densityCompact": "紧凑",
-  "densityComfortable": "舒适"
+  "densityComfortable": "舒适",
+  "npTabPlaying": "正在播放",
+  "npTabQueue": "队列",
+  "queueEmpty": "队列为空",
+  "queueEmptyHint": "播放过的歌曲会出现在这里",
+  "queueCurrent": "正在播放",
+  "queueRemove": "从队列移除",
+  "queueClear": "清空队列",
+  "queueRemain": "剩余 {count} 首",
+  "npCoverZoomHint": "点击放大封面",
+  "playlistRename": "重命名",
+  "playlistDelete": "删除播放列表",
+  "dlgRenamePlaylistTitle": "重命名播放列表",
+  "playlistDeleteConfirm": "删除「{name}」？该操作不可撤销。"
 }

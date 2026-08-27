@@ -244,5 +244,18 @@
   "settingsListDensity": "Listendichte",
   "settingsListDensityDesc": "Zeilenhöhe und Abstand der Titelliste",
   "densityCompact": "Kompakt",
-  "densityComfortable": "Geräumig"
+  "densityComfortable": "Geräumig",
+  "npTabPlaying": "Wiedergabe",
+  "npTabQueue": "Warteschlange",
+  "queueEmpty": "Warteschlange leer",
+  "queueEmptyHint": "Abgespielte Titel erscheinen hier",
+  "queueCurrent": "Wird abgespielt",
+  "queueRemove": "Aus Warteschlange entfernen",
+  "queueClear": "Warteschlange leeren",
+  "queueRemain": "{count} verbleibend",
+  "npCoverZoomHint": "Zum Vergrößern klicken",
+  "playlistRename": "Umbenennen",
+  "playlistDelete": "Wiedergabeliste löschen",
+  "dlgRenamePlaylistTitle": "Wiedergabeliste umbenennen",
+  "playlistDeleteConfirm": "„{name}\" löschen? Dies kann nicht rückgängig gemacht werden."
 }

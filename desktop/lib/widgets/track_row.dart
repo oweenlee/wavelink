@@ -64,8 +64,25 @@ class TrackRow extends ConsumerWidget {
                 : l10n.simulated);
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        onTap: () => onPlay(index),
+      child: GestureDetector(
+        // 桌面惯例：右键弹出操作菜单（与 ⋮ 菜单同项）
+        onSecondaryTapDown: (d) async {
+          final v = await showMenu<String>(
+            context: context,
+            position: RelativeRect.fromLTRB(d.globalPosition.dx,
+                d.globalPosition.dy, d.globalPosition.dx,
+                d.globalPosition.dy),
+            color: _surface,
+            items: _menuItems(context),
+          );
+          if (v != null && context.mounted) _onMenuAction(context, v);
+        },
+        child: InkWell(
+          onTap: () => onPlay(index),
+          // 列表行不参与键盘焦点：点击后焦点保持在全局 KeyboardListener 上，
+          // 避免空格触发行的 ActivateIntent（=误切歌）、方向键被列表焦点移动/滚动劫持。
+          // 空格=播放/暂停、↑↓=音量 由 home 全局按键处理统一接管。
+          canRequestFocus: false,
         child: Container(
           decoration: isCurrent
               ? BoxDecoration(
@@ -160,48 +177,57 @@ class TrackRow extends ConsumerWidget {
                 constraints: density == RowDensity.compact
                     ? const BoxConstraints(minWidth: 36, minHeight: 36)
                     : const BoxConstraints(minWidth: 40, minHeight: 40),
-                itemBuilder: (c) => [
-                  PopupMenuItem(
-                    value: 'fav',
-                    child: Text(
-                        player.isFavorite(track) ? l10n.favRemove : l10n.favAdd,
-                        style: const TextStyle(color: _onSurface, fontSize: 13)),
-                  ),
-                  PopupMenuItem(
-                    value: 'next',
-                    child: Text(l10n.playNext,
-                        style: const TextStyle(color: _onSurface, fontSize: 13)),
-                  ),
-                  PopupMenuItem(
-                    value: 'add',
-                    child: Text(l10n.addToPlaylist,
-                        style: const TextStyle(color: _onSurface, fontSize: 13)),
-                  ),
-                  PopupMenuItem(
-                    value: 'play',
-                    child: Text(l10n.playNow,
-                        style: const TextStyle(color: _onSurface, fontSize: 13)),
-                  ),
-                ],
-                onSelected: (v) {
-                  switch (v) {
-                    case 'fav':
-                      player.toggleFavorite(track);
-                    case 'next':
-                      player.playNext(track);
-                    case 'add':
-                      showAddToPlaylistDialog(context, player, track);
-                    case 'play':
-                      onPlay(index);
-                  }
-                },
+                itemBuilder: (c) => _menuItems(context),
+                onSelected: (v) => _onMenuAction(context, v),
               ),
             ],
           ),
         ),
       ),
+      ),
     ),
     );
+  }
+
+  /// 曲目操作菜单项（⋮ 按钮与右键共用）。
+  List<PopupMenuEntry<String>> _menuItems(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return [
+      PopupMenuItem(
+        value: 'play',
+        child: Text(l10n.playNow,
+            style: const TextStyle(color: _onSurface, fontSize: 13)),
+      ),
+      PopupMenuItem(
+        value: 'next',
+        child: Text(l10n.playNext,
+            style: const TextStyle(color: _onSurface, fontSize: 13)),
+      ),
+      PopupMenuItem(
+        value: 'fav',
+        child: Text(
+            player.isFavorite(track) ? l10n.favRemove : l10n.favAdd,
+            style: const TextStyle(color: _onSurface, fontSize: 13)),
+      ),
+      PopupMenuItem(
+        value: 'add',
+        child: Text(l10n.addToPlaylist,
+            style: const TextStyle(color: _onSurface, fontSize: 13)),
+      ),
+    ];
+  }
+
+  void _onMenuAction(BuildContext context, String v) {
+    switch (v) {
+      case 'fav':
+        player.toggleFavorite(track);
+      case 'next':
+        player.playNext(track);
+      case 'add':
+        showAddToPlaylistDialog(context, player, track);
+      case 'play':
+        onPlay(index);
+    }
   }
 }
 

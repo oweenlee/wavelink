@@ -297,10 +297,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             },
           ),
         },
-        child: KeyboardListener(
+        child: Focus(
           focusNode: _kbFocus,
           autofocus: true,
-          onKeyEvent: _onKey,
+          // 键盘监听必须用 Focus 而非 KeyboardListener：后者内部的 onKeyEvent
+          // 回调无论返回什么都固定转成 KeyEventResult.ignored，按键会继续冒泡
+          // 到 WidgetsApp 默认快捷键——空格触发 ActivateIntent（激活聚焦的列表
+          // 行=误切歌）、上下键触发 DirectionalFocusIntent（列表焦点移动）。
+          // 改回 Focus 后才能用 KeyEventResult.handled 真正截断传播，
+          // 保证 空格=播放/暂停、↑↓=音量、←→=快进/后退、M=静音、N/P=切歌。
+          onKeyEvent: (node, event) => _onKey(event),
           child: AccentScope(
             accent: accent,
             child: Scaffold(
