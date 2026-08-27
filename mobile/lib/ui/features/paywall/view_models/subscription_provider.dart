@@ -123,8 +123,23 @@ class SubscriptionNotifier extends Notifier<SubscriptionState> {
   @override
   SubscriptionState build() => const SubscriptionState();
 
-  /// 启动时调用一次：初始化 SDK、注册权益变更监听、查询当前权益。
-  Future<void> refresh() async {
+  Future<void>? _refreshFuture;
+
+  /// 启动/门控调用：初始化 SDK、注册权益变更监听、查询当前权益。
+  /// 幂等：并发调用共享同一 Future。
+  Future<void> refresh() {
+    return _refreshFuture ??= _doRefresh().whenComplete(() {
+      _refreshFuture = null;
+    });
+  }
+
+  /// 等待权益查询完成（幂等）。refresh 必然终止（失败路径也置 ready）。
+  Future<void> ensureReady() async {
+    if (state.ready) return;
+    await refresh();
+  }
+
+  Future<void> _doRefresh() async {
     final gw = _gw;
     await gw.init();
     if (gw.keyMissing || !gw.configured) {
@@ -134,7 +149,10 @@ class SubscriptionNotifier extends Notifier<SubscriptionState> {
     _ensureListener(gw);
     final pro = await gw.queryPro();
     if (pro == null) {
-      state = state.copyWith(ready: true);
+      // 查询未知（弱网/系统延迟）：不剥夺，乐观恢复最后已知状态；
+      // 从未激活的新用户维持未购买。
+      final lastKnown = ref.read(preferencesRepositoryProvider).proEverActive;
+      state = state.copyWith(isPro: lastKnown, ready: true);
       return;
     }
     _applyEntitlement(pro);

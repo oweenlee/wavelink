@@ -17,11 +17,19 @@ import '../view_models/locale_provider.dart';
 import '../view_models/package_info_provider.dart';
 import '../../paywall/view_models/subscription_provider.dart';
 
-/// Pro 功能门控：未订阅（且订阅状态已查询完成）时改道付费墙，
-/// 否则执行原动作。状态未就绪前放行，避免启动时误弹。
-void _requirePro(BuildContext context, WidgetRef ref, VoidCallback action) {
+/// Pro 功能门控：已购放行；未购且查询完成则改道付费墙。
+/// 查询未就绪时等待完成（refresh 必然终止，失败也置 ready），不放行——
+/// 否则启动窗口内未购用户可配置并持久化 Pro 功能（AutoEQ/房间校正/Bit
+/// Perfect 应用层无订阅检查，配置持久化后永久生效，形成白嫖）。
+Future<void> _requirePro(
+  BuildContext context,
+  WidgetRef ref,
+  VoidCallback action,
+) async {
+  await ref.read(subscriptionProvider.notifier).ensureReady();
+  if (!context.mounted) return;
   final sub = ref.read(subscriptionProvider);
-  if (sub.isPro || !sub.ready) {
+  if (sub.isPro) {
     action();
   } else {
     context.push('/paywall');

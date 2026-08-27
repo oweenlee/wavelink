@@ -11,6 +11,7 @@ import 'package:wavelink_mobile/ui/features/paywall/view_models/subscription_pro
 
 class FakeGateway implements SubscriptionGateway {
   bool initCalled = false;
+  int initCount = 0;
 
   @override
   bool configured = true;
@@ -31,6 +32,7 @@ class FakeGateway implements SubscriptionGateway {
   @override
   Future<void> init() async {
     initCalled = true;
+    initCount++;
   }
 
   @override
@@ -119,14 +121,23 @@ void main() {
       check(revocations).equals(0);
     });
 
-    test('查询失败（网络抖动）：保持最后已知状态，不剥夺（即使有标记）', () async {
+    test('查询未知（弱网）：乐观恢复最后已知状态，不剥夺（即使有标记）', () async {
       await PreferencesService.instance.setProEverActive(true);
+      gateway.queryProResult = null;
+      final s = await refresh();
+      check(s.isPro).isTrue();
+      check(s.ready).isTrue();
+      check(revocations).equals(0);
+      check(PreferencesService.instance.proEverActive).isTrue();
+    });
+
+    test('查询未知且从未激活（全新用户）：维持未购买', () async {
       gateway.queryProResult = null;
       final s = await refresh();
       check(s.isPro).isFalse();
       check(s.ready).isTrue();
       check(revocations).equals(0);
-      check(PreferencesService.instance.proEverActive).isTrue();
+      check(PreferencesService.instance.proEverActive).isFalse();
     });
 
     test('明确未激活且曾激活（退款/撤销）：剥夺 Pro 设置并清标记', () async {
@@ -190,6 +201,30 @@ void main() {
       gateway.emit(true);
       check(container.read(subscriptionProvider).isPro).isTrue();
       check(PreferencesService.instance.proEverActive).isTrue();
+    });
+
+    test('refresh 幂等：并发调用共享同一 Future（init 只跑一次）', () async {
+      gateway.queryProResult = false;
+      final f1 = container.read(subscriptionProvider.notifier).refresh();
+      final f2 = container.read(subscriptionProvider.notifier).refresh();
+      await Future.wait([f1, f2]);
+      check(gateway.initCount).equals(1);
+      check(container.read(subscriptionProvider).ready).isTrue();
+    });
+
+    test('ensureReady：未就绪时等待 refresh 完成，就绪后直接返回', () async {
+      gateway.queryProResult = true;
+      final readyFuture = container
+          .read(subscriptionProvider.notifier)
+          .ensureReady();
+      // await 前 state 仍未就绪
+      check(container.read(subscriptionProvider).ready).isFalse();
+      await readyFuture;
+      check(container.read(subscriptionProvider).ready).isTrue();
+      check(container.read(subscriptionProvider).isPro).isTrue();
+      // 已就绪后再次调用立即返回
+      await container.read(subscriptionProvider.notifier).ensureReady();
+      check(gateway.initCount).equals(1);
     });
 
     test('容器销毁时注销监听', () async {
