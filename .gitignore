@@ -9,4 +9,5 @@
 
 # 工具本地缓存
 /.workbuddy/
+/.opencode/
 website/.DS_Store
