@@ -10,7 +10,6 @@ import 'data/services/rust_service.dart';
 import 'data/services/smb_service.dart';
 import 'data/services/preferences_service.dart';
 import 'data/services/subsonic_service.dart';
-import 'data/services/subscription_service.dart';
 import 'ui/features/library/view_models/library_provider.dart';
 import 'ui/features/paywall/view_models/subscription_provider.dart';
 import 'ui/features/playback/view_models/playback_controller.dart';
@@ -66,8 +65,8 @@ Future<void> main() async {
   // 触发编排层接线，随后启动副作用（偏好加载、播放器 init、曲库扫描）
   container.read(playbackControllerProvider).bootstrap();
 
-  // 订阅：初始化 RevenueCat 并异步查询权益（未配置 Key / 离线时静默降级为免费版）
-  await SubscriptionService.init();
+  // 订阅：RevenueCat init 在 refresh 内部 await，不阻塞启动关键路径；
+  // 未配置 Key / 离线时静默降级为免费版。
   unawaited(container.read(subscriptionProvider.notifier).refresh());
 
   // NAS/SMB 会话自愈：后台挂起会掐掉 SMB socket 但 Rust 侧无感知，

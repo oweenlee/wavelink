@@ -73,6 +73,11 @@ class PreferencesRepository {
   Future<void> setBitPerfect(bool v) =>
       PreferencesService.instance.setBitPerfect(v);
 
+  // ── 订阅：是否曾经激活过 Pro ──
+  bool get proEverActive => PreferencesService.instance.proEverActive;
+  Future<void> setProEverActive(bool v) =>
+      PreferencesService.instance.setProEverActive(v);
+
   double get coverBlur => PreferencesService.instance.coverBlur;
   Future<void> setCoverBlur(double v) =>
       PreferencesService.instance.setCoverBlur(v);

@@ -258,14 +258,15 @@
   "paywallFeatureAutoEq": "AutoEQ ヘッドフォン補正 — 数千機種のプロファイルをワンタップ適用",
   "paywallFeatureRoomCorrection": "ルーム補正 — REW 測定で部屋の音響特性を補正",
   "paywallFeatureBitPerfect": "Bit Perfect 出力 — 音源を加工せずネイティブのサンプルレートで再生",
-  "paywallTrialButton": "1ヶ月無料トライアル、その後 {price}/月",
-  "paywallSubscribeButton": "購読 · {price}/月",
+  "paywallBuyButton": "購入 · {price}",
   "paywallRestore": "購入を復元",
-  "paywallTerms": "1ヶ月間無料、期限後は {price}/月で自動更新されます。App Store の登録管理からいつでもキャンセルできます。",
-  "paywallErrorOfferings": "サブスクリプション情報を取得できません。ネットワークをご確認ください。",
+  "paywallTerms": "買い切り · {price} · すべての Pro 機能を永久にアンロック",
+  "paywallErrorOfferings": "購入情報を取得できません。ネットワークをご確認ください。",
   "paywallErrorRestore": "復元できる購入履歴が見つかりません",
   "paywallErrorGeneric": "操作に失敗しました。しばらくしてからもう一度お試しください。",
-  "proActive": "有効",
+  "proActive": "購入済み",
   "paywallTermsOfUse": "利用規約",
-  "paywallPrivacyPolicy": "プライバシーポリシー"
+  "paywallPrivacyPolicy": "プライバシーポリシー",
+  "paywallRetry": "再試行",
+  "paywallPurchased": "購入済み — すべての Pro 機能が利用できます。"
 }

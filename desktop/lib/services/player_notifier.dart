@@ -183,6 +183,18 @@ class PlayerNotifier extends Notifier<PlayerState> {
   @visibleForTesting
   List<Track> get queueBase => _queueBase;
 
+  /// 仅供单测验证「快速连点切歌时旧调用不回写已加载曲目」（generation 守卫）。
+  @visibleForTesting
+  String? get loadedTrackIdForTest => _loadedTrackId;
+
+  /// 当前切歌代数（单测构造「过期收尾」用）。
+  @visibleForTesting
+  int get playGenerationForTest => _playGeneration;
+
+  /// 单测入口：以指定代数执行播放收尾，验证过期代数被守卫拒绝。
+  @visibleForTesting
+  void finishPlayForTest(int gen, Track t) => _finishPlay(gen, t);
+
   // —— 播放续播恢复（重启后接着播）——
   String? _loadedTrackId; // 已加载到引擎的 track id；区分 resume 是「已暂停」还是「从未播放（启动恢复）」
   Duration? _pendingSeek; // 启动恢复时待应用的进度，首次 resume 播放时消费
@@ -1007,7 +1019,13 @@ class PlayerNotifier extends Notifier<PlayerState> {
     } else {
       await _playTrack(t);
     }
+    _finishPlay(gen, t);
+  }
 
+  /// 播放收尾：回写 loaded 标记、清 pendingSeek、加载歌词、落盘。
+  /// gen 为调用方 playIndex 进入时的代数，与当前代数不符即放弃（竞态守卫）。
+  /// 抽出为独立方法以便单测直接验证守卫语义。
+  void _finishPlay(int gen, Track t) {
     // await 期间用户又点了别的歌：旧调用不得回写 loaded 标记/清 pendingSeek，
     // 否则新曲加载后会被旧曲状态覆盖（显示播放中实际无声）。
     if (gen != _playGeneration) return;

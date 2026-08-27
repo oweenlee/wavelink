@@ -258,14 +258,15 @@
   "paywallFeatureAutoEq": "AutoEQ headphone correction — thousands of profiles, one tap",
   "paywallFeatureRoomCorrection": "Room correction — compensate your room with REW measurement",
   "paywallFeatureBitPerfect": "Bit-perfect output — untouched audio at native sample rates",
-  "paywallTrialButton": "Try free for 1 month, then {price}/mo",
-  "paywallSubscribeButton": "Subscribe · {price}/mo",
+  "paywallBuyButton": "Buy once · {price}",
   "paywallRestore": "Restore purchases",
-  "paywallTerms": "Free for 1 month, then auto-renews at {price}/month. Cancel anytime in your App Store subscription settings.",
-  "paywallErrorOfferings": "Unable to load subscription info. Check your connection and try again.",
+  "paywallTerms": "One-time purchase · {price} · all Pro features unlocked forever",
+  "paywallErrorOfferings": "Unable to load purchase info. Check your connection and try again.",
   "paywallErrorRestore": "No purchases found to restore",
   "paywallErrorGeneric": "Something went wrong. Please try again.",
-  "proActive": "Active",
+  "proActive": "Purchased",
   "paywallTermsOfUse": "Terms of Use",
-  "paywallPrivacyPolicy": "Privacy Policy"
+  "paywallPrivacyPolicy": "Privacy Policy",
+  "paywallRetry": "Retry",
+  "paywallPurchased": "Purchased — all Pro features are unlocked."
 }

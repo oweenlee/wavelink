@@ -1,16 +1,22 @@
+import 'dart:io';
+
 import 'package:purchases_flutter/purchases_flutter.dart';
 
 import 'log.dart';
 
-/// RevenueCat 订阅服务（Pro 功能付费墙）。
+/// RevenueCat 权益服务（Pro 功能付费墙）。
+///
+/// 当前为**非消耗型一次性买断**（IAP non-consumable）：购买一次永久解锁，
+/// 权益判定仍走 entitlement（与订阅同构，后续如需切回订阅/换方案无需改代码）。
 ///
 /// 上线前需完成：
-/// 1. RevenueCat 控制台创建项目，构建时注入 API Key：
-///    --dart-define=REVENUECAT_APPLE_KEY=appl_xxx；
-/// 2. App Store Connect 创建自动续期订阅产品（月订阅 + 1 个月免费试用
-///    的引进优惠），并在 RevenueCat 关联为 entitlement `pro`。
+/// 1. RevenueCat 控制台创建项目，构建时注入 API Key（经 fastlane 从环境变量注入）：
+///    iOS: --dart-define=REVENUECAT_APPLE_KEY=appl_xxx；
+///    Android（可选）: --dart-define=REVENUECAT_GOOGLE_KEY=goog_xxx；
+/// 2. App Store Connect 创建**非消耗型内购**商品（wavelink_pro，不可变 ID），
+///    并在 RevenueCat 关联为 entitlement `pro`。
 ///
-/// 未配置 Key 时所有接口静默降级为「未订阅」，App 其余功能不受影响。
+/// 当前平台未配置 Key 时所有接口静默降级为「未购买」，App 其余功能不受影响。
 class SubscriptionService {
   SubscriptionService._();
 
@@ -20,11 +26,20 @@ class SubscriptionService {
   static const String _appleApiKey =
       String.fromEnvironment('REVENUECAT_APPLE_KEY');
 
+  /// RevenueCat Google API Key（goog_ 开头，可选）。
+  /// Android 端接入订阅后由构建注入；未注入时 Android 静默降级为免费版。
+  static const String _googleApiKey =
+      String.fromEnvironment('REVENUECAT_GOOGLE_KEY');
+
+  /// 按当前平台选择 API Key。
+  static String get _platformApiKey =>
+      Platform.isAndroid ? _googleApiKey : _appleApiKey;
+
   /// RevenueCat entitlement 标识：拥有即 Pro。
   static const String proEntitlementId = 'pro';
 
-  /// 订阅产品标识（与 App Store Connect / RevenueCat 配置一致）。
-  static const String monthlyProductId = 'wavelink_pro_monthly';
+  /// 买断 Pro 产品标识（App Store Connect 非消耗型内购，ID 创建后不可变）。
+  static const String proProductId = 'wavelink_pro';
 
   static bool _initialized = false;
 
@@ -34,7 +49,7 @@ class SubscriptionService {
   static Future<void> init() async {
     if (_initialized || kKeyMissing) return;
     try {
-      final config = PurchasesConfiguration(_appleApiKey);
+      final config = PurchasesConfiguration(_platformApiKey);
       await Purchases.configure(config);
       _initialized = true;
       Log.i('Subscription', 'RevenueCat 初始化完成');
@@ -43,19 +58,37 @@ class SubscriptionService {
     }
   }
 
-  static bool get kKeyMissing => _appleApiKey.isEmpty;
+  /// 当前平台的 API Key 是否未注入。
+  static bool get kKeyMissing => _platformApiKey.isEmpty;
 
-  /// 当前是否拥有 Pro 权益。未初始化/查询失败一律视为未订阅。
-  static Future<bool> isPro() async {
-    if (!_initialized) return false;
+  /// 当前是否拥有 Pro 权益。未初始化/查询失败一律视为未购买。
+  static Future<bool> isPro() async => (await queryPro()) ?? false;
+
+  /// 三态权益查询：`true`/`false` 为明确结论，`null` 表示未初始化或查询
+  /// 失败（无法确认）。权益**撤销**类操作（清理 Pro 设置）只应在拿到明确
+  /// `false` 时执行，避免一次网络抖动把合法订阅用户的设置清掉。
+  static Future<bool?> queryPro() async {
+    if (!_initialized) return null;
     try {
       final info = await Purchases.getCustomerInfo();
       return info.entitlements.all[proEntitlementId]?.isActive ?? false;
     } catch (e) {
       Log.e('Subscription', '查询订阅状态失败: $e');
-      return false;
+      return null;
     }
   }
+
+  /// 从 CustomerInfo 推导 Pro 是否激活（供权益变更监听复用同一判定）。
+  static bool proFromInfo(CustomerInfo info) =>
+      info.entitlements.all[proEntitlementId]?.isActive ?? false;
+
+  /// 订阅权益变更监听：续订/过期/退款等都会推送新 CustomerInfo。
+  /// SDK 注册时会立即用最近一次缓存的 CustomerInfo 回调一次。
+  static void addCustomerInfoListener(CustomerInfoUpdateListener l) =>
+      Purchases.addCustomerInfoUpdateListener(l);
+
+  static void removeCustomerInfoListener(CustomerInfoUpdateListener l) =>
+      Purchases.removeCustomerInfoUpdateListener(l);
 
   /// 拉取可售套餐（付费墙展示用）。返回空列表表示商品未配置或网络异常。
   static Future<List<Package>> getOfferings() async {

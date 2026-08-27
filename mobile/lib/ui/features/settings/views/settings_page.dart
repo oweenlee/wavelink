@@ -376,7 +376,8 @@ class _CacheRowState extends ConsumerState<_CacheRow> {
   }
 }
 
-/// WaveLink Pro 入口：已订阅显示激活状态，未订阅点击进付费墙。
+/// WaveLink Pro 入口：已购买显示激活状态（点击无操作——买断制无订阅
+/// 管理入口），未购买点击进付费墙。
 class _ProRow extends ConsumerWidget {
   const _ProRow();
 
@@ -388,7 +389,7 @@ class _ProRow extends ConsumerWidget {
       icon: LucideIcons.crown,
       label: l10n.paywallTitle,
       trailing: isPro ? l10n.proActive : null,
-      onTap: () => context.push('/paywall'),
+      onTap: isPro ? null : () => context.push('/paywall'),
     );
   }
 }

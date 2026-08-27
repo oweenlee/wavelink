@@ -194,6 +194,13 @@ class PreferencesService {
   bool get bitPerfect => _prefs.getBool(_kBitPerfect) ?? false;
   Future<void> setBitPerfect(bool v) => _prefs.setBool(_kBitPerfect, v);
 
+  // ── 订阅：是否曾经激活过 Pro ──
+  // 订阅过期/退款后权益撤销时据此清理 Pro 专属设置；首次激活置 true，
+  // 撤销时置回 false（幂等）。
+  static const _kProEverActive = 'pro_ever_active';
+  bool get proEverActive => _prefs.getBool(_kProEverActive) ?? false;
+  Future<void> setProEverActive(bool v) => _prefs.setBool(_kProEverActive, v);
+
   // ── 断点续播（会话恢复）──
   // 保存上次播放的队列（歌曲 id 列表）、当前索引与播放位置（ms）。
   // 启动后曲库就绪时恢复队列与位置，不自动播放，用户点播放继续。

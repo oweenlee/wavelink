@@ -537,6 +537,20 @@ mod tests {
     }
 
     #[test]
+    fn event_queue_is_capped_at_max_event_queue() {
+        // 轮询停滞（窗口最小化等）时队列不得无限增长：连推上限 4 倍事件，
+        // 队列长度必须停在 MAX_EVENT_QUEUE，且保留的是最新事件
+        EVENT_QUEUE.lock().unwrap().clear();
+        for i in 0..(MAX_EVENT_QUEUE * 4) {
+            push_event(json!({ "i": i }));
+        }
+        let q = EVENT_QUEUE.lock().unwrap();
+        assert_eq!(q.len(), MAX_EVENT_QUEUE);
+        let last = q.back().unwrap();
+        assert!(last.contains(&format!("\"i\":{}", MAX_EVENT_QUEUE * 4 - 1)));
+    }
+
+    #[test]
     fn apply_preset_known_names_map_without_panic() {
         for name in [
             "flat", "rock", "pop", "dance", "classical", "soft", "full_bass",

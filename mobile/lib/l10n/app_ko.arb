@@ -258,14 +258,15 @@
   "paywallFeatureAutoEq": "AutoEQ 헤드폰 보정 — 수천 개 프로파일을 한 번에 적용",
   "paywallFeatureRoomCorrection": "룸 보정 — REW 측정으로 공간 음향을 보정",
   "paywallFeatureBitPerfect": "Bit Perfect 출력 — 원음을 가공하지 않고 네이티브 샘플레이트로 재생",
-  "paywallTrialButton": "1개월 무료 체험, 이후 {price}/월",
-  "paywallSubscribeButton": "구독 · {price}/월",
+  "paywallBuyButton": "구매 · {price}",
   "paywallRestore": "구매 복원",
-  "paywallTerms": "1개월 무료 후 {price}/월로 자동 갱신됩니다. App Store 구독 관리에서 언제든 해지할 수 있습니다.",
-  "paywallErrorOfferings": "구독 정보를 가져올 수 없습니다. 네트워크를 확인한 후 다시 시도해 주세요.",
+  "paywallTerms": "일시불 · {price} · 모든 Pro 기능 영구 잠금 해제",
+  "paywallErrorOfferings": "구매 정보를 가져올 수 없습니다. 네트워크를 확인한 후 다시 시도해 주세요.",
   "paywallErrorRestore": "복원할 구매 기록이 없습니다",
   "paywallErrorGeneric": "작업에 실패했습니다. 잠시 후 다시 시도해 주세요.",
-  "proActive": "활성화됨",
+  "proActive": "구매 완료",
   "paywallTermsOfUse": "이용약관",
-  "paywallPrivacyPolicy": "개인정보 처리방침"
+  "paywallPrivacyPolicy": "개인정보 처리방침",
+  "paywallRetry": "다시 시도",
+  "paywallPurchased": "구매 완료 — 모든 Pro 기능을 사용할 수 있습니다."
 }

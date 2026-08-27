@@ -49,6 +49,22 @@ void main() {
       final queueIds = c.state.queue.map((t) => t.id).toSet();
       expect(queueIds.length, 5); // 无丢失、无重复
     });
+
+    test('过期代数的播放收尾不回写已加载曲目（generation 守卫）', () async {
+      final ts = mkTracks(2);
+      // 正常播第一首：loaded = t0，代数 +1
+      c.playFrom(ts, 0);
+      await Future<void>.delayed(Duration.zero); // 让 playIndex 收尾跑完
+      expect(c.loadedTrackIdForTest, 't0');
+      final currentGen = c.playGenerationForTest;
+      // 模拟快速连点竞态：旧调用（gen-1）在 await 后迟到收尾，
+      // 守卫必须拒绝回写，当前曲目保持 t1 的 loaded 语义不被覆盖
+      c.finishPlayForTest(currentGen - 1, ts[0]);
+      expect(c.loadedTrackIdForTest, 't0');
+      // 当前代数正常收尾则照常回写
+      c.finishPlayForTest(currentGen, ts[1]);
+      expect(c.loadedTrackIdForTest, 't1');
+    });
   });
 
   group('next / previous', () {

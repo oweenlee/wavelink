@@ -258,14 +258,15 @@
   "paywallFeatureAutoEq": "AutoEQ 耳机校正 — 数千款耳机档案一键应用",
   "paywallFeatureRoomCorrection": "房间校正 — REW 测量曲线补偿房间声学缺陷",
   "paywallFeatureBitPerfect": "Bit Perfect 模式 — 无损原样直出，采样率不经重采样",
-  "paywallTrialButton": "免费试用 1 个月，之后 {price}/月",
-  "paywallSubscribeButton": "订阅 · {price}/月",
+  "paywallBuyButton": "购买 · {price}",
   "paywallRestore": "恢复购买",
-  "paywallTerms": "免费试用 1 个月，到期后自动按 {price}/月 续订，可随时在 App Store 订阅管理中取消。",
-  "paywallErrorOfferings": "暂时无法获取订阅信息，请检查网络后重试",
+  "paywallTerms": "一次性购买 · {price} · 永久解锁全部 Pro 功能",
+  "paywallErrorOfferings": "暂时无法获取购买信息，请检查网络后重试",
   "paywallErrorRestore": "未找到可恢复的购买记录",
   "paywallErrorGeneric": "操作失败，请稍后重试",
-  "proActive": "已激活",
+  "proActive": "已购买",
   "paywallTermsOfUse": "使用条款",
-  "paywallPrivacyPolicy": "隐私政策"
+  "paywallPrivacyPolicy": "隐私政策",
+  "paywallRetry": "重试",
+  "paywallPurchased": "已购买，全部 Pro 功能已解锁。"
 }

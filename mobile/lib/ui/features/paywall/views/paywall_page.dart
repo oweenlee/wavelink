@@ -11,7 +11,7 @@ import '../../../core/theme/app_theme.dart';
 import '../view_models/subscription_provider.dart';
 
 /// 苹果审核（Guideline 3.1.2）要求付费墙内提供《使用条款》与《隐私政策》
-/// 链接；试用条款文案由 l10n.paywallTerms 承载，勿删减。
+/// 链接；买断条款文案由 l10n.paywallTerms 承载（一次性购买 + 价格），勿删减。
 class PaywallPage extends ConsumerStatefulWidget {
   const PaywallPage({super.key});
 
@@ -20,8 +20,10 @@ class PaywallPage extends ConsumerStatefulWidget {
 }
 
 class _PaywallPageState extends ConsumerState<PaywallPage> {
-  /// EULA 用苹果标准协议链接即可满足审核；隐私政策部署在项目 website/。
-  /// TODO: 隐私政策 URL 上线前确认最终域名后替换。
+  /// EULA 用苹果标准协议链接即可满足审核；隐私政策源文件在仓库根目录
+  /// website/privacy-policy/，需合入 main 并由 GitHub Pages 服务。
+  /// ⚠️ 阻断项：该 URL 当前 404（源文件只在功能分支，未合入 main），
+  /// 上线前必须部署到位，否则审核被拒。
   static const _termsUrl =
       'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
   static const _privacyUrl =
@@ -39,12 +41,18 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
   }
 
   Future<void> _loadOfferings() async {
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     final packages = await SubscriptionService.getOfferings();
     if (!mounted) return;
     setState(() {
       _packages = packages;
       _loading = false;
-      // 未拉到套餐：未配置商品或离线，展示占位错误
+      // 未拉到套餐：未配置商品或离线，展示占位错误 + 重试入口
       _error = packages.isEmpty ? 'offerings_empty' : null;
     });
   }
@@ -57,7 +65,12 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
     try {
       final ok = await ref.read(subscriptionProvider.notifier).purchase(package);
       if (!mounted) return;
-      if (ok) Navigator.of(context).pop(true);
+      if (ok) {
+        Navigator.of(context).pop(true);
+      } else {
+        // 未抛异常的失败（SDK 未配置/购买后权益未授予），统一提示
+        setState(() => _error = 'generic');
+      }
     } on PlatformException catch (e) {
       // 用户取消购买是正常路径，不弹错误（官方助手解析错误码）
       final cancelled = PurchasesErrorHelper.getErrorCode(e) ==
@@ -92,6 +105,8 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final accent = AccentScope.of(context);
+    // 已订阅：付费墙转为「管理订阅」入口，不再展示购买按钮（避免重复下单路径）
+    final isPro = ref.watch(subscriptionProvider.select((s) => s.isPro));
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -136,45 +151,70 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
               _featureRow(LucideIcons.building2, l10n.paywallFeatureRoomCorrection),
               _featureRow(LucideIcons.badgeCheck, l10n.paywallFeatureBitPerfect),
               const Spacer(),
-              if (_error != null)
+              if (isPro)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Text(
-                    _errorMessage(l10n, _error!),
+                    l10n.paywallPurchased,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.danger,
-                    ),
-                  ),
-                ),
-              if (_loading)
-                const Center(child: CircularProgressIndicator(strokeWidth: 2))
-              else ...[
-                for (final package in _packages)
-                  _PurchaseButton(
-                    package: package,
-                    purchasing: _purchasing,
-                    accent: accent,
-                    onTap: () => _purchase(package),
-                  ),
-                TextButton(
-                  onPressed: _restore,
-                  child: Text(
-                    l10n.paywallRestore,
                     style: const TextStyle(
                       fontSize: 14,
                       color: AppTheme.textSecondary,
                     ),
                   ),
-                ),
+                )
+              else ...[
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Text(
+                      _errorMessage(l10n, _error!),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.danger,
+                      ),
+                    ),
+                  ),
+                if (_loading)
+                  const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                else ...[
+                  for (final package in _packages)
+                    _PurchaseButton(
+                      package: package,
+                      purchasing: _purchasing,
+                      accent: accent,
+                      onTap: () => _purchase(package),
+                    ),
+                  TextButton(
+                    onPressed: _restore,
+                    child: Text(
+                      l10n.paywallRestore,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                  if (_error == 'offerings_empty')
+                    TextButton(
+                      onPressed: _loadOfferings,
+                      child: Text(
+                        l10n.paywallRetry,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ),
+                ],
               ],
               const SizedBox(height: 8),
-              // 苹果审核要求明示到期后价格，用 priceString（StoreKit 已按
-              // 地区货币格式化）。注意：当前仅配置单个月度套餐，条款只取
-              // 首个套餐的价格；将来加年费等多套餐时需逐套餐展示条款，
+              // 苹果审核要求明示购买价格，用 priceString（StoreKit 已按
+              // 地区货币格式化）。注意：当前仅配置单商品，条款只取
+              // 首个套餐的价格；将来加多商品时需逐商品展示条款，
               // 否则条款价与按钮价不一致会被审核挑刺。
-              if (_packages.isNotEmpty)
+              if (!isPro && _packages.isNotEmpty)
                 Text(
                   l10n.paywallTerms(_packages.first.storeProduct.priceString),
                   textAlign: TextAlign.center,
@@ -260,7 +300,7 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
 }
 
 /// 套餐购买按钮：标题取本地化价格（StoreKit 已按地区货币格式化），
-/// 免费试用套餐追加「先试后买」徽标文案。
+/// 一次性买断，无试用/续订语义。
 class _PurchaseButton extends StatelessWidget {
   final Package package;
   final bool purchasing;
@@ -278,8 +318,6 @@ class _PurchaseButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final price = package.storeProduct.priceString;
-    final hasTrial =
-        package.storeProduct.introductoryPrice != null;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -300,9 +338,7 @@ class _PurchaseButton extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             : Text(
-                hasTrial
-                    ? l10n.paywallTrialButton(price)
-                    : l10n.paywallSubscribeButton(price),
+                l10n.paywallBuyButton(price),
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,

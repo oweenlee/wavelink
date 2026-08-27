@@ -258,14 +258,15 @@
   "paywallFeatureAutoEq": "AutoEQ-Kopfhörerkorrektur – Tausende Profile mit einem Tipp",
   "paywallFeatureRoomCorrection": "Raumkorrektur – Raumakustik per REW-Messung ausgleichen",
   "paywallFeatureBitPerfect": "Bit-perfect-Ausgabe – unverfälschtes Audio mit nativer Abtastrate",
-  "paywallTrialButton": "1 Monat kostenlos testen, dann {price}/Monat",
-  "paywallSubscribeButton": "Abonnieren · {price}/Monat",
+  "paywallBuyButton": "Kaufen · {price}",
   "paywallRestore": "Käufe wiederherstellen",
-  "paywallTerms": "1 Monat kostenlos, danach automatische Verlängerung für {price}/Monat. Jederzeit in den App-Store-Abo-Einstellungen kündbar.",
-  "paywallErrorOfferings": "Abo-Informationen konnten nicht geladen werden. Bitte Verbindung prüfen und erneut versuchen.",
+  "paywallTerms": "Einmaliger Kauf · {price} · alle Pro-Funktionen dauerhaft entsperrt",
+  "paywallErrorOfferings": "Kauf-Informationen konnten nicht geladen werden. Bitte Verbindung prüfen und erneut versuchen.",
   "paywallErrorRestore": "Keine wiederherstellbaren Käufe gefunden",
   "paywallErrorGeneric": "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
-  "proActive": "Aktiv",
+  "proActive": "Gekauft",
   "paywallTermsOfUse": "Nutzungsbedingungen",
-  "paywallPrivacyPolicy": "Datenschutzrichtlinie"
+  "paywallPrivacyPolicy": "Datenschutzrichtlinie",
+  "paywallRetry": "Erneut versuchen",
+  "paywallPurchased": "Gekauft — alle Pro-Funktionen sind freigeschaltet."
 }
