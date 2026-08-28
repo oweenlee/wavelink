@@ -8,14 +8,12 @@ import 'package:local_music_player/services/player_providers.dart';
 /// playerProvider select 通知语义回归测试。
 ///
 /// 历史 bug：provider 直接桥接 `StreamProvider<int?>` 的 indexStream，
-/// 当两次 emit 的 index 相等（随机模式点歌恒为 0、playNext 插入后 index
-/// 不变、不同视图同位索引），Riverpod 判定「无变化」跳过通知，右侧
-/// 封面 / 列表高亮随之残留旧曲目。
+/// 当两次 emit 的 index 相等（随机模式点歌恒为 0、不同视图同位索引），
+/// Riverpod 判定「无变化」跳过通知，右侧封面 / 列表高亮随之残留旧曲目。
 ///
 /// 迁移到 `Notifier<PlayerState>` 后，UI 订阅 `select((s) => s.currentTrack?.id)`
 /// ——select 按值比较，天然覆盖「同 index 不同曲目」场景，无需旧的
-/// map-成新-Object hack。以下场景验证通知语义：曲目实际变化必通知、
-/// 曲目未变（如 playNext 插队）不多余通知。
+/// map-成新-Object hack。以下场景验证通知语义：曲目实际变化必通知。
 List<Track> mkTracks(int n) => List.generate(
     n,
     (i) => Track(
@@ -65,17 +63,6 @@ void main() {
     expect(player.state.queueIndex, 0);
     expect(player.state.currentTrack?.id, 't4');
     expect(notified, 2);
-  });
-
-  test('playNext while playing does not notify (current track unchanged)',
-      () async {
-    final ts = mkTracks(3);
-    player.playFrom(ts, 0);
-    player.playNext(ts[2]);
-    expect(player.state.queueIndex, 0);
-    expect(player.state.currentTrack?.id, 't0');
-    // 当前曲目未变，select 按值比较不触发重建——这正是想要的精细订阅
-    expect(notified, 1);
   });
 
   test('next() to a new track notifies', () async {

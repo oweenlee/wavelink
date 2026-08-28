@@ -199,11 +199,6 @@ class TrackRow extends ConsumerWidget {
             style: const TextStyle(color: _onSurface, fontSize: 13)),
       ),
       PopupMenuItem(
-        value: 'next',
-        child: Text(l10n.playNext,
-            style: const TextStyle(color: _onSurface, fontSize: 13)),
-      ),
-      PopupMenuItem(
         value: 'fav',
         child: Text(
             player.isFavorite(track) ? l10n.favRemove : l10n.favAdd,
@@ -221,8 +216,6 @@ class TrackRow extends ConsumerWidget {
     switch (v) {
       case 'fav':
         player.toggleFavorite(track);
-      case 'next':
-        player.playNext(track);
       case 'add':
         showAddToPlaylistDialog(context, player, track);
       case 'play':

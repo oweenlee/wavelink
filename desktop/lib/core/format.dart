@@ -7,3 +7,18 @@ String fmtDuration(Duration d) {
   final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
   return '$m:$s';
 }
+
+/// 文件体积（1024 进制，保留 1 位小数；不足 1 KB 直接给字节数）。
+/// 用于详情页面等需要真实文件大小的读数场景。
+String fmtBytes(int? bytes) {
+  if (bytes == null || bytes < 0) return '—';
+  if (bytes < 1024) return '$bytes B';
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  var v = bytes / 1024;
+  var i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return '${v.toStringAsFixed(v >= 100 ? 0 : 1)} ${units[i]}';
+}
