@@ -372,5 +372,9 @@
   "detailUnknown": "未知",
   "detailCopied": "已复制",
   "detailOn": "开",
-  "detailOff": "关"
+  "detailOff": "关",
+  "settingsSrFailed": "应用输出采样率失败：{err}",
+  "settingsSrSavedNotApplied": "已保存，但引擎未就绪，将在下次启动后生效",
+  "settingsResetConfirmTitle": "恢复默认设置？",
+  "settingsResetConfirmBody": "「{scope}」下的全部设置将恢复为默认值，此操作不可撤销。"
 }

@@ -69,6 +69,10 @@ class AudioSettingsState {
   static const Object _sentinel = Object();
 }
 
+/// `applySampleRate` 的错误原因码：引擎未就绪（偏好已落盘但未下发）。
+/// UI 层据此切换文案——直接把这个码展示给用户没有意义。
+const String kSrErrEngineNotReady = 'engineNotReady';
+
 /// 音频输出设置 Notifier。
 class AudioSettingsNotifier extends Notifier<AudioSettingsState> {
   Engine? get _engine => ref.read(playerProvider.notifier).engine;
@@ -166,17 +170,35 @@ class AudioSettingsNotifier extends Notifier<AudioSettingsState> {
   /// 应用输出采样率。播放中切换时自动重播当前曲目并恢复原位置：
   /// 引擎会立即重建输出流，但解码管线仍按旧目标速率生产样本，
   /// 不重启会导致变速变调与 underrun 坏帧。
-  Future<void> applySampleRate(int hz) async {
+  ///
+  /// 返回 null = 已下发生效；非 null = 未生效原因（[kSrErrEngineNotReady]
+  /// 或异常文本）。
+  ///
+  /// 已知边界：引擎 `setOutputSampleRate` 不回传「设备是否接受」，因此
+  /// 设备拒绝（如独占模式下要 384 kHz 而 DAC 不支持）**无法**在此感知，
+  /// 只能靠 UI 展示的 `actualSampleRate` 回落让用户发现。这里只覆盖引擎
+  /// 未就绪与调用抛异常两类可确定的失败。
+  Future<String?> applySampleRate(int hz) async {
     final player = ref.read(playerProvider.notifier);
     final st = ref.read(playerProvider);
     final wasPlaying = st.playing && st.currentTrack != null;
+    final engine = _engine;
     state = state.copyWith(sampleRatePref: hz);
     (await SharedPreferences.getInstance()).setInt('outputSampleRate', hz);
-    await _engine?.setOutputSampleRate(hz);
-    await refreshActualSampleRate();
-    if (wasPlaying) {
-      await player.replayCurrentTrack();
+    if (engine == null) {
+      // 偏好已落盘，但当前会话无引擎可下发：如实告知，不要谎报成功。
+      return kSrErrEngineNotReady;
     }
+    try {
+      await engine.setOutputSampleRate(hz);
+      await refreshActualSampleRate();
+      if (wasPlaying) {
+        await player.replayCurrentTrack();
+      }
+    } catch (e) {
+      return e.toString();
+    }
+    return null;
   }
 
   Future<String?> setBitPerfect(bool v) async {

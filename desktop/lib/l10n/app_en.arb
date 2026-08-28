@@ -292,5 +292,9 @@
   "detailUnknown": "Unknown",
   "detailCopied": "Copied",
   "detailOn": "On",
-  "detailOff": "Off"
+  "detailOff": "Off",
+  "settingsSrFailed": "Failed to apply output sample rate: {err}",
+  "settingsSrSavedNotApplied": "Saved, but the engine isn't ready — it will take effect after restart",
+  "settingsResetConfirmTitle": "Reset to defaults?",
+  "settingsResetConfirmBody": "All settings under \"{scope}\" will be restored to defaults. This cannot be undone."
 }

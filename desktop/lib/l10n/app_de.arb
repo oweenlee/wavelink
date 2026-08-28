@@ -278,5 +278,9 @@
   "detailUnknown": "Unbekannt",
   "detailCopied": "Kopiert",
   "detailOn": "Ein",
-  "detailOff": "Aus"
+  "detailOff": "Aus",
+  "settingsSrFailed": "Ausgabe-Samplerate konnte nicht angewendet werden: {err}",
+  "settingsSrSavedNotApplied": "Gespeichert, aber die Engine ist nicht bereit — wirksam nach dem nächsten Start",
+  "settingsResetConfirmTitle": "Auf Standardwerte zurücksetzen?",
+  "settingsResetConfirmBody": "Alle Einstellungen unter „{scope}“ werden auf die Standardwerte zurückgesetzt. Dies kann nicht rückgängig gemacht werden."
 }

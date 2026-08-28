@@ -278,5 +278,9 @@
   "detailUnknown": "不明",
   "detailCopied": "コピーしました",
   "detailOn": "オン",
-  "detailOff": "オフ"
+  "detailOff": "オフ",
+  "settingsSrFailed": "出力サンプルレートの適用に失敗しました：{err}",
+  "settingsSrSavedNotApplied": "保存しましたが、エンジンが未準備のため次回起動後に反映されます",
+  "settingsResetConfirmTitle": "初期設定に戻しますか？",
+  "settingsResetConfirmBody": "「{scope}」のすべての設定が初期値に戻ります。この操作は元に戻せません。"
 }

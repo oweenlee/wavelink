@@ -11,6 +11,7 @@ import 'package:local_music_player/l10n/app_localizations.dart';
 import 'package:local_music_player/screens/settings.dart';
 import 'package:local_music_player/services/player_notifier.dart';
 import 'package:local_music_player/widgets/settings_controls.dart';
+import 'package:local_music_player/widgets/settings_section.dart';
 import 'package:local_music_player/services/player_providers.dart';
 import 'package:local_music_player/services/engine.dart';
 import 'package:local_music_player/services/network_source_config.dart';
@@ -356,6 +357,107 @@ void main() {
       } else {
         expect(find.byKey(const Key('sw_exclusive')), findsNothing);
       }
+    });
+
+    // ─────────── UI/UX 评审后的防回归用例 ───────────
+
+    testWidgets('引擎就绪时切采样率提示已应用', (tester) async {
+      final fake = FakeEngine();
+      final player = FakePlayerNotifier(fake);
+      await _pumpSettings(tester, player);
+      await _selectSection(tester, 'audio');
+
+      await tester.tap(find.byKey(const Key('sr_dropdown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('48000 Hz').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('输出采样率已应用'), findsOneWidget);
+      expect(fake.calls['setOutputSampleRate'], 48000);
+    });
+
+    testWidgets('引擎未就绪时切采样率不谎报成功', (tester) async {
+      // 不给引擎：engine == null，但 state.engineReady = true（页面不显示
+      // 引擎横幅），正是「偏好已落盘却无处下发」的场景。
+      final player = FakePlayerNotifier(null);
+      await _pumpSettings(tester, player);
+      await _selectSection(tester, 'audio');
+
+      await tester.tap(find.byKey(const Key('sr_dropdown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('48000 Hz').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('已保存，但引擎未就绪，将在下次启动后生效'),
+          findsOneWidget);
+      expect(find.text('输出采样率已应用'), findsNothing);
+    });
+
+    testWidgets('AutoEQ 取消选择既不应用也不误报', (tester) async {
+      final fake = FakeEngine();
+      final player = FakePlayerNotifier(fake);
+      await _pumpSettings(tester, player);
+      await _selectSection(tester, 'dsp');
+
+      await tester.ensureVisible(find.byKey(const Key('autoeq_picker')));
+      await tester.tap(find.byKey(const Key('autoeq_picker')));
+      await tester.pumpAndSettle();
+      expect(find.text('HD650'), findsOneWidget); // 目录已展开
+
+      // 点对话框外部关闭（barrierDismissible 默认 true）= 什么都没选
+      await tester.tapAt(const Offset(6, 6));
+      await tester.pumpAndSettle();
+
+      expect(find.text('HD650'), findsNothing); // 对话框已关闭
+      expect(fake.calls['setAutoEq'], isNull); // 未下发引擎
+      expect(find.textContaining('已应用 AutoEQ'), findsNothing); // 未误报
+    });
+
+    testWidgets('恢复默认需二次确认，取消则不执行', (tester) async {
+      final fake = FakeEngine();
+      final player = FakePlayerNotifier(fake);
+      await _pumpSettings(tester, player);
+      await _selectSection(tester, 'audio');
+
+      await tester.tap(find.byKey(const Key('settings_reset')));
+      await tester.pumpAndSettle();
+      expect(find.text('恢复默认设置？'), findsOneWidget);
+      // 确认前不得执行（resetOutput 会下发 setOutputSampleRate(44100)）
+      expect(fake.calls['setOutputSampleRate'], isNull);
+
+      await tester.tap(find.byKey(const Key('settings_reset_cancel')));
+      await tester.pumpAndSettle();
+      expect(fake.calls['setOutputSampleRate'], isNull);
+
+      await tester.tap(find.byKey(const Key('settings_reset')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings_reset_confirm')));
+      await tester.pumpAndSettle();
+      expect(fake.calls['setOutputSampleRate'], 44100);
+    });
+
+    testWidgets('切换分区重置内容区滚动位置', (tester) async {
+      final fake = FakeEngine();
+      final player = FakePlayerNotifier(fake);
+      // 压低视口，保证内容区可滚动
+      await tester.binding.setSurfaceSize(const Size(980, 420));
+      await tester.pumpWidget(_testApp(const SettingsScreen(), player));
+      await tester.pumpAndSettle();
+      await _selectSection(tester, 'audio');
+
+      final scroller = find.descendant(
+        of: find.byType(SettingsSectionContent),
+        matching: find.byType(Scrollable),
+      );
+      await tester.drag(scroller, const Offset(0, -400));
+      await tester.pumpAndSettle();
+      final scrolled = tester.state<ScrollableState>(scroller).position.pixels;
+      expect(scrolled, greaterThan(0)); // 前提：确实滚动过
+
+      // 切到 DSP：新分区应从顶部开始（SettingsSectionContent 按分区 key 重建）
+      await _selectSection(tester, 'dsp');
+      final after = tester.state<ScrollableState>(scroller).position.pixels;
+      expect(after, 0.0);
     });
   });
 }

@@ -65,6 +65,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final engineNull = !ref.watch(playerProvider.select((s) => s.engineReady));
     final audio = ref.watch(audioSettingsProvider);
 
@@ -79,10 +80,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           Expanded(
             child: SettingsSectionContent(
+              // key 绑定分区：无 key 时切分区会复用 Element，内部
+              // SingleChildScrollView 的滚动偏移被保留，新分区会从半截开始显示。
+              key: ValueKey(kSettingsSections[_active].key),
               section: kSettingsSections[_active],
               engineNull: engineNull,
-              // 音频/DSP 分区提供一键恢复默认
-              onReset: _active == 1 ? _resetAudio : (_active == 2 ? _resetDsp : null),
+              // 音频/DSP 分区提供一键恢复默认（二次确认后执行）
+              onReset: switch (_active) {
+                1 => () => _confirmReset(l.settingsSectionAudio, _resetAudio),
+                2 => () => _confirmReset(l.settingsSectionDsp, _resetDsp),
+                _ => null,
+              },
               child: _activeContent(engineNull, audio),
             ),
           ),
@@ -315,13 +323,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     : (v) async {
                         if (v == null) return;
                         final messenger = ScaffoldMessenger.of(context);
-                        await ref
+                        final err = await ref
                             .read(audioSettingsProvider.notifier)
                             .applySampleRate(v);
-                        if (mounted) {
-                          messenger.showSnackBar(
-                              SnackBar(content: Text(l.settingsSrApplied)));
-                        }
+                        if (!mounted) return;
+                        // 早前版本不取返回值，一律提示「已应用」——引擎未就绪
+                        // 或调用失败时会谎报成功。
+                        messenger.showSnackBar(SnackBar(
+                            content: Text(_sampleRateMessage(l, err))));
                       },
                 items: _sampleRates.map((r) {
                   final common = _commonRates.contains(r);
@@ -337,7 +346,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           const SizedBox(width: 6),
                           Tooltip(
                             message: l.settingsCommonRate,
-                            child: const Icon(Icons.star_rounded,
+                            child: const Icon(LucideIcons.star,
                                 size: 14, color: AppTheme.textSecondary),
                           ),
                         ],
@@ -764,6 +773,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   // ───────────────────────── 交互（对话框 / 文件选择） ─────────────────────────
 
+  /// 采样率应用结果文案：成功 / 引擎未就绪（偏好已存但未下发）/ 失败。
+  String _sampleRateMessage(AppLocalizations l, String? err) {
+    if (err == null) return l.settingsSrApplied;
+    if (err == kSrErrEngineNotReady) return l.settingsSrSavedNotApplied;
+    return l.settingsSrFailed(err);
+  }
+
+  /// 恢复默认二次确认：该操作一次性重置整组设置（DSP 组含 EQ 预设、FIR、
+  /// AutoEQ 与多个滑块）且不可撤销，必须先确认。
+  Future<void> _confirmReset(String scope, Future<void> Function() run) async {
+    final l = AppLocalizations.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.s2,
+        title: Text(l.settingsResetConfirmTitle,
+            style: const TextStyle(color: AppTheme.textPrimary)),
+        content: Text(l.settingsResetConfirmBody(scope),
+            style: const TextStyle(color: AppTheme.textSecondary)),
+        actions: [
+          TextButton(
+            key: const Key('settings_reset_cancel'),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l.btnCancel,
+                style: const TextStyle(color: AppTheme.textSecondary)),
+          ),
+          TextButton(
+            key: const Key('settings_reset_confirm'),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l.settingsReset,
+                style: const TextStyle(color: AppTheme.danger)),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await run();
+  }
+
   /// 音频输出恢复默认；失败时提示，成功静默（状态已可见回弹）。
   Future<void> _resetAudio() async {
     final l = AppLocalizations.of(context);
@@ -801,6 +848,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   /// AutoEQ 型号选择。
+  ///
+  /// 对话框返回 null = 取消（点外部 / Esc，什么都不做），'' = 关闭 AutoEQ，
+  /// 其余 = 型号名。早前版本按「当前 autoEq 非空」判断是否提示，导致用户
+  /// 什么都没选也会弹「已应用 xxx」，改为以对话框返回值为准。
   Future<void> _pickAutoEq() async {
     final l = AppLocalizations.of(context);
     final accent = AccentScope.of(context);
@@ -809,7 +860,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         await ref.read(dspSettingsProvider.notifier).autoEqCatalog();
     if (!mounted) return;
 
-    await showDialog<void>(
+    final picked = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.s2,
@@ -828,21 +879,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   label: l.settingsAutoEqOff,
                   selected: current.isEmpty,
                   accent: accent,
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    ref.read(dspSettingsProvider.notifier).setAutoEq(null);
-                  },
+                  onTap: () => Navigator.of(ctx).pop(''),
                 ),
                 ...catalog.map((m) => AutoEqTile(
                       label: m,
                       selected: m == current,
                       accent: accent,
-                      onTap: () {
-                        Navigator.of(ctx).pop();
-                        ref
-                            .read(dspSettingsProvider.notifier)
-                            .setAutoEq(m);
-                      },
+                      onTap: () => Navigator.of(ctx).pop(m),
                     )),
               ],
             );
@@ -850,11 +893,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
       ),
     );
-    if (mounted && ref.read(dspSettingsProvider).autoEq.isNotEmpty) {
+    if (picked == null || !mounted) return;
+    // setAutoEq 为同步 void（内部异步落盘，不对外暴露 Future）。
+    ref
+        .read(dspSettingsProvider.notifier)
+        .setAutoEq(picked.isEmpty ? null : picked);
+    if (mounted && picked.isNotEmpty) {
       messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(SnackBar(
-          content: Text(l.settingsAutoEqApplied(
-              ref.read(dspSettingsProvider).autoEq))));
+      messenger.showSnackBar(
+        SnackBar(content: Text(l.settingsAutoEqApplied(picked))),
+      );
     }
   }
 
