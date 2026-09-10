@@ -12,16 +12,23 @@ import '../../settings/view_models/dsp_provider.dart';
 /// 订阅状态（同步 Notifier：启动时异步查询一次写入，购买/恢复/权益变更
 /// 后手动刷新；门控用 `ready && !isPro`，未就绪前放行避免启动闪付费墙）。
 class SubscriptionState {
-  /// 是否拥有 Pro 权益。
-  final bool isPro;
+  /// 当前权益档位（决定 [isPro] 与 [isSubscription]）。
+  final ProPlan plan;
 
   /// 首次查询是否完成（完成前门控行为保持放行，避免启动闪付费墙）。
   final bool ready;
 
-  const SubscriptionState({this.isPro = false, this.ready = false});
+  const SubscriptionState({this.plan = ProPlan.none, this.ready = false});
 
-  SubscriptionState copyWith({bool? isPro, bool? ready}) =>
-      SubscriptionState(isPro: isPro ?? this.isPro, ready: ready ?? this.ready);
+  /// 是否拥有 Pro 权益（订阅在有效期内，或已买断）。
+  bool get isPro => plan != ProPlan.none;
+
+  /// Pro 来自自动续期订阅（到期会失效，UI 需给「管理订阅」入口）。
+  bool get isSubscription =>
+      plan == ProPlan.monthly || plan == ProPlan.yearly;
+
+  SubscriptionState copyWith({ProPlan? plan, bool? ready}) =>
+      SubscriptionState(plan: plan ?? this.plan, ready: ready ?? this.ready);
 }
 
 /// 订阅能力网关（抽象出来便于单测替换）。生产实现委托
@@ -37,19 +44,20 @@ abstract interface class SubscriptionGateway {
   /// 保留兼容：in_app_purchase 无 Key，始终 false。
   bool get keyMissing;
 
-  /// 权益三态查询：`true`/`false` 为明确结论，`null` 表示查询失败/未知。
-  Future<bool?> queryPro();
+  /// 权益三态查询：非 `null` 为明确结论，`null` 表示查询失败/未知。
+  Future<ProEntitlement?> queryPro();
 
-  /// 购买。返回是否成为 Pro；原生错误向上抛，由调用方区分用户取消。
-  Future<bool> purchase(ProductDetails product);
+  /// 购买。返回购买后的权益（未成功为 [ProPlan.none]）；
+  /// 原生错误向上抛，由调用方区分用户取消。
+  Future<ProEntitlement> purchase(ProductDetails product);
 
-  /// 恢复购买。返回是否恢复出 Pro；错误向上抛。
-  Future<bool> restore();
+  /// 恢复购买。返回恢复后的权益；错误向上抛。
+  Future<ProEntitlement> restore();
 
-  /// 权益变更监听；注册时会以最近缓存回调一次。
-  void addCustomerInfoListener(void Function(bool isPro) listener);
+  /// 权益变更监听。
+  void addCustomerInfoListener(void Function(ProEntitlement e) listener);
 
-  void removeCustomerInfoListener(void Function(bool isPro) listener);
+  void removeCustomerInfoListener(void Function(ProEntitlement e) listener);
 }
 
 /// 生产网关：委托 in_app_purchase。
@@ -64,21 +72,27 @@ class StoreKitGateway implements SubscriptionGateway {
   bool get keyMissing => SubscriptionService.kKeyMissing;
 
   @override
-  Future<bool?> queryPro() => SubscriptionService.queryPro();
+  Future<ProEntitlement?> queryPro() => SubscriptionService.queryPro();
 
   @override
-  Future<bool> purchase(ProductDetails product) =>
-      SubscriptionService.purchase(product);
+  Future<ProEntitlement> purchase(ProductDetails product) async {
+    final ok = await SubscriptionService.purchase(product);
+    if (!ok) return const ProEntitlement();
+    // 以服务侧最新权益为准：用户可能同时持有买断与历史订阅，取最高档
+    final current = SubscriptionService.entitlementSync;
+    if (current.isPro) return current;
+    return ProEntitlement(plan: SubscriptionService.planOf(product.id));
+  }
 
   @override
-  Future<bool> restore() => SubscriptionService.restore();
+  Future<ProEntitlement> restore() => SubscriptionService.restore();
 
   @override
-  void addCustomerInfoListener(void Function(bool isPro) listener) =>
+  void addCustomerInfoListener(void Function(ProEntitlement e) listener) =>
       SubscriptionService.addCustomerInfoListener(listener);
 
   @override
-  void removeCustomerInfoListener(void Function(bool isPro) listener) =>
+  void removeCustomerInfoListener(void Function(ProEntitlement e) listener) =>
       SubscriptionService.removeCustomerInfoListener(listener);
 }
 
@@ -110,7 +124,7 @@ final proRevocationHandlerProvider = Provider<Future<void> Function()>((ref) {
 
 class SubscriptionNotifier extends Notifier<SubscriptionState> {
   SubscriptionGateway? _gateway;
-  void Function(bool)? _listener;
+  void Function(ProEntitlement)? _listener;
 
   SubscriptionGateway get _gw {
     final cached = _gateway;
@@ -149,10 +163,10 @@ class SubscriptionNotifier extends Notifier<SubscriptionState> {
     _ensureListener(gw);
     final pro = await gw.queryPro();
     if (pro == null) {
-      // 查询未知（弱网/系统延迟）：不剥夺，乐观恢复最后已知状态；
+      // 查询未知（弱网/系统延迟）：不剥夺，乐观恢复最后已知档位；
       // 从未激活的新用户维持未购买。
-      final lastKnown = ref.read(preferencesRepositoryProvider).proEverActive;
-      state = state.copyWith(isPro: lastKnown, ready: true);
+      final lastPlan = ref.read(preferencesRepositoryProvider).proLastPlan;
+      state = state.copyWith(plan: lastPlan, ready: true);
       return;
     }
     _applyEntitlement(pro);
@@ -169,37 +183,43 @@ class SubscriptionNotifier extends Notifier<SubscriptionState> {
     });
   }
 
-  void _onChanged(bool isPro) {
-    _applyEntitlement(isPro);
+  void _onChanged(ProEntitlement e) {
+    _applyEntitlement(e);
   }
 
-  void _applyEntitlement(bool active) {
+  void _applyEntitlement(ProEntitlement e) {
     final prefs = ref.read(preferencesRepositoryProvider);
-    if (active) {
-      state = state.copyWith(isPro: true, ready: true);
+    if (e.isPro) {
+      state = state.copyWith(plan: e.plan, ready: true);
       if (!prefs.proEverActive) unawaited(prefs.setProEverActive(true));
+      unawaited(prefs.setProLastPlan(e.plan.name));
       return;
     }
-    state = state.copyWith(isPro: false, ready: true);
+    state = state.copyWith(plan: ProPlan.none, ready: true);
     if (prefs.proEverActive) {
       unawaited(prefs.setProEverActive(false));
-      Log.w('Subscription', 'Pro 权益失效（退款/撤销），已撤销 Pro 设置');
+      unawaited(prefs.setProLastPlan(ProPlan.none.name));
+      Log.w(
+        'Subscription',
+        'Pro 权益失效（订阅到期/退款/撤销），已撤销 Pro 设置',
+      );
       unawaited(ref.read(proRevocationHandlerProvider)());
     }
   }
 
-  /// 购买。返回是否成功成为 Pro；原生错误向上抛由调用方区分取消。
-  Future<bool> purchase(ProductDetails product) async {
-    final ok = await _gw.purchase(product);
-    if (ok) _applyEntitlement(true);
-    return ok;
+  /// 购买。返回购买后的权益（未成功为 [ProPlan.none]）；
+  /// 原生错误向上抛由调用方区分取消。
+  Future<ProEntitlement> purchase(ProductDetails product) async {
+    final e = await _gw.purchase(product);
+    if (e.isPro) _applyEntitlement(e);
+    return e;
   }
 
-  /// 恢复购买。返回是否恢复出 Pro。
-  Future<bool> restore() async {
-    final ok = await _gw.restore();
-    if (ok) _applyEntitlement(true);
-    return ok;
+  /// 恢复购买。返回恢复后的权益。
+  Future<ProEntitlement> restore() async {
+    final e = await _gw.restore();
+    if (e.isPro) _applyEntitlement(e);
+    return e;
   }
 }
 

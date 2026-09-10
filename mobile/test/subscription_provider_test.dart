@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wavelink_mobile/data/services/preferences_service.dart';
+import 'package:wavelink_mobile/data/services/subscription_service.dart';
 import 'package:wavelink_mobile/ui/features/paywall/view_models/subscription_provider.dart';
 
 // ── Fake ──────────────────────────────────────────────────────────────────
@@ -19,15 +20,18 @@ class FakeGateway implements SubscriptionGateway {
   @override
   bool keyMissing = false;
 
-  bool? queryProResult = false;
+  /// 三态权益查询：`null` 表示未知（弱网/系统延迟）
+  ProEntitlement? queryProResult = const ProEntitlement();
 
-  bool purchaseResult = true;
+  ProEntitlement purchaseResult = const ProEntitlement(
+    plan: ProPlan.lifetime,
+  );
   Object? purchaseError;
   ProductDetails? purchased;
 
-  bool restoreResult = true;
+  ProEntitlement restoreResult = const ProEntitlement(plan: ProPlan.lifetime);
 
-  final List<void Function(bool)> listeners = [];
+  final List<void Function(ProEntitlement)> listeners = [];
 
   @override
   Future<void> init() async {
@@ -36,10 +40,10 @@ class FakeGateway implements SubscriptionGateway {
   }
 
   @override
-  Future<bool?> queryPro() async => queryProResult;
+  Future<ProEntitlement?> queryPro() async => queryProResult;
 
   @override
-  Future<bool> purchase(ProductDetails product) async {
+  Future<ProEntitlement> purchase(ProductDetails product) async {
     purchased = product;
     final err = purchaseError;
     if (err != null) throw err;
@@ -47,27 +51,30 @@ class FakeGateway implements SubscriptionGateway {
   }
 
   @override
-  Future<bool> restore() async => restoreResult;
+  Future<ProEntitlement> restore() async => restoreResult;
 
   @override
-  void addCustomerInfoListener(void Function(bool) listener) {
+  void addCustomerInfoListener(void Function(ProEntitlement) listener) {
     listeners.add(listener);
   }
 
   @override
-  void removeCustomerInfoListener(void Function(bool) listener) {
+  void removeCustomerInfoListener(void Function(ProEntitlement) listener) {
     listeners.remove(listener);
   }
 
-  void emit(bool isPro) {
+  void emit(ProPlan plan) {
     for (final l in List.of(listeners)) {
-      l(isPro);
+      l(ProEntitlement(plan: plan));
     }
   }
 }
 
-ProductDetails _product() => ProductDetails(
-      id: 'wavelink_pro',
+ProductDetails _product([
+  String id = SubscriptionService.proLifetimeId,
+]) =>
+    ProductDetails(
+      id: id,
       title: 'WaveLink Pro',
       description: '',
       price: r'$7.99',
@@ -98,35 +105,59 @@ void main() {
     addTearDown(container.dispose);
   });
 
+  /// 预置「曾经激活过 Pro」（含最后已知档位），模拟弱网乐观恢复场景。
+  Future<void> markEverActive([ProPlan plan = ProPlan.lifetime]) async {
+    await PreferencesService.instance.setProEverActive(true);
+    await PreferencesService.instance.setProLastPlanName(plan.name);
+  }
+
   Future<SubscriptionState> refresh() async {
     await container.read(subscriptionProvider.notifier).refresh();
     return container.read(subscriptionProvider);
   }
 
   group('refresh 状态流转', () {
-    test('已购买：isPro=true，记录曾激活标记', () async {
-      gateway.queryProResult = true;
+    test('已买断：isPro=true 且非订阅制，记录曾激活标记', () async {
+      gateway.queryProResult = const ProEntitlement(plan: ProPlan.lifetime);
       final s = await refresh();
       check(s.isPro).isTrue();
+      check(s.isSubscription).isFalse();
       check(s.ready).isTrue();
       check(PreferencesService.instance.proEverActive).isTrue();
+      check(PreferencesService.instance.proLastPlanName).equals('lifetime');
       check(revocations).equals(0);
     });
 
+    test('年度订阅：isPro=true 且 isSubscription=true', () async {
+      gateway.queryProResult = const ProEntitlement(plan: ProPlan.yearly);
+      final s = await refresh();
+      check(s.isPro).isTrue();
+      check(s.isSubscription).isTrue();
+      check(s.plan).equals(ProPlan.yearly);
+    });
+
+    test('月度订阅：isPro=true 且 isSubscription=true', () async {
+      gateway.queryProResult = const ProEntitlement(plan: ProPlan.monthly);
+      final s = await refresh();
+      check(s.isPro).isTrue();
+      check(s.isSubscription).isTrue();
+      check(s.plan).equals(ProPlan.monthly);
+    });
+
     test('新用户未购买：锁定但不剥夺任何设置', () async {
-      gateway.queryProResult = false;
+      gateway.queryProResult = const ProEntitlement();
       final s = await refresh();
       check(s.isPro).isFalse();
       check(s.ready).isTrue();
       check(revocations).equals(0);
     });
 
-    test('查询未知（弱网）：乐观恢复最后已知状态，不剥夺（即使有标记）', () async {
-      await PreferencesService.instance.setProEverActive(true);
+    test('查询未知（弱网）：按最后已知档位恢复，不剥夺', () async {
+      await markEverActive(ProPlan.yearly);
       gateway.queryProResult = null;
       final s = await refresh();
       check(s.isPro).isTrue();
-      check(s.ready).isTrue();
+      check(s.plan).equals(ProPlan.yearly);
       check(revocations).equals(0);
       check(PreferencesService.instance.proEverActive).isTrue();
     });
@@ -140,17 +171,18 @@ void main() {
       check(PreferencesService.instance.proEverActive).isFalse();
     });
 
-    test('明确未激活且曾激活（退款/撤销）：剥夺 Pro 设置并清标记', () async {
-      await PreferencesService.instance.setProEverActive(true);
-      gateway.queryProResult = false;
+    test('明确未激活且曾激活（订阅到期/退款/撤销）：剥夺并清标记', () async {
+      await markEverActive();
+      gateway.queryProResult = const ProEntitlement();
       final s = await refresh();
       check(s.isPro).isFalse();
       check(revocations).equals(1);
       check(PreferencesService.instance.proEverActive).isFalse();
+      check(PreferencesService.instance.proLastPlanName).isNull();
     });
 
     test('Key 未注入：静默降级，不注册监听、不剥夺', () async {
-      await PreferencesService.instance.setProEverActive(true);
+      await markEverActive();
       gateway.keyMissing = true;
       final s = await refresh();
       check(gateway.initCalled).isTrue();
@@ -162,7 +194,7 @@ void main() {
     });
 
     test('configure 失败：同样静默降级不剥夺', () async {
-      await PreferencesService.instance.setProEverActive(true);
+      await markEverActive();
       gateway.configured = false;
       final s = await refresh();
       check(gateway.listeners).isEmpty();
@@ -173,38 +205,39 @@ void main() {
   });
 
   group('权益变更监听', () {
-    test('refresh 后注册监听；运行期撤销即时剥夺', () async {
-      gateway.queryProResult = true;
+    test('refresh 后注册监听；订阅到期即时剥夺', () async {
+      gateway.queryProResult = const ProEntitlement(plan: ProPlan.monthly);
       await refresh();
       check(gateway.listeners).length.equals(1);
+      check(container.read(subscriptionProvider).isSubscription).isTrue();
 
-      gateway.emit(false);
+      gateway.emit(ProPlan.none);
       check(container.read(subscriptionProvider).isPro).isFalse();
       check(revocations).equals(1);
       check(PreferencesService.instance.proEverActive).isFalse();
     });
 
     test('重复回调保持幂等：不重复剥夺', () async {
-      await PreferencesService.instance.setProEverActive(true);
-      gateway.queryProResult = true;
+      await markEverActive();
+      gateway.queryProResult = const ProEntitlement(plan: ProPlan.yearly);
       await refresh();
 
-      gateway.emit(false);
-      gateway.emit(false);
+      gateway.emit(ProPlan.none);
+      gateway.emit(ProPlan.none);
       check(revocations).equals(1);
     });
 
-    test('权益被撤销后重新购买恢复 Pro', () async {
-      gateway.queryProResult = true;
+    test('撤销后重新购买恢复 Pro', () async {
+      gateway.queryProResult = const ProEntitlement(plan: ProPlan.lifetime);
       await refresh();
-      gateway.emit(false);
-      gateway.emit(true);
+      gateway.emit(ProPlan.none);
+      gateway.emit(ProPlan.lifetime);
       check(container.read(subscriptionProvider).isPro).isTrue();
       check(PreferencesService.instance.proEverActive).isTrue();
     });
 
     test('refresh 幂等：并发调用共享同一 Future（init 只跑一次）', () async {
-      gateway.queryProResult = false;
+      gateway.queryProResult = const ProEntitlement();
       final f1 = container.read(subscriptionProvider.notifier).refresh();
       final f2 = container.read(subscriptionProvider.notifier).refresh();
       await Future.wait([f1, f2]);
@@ -213,7 +246,7 @@ void main() {
     });
 
     test('ensureReady：未就绪时等待 refresh 完成，就绪后直接返回', () async {
-      gateway.queryProResult = true;
+      gateway.queryProResult = const ProEntitlement(plan: ProPlan.lifetime);
       final readyFuture = container
           .read(subscriptionProvider.notifier)
           .ensureReady();
@@ -228,7 +261,7 @@ void main() {
     });
 
     test('容器销毁时注销监听', () async {
-      gateway.queryProResult = true;
+      gateway.queryProResult = const ProEntitlement(plan: ProPlan.yearly);
       await refresh();
       check(gateway.listeners).length.equals(1);
       container.dispose();
@@ -237,24 +270,35 @@ void main() {
   });
 
   group('购买 / 恢复购买', () {
-    test('购买成功：置位 Pro 与标记', () async {
-      gateway.queryProResult = false;
+    test('买断成功：置位 Pro 与标记', () async {
+      gateway.queryProResult = const ProEntitlement();
       await refresh();
-      final ok = await container
+      final result = await container
           .read(subscriptionProvider.notifier)
           .purchase(_product());
-      check(ok).isTrue();
+      check(result.isPro).isTrue();
+      check(result.isSubscription).isFalse();
       check(gateway.purchased).isNotNull();
       check(container.read(subscriptionProvider).isPro).isTrue();
       check(PreferencesService.instance.proEverActive).isTrue();
     });
 
-    test('购买返回 false（权益未授予）：状态不变', () async {
-      gateway.purchaseResult = false;
-      final ok = await container
+    test('订阅购买成功：标记为订阅制', () async {
+      gateway.purchaseResult = const ProEntitlement(plan: ProPlan.yearly);
+      final result = await container
+          .read(subscriptionProvider.notifier)
+          .purchase(_product(SubscriptionService.proYearlyId));
+      check(result.isPro).isTrue();
+      check(result.isSubscription).isTrue();
+      check(container.read(subscriptionProvider).plan).equals(ProPlan.yearly);
+    });
+
+    test('购买未授予权益（用户取消）：状态不变', () async {
+      gateway.purchaseResult = const ProEntitlement();
+      final result = await container
           .read(subscriptionProvider.notifier)
           .purchase(_product());
-      check(ok).isFalse();
+      check(result.isPro).isFalse();
       check(container.read(subscriptionProvider).isPro).isFalse();
     });
 
@@ -269,15 +313,44 @@ void main() {
       check(container.read(subscriptionProvider).isPro).isFalse();
     });
 
-    test('恢复成功：置位；恢复失败：状态不变', () async {
-      gateway.restoreResult = true;
-      check(await container.read(subscriptionProvider.notifier).restore())
-          .isTrue();
+    test('恢复成功：置位；恢复为空：状态不变', () async {
+      gateway.restoreResult = const ProEntitlement(plan: ProPlan.monthly);
+      final restored = await container
+          .read(subscriptionProvider.notifier)
+          .restore();
+      check(restored.isPro).isTrue();
+      check(restored.plan).equals(ProPlan.monthly);
       check(container.read(subscriptionProvider).isPro).isTrue();
 
-      gateway.restoreResult = false;
-      check(await container.read(subscriptionProvider.notifier).restore())
-          .isFalse();
+      gateway.restoreResult = const ProEntitlement();
+      check(
+        (await container.read(subscriptionProvider.notifier).restore()).isPro,
+      ).isFalse();
+    });
+  });
+
+  group('产品 ID 与档位映射', () {
+    test('三个产品 ID 映射到对应档位', () {
+      check(SubscriptionService.planOf(SubscriptionService.proMonthlyId))
+          .equals(ProPlan.monthly);
+      check(SubscriptionService.planOf(SubscriptionService.proYearlyId))
+          .equals(ProPlan.yearly);
+      check(SubscriptionService.planOf(SubscriptionService.proLifetimeId))
+          .equals(ProPlan.lifetime);
+      check(SubscriptionService.planOf('unknown_product'))
+          .equals(ProPlan.none);
+    });
+
+    test('订阅制判定：月/年为订阅，买断不是', () {
+      check(
+        SubscriptionService.isSubscriptionId(SubscriptionService.proMonthlyId),
+      ).isTrue();
+      check(
+        SubscriptionService.isSubscriptionId(SubscriptionService.proYearlyId),
+      ).isTrue();
+      check(
+        SubscriptionService.isSubscriptionId(SubscriptionService.proLifetimeId),
+      ).isFalse();
     });
   });
 }

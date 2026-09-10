@@ -201,6 +201,19 @@ class PreferencesService {
   bool get proEverActive => _prefs.getBool(_kProEverActive) ?? false;
   Future<void> setProEverActive(bool v) => _prefs.setBool(_kProEverActive, v);
 
+  // ── 订阅：最后已知的 Pro 档位名（ProPlan.name）──
+  // 权益查询未知（弱网/系统延迟）时据此乐观恢复档位，避免误剥夺。
+  // 存字符串而非枚举，避免 service 层依赖订阅模块。
+  static const _kProLastPlan = 'pro_last_plan';
+  String? get proLastPlanName => _prefs.getString(_kProLastPlan);
+  Future<void> setProLastPlanName(String? v) async {
+    if (v == null) {
+      await _prefs.remove(_kProLastPlan);
+      return;
+    }
+    await _prefs.setString(_kProLastPlan, v);
+  }
+
   // ── 断点续播（会话恢复）──
   // 保存上次播放的队列（歌曲 id 列表）、当前索引与播放位置（ms）。
   // 启动后曲库就绪时恢复队列与位置，不自动播放，用户点播放继续。

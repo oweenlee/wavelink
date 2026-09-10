@@ -13,19 +13,72 @@
       "codeOffers" : [
 
       ],
-      "displayPrice" : "7.99",
+      "displayPrice" : "98.00",
       "familyShareable" : false,
-      "group" : "Pro",
       "internalID" : "wavelink_pro",
       "productID" : "wavelink_pro",
-      "subscriptionGroupID" : "",
+      "referenceName" : "WaveLink Pro Lifetime",
       "type" : "NonConsumable"
+    },
+    "wavelink_pro_monthly" : {
+      "adHocOffers" : [
+
+      ],
+      "codeOffers" : [
+
+      ],
+      "displayPrice" : "12.00",
+      "familyShareable" : false,
+      "group" : "Pro",
+      "internalID" : "wavelink_pro_monthly",
+      "productID" : "wavelink_pro_monthly",
+      "referenceName" : "WaveLink Pro Monthly",
+      "subscriptionGroupID" : "pro_group",
+      "subscriptionPeriod" : {
+        "unit" : "month",
+        "value" : 1
+      },
+      "type" : "AutoRenewableSubscription"
+    },
+    "wavelink_pro_yearly" : {
+      "adHocOffers" : [
+
+      ],
+      "codeOffers" : [
+
+      ],
+      "displayPrice" : "88.00",
+      "familyShareable" : false,
+      "group" : "Pro",
+      "internalID" : "wavelink_pro_yearly",
+      "productID" : "wavelink_pro_yearly",
+      "referenceName" : "WaveLink Pro Yearly",
+      "subscriptionGroupID" : "pro_group",
+      "subscriptionPeriod" : {
+        "unit" : "year",
+        "value" : 1
+      },
+      "type" : "AutoRenewableSubscription"
     }
   },
   "settings" : {
     "_applicationInternalID" : "com.wavelink.player"
   },
   "subscriptionGroups" : {
-
+    "pro_group" : {
+      "id" : "pro_group",
+      "internalID" : "pro_group",
+      "localizations" : [
+        {
+          "locale" : "en_US",
+          "name" : "Pro"
+        },
+        {
+          "locale" : "zh_CN",
+          "name" : "Pro"
+        }
+      ],
+      "name" : "Pro"
+    }
   }
 }

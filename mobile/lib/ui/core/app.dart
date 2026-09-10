@@ -15,6 +15,7 @@ import '../../data/services/webdav_service.dart';
 import '../features/settings/view_models/locale_provider.dart';
 import '../features/library/view_models/library_header_notifier.dart';
 import '../features/library/view_models/library_provider.dart';
+import '../features/paywall/view_models/pro_gate.dart';
 import '../features/playback/view_models/playback_controller.dart';
 import 'widgets/mini_player_bar.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -279,20 +280,28 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
     }
   }
 
-  void _handleNas() {
+  /// 门控：非 Pro 改道付费墙，返回是否放行。
+  Future<bool> _ensurePro() async {
+    var ok = false;
+    await requirePro(context, ref, () => ok = true);
+    return ok;
+  }
+
+  Future<void> _handleNas() async {
     Navigator.of(context).pop(); // 关抽屉
-    context.push('/nas');
+    await requirePro(context, ref, () => context.push('/nas'));
   }
 
   /// Subsonic：与 NAS 共享一致——点击行进配置页（可测试/修改/重新连接），
   /// 重新扫描改由右侧同步按钮触发（仅已配置时显示）。
-  void _handleSubsonic() {
+  Future<void> _handleSubsonic() async {
     Navigator.of(context).pop(); // 关抽屉
-    context.push('/subsonic');
+    await requirePro(context, ref, () => context.push('/subsonic'));
   }
 
   Future<void> _scanSubsonic() async {
     if (_subsonicScanning) return;
+    if (!await _ensurePro()) return;
     final player = ref.read(playbackControllerProvider);
     setState(() {
       _subsonicScanning = true;
@@ -316,13 +325,14 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
 
   /// WebDAV：与 NAS 共享一致——点击行进配置页（可测试/修改/重新连接），
   /// 重新扫描改由右侧同步按钮触发（仅已配置时显示）。
-  void _handleWebdav() {
+  Future<void> _handleWebdav() async {
     Navigator.of(context).pop(); // 关抽屉
-    context.push('/webdav');
+    await requirePro(context, ref, () => context.push('/webdav'));
   }
 
   Future<void> _scanWebdav() async {
     if (_webdavScanning) return;
+    if (!await _ensurePro()) return;
     final player = ref.read(playbackControllerProvider);
     setState(() {
       _webdavScanning = true;
@@ -431,6 +441,7 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
                   : l10n.sourceNasHint,
               connected: SmbService.mountedShare != null,
               onTap: _handleNas,
+              badge: const ProBadge(),
               trailing: SmbService.isConnected
                   ? _NasSyncButton(
                       // select 只盯同步标志：NAS 导入逐批入库时曲库 state 高频变化，
@@ -453,6 +464,7 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
               loading: _subsonicScanning,
               result: _subsonicResult,
               onTap: _handleSubsonic,
+              badge: const ProBadge(),
               trailing: SubsonicService.isConfigured
                   ? _ScanButton(onTap: _scanSubsonic)
                   : null,
@@ -468,6 +480,7 @@ class _QuickDrawerState extends ConsumerState<_QuickDrawer> {
               loading: _webdavScanning,
               result: _webdavResult,
               onTap: _handleWebdav,
+              badge: const ProBadge(),
               trailing: WebdavService.isConfigured
                   ? _ScanButton(onTap: _scanWebdav)
                   : null,
@@ -508,6 +521,9 @@ class _SourceRow extends StatelessWidget {
   final String? result;
   final Widget? trailing;
 
+  /// 行内徽标（如「PRO」），渲染在标题右侧。
+  final Widget? badge;
+
   const _SourceRow({
     required this.icon,
     required this.label,
@@ -517,6 +533,7 @@ class _SourceRow extends StatelessWidget {
     this.loading = false,
     this.result,
     this.trailing,
+    this.badge,
   });
 
   @override
@@ -554,12 +571,20 @@ class _SourceRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: AppTheme.textPrimary,
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      if (badge != null) ...[
+                        const SizedBox(width: 6),
+                        badge!,
+                      ],
+                    ],
                   ),
                   if (subtitle != null) ...[
                     const SizedBox(height: 1),

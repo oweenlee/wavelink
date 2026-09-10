@@ -91,6 +91,11 @@
             ReferencedContainer = "container:Runner.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <!-- StoreKit 本地测试配置（仅本地调试生效，Archive/上架不受影响）。
+           提审前如想让 Run 走真实 App Store，在 Scheme → Run → Options 改回 None。 -->
+      <StoreKitConfigurationFileReference
+         identifier = "../../Runner/WaveLinkPro.storekit">
+      </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Profile"

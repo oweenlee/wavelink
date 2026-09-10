@@ -1,4 +1,5 @@
 import '../services/preferences_service.dart';
+import '../services/subscription_service.dart';
 
 /// 用户偏好设置的单一来源
 ///
@@ -77,6 +78,18 @@ class PreferencesRepository {
   bool get proEverActive => PreferencesService.instance.proEverActive;
   Future<void> setProEverActive(bool v) =>
       PreferencesService.instance.setProEverActive(v);
+
+  // ── 订阅：最后已知的 Pro 档位（弱网未知时乐观恢复）──
+  ProPlan get proLastPlan {
+    final name = PreferencesService.instance.proLastPlanName;
+    return ProPlan.values.firstWhere(
+      (p) => p.name == name,
+      orElse: () => ProPlan.none,
+    );
+  }
+
+  Future<void> setProLastPlan(String planName) =>
+      PreferencesService.instance.setProLastPlanName(planName);
 
   double get coverBlur => PreferencesService.instance.coverBlur;
   Future<void> setCoverBlur(double v) =>

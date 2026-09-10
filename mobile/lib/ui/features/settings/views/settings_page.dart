@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../data/services/cache_cleaner.dart';
+import '../../../../data/services/subscription_service.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/wl_toggle.dart';
@@ -15,26 +17,8 @@ import '../../playback/view_models/audio_player_provider.dart';
 import '../view_models/dsp_provider.dart';
 import '../view_models/locale_provider.dart';
 import '../view_models/package_info_provider.dart';
+import '../../paywall/view_models/pro_gate.dart';
 import '../../paywall/view_models/subscription_provider.dart';
-
-/// Pro 功能门控：已购放行；未购且查询完成则改道付费墙。
-/// 查询未就绪时等待完成（refresh 必然终止，失败也置 ready），不放行——
-/// 否则启动窗口内未购用户可配置并持久化 Pro 功能（AutoEQ/房间校正/Bit
-/// Perfect 应用层无订阅检查，配置持久化后永久生效，形成白嫖）。
-Future<void> _requirePro(
-  BuildContext context,
-  WidgetRef ref,
-  VoidCallback action,
-) async {
-  await ref.read(subscriptionProvider.notifier).ensureReady();
-  if (!context.mounted) return;
-  final sub = ref.read(subscriptionProvider);
-  if (sub.isPro) {
-    action();
-  } else {
-    context.push('/paywall');
-  }
-}
 
 /// 设置页。
 ///
@@ -198,7 +182,7 @@ class _AutoEqRow extends ConsumerWidget {
       label: l10n.autoEq,
       trailing: model ?? l10n.autoEqOff,
       badge: const _ProBadge(),
-      onTap: () => _requirePro(context, ref, () => context.push('/autoeq')),
+      onTap: () => requirePro(context, ref, () => context.push('/autoeq')),
     );
   }
 }
@@ -218,7 +202,7 @@ class _RoomCorrectionRow extends ConsumerWidget {
           : l10n.roomCorrectionOff,
       badge: const _ProBadge(),
       onTap: () =>
-          _requirePro(context, ref, () => context.push('/room-correction')),
+          requirePro(context, ref, () => context.push('/room-correction')),
     );
   }
 }
@@ -256,7 +240,7 @@ class _BitPerfectRow extends ConsumerWidget {
       icon: LucideIcons.badgeCheck,
       label: l10n.bitPerfect,
       value: bitPerfect,
-      onChanged: (_) => _requirePro(context, ref, () {
+      onChanged: (_) => requirePro(context, ref, () {
         ref.read(playbackControllerProvider).setBitPerfect(!bitPerfect);
       }),
       badge: const _ProBadge(),
@@ -384,20 +368,36 @@ class _CacheRowState extends ConsumerState<_CacheRow> {
   }
 }
 
-/// WaveLink Pro 入口：已购买显示激活状态（点击无操作——买断制无订阅
-/// 管理入口），未购买点击进付费墙。
+/// 系统订阅管理页：已订阅用户必须能在 App 内触达（Review Guidelines 3.1.2）。
+const _manageSubscriptionsUrl = 'https://apps.apple.com/account/subscriptions';
+
+/// WaveLink Pro 入口：未购买进付费墙；已订阅显示档位并可跳转系统管理页；
+/// 买断无订阅管理入口，点击不响应。
 class _ProRow extends ConsumerWidget {
   const _ProRow();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final isPro = ref.watch(subscriptionProvider.select((s) => s.isPro));
+    final sub = ref.watch(subscriptionProvider);
+    final trailing = switch (sub.plan) {
+      ProPlan.monthly => l10n.proActiveMonthly,
+      ProPlan.yearly => l10n.proActiveYearly,
+      ProPlan.lifetime => l10n.proActiveLifetime,
+      ProPlan.none => null,
+    };
     return _SettingItem(
       icon: LucideIcons.crown,
       label: l10n.paywallTitle,
-      trailing: isPro ? l10n.proActive : null,
-      onTap: isPro ? null : () => context.push('/paywall'),
+      trailing: trailing,
+      onTap: sub.isPro
+          ? sub.isSubscription
+                ? () => launchUrl(
+                    Uri.parse(_manageSubscriptionsUrl),
+                    mode: LaunchMode.externalApplication,
+                  )
+                : null
+          : () => context.push('/paywall'),
     );
   }
 }
