@@ -134,7 +134,7 @@ class CoverCache {
     try {
       final bytes = await frb_cover.getCoverBytes(path: t.filePath!);
       if (bytes.isEmpty) return null;
-      return writeCover(t, bytes);
+      return await writeCover(t, bytes);
     } catch (_) {
       // 无封面 / 解析失败：静默降级为灰阶占位
       return null;
@@ -233,16 +233,16 @@ class CoverCache {
       final head = await frb_webdav.engineReadWebdavRange(
           url: url, username: user, password: pass, maxLen: maxLen, suffix: false);
       final headCover = await _coverFromBytes(head);
-      if (headCover != null) return writeCover(t, headCover);
+      if (headCover != null) return await writeCover(t, headCover);
       final tail = await frb_webdav.engineReadWebdavRange(
           url: url, username: user, password: pass, maxLen: maxLen, suffix: true);
       final tailCover = await _coverFromBytes(tail);
-      if (tailCover != null) return writeCover(t, tailCover);
+      if (tailCover != null) return await writeCover(t, tailCover);
       // 头尾各自解析失败：拼接窦底（与 mobile 一致）
       if (head.isNotEmpty && tail.isNotEmpty) {
         final merged = await _coverFromBytes(
             Uint8List.fromList([...head, ...tail]));
-        if (merged != null) return writeCover(t, merged);
+        if (merged != null) return await writeCover(t, merged);
       }
       return null;
     } catch (e) {
@@ -266,7 +266,7 @@ class CoverCache {
           .timeout(const Duration(seconds: 30));
       if (resp.statusCode != 200) return null;
       if (resp.bodyBytes.isEmpty) return null;
-      return writeCover(t, Uint8List.fromList(resp.bodyBytes));
+      return await writeCover(t, Uint8List.fromList(resp.bodyBytes));
     } catch (_) {
       // 网络/解析失败：静默降级为灰阶占位
       return null;
