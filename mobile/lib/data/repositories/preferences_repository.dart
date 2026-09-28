@@ -88,7 +88,9 @@ class PreferencesRepository {
     );
   }
 
-  Future<void> setProLastPlan(String planName) =>
+  /// 写入最后已知档位；传 null 表示清空（权益失效时用，
+  /// 避免残留 ProPlan.none 名字符串）。
+  Future<void> setProLastPlan(String? planName) =>
       PreferencesService.instance.setProLastPlanName(planName);
 
   double get coverBlur => PreferencesService.instance.coverBlur;

@@ -198,7 +198,8 @@ class SubscriptionNotifier extends Notifier<SubscriptionState> {
     state = state.copyWith(plan: ProPlan.none, ready: true);
     if (prefs.proEverActive) {
       unawaited(prefs.setProEverActive(false));
-      unawaited(prefs.setProLastPlan(ProPlan.none.name));
+      // 清空档位记录（传 null → remove key），不留 'none' 残留
+      unawaited(prefs.setProLastPlan(null));
       Log.w(
         'Subscription',
         'Pro 权益失效（订阅到期/退款/撤销），已撤销 Pro 设置',
