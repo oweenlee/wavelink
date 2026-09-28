@@ -13,32 +13,12 @@
       "codeOffers" : [
 
       ],
-      "displayPrice" : "98.00",
+      "displayPrice" : "5.99",
       "familyShareable" : false,
       "internalID" : "wavelink_pro",
       "productID" : "wavelink_pro",
       "referenceName" : "WaveLink Pro Lifetime",
       "type" : "NonConsumable"
-    },
-    "wavelink_pro_monthly" : {
-      "adHocOffers" : [
-
-      ],
-      "codeOffers" : [
-
-      ],
-      "displayPrice" : "12.00",
-      "familyShareable" : false,
-      "group" : "Pro",
-      "internalID" : "wavelink_pro_monthly",
-      "productID" : "wavelink_pro_monthly",
-      "referenceName" : "WaveLink Pro Monthly",
-      "subscriptionGroupID" : "pro_group",
-      "subscriptionPeriod" : {
-        "unit" : "month",
-        "value" : 1
-      },
-      "type" : "AutoRenewableSubscription"
     },
     "wavelink_pro_yearly" : {
       "adHocOffers" : [
@@ -47,7 +27,7 @@
       "codeOffers" : [
 
       ],
-      "displayPrice" : "88.00",
+      "displayPrice" : "3.99",
       "familyShareable" : false,
       "group" : "Pro",
       "internalID" : "wavelink_pro_yearly",
