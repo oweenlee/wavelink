@@ -2,85 +2,12 @@ import 'package:checks/checks.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wavelink_mobile/data/services/preferences_service.dart';
 import 'package:wavelink_mobile/data/services/subscription_service.dart';
 import 'package:wavelink_mobile/ui/features/paywall/view_models/subscription_provider.dart';
 
-// ── Fake ──────────────────────────────────────────────────────────────────
-
-class FakeGateway implements SubscriptionGateway {
-  bool initCalled = false;
-  int initCount = 0;
-
-  @override
-  bool configured = true;
-
-  @override
-  bool keyMissing = false;
-
-  /// 三态权益查询：`null` 表示未知（弱网/系统延迟）
-  ProEntitlement? queryProResult = const ProEntitlement();
-
-  ProEntitlement purchaseResult = const ProEntitlement(
-    plan: ProPlan.lifetime,
-  );
-  Object? purchaseError;
-  ProductDetails? purchased;
-
-  ProEntitlement restoreResult = const ProEntitlement(plan: ProPlan.lifetime);
-
-  final List<void Function(ProEntitlement)> listeners = [];
-
-  @override
-  Future<void> init() async {
-    initCalled = true;
-    initCount++;
-  }
-
-  @override
-  Future<ProEntitlement?> queryPro() async => queryProResult;
-
-  @override
-  Future<ProEntitlement> purchase(ProductDetails product) async {
-    purchased = product;
-    final err = purchaseError;
-    if (err != null) throw err;
-    return purchaseResult;
-  }
-
-  @override
-  Future<ProEntitlement> restore() async => restoreResult;
-
-  @override
-  void addCustomerInfoListener(void Function(ProEntitlement) listener) {
-    listeners.add(listener);
-  }
-
-  @override
-  void removeCustomerInfoListener(void Function(ProEntitlement) listener) {
-    listeners.remove(listener);
-  }
-
-  void emit(ProPlan plan) {
-    for (final l in List.of(listeners)) {
-      l(ProEntitlement(plan: plan));
-    }
-  }
-}
-
-ProductDetails _product([
-  String id = SubscriptionService.proLifetimeId,
-]) =>
-    ProductDetails(
-      id: id,
-      title: 'WaveLink Pro',
-      description: '',
-      price: r'$7.99',
-      rawPrice: 7.99,
-      currencyCode: 'USD',
-    );
+import 'helpers/fake_subscription_gateway.dart';
 
 // ── 测试 ─────────────────────────────────────────────────────────────────
 
@@ -275,7 +202,7 @@ void main() {
       await refresh();
       final result = await container
           .read(subscriptionProvider.notifier)
-          .purchase(_product());
+          .purchase(fakeProduct());
       check(result.isPro).isTrue();
       check(result.isSubscription).isFalse();
       check(gateway.purchased).isNotNull();
@@ -287,7 +214,7 @@ void main() {
       gateway.purchaseResult = const ProEntitlement(plan: ProPlan.yearly);
       final result = await container
           .read(subscriptionProvider.notifier)
-          .purchase(_product(SubscriptionService.proYearlyId));
+          .purchase(fakeProduct(SubscriptionService.proYearlyId));
       check(result.isPro).isTrue();
       check(result.isSubscription).isTrue();
       check(container.read(subscriptionProvider).plan).equals(ProPlan.yearly);
@@ -297,7 +224,7 @@ void main() {
       gateway.purchaseResult = const ProEntitlement();
       final result = await container
           .read(subscriptionProvider.notifier)
-          .purchase(_product());
+          .purchase(fakeProduct());
       check(result.isPro).isFalse();
       check(container.read(subscriptionProvider).isPro).isFalse();
     });
@@ -308,7 +235,7 @@ void main() {
         message: 'purchaseCancelledError',
       );
       await check(
-        container.read(subscriptionProvider.notifier).purchase(_product()),
+        container.read(subscriptionProvider.notifier).purchase(fakeProduct()),
       ).throws<PlatformException>();
       check(container.read(subscriptionProvider).isPro).isFalse();
     });
