@@ -61,6 +61,7 @@ lib/l10n/app_localizations_ko.dart
 # Agent / 工具本地目录
 .pi/
 .opencode/
+.codebuddy/
 
 # Workbuddy agent tooling
 .workbuddy/
