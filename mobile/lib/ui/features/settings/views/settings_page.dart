@@ -181,8 +181,7 @@ class _AutoEqRow extends ConsumerWidget {
       icon: LucideIcons.headphones,
       label: l10n.autoEq,
       trailing: model ?? l10n.autoEqOff,
-      badge: const _ProBadge(),
-      onTap: () => requirePro(context, ref, () => context.push('/autoeq')),
+      onTap: () => context.push('/autoeq'),
     );
   }
 }

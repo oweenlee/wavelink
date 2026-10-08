@@ -170,11 +170,16 @@ class _PaywallPageState extends ConsumerState<PaywallPage> {
                   color: AppTheme.textSecondary,
                 ),
               ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.paywallFreeNote,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textTertiary,
+                ),
+              ),
               const SizedBox(height: 20),
-              _featureRow(LucideIcons.hardDrive, l10n.paywallFeatureNas),
-              _featureRow(LucideIcons.cloud, l10n.paywallFeatureWebdav),
-              _featureRow(LucideIcons.server, l10n.paywallFeatureSubsonic),
-              _featureRow(LucideIcons.headphones, l10n.paywallFeatureAutoEq),
               _featureRow(
                 LucideIcons.building2,
                 l10n.paywallFeatureRoomCorrection,
