@@ -8,31 +8,65 @@
 
 ---
 
-## 🔴 2026-10-09 最新进展（必读）
+## 🔴 2026-10-09 审核回复（原文已到，这是权威结论）
 
-**1.0.3 已被 Apple 拒绝**（ASC 只读实测：版本 = `REJECTED`，提交 `ada1ef04…` = `UNRESOLVED_ISSUES`）。
-线上仍是 1.0.2（付费 $3.99），未受影响。
+**1.0.3 被拒**（提交 `ada1ef04-ecb3-4d06-b254-800684fb314f`，审核日 10-09，设备 iPhone 17 Pro Max + iPad Air 11" M3，
+被审版本 **1.0.3 (6)**）。线上仍是 1.0.2（付费 $3.99），未受影响。
 
-### 查明的三个问题（前两个已改代码）
+Apple 给了**两条**，与我们原先猜的「隐私政策 404」**都不是**：
 
-| # | 问题 | 根因（实测） | 状态 |
+| 条款 | Apple 原文要点 | 谁的问题 |
+|---|---|---|
+| **5.2.1 知识产权** | `The app includes protected album cover artworks in app icons, screenshots or previews without the necessary authorization.` | **App Store 截图**（见第 10 步） |
+| **2.1(b) 完整性** | `the app includes references to Monthly but the associated In-App Purchase products have not been submitted for review.` + `upload a new binary` | **build 6 的付费墙**（已改，需重建） |
+
+> ⚠️ 我在拿到原文前推测的两条（付费墙「按月」卡、隐私政策死链）里，
+> **「按月」推理正确且正是 2.1(b) 的来源**；**隐私政策 404 不是 Apple 这次点名的理由**
+> （但它确实是隐患，已在 build 7 里一并修掉，见下方表格）。
+
+### 两条的整改
+
+| # | 条款 | 根因（实测） | 整改 |
 |---|---|---|---|
-| 1 | 付费墙冒出「**按月 US$3.99**」卡片 | 代码 `proProductIds` 仍在查询 `wavelink_pro_monthly` / `wavelink_pro_yearly`。ASC 里订阅虽已删，**StoreKit 仍会解析出旧月订阅商品** → 卡片就渲染出来 | ✅ 已改：商品集合 **只留买断** `wavelink_pro`（`proProductIds` / `tierOrder`） |
-| 2 | 付费墙的「**隐私政策**」链接 **HTTP 404** | 链接指向 `…/wavelink/privacy-policy/`，该路径**从未部署**到 gh-pages（源文件一直躺在仓库 `website/privacy-policy/`）。3.1.2 要求付费墙内的条款/隐私链接必须可访问 → **死链是典型被拒原因** | ✅ 已改：改为实际承载隐私政策的 `https://oweenlee.github.io/wavelink/`（与 ASC 元数据里的隐私政策 URL 同一页面，实测 200） |
-| 3 | 内购商品本身 | ✅ 正常（`wavelink_pro` · $3.99 · 5 语言 · 审核截图齐全） | 无需处理 |
+| 1 | **5.2.1** | App Store **截图里全是真实专辑封面 + 真实歌词**（20 张全中）；图标/预览/App 内打包资源均干净 | **重拍 20 张截图**，去掉全部第三方封面与歌词 → **第 10 步** |
+| 2 | **2.1(b)** | build 6 的付费墙仍在查询 `wavelink_pro_monthly`，StoreKit 解析出旧订阅商品 → 渲染出「按月」卡 → Apple 看成「引用了 Monthly 但该内购没送审」 | ✅ 代码已改（`proProductIds` / `tierOrder` 只留买断）；**必须重建上传 build 7** |
 
-> ⚠️ **第 2 条很可能是本次被拒的直接原因，但以「解决中心」原文为准。**
-> 位置：ASC 左侧「App 审核」→「解决中心（Resolution Center）」。
-> **别在没读原因前原样重提**，会被同样拒一次。
+### 顺带已修（不是被拒理由，但都是真隐患）
+
+| 问题 | 根因 | 状态 |
+|---|---|---|
+| 付费墙「隐私政策」链接 **HTTP 404** | 指向 `…/wavelink/privacy-policy/`，该路径从未部署到 gh-pages | ✅ 改为 `https://oweenlee.github.io/wavelink/`（实测 200，与 ASC 元数据的 privacyPolicyUrl 同页） |
+| 权益剥夺会误删免费功能 | 退款时 `proRevocationHandler` 会清 AutoEQ，但 AutoEQ 已免费 | ✅ 剥夺清单收窄为 Bit Perfect + 房间校正 |
+| 自检脚本假绿灯 | 版本被 Apple 拒时仍报「可以去提交审核了」 | ✅ 现区分 `REJECTED` / `DEVELOPER_REJECTED`，并把 `UNRESOLVED_ISSUES` 纳入校验 |
 
 ### 因此必须重新构建上传 build 7
 
 代码动了（付费墙商品集 + 隐私链接 + `pubspec` 已 bump 到 `1.0.3+7`）→ **build 6 作废**。
-上传 build 7 → 挂到 1.0.3 版本页 → 再重新提审（顺序见第 6 步）。
 
 ```bash
 python tools/asc_preflight.py   # 现应显示：1.0.3 = REJECTED + 待上传 build 7
 ```
+
+### 🟢 好消息：提交不用重新拼
+
+被拒的提交 `ada1ef04…` **仍然完整保留着 2 个条目**（实测）：
+
+```
+item state=READY_FOR_REVIEW | 内购/其它(UUID)
+item state=REJECTED         | App 版本 (891989353)
+```
+
+→ **不需要再走一遍「合并两个草稿」的坑**。改完后：换截图 → 挂 build 7 → 在**同一个提交**上点「提交以供审核」即可。
+
+---
+
+## 🔴 本轮动作清单（按顺序，别跳步）
+
+1. **重拍并替换 App Store 截图**（20 张）—— 见第 10 步
+2. **重建并上传 build 7**，挂到 1.0.3 版本页 —— 见第 0 步（命令同 build 6，只改版本号）
+3. **换掉内购审核截图**（现在那张是旧付费墙）—— 见第 1 步
+4. **重新提审**：在同一提交 `ada1ef04…` 上点「提交以供审核」—— 见第 6 步
+5. **在解决中心回一句**（英文，见第 11 步）—— 说明已移除第三方素材 + 已上传新二进制
 
 ---
 
@@ -100,9 +134,13 @@ python tools/asc_preflight.py
 
 ---
 
-## 第 1 步 · 拍审核截图
+## 第 1 步 · 拍内购审核截图
 
 IAP 商品**必须**上传审核截图。付费墙刚改过样式，重拍一张。
+
+> 🔴 **2026-10-09 补充：现在 ASC 上那张是旧付费墙**（3 张功能卡 + 一行红色
+> 「暂时无法获取购买信息，请检查网络后重试」），与 build 7 的界面不一致 → **本轮要换掉**。
+> 拍的时候按下面第 4 条的最终形态核对（**只有 2 张卡** + 免费说明行 + 单张买断卡显示价格）。
 
 1. Xcode 打开 `ios/Runner.xcworkspace`，选任意 iOS 模拟器
 2. `Product → Run`（scheme 已绑 `WaveLinkPro.storekit`，走本地 StoreKit，不扣款）
@@ -120,7 +158,12 @@ IAP 商品**必须**上传审核截图。付费墙刚改过样式，重拍一张
    ```
 
 > ⚠️ 必须从 **Xcode 里 Run**。`flutter run` 不会注入 scheme 的 StoreKit 本地配置，
-> 跑出来只会是错误空态。
+> 跑出来只会是错误空态（就是旧那张截图里的红字）。
+>
+> 🔧 **若在 Xcode 里 Run 仍是红字错误**：说明 scheme 的 StoreKit 配置没生效。
+> 不要去手改 `.xcscheme` 的路径（格式敏感、容易写错），直接走 UI 让 Xcode 自己写：
+> `Product → Scheme → Edit Scheme… → Run → Options → StoreKit Configuration`
+> → 下拉选 **WaveLinkPro.storekit** → Close。之后再 Run 就能看到 $3.99 的买断卡。
 
 ---
 
@@ -286,6 +329,16 @@ HiFi 音质，毫不妥协。WaveLink HiFi 是一款无广告、无需账号的�
 ---
 
 ## 第 6 步 · 提审 1.0.3（App 版本与内购必须同一个提交）✅ **已完成（2026-10-08 20:29:58）**
+
+> ### 🔴 2026-10-09 被拒后：**不需要重新拼提交**
+> 实测被拒提交 `ada1ef04-ecb3-4d06-b254-800684fb314f` 里 **2 个条目都还在**：
+> ```
+> item state=READY_FOR_REVIEW | 内购/其它 (UUID)  f44adf38-…
+> item state=REJECTED         | App 版本 (891989353)
+> ```
+> → 只需「换截图 → 挂 build 7 → 在**同一个提交**上点**提交以供审核**」。
+> ⛔ **不要新建提交**、不要再走一遍合并两个草稿的流程（那个坑踩过了，见下）。
+> ⚠️ 唯一要小心的是：**别让「版本」先单独提交出去**（那会把提交拆成两个，得整个撤回重来）。
 
 > ### ✅ 结果：提审成功
 > 预检 12/12 全绿，关键两行：
@@ -491,6 +544,91 @@ ASC → **「价格与销售范围」→ 价格 → 选「免费」** → 存储
 
 ---
 
+## 第 10 步 · 🔴 替换 App Store 截图（5.2.1 被拒的直接原因）
+
+### 实测：侵权内容在**截图**里，其余位置都干净
+
+| 位置 | 结论 |
+|---|---|
+| App 图标 | ✅ 干净（橙色波形 logo，无第三方内容） |
+| App 预览视频 | ✅ **无**（ASC 上预览组 = 0） |
+| App 内打包资源 | ✅ 干净（`assets/` 只有 `fonts/` 与 `splash/`，无任何封面图） |
+| **App Store 截图** | ❌ **就是这里**：en-US 下 2 组 × 10 张 = **20 张**，逐张打开确认**全部含第三方内容** |
+
+截图里出现的第三方内容（实测清单）：
+
+- **真实专辑封面**：崔健《新长征路上的摇滚》、王力宏《爱错》《火力全开》、张学友《吻别》、
+  张国荣《为你钟情》、优客李林《认错》、李宗盛、蔡健雅、五月天、张震岳、Beyond、
+  周华健、赵鑫、黑鸭子、萧煌奇、The Offspring、John Lennon、Hayley Westenra 等
+- **真实歌词**：现在播放页直接显示歌词行，例如
+  「我從哪裡起飛（愛錯 愛錯）從哪裡降落」「多少不能原諒的錯（Woo 請妳原諒我的愛錯）」
+  以及「词：崔健」这类署名
+
+> ⚠️ **歌词同样是第三方版权内容。** Apple 这次只点名封面，但同一批图再送一次，
+> 很可能是下一个理由 —— 这次一并清掉。
+> 💡 补充：ASC 的 zh-Hans / ja **没有单独截图**（沿用主语言），所以**只需改 en-US 这两组**。
+
+### 两条合规路径（选第 2 条）
+
+Apple 原文给了两条：
+
+1. ~~`please attach documentary evidence in the App Review Information section`~~
+   —— 即提供唱片公司授权书，实际不可行
+2. ✅ **`remove all protected third-party album cover artwork from the app icons, screenshots and previews`**
+
+### 重拍做法
+
+**目标：截图里不出现任何真实专辑封面、不出现真实歌词。**
+
+- **A（最稳最快）** 用**不内嵌封面、不含歌词**的演示音频
+  → App 会显示自绘的黑胶占位图（`CoverPlaceholder`，纯代码绘制，零版权风险）
+- **B（更好看）** 自制一套**原创封面**（抽象 / 几何 / 纯色，**不含真人肖像、不含厂牌 logo**）
+  嵌进演示曲目再截；曲名与艺人名也一并换成中性示例名
+
+操作要点：
+
+1. 演示曲目**关掉歌词显示**（或干脆不放 LRC / 内嵌歌词）
+2. 建议把演示曲目的**曲名 / 专辑名 / 艺人名也换成示例名**（名字本身不是版权客体，
+   但换成自己的名字能一次性排除争议）
+3. 保持现在的取景与排版即可（曲库 / 音源 / 设置 / 播放 / 均衡器 / AutoEQ 各一张），只把内容换干净
+4. 拍 10 张 → 覆盖 **6.1" 组（1179×2556）**；**6.5" 组（1284×2778）** 用同一批图等比缩放
+5. 替换路径：ASC → 版本页 → **App 预览与屏幕快照** → 左侧分别选 **iPhone 6.1 英寸** / **iPhone 6.5 英寸**
+   → 逐张删除旧图 → 拖入新图 → 等处理完成
+
+> ⚠️ 6.5" 组是从 6.1" 图缩放的（历史做法），Apple 这次没提尺寸问题，**保持原样即可**。
+
+### 完成后自检
+
+```bash
+python tools/asc_preflight.py    # 第 6 节会看到 1.0.3 仍是 REJECTED，属正常
+```
+
+---
+
+## 第 11 步 · 在解决中心回一句（可选但推荐）
+
+位置：ASC 左侧「**App 审核**」→ **解决中心（Resolution Center）** → 该提交 → 回复。
+
+```
+Thank you for the detailed feedback. Both issues have been addressed:
+
+1. Guideline 5.2.1 — We have removed ALL third-party album cover artwork and
+   lyrics from the App Store screenshots. The new screenshots show only the app's
+   own interface and self-generated placeholder/artwork. The app icon and previews
+   contain no third-party content.
+
+2. Guideline 2.1(b) — The reference to a "Monthly" purchase has been removed.
+   The product set has been reduced to a single non-consumable in-app purchase
+   (wavelink_pro). A new binary (build 7) has been uploaded and attached to
+   version 1.0.3, and the in-app purchase is included in the same submission.
+
+Please let us know if anything else is required. Thank you.
+```
+
+> 💡 不写也能过，写了能减少来回。**关键是新二进制 + 干净截图必须已经在提交里。**
+
+---
+
 ## 附：不要做的事
 
 - ❌ 不要用 fastlane 发版 —— `flutter build ipa` 那步会失败。**先排查是否只是残留 flutter 进程
@@ -503,6 +641,9 @@ ASC → **「价格与销售范围」→ 价格 → 选「免费」** → 存储
 - ❌ 不要把发布方式留在「审核通过后自动发布」
 - ❌ 不要用「创建新提交内容」——App 版本与内购必须在**同一个**提交里（见第 6 步）
 - ❌ 不要在审核期间改动 ASC 里该版本/商品的任何内容
+- ❌ **不要把含真实专辑封面 / 真实歌词的截图提交审核** —— 2026-10-09 已因此吃了一次
+  5.2.1（详见第 10 步）；重拍时也别再用带真实封面的曲目
+- ❌ 不要在被拒后**新建提交** —— 被拒的提交里 2 个条目都还在，直接改完重提即可（见第 6 步）
 - ~~❌ 不要忘记把版本页的构建从 5 改成 6~~ ✅ 已完成；**但 build 6 已因二进制变更作废，
   需改为 build 7**（见第 6 步第 1 条）
 
