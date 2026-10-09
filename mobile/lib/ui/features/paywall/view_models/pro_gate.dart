@@ -8,8 +8,10 @@ import 'subscription_provider.dart';
 /// Pro 功能门控：已购放行；未购且查询完成则改道付费墙。
 ///
 /// 查询未就绪时等待完成（refresh 必然终止，失败也置 ready），不放行——
-/// 否则启动窗口内未购用户可配置并持久化 Pro 功能（AutoEQ/房间校正/Bit
-/// Perfect / 网络音源 应用层无订阅检查，配置持久化后永久生效，形成白嫖）。
+/// 否则启动窗口内未购用户可配置并持久化 Pro 功能（房间校正 / Bit Perfect
+/// 应用层无订阅检查，配置持久化后永久生效，形成白嫖）。
+/// ⚠️ 2026-10-09：AutoEQ 与网络音源（NAS/SMB、WebDAV、Subsonic）已改为免费，
+/// 不再走本门控 —— 当前仅剩「房间校正」与「Bit Perfect」两处。
 Future<void> requirePro(
   BuildContext context,
   WidgetRef ref,

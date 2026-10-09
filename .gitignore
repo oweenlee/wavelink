@@ -11,3 +11,6 @@
 /.workbuddy/
 /.opencode/
 website/.DS_Store
+
+# gh-pages 落地页：独立 clone（自带 .git），不入本仓库
+/wavelink-ghpages/

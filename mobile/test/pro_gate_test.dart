@@ -11,7 +11,7 @@ import 'package:wavelink_mobile/ui/features/paywall/view_models/subscription_pro
 import 'helpers/fake_subscription_gateway.dart';
 
 /// 门控探针页：一个按钮触发 [requirePro]，一个 [ProBadge] 用于断言徽标显隐。
-/// 这是 6 个门控点（NAS/WebDAV/Subsonic/AutoEQ/房间校正/Bit Perfect）的
+/// 这是「房间校正 / Bit Perfect」两个门控点的
 /// 统一调用形态，此处以最小页复现。
 class _GateProbe extends ConsumerStatefulWidget {
   const _GateProbe();

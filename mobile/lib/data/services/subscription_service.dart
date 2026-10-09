@@ -53,15 +53,18 @@ class ProEntitlement {
 ///
 /// 上线前需在 App Store Connect 完成：
 /// - 非消耗型：`wavelink_pro`（整体买断，不进订阅组）
-/// - ⚠️ **不要配置任何订阅** —— 本 App 不提供订阅（月/年常量仅为兼容
-///   历史交易回放而保留，不参与商品查询）
+/// - ⚠️ **不要配置任何订阅** —— 本 App 不提供订阅
 class SubscriptionService {
   SubscriptionService._();
 
-  /// 自动续期订阅 · 月度（**已弃用**：仅用于解析历史交易，不再查询/展示）
+  /// 历史月订阅 ID（**已弃用**）。
+  ///
+  /// ⚠️ 仅作字符串映射保留（[planOf] / [isSubscriptionId]），
+  /// **既不参与商品查询（见 [proProductIds]），也不参与权益判定**
+  /// （[_onPurchases] 的过滤只认 [proProductIds]）—— 本 App 只认买断。
   static const String proMonthlyId = 'wavelink_pro_monthly';
 
-  /// 自动续期订阅 · 年度（**已弃用**：仅用于解析历史交易，不再查询/展示）
+  /// 历史年订阅 ID（**已弃用**）。语义同 [proMonthlyId]。
   static const String proYearlyId = 'wavelink_pro_yearly';
 
   /// 非消耗型买断（沿用首个版本的产品 ID）

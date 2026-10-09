@@ -103,10 +103,12 @@ final subscriptionGatewayProvider = Provider<SubscriptionGateway>(
   (ref) => StoreKitGateway(),
 );
 
-/// 权益失效（过期/退款）后的 Pro 设置剥夺：清掉三个 Pro 专属功能
-/// （Bit Perfect / AutoEQ / 房间校正）及其持久化，堵住「订阅期内开启、
-/// 到期后永久白嫖」的漏洞。默认读播放编排与 DSP provider 执行；
-/// 单测覆写为记录型 Fake。
+/// 权益失效（退款/撤销）后的 Pro 设置剥夺：清掉**仍属 Pro 专属**的功能
+/// （Bit Perfect / 房间校正）及其持久化，堵住「权益期内开启、失效后永久白嫖」。
+///
+/// ⚠️ 2026-10-09：**不再清 AutoEQ** —— AutoEQ 已改为免费功能，清它等于删除
+/// 用户的免费设置（退款用户的仍应保留）。新增门控功能时同步本清单。
+/// 默认读播放编排与 DSP provider 执行；单测覆写为记录型 Fake。
 final proRevocationHandlerProvider = Provider<Future<void> Function()>((ref) {
   return () async {
     try {
@@ -114,7 +116,6 @@ final proRevocationHandlerProvider = Provider<Future<void> Function()>((ref) {
       if (controller.bitPerfect) controller.setBitPerfect(false);
       final dsp = ref.read(dspProvider.notifier);
       final dspState = ref.read(dspProvider);
-      if (dspState.autoEqModel != null) dsp.setAutoEq(null);
       if (dspState.roomIrPath != null) await dsp.clearRoomCorrection();
     } catch (e) {
       Log.e('Subscription', '剥夺 Pro 设置失败: $e');
