@@ -46,6 +46,9 @@ def _pubspec_build():
 
 ok_n = fail_n = 0
 SUBMITTED = [False]   # 是否有「已发出」的提交（供结尾结论区分「可提交」/「等审核」）
+# 是否被 Apple 拒绝 —— 决定结尾结论不再是「可以去提交」，否则会给出假绿灯
+# （2026-10-09 实测：1.0.3 已被拒，脚本却仍报「✅ 可以去 ASC 提交审核了」）
+REJECTED = [False]
 
 
 def check(ok: bool, msg: str, hint: str = ""):
@@ -106,8 +109,14 @@ def main():
     elif state in ("WAITING_FOR_REVIEW", "IN_REVIEW"):
         note(f"{TARGET_VERSION} 状态 = {state} —— 已提交，Apple 尚未开始/正在审核",
              "下方第 6 节会核对「提交内容是否完整」；若漏了内购，见第 6 节的撤回办法")
-    elif state in ("DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED"):
-        note(f"{TARGET_VERSION} 状态 = {state} —— 已被拒/已撤回，需处理后可重新提交")
+    elif state in ("REJECTED", "METADATA_REJECTED"):
+        REJECTED[0] = True
+        note(f"{TARGET_VERSION} 状态 = {state} —— ⚠️ Apple 已拒绝，必须先去解决中心读原因",
+             "ASC 左侧「App 审核」→「解决中心（Resolution Center）」，或版本页顶部的"
+             "拒绝提示；改完（必要时重新构建上传 build）再重新提交。"
+             "⚠️ 别在没读原因前原样重提，会被同样拒一次")
+    elif state == "DEVELOPER_REJECTED":
+        note(f"{TARGET_VERSION} 状态 = {state} —— 你自己撤回过（可重新提交）")
     else:
         check(False, f"{TARGET_VERSION} 状态 = {state}",
               "非预期状态 —— 先处理该状态（见 ASC 版本页）再提审")
@@ -268,9 +277,18 @@ def main():
     print("\n6) 提交内容完整性（App 版本 + 内购必须同在一个提交里）")
     iap_state = prod["attributes"].get("state") if prod else None
     subs = asc.get(f"/v1/reviewSubmissions?filter[app]={aid}&limit=20").get("data", [])
+    # 被 Apple 拒绝的提交状态是 UNRESOLVED_ISSUES（不是 READY_FOR_REVIEW 等），
+    # 必须单独报出来 —— 否则会漏掉「App 已被拒」这个最关键的事实。
+    unresolved = [s for s in subs
+                  if s["attributes"].get("state") == "UNRESOLVED_ISSUES"]
+    for s in unresolved:
+        when = str(s["attributes"].get("submittedDate") or "")[:19]
+        note(f"提交 {s['id'][:12]}… state=UNRESOLVED_ISSUES submitted={when}"
+             f" —— 被 Apple 拒绝，有未解决问题",
+             "去 ASC「解决中心 / Resolution Center」读拒绝原因，改完再重提")
     active = [s for s in subs if s["attributes"].get("state")
               in ("READY_FOR_REVIEW", "WAITING_FOR_REVIEW", "IN_REVIEW")]
-    if not active:
+    if not active and not unresolved:
         note("当前没有进行中的提交（草稿 / 等待审核 / 审核中）",
              "去版本页点「添加以供审核」后会生成草稿，届时重跑本检查")
     for s in active:
@@ -315,12 +333,18 @@ def main():
 def finish():
     print("\n" + "=" * 64)
     if fail_n == 0:
-        if SUBMITTED[0]:
+        if REJECTED[0]:
+            print(f"⚠️ {ok_n} 项自检通过，但 {TARGET_VERSION} **已被 Apple 拒绝** —— "
+                  f"先去解决中心读原因，改完再重新构建/提交\n")
+        elif SUBMITTED[0]:
             print(f"✅ 全部 {ok_n} 项通过 —— 已提交送审，接下来等 Apple（别再动 ASC 内容）\n")
         else:
             print(f"✅ 全部 {ok_n} 项通过 —— 可以去 ASC 提交审核了\n")
     else:
         print(f"❌ {fail_n} 项待修 / {ok_n} 项通过 —— 上面带 → 的就是怎么修\n")
+        if REJECTED[0]:
+            print(f"   ⚠️ 最关键的一条：{TARGET_VERSION} **已被 Apple 拒绝** —— "
+                  f"先去解决中心读原因，改完重新构建上传再重提\n")
     print("提示：内购是否已随版本送审，看第 6 节 ——\n"
           "      已提交时以「内购状态」为准（随行后应为 WAITING_FOR_REVIEW）；\n"
           "      草稿时以「条目构成」为准（App 版本 1 + 内购 1 = 2 项）。\n")

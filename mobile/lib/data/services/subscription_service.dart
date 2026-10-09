@@ -45,41 +45,38 @@ class ProEntitlement {
   String toString() => 'ProEntitlement(${plan.name})';
 }
 
-/// StoreKit 2 权益服务（自动续期订阅 + 买断，纯端侧无后端）。
+/// StoreKit 2 权益服务（**整体买断**，纯端侧无后端）。
 ///
 /// 依赖 `in_app_purchase` 3.3+：iOS/macOS 默认注册
 /// `InAppPurchaseStoreKitPlatform`（StoreKit 2），`restorePurchases()` 走
-/// `AppStore.sync()`，purchaseStream 只投递**当前仍有效**的交易——过期的
-/// 订阅不会出现在流里，因此无需后端即可判定订阅是否续期成功。
+/// `AppStore.sync()`，purchaseStream 只投递**当前仍有效**的交易。
 ///
 /// 上线前需在 App Store Connect 完成：
-/// - 订阅组 `Pro`：`wavelink_pro_monthly`（月）、`wavelink_pro_yearly`（年）
-/// - 非消耗型：`wavelink_pro`（买断，不进订阅组）
+/// - 非消耗型：`wavelink_pro`（整体买断，不进订阅组）
+/// - ⚠️ **不要配置任何订阅** —— 本 App 不提供订阅（月/年常量仅为兼容
+///   历史交易回放而保留，不参与商品查询）
 class SubscriptionService {
   SubscriptionService._();
 
-  /// 自动续期订阅 · 月度
+  /// 自动续期订阅 · 月度（**已弃用**：仅用于解析历史交易，不再查询/展示）
   static const String proMonthlyId = 'wavelink_pro_monthly';
 
-  /// 自动续期订阅 · 年度
+  /// 自动续期订阅 · 年度（**已弃用**：仅用于解析历史交易，不再查询/展示）
   static const String proYearlyId = 'wavelink_pro_yearly';
 
   /// 非消耗型买断（沿用首个版本的产品 ID）
   static const String proLifetimeId = 'wavelink_pro';
 
-  /// 全部 Pro 商品 ID。
-  static const Set<String> proProductIds = {
-    proMonthlyId,
-    proYearlyId,
-    proLifetimeId,
-  };
+  /// 付费墙**实际查询**的商品 ID —— 只查买断。
+  ///
+  /// ⚠️ 2026-10-09：绝不能带上 [proMonthlyId] / [proYearlyId]。实测事故：
+  /// ASC 里订阅虽已删除，StoreKit 仍会解析出旧的月订阅商品，付费墙于是
+  /// 冒出一张「按月 US$3.99」卡片（用户截图实锤）。只查买断 ID 可从根上杜绝，
+  /// 与「整体买断、不做订阅」的产品定位一致。
+  static const Set<String> proProductIds = {proLifetimeId};
 
-  /// 付费墙展示顺序：月度 → 年度 → 买断。
-  static const List<String> tierOrder = [
-    proMonthlyId,
-    proYearlyId,
-    proLifetimeId,
-  ];
+  /// 付费墙展示顺序：只有买断一档。
+  static const List<String> tierOrder = [proLifetimeId];
 
   /// 订阅制商品（需在付费墙展示自动续订条款与管理入口）。
   static bool isSubscriptionId(String productId) =>

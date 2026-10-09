@@ -21,14 +21,15 @@ class PaywallPage extends ConsumerStatefulWidget {
 }
 
 class _PaywallPageState extends ConsumerState<PaywallPage> {
-  /// EULA 用苹果标准协议链接即可满足审核；隐私政策源文件在仓库根目录
-  /// website/privacy-policy/，需合入 main 并由 GitHub Pages 服务。
-  /// ⚠️ 阻断项：该 URL 当前 404（源文件只在功能分支，未合入 main），
-  /// 上线前必须部署到位，否则审核被拒。
+  /// EULA 用苹果标准协议链接即可满足审核；隐私政策由 GitHub Pages 承载。
+  ///
+  /// ⚠️ 2026-10-09：原链接 `…/wavelink/privacy-policy/` **HTTP 404**（该路径
+  /// 从未部署到 gh-pages），3.1.2 要求付费墙内的条款/隐私链接必须可访问，
+  /// 死链会直接导致审核被拒。已改为实际承载隐私政策的站点地址
+  /// （与 ASC 元数据里的隐私政策 URL 指向同一页面）。
   static const _termsUrl =
       'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
-  static const _privacyUrl =
-      'https://oweenlee.github.io/wavelink/privacy-policy/';
+  static const _privacyUrl = 'https://oweenlee.github.io/wavelink/';
 
   /// 系统订阅管理页：已订阅用户必须能在 App 内触达（3.1.2）。
   static const _manageSubscriptionsUrl =
