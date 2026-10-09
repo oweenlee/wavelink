@@ -493,9 +493,45 @@ ASC → **「价格与销售范围」→ 价格 → 选「免费」** → 存储
 
 ## 附：不要做的事
 
-- ❌ 不要用 fastlane —— 它当前是坏的，用 Xcode Organizer
-- ❌ 不要给订阅组补本地化 —— 订阅整个要弃用（组已删）
-- ❌ 不要在审核通过前先改价 —— 会让线上的 1.0.2 变成免费全功能版
-- ❌ **不要先改价再发布 1.0.3** —— 顺序反了会白送完整功能版（详见第 7/8 步）
+- ❌ 不要用 fastlane 发版 —— `flutter build ipa` 那步会失败。**先排查是否只是残留 flutter 进程
+  占着 lockfile**（`pkill -f flutter_tools.snapshot`，清掉后 build 通常就正常）；仍不行再走 Xcode Organizer
+- ❌ 不要给订阅组补本地化 —— 订阅整个已弃用（组已删）
+- ❌ **不要先改价再发布 1.0.3** —— 顺序反了会让免费用户拿到 AutoEQ 仍被锁的 1.0.2，
+  点 AutoEQ 跳付费墙 → **误导性付费**（详见第 7/8 步）
+- ❌ **不要「点完发布按钮」就立刻改价** —— 发布到真正上架最长约 24h，
+  必须先用 `itunes lookup` 确认线上已是 1.0.3
 - ❌ 不要把发布方式留在「审核通过后自动发布」
-- ~~❌ 不要忘记把版本页的构建从 5 改成 6~~ ✅ 已完成
+- ❌ 不要用「创建新提交内容」——App 版本与内购必须在**同一个**提交里（见第 6 步）
+- ❌ 不要在审核期间改动 ASC 里该版本/商品的任何内容
+- ~~❌ 不要忘记把版本页的构建从 5 改成 6~~ ✅ 已完成；**但 build 6 已因二进制变更作废，
+  需改为 build 7**（见第 6 步第 1 条）
+
+---
+
+## 附：全项目排查结果（2026-10-09，`dart analyze` 无问题 / `flutter test` 139 项全过）
+
+### 已修正
+| 项 | 说明 |
+|---|---|
+| 付费墙「按月」卡片 | `proProductIds` 只留买断（见第 1 步） |
+| 隐私政策死链 404 | 改为 `https://oweenlee.github.io/wavelink/`（与 ASC 元数据同页） |
+| 权益剥夺误清 AutoEQ | AutoEQ 已免费，退款用户的免费设置不该被清 → 剥夺清单收窄为 Bit Perfect + 房间校正 |
+| 注释与实现不符 | 月/年历史 ID 的注释原写「用于解析历史交易」，实际既不查询也不参与权益判定 |
+| `.gitignore` | 根目录忽略 `/wavelink-ghpages/`（独立 clone，一直污染 `git status`）；去掉重复行 |
+
+### 已核对无问题
+版本号链路（pubspec → iOS/Android）、5 个 `.arb` 键集合一致（各 285 键）、
+门控仅 2 处、本地 `.storekit` 与 ASC 一致、外链可达、**无密钥入库**、
+无 TODO/`print(`、`Info.plist` 权限说明齐备（房间校正不录音，无需麦克风权限）、
+ASC 描述与 whatsNew 口径一致、无 CI、Android 签名无硬编码。
+
+### 遗留小项（**均不影响本次提审**，可按需处理）
+1. `mobile/ios/File.txt`（内容只有 `https://helloo.cc.cd/`）—— pbxproj 里只剩一个
+   PBXFileReference + 根组一行，**不在任何 build phase**，不会打进包。只在 Xcode 显红字。
+   清理需删文件 + 删 pbxproj 那 2 行（⚠️ 先 ⌘Q 退出 Xcode）。
+2. **Xcode scheme 的 StoreKit 配置路径疑似失效**：`identifier = "../../Runner/WaveLinkPro.storekit"`，
+   按惯例（相对 `xcshareddata/xcschemes/`）应为 `../../../Runner/…`。
+   只影响 **Xcode Run 的本地测试环境**，不影响上架构建；跑一次 Xcode 即可确认（字段无红字就没事）。
+3. `FREEMIUM_MIGRATION.md` / `IAP_SETUP.md` 仍是旧的「月/年 + 买断三档」规划（历史文档）。
+4. l10n 中订阅相关文案（`paywallPlanMonthly/Yearly`、`paywallSubscribeButton`、
+   `paywallManage`、`paywallTermsSubscription`、`proActiveMonthly/Yearly`）已成**死键**，不会渲染。
