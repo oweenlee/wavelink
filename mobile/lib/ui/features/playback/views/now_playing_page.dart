@@ -312,27 +312,28 @@ String _buildFormatInfo(Song song, PlaybackController player) {
   if (player.effectiveBitPerfect) {
     return Platform.isAndroid
         ? '$fmt · Exclusive bit-perfect'
-        : '$fmt · bit-exact（速率匹配）';
+        : '$fmt · bit-exact (rate matched)';
   }
 
   // 未达有效 bit-perfect：如实说明原因（不撒谎）
+  // 文案与仪表条 (OUTPUT/BUFFER/ENGINE) 保持同一语言，避免中英混排
   final reasons = <String>[];
   if (!player.bitPerfect) {
-    reasons.add('未开启');
+    reasons.add('off');
   } else {
     if (t.fileRate != t.outputRate) {
-      reasons.add('重采样 ${_khz(t.fileRate)}→${_khz(t.outputRate)}');
+      reasons.add('resample ${_khz(t.fileRate)}→${_khz(t.outputRate)}');
     }
     if (Platform.isAndroid && t.outputMode == 2) {
-      reasons.add('Shared 混音器路径');
+      reasons.add('shared mixer path');
     }
     if (player.dspAffectingSignal) {
-      reasons.add('DSP 处理中');
+      reasons.add('DSP active');
     }
     if (player.replayGain) {
-      reasons.add('ReplayGain 增益');
+      reasons.add('ReplayGain');
     }
-    if (reasons.isEmpty) reasons.add('等待播放');
+    if (reasons.isEmpty) reasons.add('waiting');
   }
   return '$fmt · ${reasons.join(' / ')}';
 }
@@ -731,7 +732,7 @@ class _BpmTagState extends State<_BpmTag> {
         ? ' /2'
         : ' ×2';
     return Tooltip(
-      message: '点击切换半速/倍速（检测值可能有 ×2/÷2 歧义）',
+      message: 'Tap to switch half/double time (detected value may be ×2 or ÷2 off)',
       child: GestureDetector(
         onTap: () {
           setState(() {
@@ -788,7 +789,7 @@ class _TechTag extends StatelessWidget {
           if (confidence != null) ...[
             const SizedBox(width: 6),
             Tooltip(
-              message: '置信度 ${(confidence! * 100).round()}%',
+              message: 'confidence ${(confidence! * 100).round()}%',
               child: Container(
                 width: 6,
                 height: 6,

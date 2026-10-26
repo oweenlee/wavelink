@@ -94,7 +94,8 @@ class ArtistDetailPage extends ConsumerWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    l10n.artistSongsAlbums(songs.length, albums.length),
+                    // 形参顺序是 (albums, songs)，别按语义顺序传
+                    l10n.artistSongsAlbums(albums.length, songs.length),
                     style: const TextStyle(
                       fontSize: 14,
                       color: AppTheme.textSecondary,

@@ -562,6 +562,7 @@ class _AlbumsTab extends ConsumerWidget {
       itemCount: albumNames.length,
       itemBuilder: (context, index) {
         final albumSongs = albums[albumNames[index]]!;
+        final l10n = AppLocalizations.of(context);
         // 展示/判定一律以首曲元数据为准（同组内艺人+专辑名一致）
         final name = albumSongs.first.album;
         final artist = albumSongs.first.artist;
@@ -640,7 +641,7 @@ class _AlbumsTab extends ConsumerWidget {
                 const SizedBox(height: 2),
                 // 单行元信息
                 Text(
-                  '${albumSongs.length} songs',
+                  l10n.songsCount(albumSongs.length),
                   style: WlText.mono(
                     fontSize: 11,
                     color: AppTheme.textTertiary,
@@ -796,7 +797,8 @@ class _ArtistsTab extends ConsumerWidget {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              l10n.artistSongsAlbums(count, albumCount),
+                              // 形参顺序是 (albums, songs)，别按语义顺序传
+                              l10n.artistSongsAlbums(albumCount, count),
                               style: WlText.mono(
                                 fontSize: 11,
                                 color: AppTheme.textTertiary,
