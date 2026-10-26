@@ -63,6 +63,13 @@ lib/l10n/app_localizations_ko.dart
 .opencode/
 .codebuddy/
 
+# SwiftPM / flutter_tools 临时目录（TMPDIR 指向本目录时产生）
+.tmp/
+
+# Python 字节码缓存（可能夹带脚本里的常量，勿入库）
+__pycache__/
+*.pyc
+
 # Workbuddy agent tooling
 .workbuddy/
 

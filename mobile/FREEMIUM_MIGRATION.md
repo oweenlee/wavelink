@@ -17,7 +17,7 @@
 
 ## 🔴 2026-09-30 实测核实（ASC API 只读拉取，本节为当前唯一权威）
 
-**核实方式**：用本机 `~/.fastlane/AuthKey_P4Q97KKSQQ.p8` 走 App Store Connect API
+**核实方式**：用本机 `~/.fastlane/AuthKey_<KEY_ID>.p8`（KEY_ID 见环境变量 `ASC_KEY_ID`）走 App Store Connect API
 做只读查询。目标 App：`WaveLink HiFi`，`bundleId = com.wavelink.player`，
 **app id = `6802973339`**。
 

@@ -25,8 +25,10 @@ except ImportError:
     sys.exit("导入 asc.py 失败")
 
 BUNDLE = sys.argv[1] if len(sys.argv) > 1 else "com.wavelink.player"
-ISSUER = os.environ.get("ASC_ISSUER_ID", "f5009def-bf90-45d1-9a4a-1de2ecb3a82e")
-KEY_ID = os.environ.get("ASC_KEY_ID", "P4Q97KKSQQ")
+ISSUER = os.environ.get("ASC_ISSUER_ID", "")
+KEY_ID = os.environ.get("ASC_KEY_ID", "")
+if not ISSUER or not KEY_ID:
+    sys.exit("请设置环境变量 ASC_KEY_ID 与 ASC_ISSUER_ID（勿写入仓库）")
 
 TARGET_VERSION = "1.0.3"
 TARGET_PRODUCT_ID = "wavelink_pro"

@@ -8,8 +8,8 @@
 
 用法:
     cd ~/Desktop/wavelink/mobile
-    ASC_ISSUER_ID=f5009def-... ASC_KEY_ID=P4Q97KKSQQ \\
-      /Users/qin/.workbuddy/binaries/python/envs/default/bin/python tools/asc_write_metadata.py
+    ASC_ISSUER_ID=<你的 Issuer ID> ASC_KEY_ID=<你的 Key ID> \\
+      python3 tools/asc_write_metadata.py
 
 安全设计:
   - 第一步先做权限探测（写一条 IAP 本地化）。403 则**立即停止**，不做任何后续写入。
