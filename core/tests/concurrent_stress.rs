@@ -4,7 +4,7 @@
 //! 包括：并发命令、跨线程 clone/drop 等。
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use audio_core::engine::EngineHandle;
 use audio_core::EngineConfig;
@@ -28,6 +28,23 @@ fn ensure_test_wav() -> String {
         writer.finalize().unwrap();
     }
     path
+}
+
+/// 等待引擎真正停下来（轮询，而非固定 sleep）。
+///
+/// `stop()` 只是往命令队列投递一条 `EngineCommand::Stop`，worker 处理完才更新
+/// `is_playing()` 的原子标志。所以"sleep N 毫秒后立即断言 !is_playing()"本质是
+/// 在赌 worker 的调度速度——实测量级是 0~1ms，但在覆盖率插桩、CI 高负载或慢机器上
+/// 会被拉长，从而随机假失败（本文件曾因此在 `cargo llvm-cov` 下 2/8 挂掉）。
+fn wait_stopped(handle: &EngineHandle, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if !handle.is_playing() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    !handle.is_playing()
 }
 
 /// 8 个线程同时发 play/pause/seek/stop 命令，验证不 panic
@@ -64,7 +81,10 @@ fn test_concurrent_commands_no_panic() {
     }
 
     // 验证引擎仍可用
-    assert!(!handle.is_playing());
+    assert!(
+        wait_stopped(&handle, Duration::from_secs(3)),
+        "并发命令后引擎应停止"
+    );
     handle.stop();
 }
 
@@ -96,7 +116,11 @@ fn test_handle_clone_across_threads() {
     t2.join().expect("线程 2 不应 panic");
     t3.join().expect("线程 3 不应 panic");
 
-    assert!(!handle.is_playing());
+    // stop() 是异步命令，join 返回不代表引擎已停；必须等待状态收敛
+    assert!(
+        wait_stopped(&handle, Duration::from_secs(3)),
+        "跨线程 clone 各自 stop 后，引擎应在 3s 内停止"
+    );
     handle.stop();
 }
 
@@ -122,8 +146,10 @@ fn test_concurrent_stop_idempotent() {
         t.join().expect("并发 stop 不应 panic");
     }
 
-    std::thread::sleep(Duration::from_millis(100));
-    assert!(!h.is_playing());
+    assert!(
+        wait_stopped(&h, Duration::from_secs(3)),
+        "10 个线程并发 stop 后，引擎应在 3s 内停止"
+    );
 }
 
 /// 大量 clone → drop 轮换，验证引用计数安全
@@ -149,7 +175,10 @@ fn test_handle_clone_drop_storm() {
     // drop 所有 clone，只剩原始 handle
     drop(clones);
 
-    assert!(!handle.is_playing());
+    assert!(
+        wait_stopped(&handle, Duration::from_secs(3)),
+        "clone drop 轮换后引擎应停止"
+    );
     handle.stop();
 }
 

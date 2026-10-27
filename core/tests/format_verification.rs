@@ -42,36 +42,61 @@ fn test_wav() {
     }
 }
 
+/// 解码样本并返回总样本数。
+///
+/// 样本由 `common::ensure_fixtures` 经 ffmpeg 转码生成；ffmpeg 不可用时文件不存在，
+/// 打印 [SKIP] 并返回 None。
+///
+/// **不要写成 `if let Ok(..) = decode_count(..)`**：那会让"解码失败"静默变成测试通过，
+/// 而解码回归正是这些用例唯一要防的东西。
+fn fixture_samples(label: &str, path: &str) -> Option<u64> {
+    if !std::path::Path::new(path).exists() {
+        eprintln!("[SKIP] {label} 样本未生成（需要 ffmpeg）: {path}");
+        return None;
+    }
+    match decode_count(path) {
+        Ok((total, chunks)) => {
+            assert!(chunks > 0, "{label} 解码后无音频帧");
+            Some(total)
+        }
+        Err(e) => panic!("{label} 解码失败: {e}"),
+    }
+}
+
 #[test]
 fn test_mp3() {
     let a = common::ensure_fixtures();
-    if let Ok((cnt, _)) = decode_count(&a.mp3) {
-        assert!(cnt > 10_000, "MP3 samples: {cnt}");
-    }
+    let Some(cnt) = fixture_samples("MP3", &a.mp3) else {
+        return;
+    };
+    assert!(cnt > 10_000, "MP3 samples: {cnt}");
 }
 
 #[test]
 fn test_flac() {
     let a = common::ensure_fixtures();
-    if let Ok((cnt, _)) = decode_count(&a.flac) {
-        assert!(cnt > 10_000, "FLAC samples: {cnt}");
-    }
+    let Some(cnt) = fixture_samples("FLAC", &a.flac) else {
+        return;
+    };
+    assert!(cnt > 10_000, "FLAC samples: {cnt}");
 }
 
 #[test]
 fn test_ogg() {
     let a = common::ensure_fixtures();
-    if let Ok((cnt, _)) = decode_count(&a.ogg) {
-        assert!(cnt > 10_000, "OGG samples: {cnt}");
-    }
+    let Some(cnt) = fixture_samples("OGG/Opus", &a.ogg) else {
+        return;
+    };
+    assert!(cnt > 10_000, "OGG samples: {cnt}");
 }
 
 #[test]
 fn test_m4a() {
     let a = common::ensure_fixtures();
-    if let Ok((cnt, _)) = decode_count(&a.m4a) {
-        assert!(cnt > 10_000, "M4A samples: {cnt}");
-    }
+    let Some(cnt) = fixture_samples("M4A/AAC", &a.m4a) else {
+        return;
+    };
+    assert!(cnt > 10_000, "M4A samples: {cnt}");
 }
 
 #[test]
@@ -90,7 +115,8 @@ fn test_wav_48k() {
 #[test]
 fn test_aiff() {
     let a = common::ensure_fixtures();
-    if let Ok((cnt, _)) = decode_count(&a.aiff) {
-        assert!(cnt > 10_000, "AIFF samples: {cnt}");
-    }
+    let Some(cnt) = fixture_samples("AIFF", &a.aiff) else {
+        return;
+    };
+    assert!(cnt > 10_000, "AIFF samples: {cnt}");
 }
