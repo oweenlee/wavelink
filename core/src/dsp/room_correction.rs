@@ -392,7 +392,7 @@ pub fn export_ir_wav(ir: &[f32], sample_rate: u32, path: &str) -> Result<(), Str
     Ok(())
 }
 
-/// 离线重采样单声道 IR（rubato SincFixedOut，与解码链路同款 SRC）。
+/// 离线重采样单声道 IR（rubato `Async` sinc，与解码链路同款 SRC 参数）。
 ///
 /// `ConvolutionEq::load_wav` 在 IR 采样率与管线采样率不一致时调用；
 /// 也可用于将已有 IR WAV 适配到目标输出采样率。
@@ -406,45 +406,47 @@ pub fn resample_ir(ir: &[f32], src_rate: u32, dst_rate: u32) -> Result<Vec<f32>,
     if (src_rate as i64 - dst_rate as i64).abs() <= 1 {
         return Ok(ir.to_vec());
     }
-    use rubato::{
-        InterpolationParameters, InterpolationType, Resampler, SincFixedOut, WindowFunction,
-    };
-    let params = InterpolationParameters {
-        sinc_len: 256,
-        f_cutoff: 0.95,
-        interpolation: InterpolationType::Linear,
-        oversampling_factor: 256,
-        window: WindowFunction::BlackmanHarris2,
-    };
-    let mut resampler =
-        SincFixedOut::<f64>::new(dst_rate as f64 / src_rate as f64, params, 1024, 1);
-    let input: Vec<f64> = ir.iter().map(|&s| s as f64).collect();
+    use rubato::audioadapter_buffers::direct::InterleavedSlice;
+    use rubato::{Async, FixedAsync, Resampler};
+    let mut resampler = Async::<f64>::new_sinc(
+        dst_rate as f64 / src_rate as f64,
+        1.0,
+        &super::sinc_params(),
+        1024,
+        1,
+        FixedAsync::Output,
+    )
+    .map_err(|e| format!("IR 重采样器创建失败: {e:?}"))?;
+    let mut buf: Vec<f64> = ir.iter().map(|&s| s as f64).collect();
     let mut out: Vec<f64> = Vec::new();
-    let mut buf = [input];
     loop {
-        let needed = resampler.nbr_frames_needed();
-        if buf[0].len() < needed {
+        let needed = resampler.input_frames_next();
+        if buf.len() < needed {
             break;
         }
-        let waves_in: Vec<Vec<f64>> = vec![buf[0].drain(..needed).collect()];
-        match resampler.process(&waves_in) {
-            Ok(waves_out) => out.extend_from_slice(&waves_out[0]),
+        let Ok(adapter) = InterleavedSlice::new(&buf[..needed], 1, needed) else {
+            break;
+        };
+        match resampler.process(&adapter, None) {
+            Ok(o) => out.extend_from_slice(&o.take_data()),
             Err(e) => return Err(format!("IR 重采样失败: {e:?}")),
         }
+        buf.drain(..needed);
     }
     // 尾部残余：补零到所需长度再处理一次（补零不改变 IR 有效内容）
-    if !buf[0].is_empty() {
-        let needed = resampler.nbr_frames_needed();
-        buf[0].resize(needed, 0.0);
-        let waves_in: Vec<Vec<f64>> = vec![buf[0].drain(..needed).collect()];
-        if let Ok(waves_out) = resampler.process(&waves_in) {
-            out.extend_from_slice(&waves_out[0]);
+    if !buf.is_empty() {
+        let needed = resampler.input_frames_next();
+        buf.resize(needed, 0.0);
+        if let Ok(adapter) = InterleavedSlice::new(&buf[..needed], 1, needed) {
+            if let Ok(o) = resampler.process(&adapter, None) {
+                out.extend_from_slice(&o.take_data());
+            }
         }
     }
     if out.is_empty() {
         return Err("IR 重采样结果为空".into());
     }
-    // SincFixedOut 按固定输出块产出，截断到理论长度
+    // Async 按固定输出块产出，截断到理论长度
     let expected = (ir.len() as f64 * dst_rate as f64 / src_rate as f64).round() as usize;
     out.truncate(expected.max(1));
     Ok(out.iter().map(|&s| s as f32).collect())

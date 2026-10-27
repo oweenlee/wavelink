@@ -1,11 +1,12 @@
 //! 变速播放：高质量 sinc 重采样
 //!
-//! 使用 rubato SincFixedOut（256-tap Blackman-Harris 窗）实现变速，
-//! 替代旧的线性插值，消除高速播放时的混叠失真。
+//! 使用 rubato `Async` sinc（256-tap Blackman-Harris 窗，参数见 `dsp::sinc_params`）
+//! 实现变速，替代旧的线性插值，消除高速播放时的混叠失真。
 //!
 //! 变速同时变调（如黑胶唱片加速）。如需不变调时间伸缩，需 WSOLA / phase vocoder。
 
-use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedOut, WindowFunction};
+use rubato::audioadapter_buffers::direct::InterleavedSlice;
+use rubato::{Async, FixedAsync, Resampler};
 
 /// 变速重采样器（rubato sinc 高质量实现）
 pub struct SpeedChanger {
@@ -13,9 +14,9 @@ pub struct SpeedChanger {
     channels: usize,
     /// rubato 重采样器（speed 变化时重建）。用 f32：音频管线全程 f32，
     /// 避免旧 f64 实现每帧的精度转换与双倍拷贝。
-    resampler: Option<SincFixedOut<f32>>,
-    /// 每声道累积缓冲（等待足够帧数后送入 resampler）
-    accum: Vec<Vec<f32>>,
+    resampler: Option<Async<f32>>,
+    /// 交错累积缓冲（等待足够帧数后送入 resampler）
+    accum: Vec<f32>,
     /// 输出缓冲（交错）
     output: Vec<f32>,
 }
@@ -63,15 +64,16 @@ impl SpeedChanger {
         // ratio = output_rate / input_rate = 1/speed
         // speed=2.0 → ratio=0.5（输出更短），speed=0.5 → ratio=2.0（输出更长）
         let ratio = 1.0 / self.speed as f64;
-        let params = InterpolationParameters {
-            sinc_len: 256,
-            f_cutoff: 0.95,
-            interpolation: InterpolationType::Linear,
-            oversampling_factor: 256,
-            window: WindowFunction::BlackmanHarris2,
-        };
-        self.resampler = Some(SincFixedOut::<f32>::new(ratio, params, 1024, channels));
-        self.accum = vec![Vec::new(); channels];
+        self.resampler = Async::<f32>::new_sinc(
+            ratio,
+            1.0,
+            &crate::dsp::sinc_params(),
+            1024,
+            channels,
+            FixedAsync::Output,
+        )
+        .ok();
+        self.accum.clear();
     }
 
     /// 对交错 PCM 做变速重采样。返回的切片引用内部 buffer，下次调用失效。
@@ -87,37 +89,24 @@ impl SpeedChanger {
         };
         self.output.clear();
 
-        // 解交错 → 累积到 per-channel 缓冲
-        let frames = input.len() / channels;
-        for f in 0..frames {
-            for c in 0..channels {
-                self.accum[c].push(input[f * channels + c]);
-            }
-        }
+        // 交错累积（rubato 5 的 adapter 直接吃交错布局，无需解交错/再交错）
+        self.accum.extend_from_slice(input);
 
         // 当累积够 resampler 需要的帧数时，处理并输出
         loop {
-            let needed = resampler.nbr_frames_needed();
-            if self.accum[0].len() < needed {
+            let needed = resampler.input_frames_next();
+            let take = needed * channels;
+            if self.accum.len() < take {
                 break;
             }
-            let waves_in: Vec<Vec<f32>> = self
-                .accum
-                .iter_mut()
-                .map(|buf| buf.drain(..needed).collect())
-                .collect();
-            match resampler.process(&waves_in) {
-                Ok(waves_out) => {
-                    let out_frames = waves_out[0].len();
-                    self.output.reserve(out_frames * channels);
-                    for f in 0..out_frames {
-                        for c in 0..channels {
-                            self.output.push(waves_out[c][f]);
-                        }
-                    }
-                }
+            let Ok(adapter) = InterleavedSlice::new(&self.accum[..take], channels, needed) else {
+                break;
+            };
+            match resampler.process(&adapter, None) {
+                Ok(out) => self.output.extend_from_slice(&out.take_data()),
                 Err(_) => break,
             }
+            self.accum.drain(..take);
         }
 
         &self.output

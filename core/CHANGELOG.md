@@ -49,7 +49,18 @@
 - **事件分配**：`EngineEvent::Spectrum` `Vec<f32>`→`[f32; 16]` 固定数组，消除高频堆分配（desktop/mobile 桥接均兼容）
 - **依赖升级**：`crossbeam-channel` 0.5.16→0.5.17；`windows-sys` 0.59→0.61（与 dev 依赖链已有的 0.61.2 合并，Windows 构建少编一份）；`dsd-reader` 0.3.1→0.4.0；`lofty` 0.24→0.25.3
   - `parking_lot` 保持 0.12：0.13 要求 Rust 1.95+（当前工具链 1.92）
-  - `cpal`(0.15→0.18) / `rubato`(0.10→5.0) 均为 breaking，另行排期
+  - `cpal`(0.15→0.18) 为 breaking 且只能实机验证，另行排期
+- **`rubato` 0.10.1→5.0.1**：API 全面重构（`SincFixedOut` → `Async::new_sinc(... FixedAsync::Output)`、
+  `InterpolationParameters`/`InterpolationType` → `SincInterpolationParameters`/`SincInterpolationType`、
+  `nbr_frames_needed()` → `input_frames_next()`、缓冲区改为 `audioadapter` trait）
+  - **收益**：`realfft` 双版本（rubato 0.10 带来的 2.0.1 + 直依赖 3.5.0）收敛为单版本
+  - **拷贝减少**：解码累积缓冲由「每声道 `Vec<Vec<f32>>`」改为单一交错 `Vec<f32>`；
+    rubato 5 的 `InterleavedSlice` 直接吃交错布局，省掉旧实现"解交错 → drain 成 `Vec<Vec<f32>>` → 再交错输出"的两次拷贝
+  - **参数集中**：解码链路 / 变速 / 房间校正 IR 三处原本各自复制同一组 sinc 参数，
+    统一到 `dsp::sinc_params()`（`sinc_len` 256、`f_cutoff` 0.95、`oversampling` 256、BlackmanHarris2）
+  - **修复**：IR 重采样尾部由 5120 样本 → 5224（理论 5224.5），原先静默丢掉约 2% 的 IR 尾部
+  - **数值验收**（44.1k→48k/96k 解码、变速 0.5x/2x/4x）：样本数逐项一致；基波电平差 0.0000 dB，
+    谐波+噪声占比差 ≤0.03 dB；仅存在常量群延迟差异（<6ms，人耳不可闻）。见 307 项测试全绿
 - **`ringbuf` 0.4.8→0.5.3（零代码改动）**：`HeapProd`/`HeapCons` 由普通包装变为 caching 包装
   （生产者/消费者各缓存对端索引，仅在操作无法推进时才 `fetch()` 刷新，热路径少一轮原子读）。
   语义等价：cached 索引只会低估可用空间；`try_push`/`try_pop` 失败前必先刷新重试。

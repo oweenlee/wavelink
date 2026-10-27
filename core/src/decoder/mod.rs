@@ -23,7 +23,8 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use tracing::{debug, error, info, warn};
 
-use rubato::{InterpolationParameters, InterpolationType, Resampler, SincFixedOut, WindowFunction};
+use rubato::audioadapter_buffers::direct::InterleavedSlice;
+use rubato::{Async, FixedAsync, Resampler};
 
 use crate::dsd;
 use crate::error::EngineError;
@@ -306,30 +307,33 @@ fn try_send_or_stop(tx: &Sender<DecodedFrame>, frame: DecodedFrame, stop_rx: &Re
 
 /// 创建 rubato 重采样器（如源/目标采样率不同）。
 /// 用 f32 实现：解码管线全程 f32，旧 f64 实现每帧多两次全缓冲的精度转换+拷贝。
-fn create_resampler(src_rate: u32, target_rate: u32, out_ch: usize) -> Option<SincFixedOut<f32>> {
+fn create_resampler(src_rate: u32, target_rate: u32, out_ch: usize) -> Option<Async<f32>> {
     if (src_rate as i64 - target_rate as i64).abs() <= 1 {
         return None;
     }
-    let params = InterpolationParameters {
-        sinc_len: 256,
-        f_cutoff: 0.95,
-        interpolation: InterpolationType::Linear,
-        oversampling_factor: 256,
-        window: WindowFunction::BlackmanHarris2,
-    };
-    Some(SincFixedOut::<f32>::new(
+    // 倍率固定（max_relative = 1.0 表示不允许运行时调整）；
+    // FixedAsync::Output + chunk_size 1024 = 每次固定输出 1024 帧，与旧版 SincFixedOut 一致。
+    match Async::<f32>::new_sinc(
         target_rate as f64 / src_rate as f64,
-        params,
+        1.0,
+        &crate::dsp::sinc_params(),
         1024,
         out_ch,
-    ))
+        FixedAsync::Output,
+    ) {
+        Ok(r) => Some(r),
+        Err(e) => {
+            warn!("rubato 重采样器创建失败（降级为不重采样）: {e:?}");
+            None
+        }
+    }
 }
 
 /// 重采样并发送（或直发）。返回更新后的 pts。
 fn resample_and_send(
     mixed: &[f32],
-    resampler: &mut Option<SincFixedOut<f32>>,
-    rubato_buf: &mut [Vec<f32>],
+    resampler: &mut Option<Async<f32>>,
+    rubato_buf: &mut Vec<f32>,
     out_ch: usize,
     target_rate: u32,
     target_ch: u32,
@@ -337,46 +341,7 @@ fn resample_and_send(
     tx: &Sender<DecodedFrame>,
     stop_rx: &Receiver<()>,
 ) -> f64 {
-    if let Some(ref mut resampler) = resampler {
-        for c in 0..out_ch {
-            rubato_buf[c].extend(mixed.iter().skip(c).step_by(out_ch).copied());
-        }
-        let mut cur_pts = pts;
-        loop {
-            let needed = resampler.nbr_frames_needed();
-            if rubato_buf[0].len() < needed {
-                break;
-            }
-            let waves_in: Vec<Vec<f32>> = rubato_buf
-                .iter_mut()
-                .map(|buf| buf.drain(..needed).collect())
-                .collect();
-            match resampler.process(&waves_in) {
-                Ok(waves_out) => {
-                    let out_frames = waves_out[0].len();
-                    let mut samples = Vec::with_capacity(out_frames * out_ch);
-                    for f in 0..out_frames {
-                        for c in 0..out_ch {
-                            samples.push(waves_out[c][f]);
-                        }
-                    }
-                    try_send_or_stop(
-                        tx,
-                        DecodedFrame {
-                            samples,
-                            pts_secs: cur_pts,
-                            sample_rate: target_rate,
-                            channels: target_ch,
-                        },
-                        stop_rx,
-                    );
-                    cur_pts += out_frames as f64 / target_rate as f64;
-                }
-                Err(e) => warn!("rubato 重采样失败: {e:?}"),
-            }
-        }
-        cur_pts
-    } else {
+    let Some(resampler) = resampler.as_mut() else {
         try_send_or_stop(
             tx,
             DecodedFrame {
@@ -387,16 +352,53 @@ fn resample_and_send(
             },
             stop_rx,
         );
-        pts + (mixed.len() / out_ch) as f64 / target_rate as f64
+        return pts + (mixed.len() / out_ch) as f64 / target_rate as f64;
+    };
+    // rubato 5 的 adapter 直接吃交错布局：累积缓冲保持交错，
+    // 省掉旧实现"解交错进 rubato_buf → drain 成 Vec<Vec<f32>> → 再交错输出"的两次拷贝。
+    rubato_buf.extend_from_slice(mixed);
+    let mut cur_pts = pts;
+    loop {
+        let needed = resampler.input_frames_next();
+        let take = needed * out_ch;
+        if rubato_buf.len() < take {
+            break;
+        }
+        let Ok(adapter) = InterleavedSlice::new(&rubato_buf[..take], out_ch, needed) else {
+            break;
+        };
+        match resampler.process(&adapter, None) {
+            Ok(out) => {
+                let samples = out.take_data();
+                let out_frames = samples.len() / out_ch;
+                try_send_or_stop(
+                    tx,
+                    DecodedFrame {
+                        samples,
+                        pts_secs: cur_pts,
+                        sample_rate: target_rate,
+                        channels: target_ch,
+                    },
+                    stop_rx,
+                );
+                cur_pts += out_frames as f64 / target_rate as f64;
+            }
+            Err(e) => {
+                warn!("rubato 重采样失败: {e:?}");
+                break;
+            }
+        }
+        rubato_buf.drain(..take);
     }
+    cur_pts
 }
 
-/// EOF 时冲刷重采样器：`SincFixedOut` 按固定块消费输入，残余不足一个块的
+/// EOF 时冲刷重采样器：`Async`（FixedAsync::Output）按固定块消费输入，残余不足一个块的
 /// 输入帧若不处理会在曲尾被静默丢弃（44.1k↔48k 时约 24ms）。补零到所需
 /// 长度做最后一次 `process`，把剩余有效音频连同滤波器尾部一起输出。
 fn flush_resampler(
-    resampler: &mut Option<SincFixedOut<f32>>,
-    rubato_buf: &mut [Vec<f32>],
+    resampler: &mut Option<Async<f32>>,
+    rubato_buf: &mut Vec<f32>,
     out_ch: usize,
     target_rate: u32,
     target_ch: u32,
@@ -404,29 +406,22 @@ fn flush_resampler(
     tx: &Sender<DecodedFrame>,
     stop_rx: &Receiver<()>,
 ) {
-    let Some(ref mut resampler) = resampler else {
+    let Some(resampler) = resampler.as_mut() else {
         return;
     };
-    if stop_rx.try_recv().is_ok() || rubato_buf.iter().all(|b| b.is_empty()) {
+    if stop_rx.try_recv().is_ok() || rubato_buf.is_empty() {
         return;
     }
-    let needed = resampler.nbr_frames_needed();
-    for buf in rubato_buf.iter_mut() {
-        buf.resize(needed, 0.0);
-    }
-    let waves_in: Vec<Vec<f32>> = rubato_buf.iter_mut().map(std::mem::take).collect();
-    if let Ok(waves_out) = resampler.process(&waves_in) {
-        let out_frames = waves_out[0].len();
-        let mut samples = Vec::with_capacity(out_frames * out_ch);
-        for f in 0..out_frames {
-            for c in 0..out_ch {
-                samples.push(waves_out[c][f]);
-            }
-        }
+    let needed = resampler.input_frames_next();
+    rubato_buf.resize(needed * out_ch, 0.0);
+    let Ok(adapter) = InterleavedSlice::new(&rubato_buf[..], out_ch, needed) else {
+        return;
+    };
+    if let Ok(out) = resampler.process(&adapter, None) {
         try_send_or_stop(
             tx,
             DecodedFrame {
-                samples,
+                samples: out.take_data(),
                 pts_secs: pts,
                 sample_rate: target_rate,
                 channels: target_ch,
@@ -434,6 +429,7 @@ fn flush_resampler(
             stop_rx,
         );
     }
+    rubato_buf.clear();
 }
 
 fn run(
@@ -621,7 +617,7 @@ fn run(
                     let mixed = mix_channels(&kept, in_ch, target_ch as usize);
                     let out_ch = target_ch as usize;
                     let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
-                    let mut rubato_buf: Vec<Vec<f32>> = vec![Vec::new(); out_ch];
+                    let mut rubato_buf: Vec<f32> = Vec::new();
                     let _ = resample_and_send(
                         &mixed,
                         &mut rubato_resampler,
@@ -642,7 +638,7 @@ fn run(
     // ── 创建 rubato 重采样器（如有必要） ──
     let out_ch = target_ch as usize;
     let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
-    let mut rubato_buf: Vec<Vec<f32>> = vec![Vec::new(); out_ch];
+    let mut rubato_buf: Vec<f32> = Vec::new();
     let mut consecutive_errors = 0u32;
     // 跟踪最后发送帧的 pts，EOF 冲刷重采样器残余时用
     let mut last_pts = 0.0f64;
@@ -913,7 +909,7 @@ fn run_from_stream(
     }
 
     let mut rubato_resampler = create_resampler(src_rate, target_rate, out_ch);
-    let mut rubato_buf: Vec<Vec<f32>> = vec![Vec::new(); out_ch];
+    let mut rubato_buf: Vec<f32> = Vec::new();
     let mut consecutive_errors = 0u32;
     // 跟踪最后发送帧的 pts，EOF 冲刷重采样器残余时用
     let mut last_pts = 0.0f64;
@@ -1156,7 +1152,7 @@ fn run_dsd(
 
     // 重采样器（如需要）
     let mut resampler = create_resampler(src_rate, target_rate, out_ch);
-    let mut rubato_buf: Vec<Vec<f32>> = vec![Vec::new(); out_ch];
+    let mut rubato_buf: Vec<f32> = Vec::new();
     let mut pts = 0.0f64;
 
     // 主循环：流式读取 DSD 块 → 转换 → 混音 → 重采样 → 发送
@@ -1331,7 +1327,7 @@ fn run_ape(
 
     // 重采样器（如需要）
     let mut resampler = create_resampler(src_rate, target_rate, out_ch);
-    let mut rubato_buf: Vec<Vec<f32>> = vec![Vec::new(); out_ch];
+    let mut rubato_buf: Vec<f32> = Vec::new();
     let mut pts = 0.0f64;
 
     // 主循环：逐帧解码 → 字节转 f32 → 混音 → 重采样 → 发送

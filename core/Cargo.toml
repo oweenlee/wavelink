@@ -42,7 +42,7 @@ symphonia = { version = "0.6.1", default-features = false, features = [
     "mp3", "flac", "pcm", "vorbis", "aac", "alac", "isomp4", "ogg", "wav", "aiff"
 ] }
 symphonia-adapter-oporus = "0.1"
-rubato = "0.10"
+rubato = "5"
 dsd-reader = "0.4"
 
 # APE (Monkey's Audio) 纯 Rust 解码器
