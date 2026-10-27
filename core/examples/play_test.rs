@@ -17,10 +17,15 @@ fn main() {
     let device = host.default_output_device().expect("无输出设备");
     let config = cpal::StreamConfig {
         channels: target_channels,
-        sample_rate: cpal::SampleRate(target_rate),
+        sample_rate: target_rate,
         buffer_size: cpal::BufferSize::Default,
     };
-    println!("设备: {}", device.name().unwrap_or_default());
+    // cpal 0.18：DeviceTrait::name() 已移除，改用 description().name()
+    let label = device
+        .description()
+        .map(|d| d.name().to_string())
+        .unwrap_or_default();
+    println!("设备: {label}");
 
     let rb = HeapRb::<f32>::new((target_rate as f32 * 0.5) as usize * target_channels as usize);
     let (mut prod, mut cons) = rb.split();
@@ -45,7 +50,7 @@ fn main() {
     let p = playing.clone();
     let stream = device
         .build_output_stream(
-            &config,
+            config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 if !p.load(Ordering::SeqCst) {
                     data.fill(0.0);

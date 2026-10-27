@@ -20,6 +20,17 @@ use crate::output::{
     AudioOutput, AudioOutputInner, DeviceConfig, OutputDeviceInfo, PcmProducer, SampleFormat,
 };
 
+/// 取设备的人类可读名称。
+///
+/// cpal 0.18 移除了 `DeviceTrait::name()`，改为 `description() -> DeviceDescription`
+/// （另提供 `id() -> DeviceId` 作稳定标识）。这里统一封装，取不到时返回 None。
+fn device_label(device: &cpal::Device) -> Option<String> {
+    device
+        .description()
+        .ok()
+        .map(|desc| desc.name().to_string())
+}
+
 /// cpal 音频输出句柄
 pub struct AudioOutputCpal {
     /// cpal 音频流句柄
@@ -73,7 +84,7 @@ impl AudioOutput for AudioOutputCpal {
                     crate::error::EngineError::OutputOpenFailed(format!("枚举设备失败: {e}"))
                 })?;
                 devices
-                    .find(|d| d.name().ok().as_deref() == Some(name))
+                    .find(|d| device_label(d).as_deref() == Some(name))
                     .ok_or_else(|| {
                         crate::error::EngineError::OutputOpenFailed(format!("未找到设备: {name}"))
                     })?
@@ -85,7 +96,7 @@ impl AudioOutput for AudioOutputCpal {
 
         let config = cpal::StreamConfig {
             channels: self.channels as u16,
-            sample_rate: cpal::SampleRate(rate),
+            sample_rate: rate,
             buffer_size: cpal::BufferSize::Default,
         };
 
@@ -116,7 +127,7 @@ impl AudioOutput for AudioOutputCpal {
 
         let stream = device
             .build_output_stream(
-                &config,
+                config,
                 move |data: &mut [f32], _info: &cpal::OutputCallbackInfo| {
                     if !playing_clone.load(Ordering::Acquire) {
                         data.fill(0.0);
@@ -160,7 +171,7 @@ impl AudioOutput for AudioOutputCpal {
                 let Ok(mut devices) = host.devices() else {
                     return vec![self.sample_rate];
                 };
-                match devices.find(|d| d.name().ok().as_deref() == Some(name)) {
+                match devices.find(|d| device_label(d).as_deref() == Some(name)) {
                     Some(d) => d,
                     None => return vec![self.sample_rate],
                 }
@@ -173,7 +184,7 @@ impl AudioOutput for AudioOutputCpal {
         let mut rates: Vec<u32> = device
             .supported_output_configs()
             .map(|cfgs| {
-                cfgs.flat_map(|c| vec![c.min_sample_rate().0, c.max_sample_rate().0])
+                cfgs.flat_map(|c| vec![c.min_sample_rate(), c.max_sample_rate()])
                     .collect()
             })
             .unwrap_or_default();
@@ -203,7 +214,7 @@ pub(crate) fn list_device_names() -> Vec<String> {
                         .map(|mut c| c.next().is_some())
                         .unwrap_or(false)
             })
-            .filter_map(|d| d.name().ok())
+            .filter_map(|d| device_label(&d))
             .collect(),
         Err(_) => Vec::new(),
     }
@@ -220,7 +231,9 @@ pub(crate) fn enumerate_devices() -> Vec<OutputDeviceInfo> {
 
     let mut result = Vec::new();
     for device in device_iter {
-        let Ok(name) = device.name() else { continue };
+        let Some(name) = device_label(&device) else {
+            continue;
+        };
         let Ok(config_ranges) = device.supported_output_configs() else {
             continue;
         };
@@ -236,8 +249,8 @@ pub(crate) fn enumerate_devices() -> Vec<OutputDeviceInfo> {
                 _ => continue,
             };
             let channels = cr.channels();
-            let min_rate = cr.min_sample_rate().0;
-            let max_rate = cr.max_sample_rate().0;
+            let min_rate = cr.min_sample_rate();
+            let max_rate = cr.max_sample_rate();
             let bit_depth = match sample_format {
                 SampleFormat::I16 => 16,
                 SampleFormat::I24 => 24,
@@ -273,7 +286,7 @@ pub(crate) fn enumerate_devices() -> Vec<OutputDeviceInfo> {
 
         let is_default = default_device
             .as_ref()
-            .and_then(|d| d.name().ok())
+            .and_then(device_label)
             .map(|n| n == name)
             .unwrap_or(false);
 
@@ -300,7 +313,7 @@ pub(crate) fn open_inner(
         Some(name) => {
             let mut devices = host.devices().map_err(|e| format!("枚举设备失败: {e}"))?;
             devices
-                .find(|d| d.name().ok().as_deref() == Some(name))
+                .find(|d| device_label(d).as_deref() == Some(name))
                 .ok_or_else(|| format!("未找到输出设备: {name}"))?
         }
         None => host
@@ -310,7 +323,7 @@ pub(crate) fn open_inner(
 
     let config = cpal::StreamConfig {
         channels: channels as u16,
-        sample_rate: cpal::SampleRate(sample_rate),
+        sample_rate,
         buffer_size: cpal::BufferSize::Default,
     };
 
@@ -330,7 +343,7 @@ pub(crate) fn open_inner(
     let err_inner = inner.clone();
 
     let build_result = device.build_output_stream(
-        &config,
+        config,
         move |data: &mut [f32], _info: &cpal::OutputCallbackInfo| {
             if !playing_clone.load(Ordering::Acquire) {
                 data.fill(0.0);
@@ -377,12 +390,12 @@ pub(crate) fn open_inner(
             let default_cfg = device
                 .default_output_config()
                 .map_err(|e| format!("获取设备默认配置失败: {e}"))?;
-            let fallback_rate = default_cfg.sample_rate().0;
+            let fallback_rate = default_cfg.sample_rate();
             info!("回退采样率: {}Hz", fallback_rate);
 
             let fallback_config = cpal::StreamConfig {
                 channels: channels as u16,
-                sample_rate: cpal::SampleRate(fallback_rate),
+                sample_rate: fallback_rate,
                 buffer_size: cpal::BufferSize::Default,
             };
 
@@ -402,7 +415,7 @@ pub(crate) fn open_inner(
 
             let fb_stream = device
                 .build_output_stream(
-                    &fallback_config,
+                    fallback_config,
                     move |data: &mut [f32], _info: &cpal::OutputCallbackInfo| {
                         if !fb_playing_clone.load(Ordering::Acquire) {
                             data.fill(0.0);
@@ -459,7 +472,7 @@ pub(crate) fn open_inner(
 
     info!(
         "输出设备: {}, {}Hz {}ch, 缓冲: {}ms",
-        device.name().unwrap_or_default(),
+        device_label(&device).unwrap_or_default(),
         actual_rate,
         channels,
         buffer_ms,

@@ -337,7 +337,10 @@ pub fn wavelink_poll_event() -> Option<String> {
 pub fn wavelink_enumerate_devices() -> Vec<String> {
     let host = cpal::default_host();
     match host.output_devices() {
-        Ok(devs) => devs.filter_map(|d| d.name().ok()).collect(),
+        // cpal 0.18 移除 DeviceTrait::name()，改用 description().name()
+        Ok(devs) => devs
+            .filter_map(|d| d.description().ok().map(|desc| desc.name().to_string()))
+            .collect(),
         Err(_) => Vec::new(),
     }
 }

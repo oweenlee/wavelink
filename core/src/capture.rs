@@ -75,12 +75,12 @@ pub fn start_global_capture(sample_rate: u32, channels: u32) -> Result<(), Strin
             };
             let config = cpal::StreamConfig {
                 channels: channels as u16,
-                sample_rate: cpal::SampleRate(sample_rate),
+                sample_rate,
                 buffer_size: cpal::BufferSize::Default,
             };
             let err_fn = |err| tracing::error!("捕获回调错误: {err}");
             let stream = match device.build_input_stream(
-                &config,
+                config,
                 move |data: &[f32], _: &cpal::InputCallbackInfo| {
                     let n = prod.push_slice(data);
                     if n < data.len() {

@@ -49,7 +49,16 @@
 - **事件分配**：`EngineEvent::Spectrum` `Vec<f32>`→`[f32; 16]` 固定数组，消除高频堆分配（desktop/mobile 桥接均兼容）
 - **依赖升级**：`crossbeam-channel` 0.5.16→0.5.17；`windows-sys` 0.59→0.61（与 dev 依赖链已有的 0.61.2 合并，Windows 构建少编一份）；`dsd-reader` 0.3.1→0.4.0；`lofty` 0.24→0.25.3
   - `parking_lot` 保持 0.12：0.13 要求 Rust 1.95+（当前工具链 1.92）
-  - `cpal`(0.15→0.18) 为 breaking 且只能实机验证，另行排期
+- **`cpal` 0.15.3→0.18.2**：桌面端实际发声路径（`desktop/rust` 只启用默认 feature `cpal-backend`）
+  - `SampleRate` 由 newtype 变为 `u32` 类型别名 → `SampleRate(x)` 改裸值，`min/max_sample_rate()`、`sample_rate()` 不再取 `.0`
+  - `StreamConfig.buffer_size` 由 `Option<BufferSize>` 改为 `BufferSize`；`build_output_stream` 的 config 改为按值传入
+  - **`DeviceTrait::name()` 被移除** → 统一改走 `description().name()`（`output_cpal` 新增 `device_label()` 封装）；
+    0.18 另提供 `id() -> DeviceId`，后续可用它替代"按名字匹配设备"（同名 DAC 目前会选到第一个）
+  - `desktop/rust` 的 `cpal` 必须同步升级：`alsa-sys` 带 `links = "alsa"`，
+    依赖图内只允许一个包链接同名原生库，core 单独升会直接依赖解析失败
+  - 验证：macOS 真实设备冒烟——open 48k → 稳态 0 underrun → pause/resume → 切 96k → `swap_consumer`
+    全程 `stream_failed=false`（切率后重建流、缓冲为空期间会有约 10 次 underrun，属既有设计）；
+    `--target x86_64-pc-windows-msvc` 与 iOS（`--no-default-features`）编译通过；Linux 目标本机缺 rust-std 未验证
 - **`rubato` 0.10.1→5.0.1**：API 全面重构（`SincFixedOut` → `Async::new_sinc(... FixedAsync::Output)`、
   `InterpolationParameters`/`InterpolationType` → `SincInterpolationParameters`/`SincInterpolationType`、
   `nbr_frames_needed()` → `input_frames_next()`、缓冲区改为 `audioadapter` trait）
