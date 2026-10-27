@@ -1,0 +1,11 @@
+# 固定工具链版本，避免不同机器上 rustc/clippy 版本不一致导致
+# 依赖解析（MSRV-aware resolver）与 lint 结果漂移。
+# 升级时改这里，并跑一轮 cargo test / clippy / 各 target check。
+#
+# 注意：本机 rustup 配了阿里云镜像（RUSTUP_DIST_SERVER），其 1.95.0 的
+# 跨平台 rust-std 缺失（404），补装需临时走官方源：
+#   RUSTUP_DIST_SERVER=https://static.rust-lang.org rustup target add --toolchain 1.95.0 <target>
+[toolchain]
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]
+profile = "default"

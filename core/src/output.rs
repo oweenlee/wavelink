@@ -521,18 +521,15 @@ pub fn start_device_monitor() -> DeviceMonitor {
 
                 let prev_default = prev.iter().find(|d| d.is_default);
                 let cur_default = cur.iter().find(|d| d.is_default);
-                match (prev_default, cur_default) {
-                    (Some(p), Some(c)) if p.id != c.id => {
-                        if tx.send(DeviceEvent::DefaultDeviceChanged).is_err() {
-                            return;
-                        }
-                    }
-                    (Some(_), None) | (None, Some(_)) => {
-                        if tx.send(DeviceEvent::DefaultDeviceChanged).is_err() {
-                            return;
-                        }
-                    }
-                    _ => {}
+                // 默认设备变更：换了设备，或从"有默认"变"无默认"（反之亦然）。
+                // 收敛成一个 bool 再发事件，避免两处重复的 send/return。
+                let default_changed = match (prev_default, cur_default) {
+                    (Some(p), Some(c)) => p.id != c.id,
+                    (Some(_), None) | (None, Some(_)) => true,
+                    _ => false,
+                };
+                if default_changed && tx.send(DeviceEvent::DefaultDeviceChanged).is_err() {
+                    return;
                 }
 
                 prev = cur;
