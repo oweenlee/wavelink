@@ -186,7 +186,7 @@ let (engine, events) = EngineHandle::start_with_config(config);
 ## 测试
 
 ```bash
-cargo test -p audio-core    # 288 个测试 (单元 + 集成)
+cargo test -p audio-core    # 307 个测试 (单元 189 + 集成 115 + 文档 3)
 ```
 
 诊断型样例（依赖本机样本文件，非 CI 测试）见 `examples/`：

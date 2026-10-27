@@ -47,14 +47,9 @@ targets = [
     "x86_64-linux-android",
 ]
 
-[profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
-debug = 0
-debug-assertions = false
-rpath = false
-panic = "unwind"
+# 原 [profile.release] 已移除：本 crate 是根 workspace 的隐式成员，
+# profile 由 workspace 根统一提供，自带的会被 cargo 忽略并每次输出
+# "profiles for the non root package will be ignored" 警告。
 overflow-checks = false
 incremental = false
 strip = true

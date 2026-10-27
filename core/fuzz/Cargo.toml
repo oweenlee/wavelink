@@ -13,14 +13,14 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-symphonia = { version = "0.6", default-features = false, features = [
-    "mp3", "flac", "pcm", "vorbis", "aac", "isomp4", "ogg", "wav", "aiff"
+# feature 列表与 core 保持一致（含 alac），确保 fuzz 覆盖的解码路径与线上一致
+symphonia = { version = "0.6.1", default-features = false, features = [
+    "mp3", "flac", "pcm", "vorbis", "aac", "alac", "isomp4", "ogg", "wav", "aiff"
 ] }
 
-# 独立 workspace 不继承根 Cargo.toml 的 patch；
-# 不重复声明会触发双 symphonia_core 编译冲突（与根工作区同理）
-[patch.crates-io]
-symphonia-core = { git = "https://github.com/pdeljanov/Symphonia", branch = "main" }
+# 曾用 [patch.crates-io] 指向 symphonia git main；core 已迁回 crates.io 0.6.1
+# （根 workspace 亦已移除 patch），此处保留 patch 会编出第二份、与主工程不同源的
+# symphonia-core。故删除：fuzz 与主工程共用 crates.io 同一版本。
 
 [dependencies.audio-core]
 path = ".."

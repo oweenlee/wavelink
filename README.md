@@ -48,10 +48,10 @@ cd mobile && flutter run                # Rust 层自动编译 audio-core
 
 ## 注意事项
 
-- `core` 的 symphonia 用 git main 分支；根 workspace 以 `[patch.crates-io]`
-  统一 symphonia-core 源。`desktop/rust` 已加入根 workspace `members`，
-  自动继承该 patch；若新增独立 workspace 的子项，需各自声明同款 patch，
-  否则双版本编译冲突。
+- `core` 的 symphonia 用 crates.io 正式版 0.6.1（已迁回，不再是 git main）；
+  根 workspace **不再有** `[patch.crates-io]`。`core/fuzz` 是独立 workspace
+  （cargo-fuzz 要求），同样走 crates.io 0.6.1，无需重复声明 patch——
+  否则会编出第二份与主工程不同源的 symphonia-core。
 - `core/vendor/oboe` 是根 workspace 隐式成员（经 path 依赖自动加入），
   有意保留以继承 `[profile]` 优化配置。
 - **DSP 参数语义**：以 `core/src/engine` 的定义为准，两端只透传不改写。

@@ -47,6 +47,9 @@
 - **探测合并**：`probe_format_info` 一次开文件同时取采样率+位深（bit-perfect 路径用它，原两次开文件）
 - **空闲省电**：worker tick 暂停时 200ms→1s；`DeviceMonitor` 轮询 1.2s→5s
 - **事件分配**：`EngineEvent::Spectrum` `Vec<f32>`→`[f32; 16]` 固定数组，消除高频堆分配（desktop/mobile 桥接均兼容）
+- **依赖升级**：`crossbeam-channel` 0.5.16→0.5.17；`windows-sys` 0.59→0.61（与 dev 依赖链已有的 0.61.2 合并，Windows 构建少编一份）；`dsd-reader` 0.3.1→0.4.0；`lofty` 0.24→0.25.3
+  - `parking_lot` 保持 0.12：0.13 要求 Rust 1.95+（当前工具链 1.92）
+  - `cpal`(0.15→0.18) / `rubato`(0.10→5.0) / `ringbuf`(0.4→0.5) 均为 breaking，另行排期
 
 ### 变更
 
@@ -58,8 +61,12 @@
   （标签/封面/ReplayGain/格式探测），`pub use metadata::*` 保持既有路径兼容
 - `diag` 低层诊断日志降为 `pub(crate)`；`consumer` 保持公开（样本级集成测试依赖）
 - 诊断型集成测试（check_two_files/check_384k_speed）迁至 `examples/`
-- CI 工作流迁至仓库根 `.github/workflows/core-ci.yml`（子目录 workflows 不会被触发）；
-  `core/fuzz` 补独立 workspace 与 symphonia patch
+- CI 工作流曾迁至仓库根 `.github/workflows/core-ci.yml`，后已整体移除（提交 `19c8a9d`），当前仓库无 CI
+- **`core/fuzz` 去掉 `[patch.crates-io]`**：symphonia 已回 crates.io 0.6.1，fuzz 是独立 workspace，
+  保留 git patch 会编出第二份不同源的 symphonia-core；同时补齐 fuzz 侧 symphonia features（含 `alac`）
+- **`core` 声明 `rust-version = "1.89"`**（依赖下限：lofty 0.25 要求 1.89，fft-convolver 1.87，symphonia 1.85）
+- **`vendor/oboe` 移除自带 `[profile.release]`**：作为 workspace 隐式成员其 profile 本就被忽略，
+  且每次 cargo 命令都会输出 "profiles for the non root package will be ignored" 警告
 
 ### 修复
 
