@@ -49,7 +49,11 @@
 - **事件分配**：`EngineEvent::Spectrum` `Vec<f32>`→`[f32; 16]` 固定数组，消除高频堆分配（desktop/mobile 桥接均兼容）
 - **依赖升级**：`crossbeam-channel` 0.5.16→0.5.17；`windows-sys` 0.59→0.61（与 dev 依赖链已有的 0.61.2 合并，Windows 构建少编一份）；`dsd-reader` 0.3.1→0.4.0；`lofty` 0.24→0.25.3
   - `parking_lot` 保持 0.12：0.13 要求 Rust 1.95+（当前工具链 1.92）
-  - `cpal`(0.15→0.18) / `rubato`(0.10→5.0) / `ringbuf`(0.4→0.5) 均为 breaking，另行排期
+  - `cpal`(0.15→0.18) / `rubato`(0.10→5.0) 均为 breaking，另行排期
+- **`ringbuf` 0.4.8→0.5.3（零代码改动）**：`HeapProd`/`HeapCons` 由普通包装变为 caching 包装
+  （生产者/消费者各缓存对端索引，仅在操作无法推进时才 `fetch()` 刷新，热路径少一轮原子读）。
+  语义等价：cached 索引只会低估可用空间；`try_push`/`try_pop` 失败前必先刷新重试。
+  注意 workspace 内 0.4 与 0.5 并存（`mobile/rust` 声明了未实际使用的 `ringbuf = "0.4"`）
 
 ### 变更
 

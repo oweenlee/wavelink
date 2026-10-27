@@ -182,7 +182,7 @@ dependencies = [
  "oboe 0.6.1",
  "parking_lot",
  "realfft 3.5.0",
- "ringbuf",
+ "ringbuf 0.5.3",
  "rubato",
  "serde",
  "symphonia",
@@ -2225,6 +2225,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ringbuf"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b58b631e416dd7d84549d7e6a50f767e111f9b03e30d04f40072f6618f386aaf"
+dependencies = [
+ "crossbeam-utils",
+ "portable-atomic",
+ "portable-atomic-util",
+]
+
+[[package]]
 name = "rle-decode-fast"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2292,7 +2303,7 @@ dependencies = [
  "parking_lot",
  "realfft 3.5.0",
  "reqwest",
- "ringbuf",
+ "ringbuf 0.4.8",
  "smb2",
  "tokio",
 ]
