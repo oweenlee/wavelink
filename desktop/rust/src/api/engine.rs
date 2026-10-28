@@ -80,6 +80,8 @@ pub(crate) fn notify_stream_error(message: String) {
 
 // ── 初始化 / 销毁 ──
 
+// 与 EngineConfig 字段一一对应，FRB 不支持结构体参数（同 mobile `api::engine`）
+#[allow(clippy::too_many_arguments)]
 /// 初始化引擎。成功返回 null；失败返回错误信息字符串。
 ///
 /// `output_device` 为 null 表示系统默认设备。幂等：已初始化时直接返回成功。

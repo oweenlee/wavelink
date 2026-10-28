@@ -4,6 +4,7 @@
 //! 复用现有 lofty（cover.rs 已在用）+ SMB/WebDAV 读头能力：
 //! - NAS：读文件头（smb_read_head，最多 head_limit 字节）→ lofty 内存探测
 //! - WebDAV：读文件头（engine_read_webdav_range 的 head 模式）→ lofty 内存探测
+//!
 //! 头部足以覆盖绝大多数无损/hi-res 格式（FLAC/DSF/DFF/WAV/ALAC/APE/WV/AIFF，
 //! 以及带 Xing/Info/LAME 头的 MP3）；少数需尾部页才能确定时长的格式（如
 //! OGG/OPUS）探不到 → 由 Dart 侧回退文件名解析 + estimateDuration（粗估）。

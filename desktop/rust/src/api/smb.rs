@@ -963,12 +963,7 @@ mod nas_cover_diag {
         let share = std::env::var("WAVELINK_NAS_SHARE").unwrap_or_default();
         let path = std::env::var("WAVELINK_NAS_PATH").unwrap_or_default();
 
-        let params = ConnectParams {
-            addr: format!("{host}:445"),
-            username: user.clone(),
-            password: pass.clone(),
-            domain: String::new(),
-        };
+        // smb_connect 内部会写入全局连接参数（含读取连接池），无需本地构造 ConnectParams
         smb_connect(host.clone(), 445, user, pass, String::new())
             .await
             .expect("smb_connect");
@@ -997,7 +992,8 @@ mod nas_cover_diag {
                     let ms = t0.elapsed().as_millis();
                     use lofty::file::TaggedFileExt;
                     let mut reader = std::io::Cursor::new(data.clone());
-                    let parsed: Result<lofty::file::TaggedFile, lofty::error::LoftyError> =
+                    // lofty 0.25：`read()` 的错误类型改为 `FileParseError`（旧 `LoftyError` 已移除）
+                    let parsed: Result<lofty::file::TaggedFile, lofty::error::FileParseError> =
                         match lofty::probe::Probe::new(&mut reader).guess_file_type() {
                             Ok(probe) => probe.read(),
                             Err(e) => Err(e.into()),

@@ -7,20 +7,22 @@ fn probe(name: &str, data: &[u8]) {
     use lofty::file::TaggedFileExt;
     use lofty::tag::Accessor;
     let mut reader = std::io::Cursor::new(data);
-    let probed: Result<lofty::file::TaggedFile, lofty::error::LoftyError> =
+    // lofty 0.25 起移除统一的 `LoftyError`，改为结构化错误；
+    // probe 读取环节的顶层错误类型为 `FileParseError`（见 core 依赖同源 0.25.3）
+    let probed: Result<lofty::file::TaggedFile, lofty::error::FileParseError> =
         match lofty::probe::Probe::new(&mut reader).guess_file_type() {
             Ok(p) => p.read(),
             Err(e) => Err(e.into()),
         };
     match probed {
         Ok(tagged) => {
-            let mut cover = None;
-            'outer: for tag in tagged.tags() {
-                for pic in tag.pictures() {
-                    cover = Some(pic.data().len());
-                    break 'outer;
-                }
-            }
+            // 取第一张封面即可（遍历全部标签的首图），不必双层循环 + 标签 break
+            let cover = tagged
+                .tags()
+                .iter()
+                .flat_map(|t| t.pictures())
+                .next()
+                .map(|p| p.data().len());
             let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
             let has_pic = match cover {
                 Some(n) => format!("cover={n}B"),
